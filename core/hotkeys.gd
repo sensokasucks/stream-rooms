@@ -14,7 +14,7 @@ func _input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
 		return
-	var focus := get_viewport().gui_get_focus_owner()
+	var focus := _focus_owner()
 	if focus is LineEdit or focus is TextEdit or _in_keyboard_panel(focus):
 		# typing, or moving through the control panel with the keyboard (F6): the key is the
 		# control's. Esc leaves the box / the panel.
@@ -28,6 +28,19 @@ func _input(event: InputEvent) -> void:
 		return
 	if _handle(key.keycode):
 		get_viewport().set_input_as_handled()
+
+
+## The control with keyboard focus: in this window, or in the control panel's own window (F9).
+## Without the second check, keyboard mode in the panel window let hotkeys through.
+func _focus_owner() -> Control:
+	var f := get_viewport().gui_get_focus_owner()
+	if f:
+		return f
+	for n: Node in get_tree().get_nodes_in_group("keyboard_panel"):
+		var vp := n.get_viewport()
+		if vp != get_viewport() and vp.gui_get_focus_owner():
+			return vp.gui_get_focus_owner()
+	return null
 
 
 func _in_keyboard_panel(n: Node) -> bool:

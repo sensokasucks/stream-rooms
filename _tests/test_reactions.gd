@@ -199,7 +199,12 @@ func _ready() -> void:
 	var pod: Dictionary = main.get_node("RoomHost").get_current_room().find_child("Reactions", true, false).resolve_target({"type": "stage", "name": "podium2"})
 	var pres: Dictionary = main.get_node("RoomHost").get_current_room().find_child("Reactions", true, false).resolve_target({"type": "guest", "name": "guest2"})
 	print("podium2 at ", (pod["pos"] as Vector3).snapped(Vector3.ONE * 0.01), " presenter2 at ", (pres["pos"] as Vector3).snapped(Vector3.ONE * 0.01))
-	_check(not bool(pod["fallback"]) and (pod["pos"] as Vector3).y < (pres["pos"] as Vector3).y, "podium2 sits below presenter2's picture")
+	# compare the spot centres: resolve_target adds random jitter, which made this check flaky
+	var panel_layer: Node = main.get_node("RoomHost").get_current_room().find_child("Reactions", true, false)
+	var pod_y: float = (panel_layer._find_spot("podium2")["pos"] as Vector3).y
+	var pres_y: float = (panel_layer._find_spot("guest2")["pos"] as Vector3).y
+	print("podium2 centre y=", snappedf(pod_y, 0.01), " presenter2 centre y=", snappedf(pres_y, 0.01))
+	_check(not bool(pod["fallback"]) and pod_y < pres_y, "podium2 sits below presenter2's picture")
 	var cam2: Camera3D = get_viewport().get_camera_3d()
 	cam2.global_position = (pod["pos"] as Vector3) + (pod["normal"] as Vector3) * 5.0 + Vector3.UP * 0.8
 	cam2.look_at((pod["pos"] as Vector3) + Vector3.UP * 0.7)

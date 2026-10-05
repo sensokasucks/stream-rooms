@@ -23,6 +23,10 @@ func _ready():
 	AppState.set_setting("panel_scale", 1.0)
 	AppState.set_setting("photosensitive_safe", false)
 	AppState.set_setting("flash_strength", 1.0)
+	# don't depend on the saved settings: the panel sits in the main window, the left chat window shows Twitch
+	AppState.set_setting("panel_window", false)
+	AppState.set_setting("chat_left", true)
+	AppState.set_setting("chat_left_chat", "twitch")
 	var main = load("res://core/main.tscn").instantiate()
 	add_child(main)
 	await _secs(0.5)
@@ -85,7 +89,10 @@ func _ready():
 	EventBus.chat_message_received.emit({"name": "TwitchTom", "platform": "twitch", "user_id": "tt", "text": "can you read this?", "color": "#9146ff", "timestamp": Time.get_unix_time_from_system()})
 	AppState.set_setting("chat_left_outline", 1.0)
 	await _secs(0.3)
-	print("outline px=", left._cards[-1]["rtl"].get_theme_constant("outline_size"))
+	if left._cards.is_empty():
+		print("FAIL the left chat window got no card for a Twitch message")
+	else:
+		print("outline px=", left._cards[-1]["rtl"].get_theme_constant("outline_size"))
 	print("t step cam ", Time.get_ticks_msec())
 	var cam: CameraRig = main.get_node("CameraRig")
 	cam.global_position = Vector3(0, 4.5, 9)

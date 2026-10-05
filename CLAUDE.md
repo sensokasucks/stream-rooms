@@ -55,18 +55,21 @@ Stream Core is a separate Python app (FastAPI). On the owner's PC it lives at `G
 
 Each test in `_tests/` is a scene (`test_x.tscn` plus `test_x.gd`). It builds `core/main.tscn`, drives it, and prints results. The newer tests print `PASS ...` / `FAIL ...` lines; the older ones print values to compare between runs. The first user argument is an output folder for screenshots. Keep it **outside** the project folder, or the editor imports the PNGs.
 
+**Run tests with `tools/run_tests.ps1`** (default: the regression set below):
+
 ```
-<redot console exe> --path . _tests/test_performance.tscn -- C:/temp/sr_tests
+powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1
+powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions -SkipImport
 ```
 
-(Use the console build of the Redot editor exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64edot.windows.editor.x86_64.console.exe`.)
+It rebuilds the editor's class cache first, runs each test one at a time with `--mp-profile=test` from a fresh `settings_test.cfg` (so tests start from the defaults and **never touch the owner's live `settings.cfg`**), stops a test after a time limit, and prints a table of PASS / FAIL / script errors. Logs and screenshots go to `C:\temp\sr_tests`.
 
-- If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. Run the exe once with `--headless --path . --import` to rebuild it.
-- The exe can crash with a segmentation fault while quitting after a test. Judge a test by its printed results, not by its exit code.
-- `test_mp_profile` needs a profile after the output folder (`-- C:/temp/sr_tests --mp-profile=guest2`). It writes `settings_<profile>.cfg`, not the live settings, so two copies with different profiles may run at once.
-
-- **Tests change the real settings.** `user://settings.cfg` is the owner's live settings file (in the Redot app_userdata folder, `Stream Rooms`). Back it up before a test session and restore it afterwards. Run tests **one at a time**, never in parallel.
-- Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`.
+- Redot console exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe`.
+- Write tests so they set every setting they depend on; they start from the defaults.
+- If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. The runner fixes that (or run the exe with `--headless --path . --import`).
+- The godot-ndi plugin makes Redot crash while quitting. Judge a test by its printed results, not its exit code.
+- Running a test by hand without a profile still changes the live settings: back up `settings.cfg` first (Redot app_userdata folder, `Stream Rooms`).
+- Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`, `test_mp_profile`.
 - Look at the screenshots a test saves. Many bugs are visual.
 
 ## Working rules
