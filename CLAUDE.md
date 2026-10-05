@@ -67,7 +67,7 @@ It rebuilds the editor's class cache first, runs each test one at a time with `-
 - Redot console exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe`.
 - Write tests so they set every setting they depend on; they start from the defaults.
 - If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. The runner fixes that (or run the exe with `--headless --path . --import`).
-- The godot-ndi plugin makes Redot crash while quitting. Judge a test by its printed results, not its exit code.
+- Every test should end with "exit 0" in the runner table. Anything else means Redot crashed (the old quit crash in the NDI plugin is fixed; see `addons/godot-ndi/STREAM_ROOMS_PATCH.md`).
 - Running a test by hand without a profile still changes the live settings: back up `settings.cfg` first (Redot app_userdata folder, `Stream Rooms`).
 - Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`, `test_mp_profile`.
 - Look at the screenshots a test saves. Many bugs are visual.

@@ -2,7 +2,7 @@
 
 The Windows DLLs in `bin/windows/` are godot-ndi v1.2.6 (https://github.com/unvermuthet/godot-ndi,
 MPL-2.0, (C) 2025-present Henry Muth - unvermuthet and Godot NDI contributors) rebuilt with a small
-audio patch. The modified source files and the diff are in `stream_rooms_patch/`. The originals
+audio patch and a shutdown fix. The modified source files and the diff are in `stream_rooms_patch/`. The originals
 are backed up in `../../_backup/godot-ndi-1.2.6-original-windows/`.
 
 ## Why
@@ -19,8 +19,22 @@ left the player's buffer empty for a moment -> a click. Nothing ever refilled th
   no cap at the queue depth, a 60 ms pre-roll, and big pulls are written in chunks instead of
   dropping everything past 4096 samples.
 
+## Shutdown fix (October 2026)
+Redot crashed every time it quit, with the original plugin too. `ViewportTextureRouter`'s
+destructor runs at the CORE uninitialize level, after the RenderingServer is gone, and still
+called it to disconnect `frame_post_draw`. It now skips that when no viewports are registered
+(the signal is only connected while some are). Changed file: `src/viewport_texture_router.cpp`.
+
 ## Rebuilding
-Built on Linux with llvm-mingw 20250613 (UCRT) and SCons 4.8.1:
+`stream_rooms_patch/stream-rooms.diff` holds both changes against the v1.2.6 tag (`audio-pull.diff`
+is the audio change alone). Since the shutdown fix, the DLLs are built on Windows with MSVC 2022
+(Build Tools 14.39) and SCons 4.11:
+`git clone --branch v1.2.6 https://github.com/unvermuthet/godot-ndi`, `git submodule update --init godot-cpp`,
+`git apply stream-rooms.diff`, then
+`python -m SCons platform=windows target=template_debug arch=x86_64` (and `target=template_release`).
+The DLLs land in `project/addons/godot-ndi/bin/windows/`.
+
+The audio-patch DLLs were first built on Linux with llvm-mingw 20250613 (UCRT) and SCons 4.8.1:
 `scons platform=windows use_mingw=yes use_llvm=yes arch=x86_64 target=template_release`
 (and `target=template_debug`), from the v1.2.6 tag with `audio-pull.diff` applied.
 To go back to the original plugin, copy the two DLLs from the backup folder over these.

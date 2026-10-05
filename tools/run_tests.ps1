@@ -18,6 +18,8 @@ param(
 	[switch]$SkipImport
 )
 $ErrorActionPreference = "Stop"
+# "powershell -File" hands "-Tests a,b" over as one string, so split it here
+$Tests = @($Tests | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 $project = Split-Path $PSScriptRoot -Parent
 $profileCfg = Join-Path $env:APPDATA "Redot\app_userdata\Stream Rooms\settings_test.cfg"
 New-Item -ItemType Directory -Force $Out | Out-Null
@@ -25,11 +27,13 @@ New-Item -ItemType Directory -Force $Out | Out-Null
 function Invoke-Redot([string[]]$ArgList, [string]$Log, [int]$Seconds) {
 	$p = Start-Process -FilePath $Redot -ArgumentList $ArgList -WorkingDirectory $project -NoNewWindow -PassThru `
 		-RedirectStandardOutput $Log -RedirectStandardError "$Log.err"
+	$null = $p.Handle    # keeps the handle open so ExitCode can be read afterwards
 	if (-not $p.WaitForExit($Seconds * 1000)) {
 		Stop-Process -Id $p.Id -Force
-		return $false
+		return "TIMED OUT"
 	}
-	return $true
+	# exit code 0 = quit cleanly; anything else (e.g. -1073741819) = crashed
+	return "exit $($p.ExitCode)"
 }
 
 if (-not $SkipImport) {
@@ -44,11 +48,11 @@ foreach ($t in $Tests) {
 	New-Item -ItemType Directory -Force $dir | Out-Null
 	if (Test-Path $profileCfg) { Remove-Item $profileCfg -Force }
 	$log = Join-Path $Out "$t.log"
-	$finished = Invoke-Redot @("--path", "`"$project`"", "_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test") $log $TimeLimit
+	$ended = Invoke-Redot @("--path", "`"$project`"", "_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test") $log $TimeLimit
 	$text = @(Get-Content $log -ErrorAction SilentlyContinue) + @(Get-Content "$log.err" -ErrorAction SilentlyContinue)
 	$rows += [pscustomobject]@{
 		Test           = $t
-		Finished       = if ($finished) { "yes" } else { "TIMED OUT" }
+		Ended          = $ended
 		Pass           = @($text | Where-Object { $_ -like "PASS *" }).Count
 		Fail           = @($text | Where-Object { $_ -like "FAIL *" }).Count
 		"Script errors" = @($text | Where-Object { $_ -like "*SCRIPT ERROR*" }).Count
@@ -58,4 +62,3 @@ if (Test-Path $profileCfg) { Remove-Item $profileCfg -Force }
 
 $rows | Format-Table -AutoSize
 Write-Host "Logs and screenshots: $Out"
-Write-Host "Redot may crash while quitting (NDI plugin); judge tests by the table above, not the exit code."
