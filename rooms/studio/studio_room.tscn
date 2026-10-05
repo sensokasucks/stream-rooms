@@ -1,0 +1,152 @@
+[gd_scene load_steps=21 format=3]
+
+[ext_resource type="Script" path="res://rooms/room.gd" id="1_hxaxa"]
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_rhnwn"]
+albedo_color = Color(0.12, 0.12, 0.13, 1)
+roughness = 0.8
+
+[sub_resource type="BoxMesh" id="BoxMesh_e1dlq"]
+material = SubResource("StandardMaterial3D_rhnwn")
+size = Vector3(10, 0.2, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ftvrb"]
+albedo_color = Color(0.08, 0.08, 0.09, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_uqbjm"]
+material = SubResource("StandardMaterial3D_ftvrb")
+size = Vector3(10, 0.2, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g5hft"]
+albedo_color = Color(0.16, 0.17, 0.2, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_uy8md"]
+material = SubResource("StandardMaterial3D_g5hft")
+size = Vector3(10, 3.6, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_a6aj1"]
+albedo_color = Color(0.16, 0.17, 0.2, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_i44hb"]
+material = SubResource("StandardMaterial3D_a6aj1")
+size = Vector3(10, 3.6, 0.2)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_g3g70"]
+albedo_color = Color(0.14, 0.15, 0.18, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_yg1b2"]
+material = SubResource("StandardMaterial3D_g3g70")
+size = Vector3(0.2, 3.6, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_e1pxs"]
+albedo_color = Color(0.14, 0.15, 0.18, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_n348n"]
+material = SubResource("StandardMaterial3D_e1pxs")
+size = Vector3(0.2, 3.6, 10)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_klebx"]
+albedo_color = Color(0.3, 0.2, 0.12, 1)
+roughness = 0.5
+
+[sub_resource type="BoxMesh" id="BoxMesh_jdm46"]
+material = SubResource("StandardMaterial3D_klebx")
+size = Vector3(2.4, 0.08, 0.9)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_uww7a"]
+albedo_color = Color(0.25, 0.1, 0.1, 1)
+roughness = 0.9
+
+[sub_resource type="BoxMesh" id="BoxMesh_2tqk2"]
+material = SubResource("StandardMaterial3D_uww7a")
+size = Vector3(2.8, 0.5, 1)
+
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_4tvil"]
+albedo_color = Color(0.02, 0.02, 0.02, 1)
+roughness = 0.4
+
+[sub_resource type="BoxMesh" id="BoxMesh_quwt8"]
+material = SubResource("StandardMaterial3D_4tvil")
+size = Vector3(4.3, 2.5, 0.08)
+
+[sub_resource type="QuadMesh" id="QuadMesh_456d0"]
+size = Vector2(4, 2.25)
+
+[node name="StudioRoom" type="Node3D"]
+script = ExtResource("1_hxaxa")
+
+[node name="Geometry" type="Node3D" parent="."]
+
+[node name="Floor" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.1, 0)
+mesh = SubResource("BoxMesh_e1dlq")
+
+[node name="Ceiling" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.6, 0)
+mesh = SubResource("BoxMesh_uqbjm")
+
+[node name="WallBack" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, -5)
+mesh = SubResource("BoxMesh_uy8md")
+
+[node name="WallFront" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.8, 5)
+mesh = SubResource("BoxMesh_i44hb")
+
+[node name="WallLeft" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5, 1.8, 0)
+mesh = SubResource("BoxMesh_yg1b2")
+
+[node name="WallRight" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 5, 1.8, 0)
+mesh = SubResource("BoxMesh_n348n")
+
+[node name="Desk" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.75, 1.2)
+mesh = SubResource("BoxMesh_jdm46")
+
+[node name="Couch" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.25, 3.2)
+mesh = SubResource("BoxMesh_2tqk2")
+
+[node name="ScreenBezel" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, -4.86)
+mesh = SubResource("BoxMesh_quwt8")
+
+[node name="TVScreen" type="MeshInstance3D" parent="Geometry"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, -4.8)
+mesh = SubResource("QuadMesh_456d0")
+
+[node name="LIGHTS_House" type="Node3D" parent="."]
+
+[node name="@OmniLight3D@10" type="OmniLight3D" parent="LIGHTS_House"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -3, 3.2, 2)
+light_color = Color(0.8, 0.85, 1, 1)
+light_energy = 1.2
+light_volumetric_fog_energy = 0.3
+omni_range = 7.0
+omni_attenuation = 1.5
+
+[node name="@OmniLight3D@11" type="OmniLight3D" parent="LIGHTS_House"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 3, 3.2, 2)
+light_color = Color(0.8, 0.85, 1, 1)
+light_energy = 1.2
+light_volumetric_fog_energy = 0.3
+omni_range = 7.0
+omni_attenuation = 1.5
+
+[node name="Cameras" type="Node3D" parent="."]
+
+[node name="CAM_1_Couch" type="Marker3D" parent="Cameras"]
+transform = Transform3D(1, 0, 0, 0, 0.998233, -0.0594186, 0, 0.0594186, 0.998233, 0, 1.4, 3.6)
+
+[node name="CAM_2_Screen" type="Marker3D" parent="Cameras"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.9, -1.2)
+
+[node name="CAM_3_Corner" type="Marker3D" parent="Cameras"]
+transform = Transform3D(0.810679, -0.103806, 0.576215, 0, 0.984157, 0.177297, -0.585491, -0.143731, 0.797836, 4.2, 2.8, 4.2)

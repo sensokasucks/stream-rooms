@@ -1,0 +1,21 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://core/interiors/interior_windows.gdshader" id="1_shd"]
+[ext_resource type="Texture2D" path="res://core/interiors/interior_atlas.png" id="2_atl"]
+
+[resource]
+resource_name = "win_brick"
+shader = ExtResource("1_shd")
+shader_parameter/room_atlas = ExtResource("2_atl")
+shader_parameter/seed = 3.0
+shader_parameter/glass_rect = Vector4(0.18, 0.25, 0.82, 0.85)
+shader_parameter/mullions = 1
+shader_parameter/wall_color = Color(0.3, 0.1, 0.07, 1)
+shader_parameter/wall_color_2 = Color(0.2, 0.07, 0.05, 1)
+shader_parameter/wall_variation = 0.5
+shader_parameter/wall_roughness = 0.7
+shader_parameter/lit_ratio = 0.5
+shader_parameter/variant_min = 0
+shader_parameter/variant_max = 1
+shader_parameter/room_depth = 3.5
+shader_parameter/curtain_chance = 0.4

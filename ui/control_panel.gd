@@ -1,0 +1,1647 @@
+extends CanvasLayer
+## Control panel (Tab to hide/show). Thin UI: it shows AppState / EventBus data
+## and forwards user input to AppState setters or EventBus requests. No logic.
+
+@export var panel_width: float = 580.0
+
+var _panel: PanelContainer
+var _url: LineEdit
+var _capture_label: Label
+var _capture_url: String = ""
+var _room_select: OptionButton
+var _camera_box: HFlowContainer
+var _react_btn: Button
+var _mic_bar: ProgressBar
+var _duck_label: Label
+var _dialog: FileDialog
+var _sliders: Dictionary = {}     # setting key -> HSlider
+var _checks: Dictionary = {}      # setting key -> CheckBox
+var _colors: Dictionary = {}      # setting key -> ColorPickerButton
+var _room_box: VBoxContainer      # this room's own controls (rebuilt on every room change)
+var _room_keys: Array[String] = []
+var _chat_label: Label
+var _options: Dictionary = {}          # setting key -> OptionButton (values in item metadata)
+var _pres_count_label: Label
+var _pres_details: Array[Control] = []
+var _size_warnings: Dictionary = {}       # chat window key -> Label ("text too small on stream")
+var _size_check: float = 1.0
+var _scale_pending: float = 0.0           # panel size change waiting for the slider to settle
+var _pres_rows: Array[Dictionary] = []    # per presenter: {camera, ndi, url, key, picture[]} rows shown by source
+var _pres_feed_labels: Array[Label] = []
+var _pres_camera_menus: Array[OptionButton] = []
+var _pres_edit_buttons: Array[Button] = []
+var _last_cams_json: String = "[]"
+var _seat_label: Label
+var _ndi_menu: OptionButton
+var _ndi_label: Label
+var _ndi_names: PackedStringArray = []
+var _ndi_available: bool = false
+var _pres_ndi_menus: Array[OptionButton] = []
+var _user_hidden: bool = false
+var _window: Window               # the panel's own OS window (F9), null while docked
+var _window_btn: Button
+var _panel_style: StyleBoxFlat
+var _pos_check: float = 0.0
+var _curtain_label: Label
+var _gfx_hint: Label
+var _tabs: TabContainer
+var _platform_boxes: Dictionary = {}      # "<window>_chat" -> {group: CheckBox}
+var _mix_warnings: Dictionary = {}        # "<window>_chat" -> Label (Twitch mixed with others)
+var _chart: SeatingChart
+var _section_label: Label
+var _section_boxes: Dictionary = {}       # group -> CheckBox (the picked section's platforms)
+var _capacity_label: Label
+
+
+func _ready() -> void:
+	_ndi_available = NdiReceiver.is_available()
+	_build()
+	EventBus.capture_status_changed.connect(_on_capture_status)
+	EventBus.camera_presets_changed.connect(_on_camera_presets)
+	EventBus.room_changed.connect(_on_room_changed)
+	EventBus.room_controls_changed.connect(_on_room_controls)
+	EventBus.react_pause_changed.connect(_on_react_pause_changed)
+	EventBus.mic_level_changed.connect(_on_mic_level)
+	EventBus.ducking_changed.connect(_on_ducking)
+	EventBus.clean_feed_changed.connect(func(_c: bool) -> void: _refresh_visible())
+	EventBus.setting_changed.connect(_on_setting_changed)
+	EventBus.chat_status_changed.connect(_on_chat_status)
+	EventBus.audience_count_changed.connect(_on_audience_count)
+	EventBus.room_presenters_changed.connect(_on_room_presenters)
+	EventBus.ndi_sources_changed.connect(_on_ndi_sources)
+	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_ndi_label())
+	_on_chat_status(ChatFeed.get_status())
+	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _refresh_curtain_label())
+	if bool(AppState.get_setting("panel_window")):
+		_apply_window_mode.call_deferred()
+
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		_drop_mouse_focus.call_deferred(get_viewport())
+		return
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	if key.keycode == KEY_F6:
+		focus_panel()
+		get_viewport().set_input_as_handled()
+	elif key.keycode == KEY_F9:
+		toggle_window()
+		get_viewport().set_input_as_handled()
+	elif has_keyboard_focus():
+		# keyboard mode: Tab / Shift+Tab move between controls, Esc leaves (hotkeys come back)
+		if key.keycode == KEY_ESCAPE:
+			_release_panel_focus()
+			get_viewport().set_input_as_handled()
+	elif key.keycode == KEY_TAB:
+		_user_hidden = not _user_hidden
+		_refresh_visible()
+		get_viewport().set_input_as_handled()
+
+
+## Keyboard mode (F6): the first control of the open tab gets focus; Tab / Shift+Tab move,
+## arrows change sliders / tabs, Space / Enter press, Esc leaves.
+func focus_panel() -> void:
+	_user_hidden = false
+	_refresh_visible()
+	if _window:
+		_window.grab_focus()
+	var bar := _tabs.get_tab_bar()
+	bar.focus_mode = Control.FOCUS_ALL
+	bar.grab_focus()
+	EventBus.status_message.emit("Keyboard: Tab / Shift+Tab move, arrows change, Space / Enter press, Esc leaves.", false)
+
+
+## Does a control in the panel have the keyboard focus (so keys belong to it, not the hotkeys)?
+func has_keyboard_focus() -> bool:
+	var vp: Viewport = _window if _window else get_viewport()
+	var f := vp.gui_get_focus_owner()
+	return f != null and _panel.is_ancestor_of(f)
+
+
+func _release_panel_focus() -> void:
+	var vp: Viewport = _window if _window else get_viewport()
+	var f := vp.gui_get_focus_owner()
+	if f:
+		f.release_focus()
+
+
+## A mouse click leaves no focus behind (so Space still pauses instead of pressing the last button
+## clicked); text boxes keep it so you can type.
+func _drop_mouse_focus(vp: Viewport) -> void:
+	if not is_instance_valid(vp):
+		return
+	var f := vp.gui_get_focus_owner()
+	if f and _panel.is_ancestor_of(f) and not (f is LineEdit or f is TextEdit):
+		f.release_focus()
+
+
+func _process(delta: float) -> void:
+	_size_check -= delta
+	if _size_check <= 0.0:
+		_size_check = 1.0
+		_check_text_sizes()
+	if _scale_pending > 0.0:
+		_scale_pending -= delta
+		if _scale_pending <= 0.0:
+			_apply_scale()
+	# remember where the panel window sits
+	if _window == null:
+		return
+	_pos_check -= delta
+	if _pos_check <= 0.0:
+		_pos_check = 2.0
+		_save_window_pos()
+
+
+# ── Own window (F9) ──────────────────────────────────────────
+## Moves the panel into its own OS window (so a window capture of the main window never shows
+## it) or back into the main window.
+func toggle_window() -> void:
+	AppState.set_setting("panel_window", not bool(AppState.get_setting("panel_window")))
+	_apply_window_mode()
+
+
+func is_in_window() -> bool:
+	return _window != null
+
+
+func _apply_window_mode() -> void:
+	var want := bool(AppState.get_setting("panel_window"))
+	if want and _window == null:
+		if not DisplayServer.has_feature(DisplayServer.FEATURE_SUBWINDOWS):
+			EventBus.status_message.emit("This system can't open a second window; the panel stays here.", true)
+			AppState.set_setting("panel_window", false)
+			return
+		get_tree().root.gui_embed_subwindows = false
+		_window = Window.new()
+		_window.title = "Stream Rooms — controls"
+		_window.wrap_controls = false
+		var w := int((maxf(panel_width, _panel.get_combined_minimum_size().x) + 20.0) * _panel_scale())     # (every tab name fits)
+		_window.min_size = Vector2i(w, 360)
+		_window.transient = false
+		_window.close_requested.connect(func() -> void:
+			_save_window_pos()
+			_user_hidden = true
+			_refresh_visible())
+		_window.window_input.connect(_on_window_input)
+		add_child(_window)
+		_panel.reparent(_window, false)
+		_panel.position = Vector2.ZERO
+		_panel_style.bg_color.a = 1.0
+		var usable := DisplayServer.screen_get_usable_rect(DisplayServer.window_get_current_screen())
+		_window.size = Vector2i(w, mini(900, usable.size.y - 80))
+		_window.size_changed.connect(_fit_height)
+		var saved := String(AppState.get_setting("panel_window_pos")).split(",")
+		if saved.size() == 2 and saved[0].is_valid_int() and saved[1].is_valid_int():
+			_window.position = Vector2i(int(saved[0]), int(saved[1]))
+		else:
+			_window.position = DisplayServer.window_get_position() + Vector2i(40, 40)
+		_user_hidden = false
+		EventBus.status_message.emit("Control panel in its own window (F9 puts it back).", false)
+	elif not want and _window != null:
+		_save_window_pos()
+		_panel.reparent(self, false)
+		_panel.position = Vector2(16, 16)
+		_panel_style.bg_color.a = 0.88
+		_window.hide()
+		_window.queue_free()
+		_window = null
+		(func() -> void: get_tree().root.gui_embed_subwindows = true).call_deferred()
+	_fit_height.call_deferred()
+	_window_btn.text = "Back in the main window (F9)" if _window else "Own window (F9)"
+	_refresh_visible()
+
+
+## The tabs take the height that's there (the main window's, or the panel window's); each tab
+## scrolls inside it.
+func _fit_height() -> void:
+	if _tabs == null:
+		return
+	var avail: float
+	var k := _panel_scale()
+	if _window:
+		avail = float(_window.size.y) / k
+		_panel.size = Vector2(_window.size) / k
+	else:
+		avail = (get_viewport().get_visible_rect().size.y - 32.0) / k
+	var extra := 0.0
+	for c in _tabs.get_parent().get_children():
+		if c != _tabs and (c as Control).visible:
+			extra += (c as Control).get_combined_minimum_size().y + 4.0
+	_tabs.custom_minimum_size.y = maxf(avail - extra - 24.0, 240.0)
+	if not _window:
+		_panel.size.y = 0.0       # shrink to fit the new minimum
+
+
+func _save_window_pos() -> void:
+	if _window == null:
+		return
+	var p := "%d,%d" % [_window.position.x, _window.position.y]
+	if p != String(AppState.get_setting("panel_window_pos")):
+		AppState.set_setting("panel_window_pos", p)
+
+
+## Keys pressed in the panel window still work as hotkeys (unless you're typing in a box).
+func _on_window_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+		_drop_mouse_focus.call_deferred(_window)
+		return
+	var key := event as InputEventKey
+	if key == null or not key.pressed or key.echo:
+		return
+	if key.keycode == KEY_F6:
+		focus_panel()
+		_window.set_input_as_handled()
+		return
+	var focus := _window.gui_get_focus_owner()
+	if focus != null and key.keycode != KEY_F9:
+		if key.keycode == KEY_ESCAPE:
+			focus.release_focus()
+			_window.set_input_as_handled()
+		return      # typing, or keyboard mode: the key belongs to the control
+	if key.keycode == KEY_TAB:
+		_user_hidden = true
+		_refresh_visible()
+	elif key.keycode == KEY_F9:
+		toggle_window()
+	else:
+		Input.parse_input_event(event.duplicate())     # (a fresh event: the engine won't parse one twice a frame)
+	if _window:        # (F9 just closed the panel's window)
+		_window.set_input_as_handled()
+
+
+# ── Build ────────────────────────────────────────────────────
+func _build() -> void:
+	_panel = PanelContainer.new()
+	_panel.position = Vector2(16, 16)
+	_panel.custom_minimum_size = Vector2(panel_width, 0)
+	var style := StyleBoxFlat.new()
+	_panel_style = style
+	style.bg_color = Color(0.05, 0.05, 0.07, 0.88)
+	style.set_corner_radius_all(8)
+	style.set_content_margin_all(10)
+	_panel.add_theme_stylebox_override("panel", style)
+	_panel.theme = _focus_theme()
+	_panel.add_to_group("keyboard_panel")
+	add_child(_panel)
+	var outer := VBoxContainer.new()
+	_panel.add_child(outer)
+	_tabs = TabContainer.new()
+	_tabs.custom_minimum_size = Vector2(panel_width - 20, 0)
+	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_tabs.clip_tabs = false      # every tab name stays in view (the panel widens a little instead)
+	outer.add_child(_tabs)
+	# every tab scrolls, so nothing is cut off at the bottom of a small screen / window
+	for page: Control in [_build_source_tab(), _build_room_tab(), _build_react_tab(), _build_audio_tab(),
+			_build_chat_tab(), _build_audience_tab(), _build_seating_tab(), _build_games_tab(), _build_presenters_tab()]:
+		var sc := ScrollContainer.new()
+		sc.name = page.name
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		page.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sc.add_child(page)
+		_tabs.add_child(sc)
+	get_viewport().size_changed.connect(_fit_height)
+	_fit_height.call_deferred()
+	var hint := Label.new()
+	hint.text = "Tab panel | F6 keyboard (Esc leaves) | F9 own window | Space react pause | F focus | B curtain (Shift+B reveal) | 1-9, 0 cameras | PgUp/PgDn rooms | F10 clean feed | right-drag look"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.custom_minimum_size = Vector2(panel_width - 20, 0)
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+	outer.add_child(hint)
+	var bottom := HBoxContainer.new()
+	outer.add_child(bottom)
+	_window_btn = _button("Own window (F9)", toggle_window)
+	_window_btn.tooltip_text = "Move this panel into its own window, so a window capture of the room never shows it."
+	bottom.add_child(_window_btn)
+	var size_row := _slider("panel_scale", "Panel size", 0.75, 2.0, 0.05, "%d%%", 100.0)
+	size_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	(size_row.get_child(0) as Label).custom_minimum_size = Vector2(80, 0)
+	size_row.tooltip_text = "Makes everything in this panel bigger or smaller (text, buttons, sliders). Ctrl+= / Ctrl+- also work."
+	bottom.add_child(size_row)
+	_add_help_buttons(_panel)
+	_apply_scale.call_deferred()
+
+	_dialog = FileDialog.new()
+	_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_dialog.use_native_dialog = true
+	_dialog.title = "Choose a video"
+	_dialog.filters = PackedStringArray(["*.ogv, *.mp4, *.mkv, *.webm, *.mov, *.avi, *.m4v ; Videos", "* ; All files"])
+	_dialog.file_selected.connect(func(p: String) -> void:
+		_url.text = p
+		EventBus.file_play_requested.emit(p))
+	add_child(_dialog)
+
+
+func _build_source_tab() -> Control:
+	var v := _tab("Source")
+	v.add_child(_heading("Browser tab (live)"))
+	var row := HBoxContainer.new()
+	v.add_child(row)
+	row.add_child(_button("Open sender page", func() -> void:
+		if _capture_url != "": OS.shell_open(_capture_url)))
+	_capture_label = Label.new()
+	_capture_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_capture_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_capture_label.text = "Not connected."
+	row.add_child(_capture_label)
+	var how := Label.new()
+	how.text = "Open the sender page in Brave, click Share, pick the YouTube tab and keep \"Share tab audio\" on."
+	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	how.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(how)
+
+	v.add_child(_heading("NDI (OBS / NDI Tools)"))
+	var nr := HBoxContainer.new()
+	v.add_child(nr)
+	_ndi_menu = OptionButton.new()
+	_ndi_menu.focus_mode = Control.FOCUS_ALL
+	_ndi_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ndi_menu.fit_to_longest_item = false
+	nr.add_child(_ndi_menu)
+	nr.add_child(_button("Show", func() -> void:
+		if _ndi_menu.selected >= 0 and _ndi_menu.get_item_metadata(_ndi_menu.selected) != null:
+			EventBus.ndi_connect_requested.emit(String(_ndi_menu.get_item_metadata(_ndi_menu.selected)))))
+	nr.add_child(_button("Stop", func() -> void: EventBus.ndi_stop_requested.emit()))
+	_ndi_label = Label.new()
+	_ndi_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_ndi_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(_ndi_label)
+	v.add_child(_check("ndi_auto", "Reconnect to the last source by itself"))
+	var nb := _slider("ndi_audio_buffer_ms", "Sound buffer", 50.0, 1500.0, 10.0, "%d ms")
+	nb.tooltip_text = "How much NDI sound is queued before it plays. More rides out hiccups on the network / OBS side,\nbut the sound runs that much behind the picture. Needs the patched NDI plugin."
+	v.add_child(nb)
+	_fill_ndi_menu(_ndi_menu, String(AppState.get_setting("ndi_source")), "(pick a source)")
+	_refresh_ndi_label()
+
+	v.add_child(_heading("File or URL"))
+	var r1 := HBoxContainer.new()
+	v.add_child(r1)
+	_url = LineEdit.new()
+	_url.placeholder_text = "YouTube URL or path to a video file"
+	_url.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_url.text_submitted.connect(func(t: String) -> void:
+		_url.release_focus()
+		EventBus.file_play_requested.emit(t))
+	r1.add_child(_url)
+	r1.add_child(_button("Play", func() -> void: EventBus.file_play_requested.emit(_url.text)))
+	r1.add_child(_button("Browse...", func() -> void: _dialog.popup_centered_ratio(0.6)))
+	var r2 := HBoxContainer.new()
+	v.add_child(r2)
+	r2.add_child(_button("Pause / resume", func() -> void: EventBus.file_pause_toggle_requested.emit()))
+	r2.add_child(_button("Stop", func() -> void: EventBus.file_stop_requested.emit()))
+	r2.add_child(_check("loop_files", "Loop"))
+	var q := OptionButton.new()
+	for h in [480, 720, 1080]:
+		q.add_item("%dp" % h, h)
+	q.select(q.get_item_index(int(AppState.get_setting("max_height"))))
+	q.tooltip_text = "Resolution for downloads/conversion. Lower converts faster."
+	q.item_selected.connect(func(i: int) -> void: AppState.set_setting("max_height", q.get_item_id(i)))
+	r2.add_child(q)
+	return v
+
+
+func _build_room_tab() -> Control:
+	var v := _tab("Room")
+	v.add_child(_heading("Room"))
+	_room_select = OptionButton.new()
+	for id in RoomCatalog.get_ids():
+		_room_select.add_item(RoomCatalog.get_info(id).display_name)
+		_room_select.set_item_metadata(_room_select.item_count - 1, id)
+	_room_select.item_selected.connect(func(i: int) -> void:
+		AppState.request_room(String(_room_select.get_item_metadata(i))))
+	v.add_child(_room_select)
+	v.add_child(_slider("house_lights", "House lights", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	_build_curtain_controls(v)
+	_room_box = VBoxContainer.new()
+	_room_box.add_theme_constant_override("separation", 6)
+	v.add_child(_room_box)
+	v.add_child(_heading("Cameras (keys 1-9, 0 = 10th)"))
+	_camera_box = HFlowContainer.new()
+	v.add_child(_camera_box)
+	v.add_child(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"))
+	v.add_child(_check("camera_see_through", "See into the room from outside (instead of black)"))
+	_build_performance_controls(v)
+	return v
+
+
+## Graphics quality preset + its switches, and the frame-rate cap (core/graphics_quality.gd).
+func _build_performance_controls(v: VBoxContainer) -> void:
+	v.add_child(_heading("Performance (this PC)"))
+	var q := _option("graphics_quality", "Graphics quality", [["low", "Low"], ["medium", "Medium"], ["high", "High"], ["custom", "Custom"]])
+	q.tooltip_text = "One switch for the expensive effects. Applies right away. Remembered on this PC, not per room."
+	v.add_child(q)
+	_gfx_hint = _hint(GraphicsQuality.describe(String(AppState.get_setting("graphics_quality"))))
+	v.add_child(_gfx_hint)
+	var sw := HFlowContainer.new()
+	v.add_child(sw)
+	var gi := _check("gfx_gi", "Bounce light (SDFGI)")
+	gi.tooltip_text = "Light bouncing off walls and floors. The most expensive effect; rooms get a little extra ambient light when it's off."
+	sw.add_child(gi)
+	var ao := _check("gfx_ssao", "Ambient occlusion")
+	ao.tooltip_text = "Soft shading in corners and under seats."
+	sw.add_child(ao)
+	var ssr := _check("gfx_ssr", "Reflections")
+	ssr.tooltip_text = "Screen-space reflections (Neon City's wet street)."
+	sw.add_child(ssr)
+	var fog := _option("gfx_fog", "Fog", [["off", "Off"], ["low", "Low res"], ["full", "Full"]])
+	fog.tooltip_text = "Volumetric fog and light beams (projector beam, stage lights). Low res is coarser but much cheaper."
+	v.add_child(fog)
+	var sh := _option("gfx_shadows", "Shadows", [["low", "Low"], ["medium", "Medium"], ["high", "High"]])
+	sh.tooltip_text = "Soft shadow quality and shadow map size."
+	v.add_child(sh)
+	var aa := _option("gfx_msaa", "Anti-aliasing", [[0, "Off (FXAA)"], [2, "MSAA 2x"], [4, "MSAA 4x"]])
+	aa.tooltip_text = "Smooths jagged 3D edges. Off uses cheap FXAA instead."
+	v.add_child(aa)
+	var rs := _slider("gfx_render_scale", "3D resolution", 0.5, 1.0, 0.05, "%d%%", 100.0)
+	rs.tooltip_text = "Draws the 3D room at a lower resolution and scales it up with AMD FSR. Text, chat windows and this panel stay sharp. 75% is a big saving on a laptop."
+	v.add_child(rs)
+	var fps := _option("fps_cap", "Frame rate cap", [[30, "30 fps"], [60, "60 fps"], [0, "Unlimited"]])
+	fps.tooltip_text = "Most frames drawn per second. Set it to the frame rate you stream at: a 144-165 Hz laptop screen otherwise makes the GPU draw 2-3 times the frames the stream needs."
+	v.add_child(fps)
+	var vs := _check("vsync", "V-Sync")
+	vs.tooltip_text = "Wait for the display refresh: no tearing on your screen. OBS captures the same frames either way. If 60 fps stutters on a 144 Hz screen, try V-Sync off."
+	v.add_child(vs)
+
+
+func _build_curtain_controls(v: VBoxContainer) -> void:
+	v.add_child(_heading("Stage curtain (B, Shift+B = reveal)"))
+	var row := HFlowContainer.new()
+	v.add_child(row)
+	row.add_child(_button("Close", func() -> void: AppState.set_curtain(true)))
+	row.add_child(_button("Open", func() -> void: AppState.set_curtain(false)))
+	row.add_child(_button("Reveal", func() -> void: AppState.reveal_curtain()))
+	row.add_child(_button("Be right back", func() -> void:
+		AppState.set_setting("curtain_sign", "Be right back")
+		AppState.set_curtain(true)))
+	_curtain_label = Label.new()
+	_curtain_label.modulate = Color(1, 1, 1, 0.7)
+	row.add_child(_curtain_label)
+	_refresh_curtain_label()
+	v.add_child(_text_setting("curtain_sign", "Sign", "shown on the closed curtain (blank = none)"))
+	var r2 := HFlowContainer.new()
+	v.add_child(r2)
+	r2.add_child(_check("curtain_enabled", "Curtain in rooms"))
+	r2.add_child(_check("curtain_start_closed", "Start closed"))
+	r2.add_child(_check("curtain_mute", "Mute stream sound while closed"))
+	r2.add_child(_check("curtain_show_lights", "Reveal dims the lights"))
+	v.add_child(_color("curtain_color", "Curtain colour"))
+	v.add_child(_slider("curtain_speed", "Curtain speed", 0.25, 3.0, 0.05, "%d%%", 100.0))
+	v.add_child(_slider("curtain_sound", "Curtain sounds", 0.0, 1.0, 0.01, "%d%%", 100.0))
+
+
+func _refresh_curtain_label() -> void:
+	if _curtain_label:
+		_curtain_label.text = "closed" if AppState.is_curtain_closed() else "open"
+
+
+func _build_react_tab() -> Control:
+	var v := _tab("React")
+	var row := HBoxContainer.new()
+	v.add_child(row)
+	_react_btn = _button("Pause to react (Space)", func() -> void: AppState.toggle_react_pause())
+	row.add_child(_react_btn)
+	row.add_child(_button("Focus view (F)", func() -> void: AppState.toggle_focus_view()))
+	row.add_child(_button("Clean feed (F10)", func() -> void: AppState.toggle_clean_feed()))
+	v.add_child(_check("react_lights_up", "Raise the lights while paused"))
+	v.add_child(_check("react_camera", "Jump to the Reaction camera while paused"))
+	v.add_child(_check("auto_dim_house", "Dim room lights while playing"))
+	v.add_child(_check("webcam_in_room", "Show webcam in the room (off = corner overlay)"))
+
+	v.add_child(_heading("Auto-duck when I talk"))
+	v.add_child(_check("duck_enabled", "Lower the video while the mic hears me"))
+	var meter := HBoxContainer.new()
+	v.add_child(meter)
+	var ml := Label.new()
+	ml.text = "Mic"
+	ml.custom_minimum_size = Vector2(120, 0)
+	meter.add_child(ml)
+	_mic_bar = ProgressBar.new()
+	_mic_bar.min_value = -60.0
+	_mic_bar.max_value = 0.0
+	_mic_bar.show_percentage = false
+	_mic_bar.custom_minimum_size = Vector2(0, 14)
+	_mic_bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_mic_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	meter.add_child(_mic_bar)
+	_duck_label = Label.new()
+	_duck_label.custom_minimum_size = Vector2(80, 0)
+	meter.add_child(_duck_label)
+	v.add_child(_slider("duck_threshold_db", "Talk threshold", -60.0, -10.0, 1.0, "%d dB"))
+	v.add_child(_slider("duck_amount_db", "Duck by", -30.0, -3.0, 1.0, "%d dB"))
+	return v
+
+
+func _build_audio_tab() -> Control:
+	var v := _tab("Sound")
+	v.add_child(_slider("volume", "Video volume", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	v.add_child(_slider("ambience_volume", "Room ambience", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	v.add_child(_slider("room_acoustics", "Room acoustics", 0.0, 2.0, 0.01, "%d%%", 100.0))
+	v.add_child(_slider("room_speaker", "Speaker FX", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	v.add_child(_slider("audio_delay_ms", "Audio delay", 0.0, 800.0, 10.0, "%d ms"))
+	v.add_child(_slider("video_delay_ms", "Video delay", 0.0, 800.0, 10.0, "%d ms"))
+	var tip := Label.new()
+	tip.text = "Lip-sync: if the sound is early, raise Audio delay. If the picture is early, raise Video delay."
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tip.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(tip)
+	v.add_child(_slider("screen_light", "Screen light", 0.0, 4.0, 0.05, "%.2f"))
+	v.add_child(_slider("screen_glow", "Screen glow", 0.2, 4.0, 0.05, "%.2f"))
+	return v
+
+
+func _build_chat_tab() -> Control:
+	var v := _tab("Chat")
+	v.add_child(_heading("Chat (Fridge Stream Core)"))
+	var row := HBoxContainer.new()
+	v.add_child(row)
+	row.add_child(_check("chat_enabled", "Connect"))
+	_chat_label = Label.new()
+	_chat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chat_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	row.add_child(_chat_label)
+	row.add_child(_button("Retry now", func() -> void: ChatFeed.reconnect()))
+	v.add_child(_text_setting("chat_core_url", "Core address", "ws://127.0.0.1:3850/ws"))
+	var tr := HBoxContainer.new()
+	v.add_child(tr)
+	tr.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
+	var tl := _hint("Made-up chatters on Kick, Twitch and YouTube.")
+	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tr.add_child(tl)
+
+	v.add_child(_heading("Chat windows"))
+	v.add_child(_hint("Pick what each window shows: one platform per window keeps chats apart (Twitch asks for its chat to be kept separate), or tick several to mix them. \"Stream Core replies\" are Core's answers to chat commands plus chat games boards; \"When there's no reply screen\" shows them only in rooms without one (or with it switched off)."))
+	var shared := HFlowContainer.new()
+	v.add_child(shared)
+	shared.add_child(_check("chat_screen_pictures", "Chatter pictures"))
+	var hc := _check("chat_screen_hide_commands", "Hide !commands")
+	hc.tooltip_text = "Leave !commands (like !tomato) out of the chat windows. The audience bubbles have their own setting."
+	shared.add_child(hc)
+	var hold := _slider("reply_screen_hold_s", "Keep each reply", 0.0, 300.0, 5.0, "%d s")
+	hold.tooltip_text = "How long a Stream Core reply stays up. 0 = until newer ones push it off."
+	v.add_child(hold)
+	_chat_window(v, "chat_left", "Left of the screen", "Tall window beside the main screen, every room with a screen.", true)
+	_chat_window(v, "chat_right", "Right of the screen", "Tall window beside the main screen, every room with a screen.", true)
+	_chat_window(v, "chat_screen", "Under the screen (C)", "Rooms with a chat panel under the screen (Lecture Hall (Panel)).", false)
+	_chat_window(v, "reply_screen", "Above the screen (R)", "Rooms with a reply screen above the main screen (Lecture Hall (Panel)).", false)
+
+	v.add_child(_heading("Chat games boards"))
+	var r6 := HBoxContainer.new()
+	v.add_child(r6)
+	var bl := Label.new()
+	bl.text = "Boards in the corner"
+	bl.custom_minimum_size = Vector2(120, 0)
+	r6.add_child(bl)
+	var hud := OptionButton.new()
+	hud.focus_mode = Control.FOCUS_ALL
+	var modes := [["auto", "Auto (when no chat window shows them)"], ["on", "Always"], ["off", "Never"]]
+	for m: Array in modes:
+		hud.add_item(String(m[1]))
+		if String(m[0]) == String(AppState.get_setting("board_hud")):
+			hud.select(hud.item_count - 1)
+	hud.item_selected.connect(func(i: int) -> void: AppState.set_setting("board_hud", String(modes[i][0])))
+	hud.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	r6.add_child(hud)
+	v.add_child(_slider("board_hud_scale", "Board size", 0.5, 2.5, 0.05, "%d%%", 100.0))
+	return v
+
+
+## One chat window's settings: show it, its platforms, replies, looks (and, beside the
+## screen, its size and position).
+func _chat_window(v: VBoxContainer, key: String, title: String, where: String, side: bool) -> void:
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	var t := _heading(title)
+	t.add_theme_font_size_override("font_size", 14)
+	head.add_child(t)
+	var show := _check(key, "Show")
+	head.add_child(show)
+	# the rest folds away (the Chat tab is long with four windows): remembered per window
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 5)
+	var fold := Button.new()
+	fold.flat = true
+	fold.focus_mode = Control.FOCUS_ALL
+	fold.tooltip_text = "Show / hide this window's settings"
+	var folded := PackedStringArray(String(AppState.get_setting("panel_folded")).split(",", false)).has(key)
+	body.visible = not folded
+	fold.text = "▸ settings" if folded else "▾ settings"
+	fold.pressed.connect(func() -> void:
+		body.visible = not body.visible
+		fold.text = "▾ settings" if body.visible else "▸ settings"
+		var list := PackedStringArray(String(AppState.get_setting("panel_folded")).split(",", false))
+		if body.visible:
+			var i := list.find(key)
+			if i >= 0:
+				list.remove_at(i)
+		elif not list.has(key):
+			list.append(key)
+		AppState.set_setting("panel_folded", ",".join(list)))
+	head.add_child(fold)
+	v.add_child(_hint(where))
+	v.add_child(body)
+	v = body
+	v.add_child(_platform_row(key + "_chat", "Chat from"))
+	v.add_child(_option(key + "_replies", "Stream Core replies", [["off", "Off"], ["on", "Always"], ["fallback", "When there's no reply screen"]]))
+	if AppState.DEFAULTS.has(key + "_replies_for"):
+		var rf := _option(key + "_replies_for", "Replies to", [["all", "Every platform's chatters"], ["chat", "Only this window's platforms"]])
+		rf.tooltip_text = "Which chatters' Stream Core replies this window shows. A window with no chat ticked shows them all."
+		v.add_child(rf)
+	if AppState.DEFAULTS.has(key + "_header_on"):
+		var hh := _text_setting(key + "_header", "Header", "Automatic (e.g. \"Twitch chat\")")
+		var hc := _check(key + "_header_on", "Show")
+		hc.tooltip_text = "A header line across the top of the window. Leave the text empty to name it after what it shows."
+		hh.add_child(hc)
+		v.add_child(hh)
+	v.add_child(_slider(key + "_text", "Text size", 0.5, 3.0, 0.05, "%d%%", 100.0))
+	var warn := _hint("")
+	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
+	warn.visible = false
+	v.add_child(warn)
+	_size_warnings[key] = warn
+	v.add_child(_slider(key + "_bg", "Background", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	var ol := _slider(key + "_outline", "Text outline", 0.0, 1.0, 0.05, "%d%%", 100.0)
+	ol.tooltip_text = "A dark edge round every letter, so the text stays readable over the room when the background is see-through (low Background)."
+	v.add_child(ol)
+	if AppState.DEFAULTS.has(key + "_columns") and not side:
+		v.add_child(_slider(key + "_columns", "Columns", 1.0, 4.0, 1.0, "%d"))
+	if side:
+		v.add_child(_slider(key + "_width", "Width", 0.8, 6.0, 0.05, "%.2f m"))
+		v.add_child(_slider(key + "_height", "Height", 0.3, 1.6, 0.01, "%d%%", 100.0))
+		v.add_child(_slider(key + "_gap", "Gap to screen", -1.0, 4.0, 0.05, "%.2f m"))
+		v.add_child(_slider(key + "_lift", "Up / down", -4.0, 4.0, 0.05, "%.2f m"))
+
+
+## Kick / Twitch / YouTube / Other ticks bound to a comma-separated platforms setting.
+func _platform_row(key: String, label: String) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	var h := HBoxContainer.new()
+	box.add_child(h)
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var boxes: Dictionary = {}
+	var have := String(AppState.get_setting(key)).split(",", false)
+	for g in AudienceManager.PLATFORMS:
+		var c := CheckBox.new()
+		c.text = String(AudienceManager.PLATFORM_LABELS[g])
+		c.focus_mode = Control.FOCUS_ALL
+		c.button_pressed = have.has(g)
+		c.add_theme_color_override("font_color", AudienceManager.platform_color(g).lightened(0.3))
+		c.toggled.connect(func(_on: bool) -> void:
+			var picked := PackedStringArray()
+			for g2: String in boxes.keys():
+				if (boxes[g2] as CheckBox).button_pressed:
+					picked.append(g2)
+			AppState.set_setting(key, ",".join(picked)))
+		h.add_child(c)
+		boxes[g] = c
+	_platform_boxes[key] = boxes
+	var warn := _hint("⚠ Twitch chat mixed with other platforms in this window.")
+	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
+	box.add_child(warn)
+	_mix_warnings[key] = warn
+	_refresh_mix_warning(key)
+	return box
+
+
+func _refresh_mix_warning(key: String) -> void:
+	var have := String(AppState.get_setting(key)).split(",", false)
+	(_mix_warnings[key] as Label).visible = have.has("twitch") and have.size() > 1
+
+
+func _build_audience_tab() -> Control:
+	var v := _tab("Audience")
+	v.add_child(_heading("Virtual audience"))
+	var r2 := HBoxContainer.new()
+	v.add_child(r2)
+	r2.add_child(_check("audience_enabled", "Show audience"))
+	_seat_label = Label.new()
+	_seat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_seat_label.text = "No seats in this room."
+	r2.add_child(_seat_label)
+	r2.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
+	r2.add_child(_button("Clear", func() -> void: AudienceManager.clear()))
+	v.add_child(_option("audience_seating", "New chatters sit", [
+		["random", "Anywhere (random)"],
+		["front", "Front row first, from the middle"],
+		["front_random", "Front row first, random seat in the row"],
+	]))
+	var idle := _slider("audience_idle_min", "Idle timeout", 1.0, 60.0, 1.0, "%d min")
+	idle.tooltip_text = "Minutes without chatting before someone gives up a main seat."
+	v.add_child(idle)
+	v.add_child(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"))
+	v.add_child(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0))
+	var r3 := HFlowContainer.new()
+	v.add_child(r3)
+	r3.add_child(_check("audience_names", "Name tags"))
+	r3.add_child(_check("audience_show_empty", "Show empty seats"))
+	r3.add_child(_check("audience_hide_commands", "Hide !commands in bubbles"))
+	r3.add_child(_check("audience_avatars", "Chatter pictures"))
+	v.add_child(_check("audience_titles", "Regulars' titles on name tags"))
+	v.add_child(_text_setting("audience_ignore", "Ignore names", "bots, comma separated"))
+	v.add_child(_text_setting("audience_hide_avatars", "Hide pictures of", "names, comma separated"))
+
+	v.add_child(_heading("Colours"))
+	var cb := _option("audience_color_by", "Colour chatters by", [
+		["chat", "Their chat colour (else from their name)"],
+		["name", "Picked from their name"],
+		["platform", "Their platform"],
+	])
+	cb.tooltip_text = "Silhouettes, name tags, bubbles and chat windows. \"Their platform\" makes it easy to see who's on which platform."
+	v.add_child(cb)
+	var pc := HFlowContainer.new()
+	v.add_child(pc)
+	for g in AudienceManager.PLATFORMS:
+		var c := _color("platform_color_" + g, String(AudienceManager.PLATFORM_LABELS[g]))
+		(c.get_child(0) as Label).custom_minimum_size = Vector2(56, 0)
+		(c.get_child(1) as Control).custom_minimum_size = Vector2(60, 24)
+		pc.add_child(c)
+	var pr := HBoxContainer.new()
+	v.add_child(pr)
+	var safe := _button("Colour-blind safe colours", func() -> void:
+		for g: String in COLOR_SAFE.keys():
+			AppState.set_setting("platform_color_" + g, Color(String(COLOR_SAFE[g]))))
+	safe.tooltip_text = "Kick bluish green, Twitch reddish purple, YouTube orange, other sky blue: colours that stay apart for the common kinds of colour blindness (Okabe-Ito palette). The seating chart also marks sections with letters."
+	pr.add_child(safe)
+	pr.add_child(_button("Brand colours", func() -> void:
+		for g in AudienceManager.PLATFORMS:
+			AppState.set_setting("platform_color_" + g, AppState.DEFAULTS["platform_color_" + g])))
+
+	v.add_child(_heading("Crowd (Lecture Hall tiers, balcony, gallery)"))
+	var crowd_row := HBoxContainer.new()
+	v.add_child(crowd_row)
+	var crowd_check := _check("audience_crowd", "Filler crowd")
+	crowd_check.tooltip_text = "Rooms with a big crowd fill it with filler people. When the main seats are full, chatters take their places."
+	crowd_row.add_child(crowd_check)
+	var fill := _slider("audience_crowd_fill", "Crowd fullness", 0.0, 1.0, 0.01, "%d%%", 100.0)
+	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	crowd_row.add_child(fill)
+	var crowd_idle := _slider("audience_crowd_idle_min", "Crowd timeout", 1.0, 60.0, 1.0, "%d min")
+	crowd_idle.tooltip_text = "Minutes without chatting before a chatter gives up a crowd seat. Presenters linked to chat never time out."
+	v.add_child(crowd_idle)
+	var crowd_max := _slider("audience_crowd_max", "Most chatters in crowd", 0.0, 400.0, 10.0, "%d")
+	crowd_max.tooltip_text = "How many chatters can sit in the crowd seats at once. 0 = no limit. Every seat stays and filler people fill the rest, so the room looks the same; each chatter in the crowd costs a little CPU and GPU (picture, name tag, bubble), filler people cost nothing. When it's reached, a new chatter takes the seat of whoever has been quiet the longest. Try 100-150 on a laptop."
+	v.add_child(crowd_max)
+	var crowd_opts := HFlowContainer.new()
+	v.add_child(crowd_opts)
+	var down := _check("audience_crowd_move_down", "Crowd chatters move down")
+	down.tooltip_text = "When a main seat frees up, the most recently active chatter in the crowd moves down into it."
+	crowd_opts.add_child(down)
+	var fm := _check("audience_fill_main", "Filler people in empty main seats")
+	fm.tooltip_text = "Empty main seats show filler people too (the same share as Crowd fullness). Chatters take their places as they arrive."
+	crowd_opts.add_child(fm)
+	return v
+
+
+func _build_seating_tab() -> Control:
+	var v := _tab("Seating")
+	v.add_child(_heading("Seating by platform"))
+	v.add_child(_hint("Keep each platform's chatters physically apart. The main seats are four quadrants (as the audience faces the stage); the Lecture Hall's crowd seats are stadium sections: 101… lower tier, 201… balcony, 301… gallery, numbered from the audience's left round to the right. Click a section on the chart, then tick who may sit there (no ticks = anyone)."))
+	var r := HFlowContainer.new()
+	v.add_child(r)
+	r.add_child(_check("seating_by_platform", "Seat chatters by platform"))
+	var strict := _check("seating_strict", "Keep platforms apart when their seats are full")
+	strict.tooltip_text = "On: a chatter whose sections are full takes the seat of the idlest chatter there (or waits). Off: they sit anywhere that's free."
+	r.add_child(strict)
+	var pr := HFlowContainer.new()
+	v.add_child(pr)
+	pr.add_child(_button("Anyone anywhere", func() -> void: AudienceManager.apply_preset("anyone")))
+	var b1 := _button("Twitch apart (left)", func() -> void: AudienceManager.apply_preset("twitch_apart"))
+	b1.tooltip_text = "Twitch on the audience's left (front + back left, the left half of every crowd level); Kick, YouTube and others on the right. Matches the default chat windows (Twitch left)."
+	pr.add_child(b1)
+	var b2 := _button("A quadrant each", func() -> void: AudienceManager.apply_preset("quadrant_each"))
+	b2.tooltip_text = "Kick front left, Twitch front right, YouTube back left, other back right; crowd sections take turns."
+	pr.add_child(b2)
+	pr.add_child(_button("Re-seat everyone now", func() -> void: AudienceManager.reseat_by_plan()))
+	# floors: the chart shows one at a time (downstairs, or the balcony + gallery upstairs)
+	var fr := HBoxContainer.new()
+	v.add_child(fr)
+	var fl := Label.new()
+	fl.text = "Floor"
+	fl.custom_minimum_size = Vector2(120, 0)
+	fr.add_child(fl)
+	var fg := ButtonGroup.new()
+	var floor_buttons: Dictionary = {}
+	for f: Array in [[SeatingChart.BOTTOM, "Bottom floor"], [SeatingChart.TOP, "Top floor (balcony + gallery)"]]:
+		var fb := Button.new()
+		fb.text = f[1]
+		fb.toggle_mode = true
+		fb.button_group = fg
+		fb.focus_mode = Control.FOCUS_ALL
+		fb.button_pressed = f[0] == SeatingChart.BOTTOM
+		var which: String = f[0]
+		fb.pressed.connect(func() -> void: _chart.show_floor(which))
+		fr.add_child(fb)
+		floor_buttons[which] = fb
+	_chart = SeatingChart.new()
+	_chart.section_picked.connect(_on_section_picked)
+	_chart.floors_changed.connect(func(has_top: bool) -> void:
+		fr.visible = has_top
+		if not has_top:
+			(floor_buttons[SeatingChart.BOTTOM] as Button).button_pressed = true)
+	v.add_child(_chart)
+	fr.visible = _chart.has_top_floor()
+	_section_label = Label.new()
+	_section_label.text = "Click a section on the chart."
+	v.add_child(_section_label)
+	var sr := HBoxContainer.new()
+	v.add_child(sr)
+	var sl := Label.new()
+	sl.text = "May sit here"
+	sl.custom_minimum_size = Vector2(120, 0)
+	sr.add_child(sl)
+	for g in AudienceManager.PLATFORMS:
+		var c := CheckBox.new()
+		c.text = String(AudienceManager.PLATFORM_LABELS[g])
+		c.focus_mode = Control.FOCUS_ALL
+		c.disabled = true
+		c.add_theme_color_override("font_color", AudienceManager.platform_color(g).lightened(0.3))
+		c.toggled.connect(func(_on: bool) -> void: _save_section())
+		sr.add_child(c)
+		_section_boxes[g] = c
+	_capacity_label = Label.new()
+	_capacity_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_capacity_label)
+	EventBus.seating_changed.connect(_refresh_capacity)
+	_refresh_capacity()
+	return v
+
+
+func _on_section_picked(id: String) -> void:
+	var label := id
+	for sec in AudienceManager.get_sections():
+		if String(sec["id"]) == id:
+			label = "%s — %d seats" % [String(sec["label"]), int(sec["count"])]
+	_section_label.text = label
+	var allowed := AudienceManager.get_section_platforms(id)
+	for g: String in _section_boxes.keys():
+		var c: CheckBox = _section_boxes[g]
+		c.disabled = false
+		c.set_pressed_no_signal(allowed.has(g))
+
+
+func _save_section() -> void:
+	if _chart == null or _chart.selected == "":
+		return
+	var picked := PackedStringArray()
+	for g: String in _section_boxes.keys():
+		if (_section_boxes[g] as CheckBox).button_pressed:
+			picked.append(g)
+	AudienceManager.set_section_platforms(_chart.selected, picked)
+
+
+## Seats each platform may use in this room, with a warning for one that has none.
+func _refresh_capacity() -> void:
+	if _capacity_label == null:
+		return
+	var cap := AudienceManager.get_platform_capacity()
+	var parts := PackedStringArray()
+	var none := PackedStringArray()
+	for g in AudienceManager.PLATFORMS:
+		parts.append("%s %d" % [String(AudienceManager.PLATFORM_LABELS[g]), int(cap.get(g, 0))])
+		if int(cap.get(g, 0)) == 0:
+			none.append(String(AudienceManager.PLATFORM_LABELS[g]))
+	var text := "Seats each platform may use here: " + " · ".join(parts)
+	if bool(AppState.get_setting("seating_by_platform")) and not none.is_empty():
+		text += "\n⚠ No seats for %s: with \"Keep platforms apart\" on, they won't get a seat." % ", ".join(none)
+	_capacity_label.text = text
+	if _chart and _chart.selected != "":
+		_on_section_picked(_chart.selected)
+
+
+func _build_games_tab() -> Control:
+	var v := _tab("Games")
+	v.add_child(_heading("Chat reactions"))
+	v.add_child(_hint("🍅 / !tomato @name from chat. Set them up in Stream Core: Admin → Config → Reactions."))
+	var r4 := HFlowContainer.new()
+	v.add_child(r4)
+	r4.add_child(_check("reactions_enabled", "Play reactions"))
+	r4.add_child(_check("reaction_camera_shake", "Allow camera shake"))
+	v.add_child(_slider("reaction_size", "Reaction size", 0.3, 3.0, 0.05, "%d%%", 100.0))
+	v.add_child(_heading("Flashing lights (photosensitive viewers)"))
+	var fs := _slider("flash_strength", "Flash strength", 0.0, 1.0, 0.05, "%d%%", 100.0)
+	fs.tooltip_text = "How bright flashing reactions get: FLASHBANG, police lights, flicker, fireworks and fire. 0% = no flashes at all; the rest of each reaction still plays."
+	v.add_child(fs)
+	var safe := _check("photosensitive_safe", "Photosensitive-safe mode")
+	safe.tooltip_text = "Caps flashes at 30% (whatever Flash strength says), slows strobing lights to under 3 flashes a second (the WCAG limit), turns a FLASHBANG into a soft swell, and turns camera shake off."
+	v.add_child(safe)
+	var r5 := HBoxContainer.new()
+	v.add_child(r5)
+	var pick := OptionButton.new()
+	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	for id in Reactions.get_effect_ids():
+		if id != "meter":
+			pick.add_item(id)
+	r5.add_child(pick)
+	r5.add_child(_button("Test here", func() -> void:
+		Reactions.play_test(pick.get_item_text(pick.selected))))
+	v.add_child(_heading("Chat games"))
+	v.add_child(_hint("Polls, predictions, trivia, the hype meter ... from Stream Core: Admin → Chat games. Where their boards show: Chat tab."))
+	return v
+
+
+## Okabe-Ito colours: tell apart with red-green colour blindness (Kick green vs YouTube red don't).
+const COLOR_SAFE: Dictionary = {"kick": "009e73", "twitch": "cc79a7", "youtube": "e69f00", "other": "56b4e9"}
+
+const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green screen"],
+	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"]]
+
+
+func _build_presenters_tab() -> Control:
+	var v := _tab("Presenters")
+	_pres_count_label = Label.new()
+	_pres_count_label.text = "This room has no podiums."
+	_pres_count_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(_pres_count_label)
+	var on_row := HBoxContainer.new()
+	v.add_child(on_row)
+	var l := Label.new()
+	l.text = "On set"
+	l.custom_minimum_size = Vector2(120, 0)
+	on_row.add_child(l)
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		on_row.add_child(_check(AppState.presenter_key(n, "on"), str(n)))
+	var edit_row := HBoxContainer.new()
+	v.add_child(edit_row)
+	var l2 := Label.new()
+	l2.text = "Edit presenter"
+	l2.custom_minimum_size = Vector2(120, 0)
+	edit_row.add_child(l2)
+	var group := ButtonGroup.new()
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var b := Button.new()
+		b.text = " %d " % n
+		b.toggle_mode = true
+		b.button_group = group
+		b.focus_mode = Control.FOCUS_ALL
+		var idx := n - 1
+		b.toggled.connect(func(on: bool) -> void:
+			if on:
+				for i in _pres_details.size():
+					_pres_details[i].visible = i == idx)
+		edit_row.add_child(b)
+		_pres_edit_buttons.append(b)
+	var hint := Label.new()
+	hint.text = "Podiums are numbered left to right as the audience sees them."
+	hint.add_theme_font_size_override("font_size", 12)
+	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+	edit_row.add_child(hint)
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var d := _build_presenter_detail(n)
+		d.visible = n == 1
+		v.add_child(d)
+		_pres_details.append(d)
+	_pres_edit_buttons[0].button_pressed = true
+	return v
+
+
+func _build_presenter_detail(n: int) -> VBoxContainer:
+	var k := func(f: String) -> String: return AppState.presenter_key(n, f)
+	var d := VBoxContainer.new()
+	d.add_theme_constant_override("separation", 5)
+	d.add_child(_heading("Presenter %d" % n))
+	d.add_child(_option(k.call("source"), "Show", PRESENTER_SOURCES))
+	var rows: Dictionary = {"picture": []}
+	_pres_rows.append(rows)
+	var cam_row := HBoxContainer.new()
+	rows["camera"] = cam_row
+	var cl := Label.new()
+	cl.text = "Camera"
+	cl.custom_minimum_size = Vector2(120, 0)
+	cam_row.add_child(cl)
+	var cam := OptionButton.new()
+	cam.focus_mode = Control.FOCUS_ALL
+	cam.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cam.fit_to_longest_item = false
+	cam.item_selected.connect(func(i: int) -> void: AppState.set_setting(k.call("camera"), String(cam.get_item_metadata(i))))
+	cam_row.add_child(cam)
+	d.add_child(cam_row)
+	_pres_camera_menus.append(cam)
+	_fill_camera_menu(n, [])
+	var ndi_row := HBoxContainer.new()
+	rows["ndi"] = ndi_row
+	var nl := Label.new()
+	nl.text = "NDI source"
+	nl.custom_minimum_size = Vector2(120, 0)
+	ndi_row.add_child(nl)
+	var ndi := OptionButton.new()
+	ndi.focus_mode = Control.FOCUS_ALL
+	ndi.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ndi.fit_to_longest_item = false
+	ndi.tooltip_text = "An NDI source (e.g. an OBS browser source with an NDI filter). Transparency in the source is kept, so you may not need the chroma key."
+	ndi.item_selected.connect(func(i: int) -> void:
+		if ndi.get_item_metadata(i) != null:
+			AppState.set_setting(k.call("ndi"), String(ndi.get_item_metadata(i))))
+	ndi_row.add_child(ndi)
+	d.add_child(ndi_row)
+	_pres_ndi_menus.append(ndi)
+	_fill_ndi_menu(ndi, String(AppState.get_setting(k.call("ndi"))), "(none)")
+	var url := _text_setting(k.call("url"), "Web page", "https://... (for \"Web page\")")
+	url.tooltip_text = "For pages with a see-through background (e.g. a reactive PNGTuber page). The sender page shows it over the key colour, you share that, and the chroma key cuts the colour out again."
+	rows["url"] = url
+	d.add_child(url)
+	var feed := Label.new()
+	feed.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	feed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	d.add_child(feed)
+	_pres_feed_labels.append(feed)
+	var r := HFlowContainer.new()
+	r.add_child(_check(k.call("self_lit"), "Self-lit (light panel)"))
+	var keybox := _check(k.call("key"), "Chroma key")
+	r.add_child(keybox)
+	r.add_child(_color(k.call("key_color"), "Key colour"))
+	d.add_child(r)
+	rows["picture"].append(r)
+	d.add_child(_slider(k.call("light"), "Podium light", 0.0, 3.0, 0.01, "%d%%", 100.0))
+	for key_row: Control in [_slider(k.call("key_similarity"), "Key similarity", 0.0, 0.8, 0.005, "%.3f"),
+			_slider(k.call("key_smoothness"), "Key smoothness", 0.0, 0.3, 0.005, "%.3f"),
+			_slider(k.call("key_spill"), "Spill removal", 0.0, 1.0, 0.01, "%d%%", 100.0)]:
+		d.add_child(key_row)
+		rows["picture"].append(key_row)
+	rows["keybox"] = keybox
+	_refresh_presenter_rows(n)
+	d.add_child(_slider(k.call("zoom"), "Zoom", 0.3, 3.0, 0.01, "%.2fx"))
+	d.add_child(_slider(k.call("offset_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f"))
+	var chat := _text_setting(k.call("chat"), "Chat name", "their chat name(s), e.g. sensoka, kick:sensoka")
+	chat.tooltip_text = "Link this presenter to their chat name. They sit on this podium instead of taking an audience seat, and their chat commands (throws, signs, !highfive ...) come from here. Several names: comma separated. \"kick:name\" only matches on that platform."
+	d.add_child(chat)
+	var cr := HFlowContainer.new()
+	var look := _check(k.call("chat_look"), "Chat-style silhouette")
+	look.tooltip_text = "When showing a silhouette: use the linked chatter's colour, picture and name tag, like the chat audience."
+	cr.add_child(look)
+	var bub := _check(k.call("chat_bubbles"), "Chat bubbles")
+	bub.tooltip_text = "Their chat messages pop up as speech bubbles over the podium."
+	cr.add_child(bub)
+	d.add_child(cr)
+	return d
+
+
+## Camera menu for presenter n: "Default camera" + the cameras the sender page reports.
+func _fill_camera_menu(n: int, cameras: Array) -> void:
+	var menu: OptionButton = _pres_camera_menus[n - 1]
+	var want := String(AppState.get_setting(AppState.presenter_key(n, "camera")))
+	menu.clear()
+	menu.add_item("Default camera")
+	menu.set_item_metadata(0, "")
+	var found := want == ""
+	for c: Variant in cameras:
+		if not c is Dictionary:
+			continue
+		menu.add_item(String(c.get("label", "Camera")))
+		menu.set_item_metadata(menu.item_count - 1, String(c.get("id", "")))
+		if String(c.get("id", "")) == want:
+			menu.select(menu.item_count - 1)
+			found = true
+	if not found:
+		menu.add_item("(saved camera, not connected)")
+		menu.set_item_metadata(menu.item_count - 1, want)
+		menu.select(menu.item_count - 1)
+	elif want == "":
+		menu.select(0)
+
+
+## A dropdown bound to a String setting. items: [[value, text], ...]
+func _option(key: String, label: String, items: Array) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var o := OptionButton.new()
+	o.focus_mode = Control.FOCUS_ALL
+	for it: Array in items:
+		o.add_item(String(it[1]))
+		o.set_item_metadata(o.item_count - 1, it[0])
+		if it[0] == AppState.get_setting(key):
+			o.select(o.item_count - 1)
+	o.item_selected.connect(func(i: int) -> void: AppState.set_setting(key, o.get_item_metadata(i)))
+	h.add_child(o)
+	_options[key] = o
+	return h
+
+
+## A text box bound to a String setting. Applies on Enter or when it loses focus.
+func _text_setting(key: String, label: String, placeholder: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var e := LineEdit.new()
+	e.text = String(AppState.get_setting(key))
+	e.placeholder_text = placeholder
+	e.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var apply := func() -> void: AppState.set_setting(key, e.text.strip_edges())
+	e.text_submitted.connect(func(_t: String) -> void:
+		apply.call()
+		e.release_focus())
+	e.focus_exited.connect(apply)
+	h.add_child(e)
+	return h
+
+
+# ── EventBus handlers ────────────────────────────────────────
+func _on_chat_status(info: Dictionary) -> void:
+	if _chat_label == null:
+		return
+	if info.get("connected", false):
+		_chat_label.text = "Connected to Stream Core."
+	elif not AppState.get_setting("chat_enabled"):
+		_chat_label.text = "Off."
+	else:
+		var err := String(info.get("error", ""))
+		_chat_label.text = "Waiting for Stream Core%s (retrying)." % ((": " + err) if err != "" else "")
+
+
+func _update_presenter_feeds(info: Dictionary) -> void:
+	var connected := bool(info.get("connected", false))
+	var cams: Array = info.get("cameras", []) if info.get("cameras") is Array else []
+	var feeds: Array = info.get("presenters", []) if info.get("presenters") is Array else []
+	var cams_json := JSON.stringify(cams)
+	var cams_changed := cams_json != _last_cams_json
+	_last_cams_json = cams_json
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var menu: OptionButton = _pres_camera_menus[n - 1]
+		if cams_changed and not menu.get_popup().visible:
+			_fill_camera_menu(n, cams)
+		var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
+		menu.disabled = src != "camera"
+		var text := ""
+		if src == "camera" or src == "tab" or src == "web":
+			var f: Dictionary = feeds[n - 1] if n - 1 < feeds.size() and feeds[n - 1] is Dictionary else {}
+			if not connected:
+				text = "Open the sender page (Source tab) - the feed comes from there."
+			elif String(f.get("error", "")) != "":
+				text = "Sender page: " + String(f["error"])
+			elif bool(f.get("active", false)):
+				text = "Live: " + String(f.get("label", ""))
+			elif src == "tab":
+				text = "Waiting - click Presenter %d's button in the sender page and pick a tab or window." % n
+			elif src == "web" and String(AppState.get_setting(AppState.presenter_key(n, "url"))) == "":
+				text = "Type the web page's address above."
+			elif src == "web":
+				text = "Waiting - in the sender page click Presenter %d's \"Open page\", then \"Share it\"." % n
+			else:
+				text = "Starting the camera..."
+		elif src == "ndi":
+			text = _ndi_presenter_text(n)
+		_pres_feed_labels[n - 1].text = text
+
+
+# ── NDI ──────────────────────────────────────────────────────
+func _on_ndi_sources(names: PackedStringArray, available: bool) -> void:
+	_ndi_names = names
+	_ndi_available = available
+	if not _ndi_menu.get_popup().visible:
+		var cur: Variant = _ndi_menu.get_item_metadata(_ndi_menu.selected) if _ndi_menu.selected >= 0 else null
+		_fill_ndi_menu(_ndi_menu, String(cur) if cur != null else String(AppState.get_setting("ndi_source")), "(pick a source)")
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var m: OptionButton = _pres_ndi_menus[n - 1]
+		if not m.get_popup().visible:
+			_fill_ndi_menu(m, String(AppState.get_setting(AppState.presenter_key(n, "ndi"))), "(none)")
+		if String(AppState.get_setting(AppState.presenter_key(n, "source"))) == "ndi":
+			_pres_feed_labels[n - 1].text = _ndi_presenter_text(n)
+	_refresh_ndi_label()
+
+
+## NDI sources in a dropdown (metadata = source name). A wanted source that isn't on the network
+## right now stays listed as "(offline)" so the choice isn't lost.
+func _fill_ndi_menu(menu: OptionButton, want: String, empty_text: String) -> void:
+	menu.clear()
+	menu.add_item(empty_text)
+	menu.set_item_metadata(0, null)
+	menu.select(0)
+	for src in _ndi_names:
+		menu.add_item(src)
+		menu.set_item_metadata(menu.item_count - 1, src)
+		if src == want:
+			menu.select(menu.item_count - 1)
+	if want != "" and not _ndi_names.has(want):
+		menu.add_item("%s (offline)" % want)
+		menu.set_item_metadata(menu.item_count - 1, want)
+		menu.select(menu.item_count - 1)
+
+
+func _refresh_ndi_label() -> void:
+	if _ndi_label == null:
+		return
+	if not _ndi_available:
+		_ndi_label.text = "NDI plugin not loaded (addons/godot-ndi). Restart Redot after installing it; the NDI Runtime must be installed too."
+	elif AppState.get_source_mode() == "ndi":
+		_ndi_label.text = "Showing %s on the screen (%s)." % [String(AppState.get_setting("ndi_source")),
+			"game-paced sound" if NdiReceiver.supports_pull_audio() else "plugin sound, unpatched plugin"]
+	elif _ndi_names.is_empty():
+		_ndi_label.text = "Looking for NDI sources... (in OBS: DistroAV > NDI main output, or an NDI filter on a source)"
+	else:
+		_ndi_label.text = "%d NDI source(s) found. Pick one and click Show." % _ndi_names.size()
+
+
+func _ndi_presenter_text(n: int) -> String:
+	var want := String(AppState.get_setting(AppState.presenter_key(n, "ndi")))
+	if not _ndi_available:
+		return "NDI plugin not loaded."
+	if want == "":
+		return "Pick an NDI source above."
+	if not _ndi_names.has(want):
+		return "Waiting for NDI source %s..." % want
+	return "Live: NDI %s" % want
+
+
+func _on_room_presenters(count: int) -> void:
+	_pres_count_label.text = "This room has no podiums." if count == 0 else \
+		"%d podiums in this room. Tick who's on set, then pick what each one shows." % count
+
+
+func _on_audience_count(seated: int, capacity: int) -> void:
+	if capacity <= 0:
+		_seat_label.text = "No seats in this room."
+	else:
+		_seat_label.text = "%d / %d seats taken" % [seated, capacity]
+
+
+func _on_capture_status(info: Dictionary) -> void:
+	_capture_url = String(info.get("url", _capture_url))
+	_update_presenter_feeds(info)
+	if not info.get("connected", false):
+		_capture_label.text = "Sender page not connected."
+		return
+	if not info.get("capturing", false):
+		_capture_label.text = "Sender connected - not sharing yet."
+		return
+	var text := "Live: %s (%d fps)" % [String(info.get("label", "tab")), int(info.get("fps", 0))]
+	if not info.get("has_audio", false):
+		text += "\nNo audio - turn on \"Share tab audio\" in the picker."
+	elif not info.get("suppress_local_audio", false):
+		text += "\nBrowser couldn't silence the tab - mute it to avoid double audio."
+	_capture_label.text = text
+
+
+func _on_camera_presets(names: PackedStringArray) -> void:
+	for c in _camera_box.get_children():
+		c.queue_free()
+	for i in names.size():
+		var idx := i
+		_camera_box.add_child(_button("%d  %s" % [i + 1, names[i]], func() -> void:
+			EventBus.camera_preset_requested.emit(idx)))
+
+
+func _on_room_changed(room_id: String) -> void:
+	for i in _room_select.item_count:
+		if String(_room_select.get_item_metadata(i)) == room_id:
+			_room_select.select(i)
+
+
+func _on_room_controls(controls: Array) -> void:
+	for key in _room_keys:
+		_sliders.erase(key)
+		_colors.erase(key)
+		_checks.erase(key)
+	_room_keys.clear()
+	for c in _room_box.get_children():
+		c.queue_free()
+	for spec: Dictionary in controls:
+		if spec.has("heading"):
+			_room_box.add_child(_heading(String(spec["heading"])))
+			continue
+		var key := String(spec.get("key", ""))
+		if key == "" or AppState.get_setting(key) == null:
+			push_warning("Room control for unknown setting: %s" % key)
+			continue
+		var w: Control
+		if String(spec.get("type", "slider")) == "color":
+			w = _color(key, String(spec.get("label", key)))
+		elif String(spec.get("type", "slider")) == "check":
+			w = _check(key, String(spec.get("label", key)))
+		else:
+			w = _slider(key, String(spec.get("label", key)), float(spec.get("min", 0.0)), float(spec.get("max", 1.0)),
+				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)))
+		w.tooltip_text = String(spec.get("tooltip", ""))
+		_room_box.add_child(w)
+		_room_keys.append(key)
+	_add_help_buttons(_room_box)
+
+
+func _on_react_pause_changed(paused: bool) -> void:
+	_react_btn.text = "Resume (Space)" if paused else "Pause to react (Space)"
+
+
+func _on_mic_level(db: float) -> void:
+	_mic_bar.value = db
+
+
+func _on_ducking(ducking: bool) -> void:
+	_duck_label.text = "ducking" if ducking else ""
+
+
+func _on_setting_changed(key: String, value: Variant) -> void:
+	if key == "panel_scale":
+		_scale_pending = 0.3      # applied once the slider stops moving (it moves under the mouse otherwise)
+	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_ndi")):
+		var pn := int(key.get_slice("_", 1))
+		if pn >= 1 and pn <= _pres_feed_labels.size() and String(AppState.get_setting(AppState.presenter_key(pn, "source"))) == "ndi":
+			_pres_feed_labels[pn - 1].text = _ndi_presenter_text(pn)
+	if _sliders.has(key):
+		var s: HSlider = _sliders[key]
+		s.set_value_no_signal(float(value) * float(s.get_meta("scale", 1.0)))
+		s.value_changed.emit(s.value)  # refresh the number label only
+	if _checks.has(key):
+		(_checks[key] as CheckBox).set_pressed_no_signal(bool(value))
+	if _colors.has(key):
+		(_colors[key] as ColorPickerButton).color = value
+	if _options.has(key):
+		var o: OptionButton = _options[key]
+		for i in o.item_count:
+			if o.get_item_metadata(i) == value:
+				o.select(i)
+	if _platform_boxes.has(key):
+		var have := String(value).split(",", false)
+		for g: String in (_platform_boxes[key] as Dictionary).keys():
+			((_platform_boxes[key] as Dictionary)[g] as CheckBox).set_pressed_no_signal(have.has(g))
+		_refresh_mix_warning(key)
+	if key == "seating_by_platform" or key == "seating_plan":
+		_refresh_capacity()
+	if key == "graphics_quality" and _gfx_hint:
+		_gfx_hint.text = GraphicsQuality.describe(String(value))
+	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_key")):
+		_refresh_presenter_rows(int(key.get_slice("_", 1)))
+
+
+## Only the rows that matter for what a presenter shows: the camera picker for a camera, the NDI
+## picker for NDI, the address for a web page, and the chroma key controls for a picture.
+func _refresh_presenter_rows(n: int) -> void:
+	if n < 1 or n > _pres_rows.size():
+		return
+	var rows: Dictionary = _pres_rows[n - 1]
+	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
+	(rows["camera"] as Control).visible = src == "camera"
+	(rows["ndi"] as Control).visible = src == "ndi"
+	(rows["url"] as Control).visible = src == "web"
+	var picture := src in ["camera", "tab", "web", "ndi"]
+	var keyed := picture and bool(AppState.get_setting(AppState.presenter_key(n, "key")))
+	for i in (rows["picture"] as Array).size():
+		# the chroma key row itself shows for any picture; its sliders only while the key is on
+		((rows["picture"] as Array)[i] as Control).visible = picture if i == 0 else keyed
+
+
+func _refresh_visible() -> void:
+	if _window:
+		# its own window isn't in the stream picture, so clean feed doesn't hide it
+		_panel.visible = true
+		_window.visible = not _user_hidden
+		return
+	_panel.visible = not _user_hidden and not AppState.is_clean_feed()
+	if not _panel.visible:
+		get_viewport().gui_release_focus()
+
+
+# ── Widget helpers ───────────────────────────────────────────
+func _tab(title: String) -> VBoxContainer:
+	var v := VBoxContainer.new()
+	v.name = title
+	v.add_theme_constant_override("separation", 6)
+	return v
+
+
+func _hint(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.custom_minimum_size = Vector2(200, 0)
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", Color(1, 1, 1, 0.78))
+	return l
+
+
+func _heading(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_size_override("font_size", 15)
+	l.add_theme_color_override("font_color", Color(1.0, 0.72, 0.4))
+	return l
+
+
+func _button(text: String, cb: Callable) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_ALL    # (a mouse click doesn't keep focus: see _drop_mouse_focus)
+	b.pressed.connect(cb)
+	return b
+
+
+func _check(key: String, text: String) -> CheckBox:
+	var c := CheckBox.new()
+	c.text = text
+	c.focus_mode = Control.FOCUS_ALL
+	c.button_pressed = bool(AppState.get_setting(key))
+	c.toggled.connect(func(on: bool) -> void: AppState.set_setting(key, on))
+	_checks[key] = c
+	return c
+
+
+func _color(key: String, text: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = text
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var b := ColorPickerButton.new()
+	b.color = AppState.get_setting(key)
+	b.edit_alpha = false
+	b.focus_mode = Control.FOCUS_ALL
+	b.custom_minimum_size = Vector2(90, 24)
+	b.color_changed.connect(func(c: Color) -> void: AppState.set_setting(key, c))
+	h.add_child(b)
+	_colors[key] = b
+	return h
+
+
+## scale: display multiplier (e.g. 100 to show 0..1 as 0..100%).
+## A number typed into a slider's value box: the first number in it, in the units shown
+## (e.g. "75" for 75%), clamped to the slider's range.
+func _apply_typed(s: HSlider, num: LineEdit, fmt: String, t: String) -> void:
+	var rx := RegEx.new()
+	rx.compile("-?[0-9]*[.,]?[0-9]+")
+	var m := rx.search(t)
+	if m != null:
+		s.value = clampf(float(m.get_string().replace(",", ".")), s.min_value, s.max_value)
+	num.text = fmt % s.value
+
+
+func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, scale: float = 1.0) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var s := HSlider.new()
+	s.min_value = lo * scale
+	s.max_value = hi * scale
+	s.step = step * scale
+	s.set_meta("scale", scale)
+	s.value = float(AppState.get_setting(key)) * scale
+	s.focus_mode = Control.FOCUS_ALL
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(s)
+	# the value is a box you can type an exact number into (Enter sets it, Esc / leaving keeps the old one)
+	var num := LineEdit.new()
+	num.flat = true
+	num.custom_minimum_size = Vector2(78, 0)
+	num.text = fmt % s.value
+	num.select_all_on_focus = true
+	num.tooltip_text = "Click and type an exact value, then Enter"
+	num.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
+	h.add_child(num)
+	var is_int := typeof(AppState.get_setting(key)) == TYPE_INT
+	s.value_changed.connect(func(x: float) -> void:
+		if not num.has_focus():
+			num.text = fmt % x
+		var raw := x / scale
+		AppState.set_setting(key, int(raw) if is_int else raw))
+	num.text_submitted.connect(func(t: String) -> void:
+		_apply_typed(s, num, fmt, t)
+		num.release_focus())
+	num.focus_exited.connect(func() -> void: num.text = fmt % s.value)
+	_sliders[key] = s
+	return h
+
+
+# ── Accessibility helpers ────────────────────────────────────
+func _panel_scale() -> float:
+	return clampf(float(AppState.get_setting("panel_scale")), 0.75, 2.0)
+
+
+## Panel size: the whole panel scales (text, buttons, hit areas); in its own window the window's
+## content scales and the window grows to fit.
+func _apply_scale() -> void:
+	var k := _panel_scale()
+	if _window:
+		_panel.scale = Vector2.ONE
+		_window.content_scale_factor = k
+		var w := int((maxf(panel_width, _panel.get_combined_minimum_size().x) + 20.0) * k)
+		_window.min_size = Vector2i(w, 360)
+		if _window.size.x < w:
+			_window.size = Vector2i(w, _window.size.y)
+	else:
+		_panel.scale = Vector2(k, k)
+	_fit_height()
+	# wrapped hint lines change height once the new size has been laid out: fit again after that
+	await get_tree().process_frame
+	_fit_height()
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	var key := event as InputEventKey
+	if key == null or not key.pressed or not key.ctrl_pressed:
+		return
+	if key.keycode == KEY_EQUAL or key.keycode == KEY_PLUS or key.keycode == KEY_KP_ADD:
+		AppState.set_setting("panel_scale", clampf(snappedf(_panel_scale() + 0.1, 0.05), 0.75, 2.0))
+	elif key.keycode == KEY_MINUS or key.keycode == KEY_KP_SUBTRACT:
+		AppState.set_setting("panel_scale", clampf(snappedf(_panel_scale() - 0.1, 0.05), 0.75, 2.0))
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+## A bright outline around whatever has the keyboard focus.
+func _focus_theme() -> Theme:
+	var t := Theme.new()
+	var sb := StyleBoxFlat.new()
+	sb.draw_center = false
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1.0, 0.85, 0.2)
+	sb.set_corner_radius_all(4)
+	sb.set_expand_margin_all(2.0)
+	for type in ["Button", "CheckBox", "CheckButton", "OptionButton", "HSlider", "LineEdit", "TabBar", "ColorPickerButton", "TextEdit"]:
+		t.set_stylebox("focus", type, sb)
+	return t
+
+
+## Help you can see without hovering: every row with a tooltip gets a "?" that shows the same
+## text as a line under the row (the tooltips stay too).
+func _add_help_buttons(root: Node) -> void:
+	for n in root.find_children("*", "Control", true, false):
+		var c := n as Control
+		if c.tooltip_text == "" or c.has_meta("help_done") or c.has_meta("help_q"):
+			continue
+		if c is SeatingChart:
+			continue      # (the chart explains itself in its own hint)
+		if c is LineEdit and (c as LineEdit).flat:
+			continue      # (a slider's number box: its tip is the same everywhere)
+		c.set_meta("help_done", true)
+		var row: Control = c
+		while row.get_parent() and not (row.get_parent() is VBoxContainer) and row.get_parent() != root:
+			row = row.get_parent() as Control
+			if row == null:
+				break
+		if row == null or not (row.get_parent() is VBoxContainer):
+			continue
+		var tip := c.tooltip_text
+		if row.has_meta("help_label"):
+			var lbl := row.get_meta("help_label") as Label
+			if not lbl.text.contains(tip):
+				lbl.text += "\n" + tip
+			continue
+		var box := row.get_parent() as VBoxContainer
+		var holder: Container = row as Container
+		if not (row is HBoxContainer or row is HFlowContainer):
+			# a lone tick box / button: put it in a row so the "?" can sit beside it
+			var wrap := HBoxContainer.new()
+			var idx := row.get_index()
+			box.add_child(wrap)
+			box.move_child(wrap, idx)
+			row.reparent(wrap, false)
+			holder = wrap
+			wrap.set_meta("help_done", true)
+			row = wrap
+		var hint := _hint(tip)
+		hint.visible = false
+		box.add_child(hint)
+		box.move_child(hint, row.get_index() + 1)
+		var q := Button.new()
+		q.text = "?"
+		q.flat = true
+		q.set_meta("help_q", true)
+		q.tooltip_text = ""
+		q.custom_minimum_size = Vector2(26, 0)
+		q.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+		q.pressed.connect(func() -> void:
+			hint.visible = not hint.visible
+			if box == _tabs.get_parent():
+				_fit_height.call_deferred())
+		holder.add_child(q)
+		row.set_meta("help_label", hint)
+
+
+## Chat tab: warn when a window's text would be too small to read on a 1080p stream from the
+## camera in use (checked once a second while the panel shows the Chat tab).
+const MIN_STREAM_TEXT_PX: float = 16.0
+
+func _check_text_sizes() -> void:
+	if _size_warnings.is_empty() or not _panel.is_visible_in_tree():
+		return
+	var page := _tabs.get_current_tab_control()
+	if page == null or page.name != "Chat":
+		return
+	var seen: Dictionary = {}
+	for n in get_tree().get_nodes_in_group("chat_windows"):
+		var w := n as ChatScreen
+		if w == null or not is_instance_valid(w):
+			continue
+		var px := w.estimate_text_px()
+		if px > 0.0:
+			seen[w.get_window_key()] = px
+	for key: String in _size_warnings.keys():
+		var lbl := _size_warnings[key] as Label
+		var px := float(seen.get(key, -1.0))
+		lbl.visible = px > 0.0 and px < MIN_STREAM_TEXT_PX
+		if lbl.visible:
+			var ok_size := float(AppState.get_setting(key + "_text")) * MIN_STREAM_TEXT_PX / px
+			var need := ceili(ok_size * 20.0) * 5
+			lbl.text = ("⚠ From this camera the text is only about %d px tall on a 1080p stream (hard to read). " % roundi(px)) + \
+				("Try Text size %d%% or more, or a closer camera." % need if need <= 300 else "Use a closer camera (even 300% text won't be enough from here).")

@@ -1,0 +1,33 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://rooms/neon_city/neon_city_room.gd" id="1_jeet6"]
+[ext_resource type="PackedScene" path="res://rooms/neon_city/neon_city.glb" id="2_i2k3o"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_concrete.tres" id="m_concrete"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_glass.tres" id="m_glass"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_brick.tres" id="m_brick"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_teal.tres" id="m_teal"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_steel.tres" id="m_steel"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_hab.tres" id="m_hab"]
+[ext_resource type="Material" path="res://rooms/neon_city/materials/win_storefront.tres" id="m_storefront"]
+
+[node name="NeonCityRoom" type="Node3D"]
+script = ExtResource("1_jeet6")
+rain_enabled = true
+rain_amount = 6000
+rain_speed = 28.0
+rain_color = Color(0.7, 0.8, 1, 0.32)
+flying_count = 34
+ground_count = 26
+lit_craft_every = 5
+avenue_z_range = Vector2(-280, 70)
+flare_prefix = "FLARE_"
+flare_color = Color(1, 0.55, 0.18, 1)
+ambience_enabled = true
+rain_loudness = 0.35
+dimmed_level = 0.55
+material_overrides = {"Win_Concrete": ExtResource("m_concrete"), "Win_Glass": ExtResource("m_glass"), "Win_Brick": ExtResource("m_brick"), "Win_Teal": ExtResource("m_teal"), "Win_Steel": ExtResource("m_steel"), "Win_Hab": ExtResource("m_hab"), "Win_Storefront": ExtResource("m_storefront")}
+lamp_color = Color(0.6, 0.9, 1, 1)
+lamp_energy = 2.2
+lamp_range = 16.0
+
+[node name="Model" parent="." instance=ExtResource("2_i2k3o")]

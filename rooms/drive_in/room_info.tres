@@ -1,0 +1,63 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=7 format=3]
+
+[ext_resource type="Shader" path="res://rooms/drive_in/night_sky.gdshader" id="1_8ars0"]
+[ext_resource type="Texture2D" path="res://rooms/drive_in/moon_albedo.png" id="2_rbpjm"]
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="3_ashas"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_obrkm"]
+shader = ExtResource("1_8ars0")
+shader_parameter/moon_radius_deg = null
+shader_parameter/moon_brightness = null
+shader_parameter/moon_sun_dir = null
+shader_parameter/earthshine = null
+shader_parameter/halo_color = null
+shader_parameter/halo_strength = null
+shader_parameter/fallback_moon_dir = null
+shader_parameter/moon_texture = ExtResource("2_rbpjm")
+shader_parameter/zenith_color = null
+shader_parameter/horizon_color = null
+shader_parameter/glow_color = null
+shader_parameter/ground_color = null
+shader_parameter/star_density = null
+shader_parameter/star_brightness = null
+shader_parameter/twinkle = null
+shader_parameter/milky_way = null
+shader_parameter/milky_way_axis = null
+shader_parameter/cloud_coverage = null
+shader_parameter/cloud_softness = null
+shader_parameter/cloud_scale = null
+shader_parameter/cloud_wind = null
+shader_parameter/cloud_dark = null
+shader_parameter/cloud_lit = null
+
+[sub_resource type="Sky" id="Sky_8mqel"]
+sky_material = SubResource("ShaderMaterial_obrkm")
+radiance_size = 1
+
+[sub_resource type="Environment" id="Environment_35qo3"]
+background_mode = 2
+sky = SubResource("Sky_8mqel")
+ambient_light_source = 2
+ambient_light_color = Color(0.08, 0.1, 0.18, 1)
+ambient_light_energy = 0.25
+tonemap_mode = 2
+glow_enabled = true
+glow_bloom = 0.05
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.004
+volumetric_fog_albedo = Color(0.8, 0.82, 0.9, 1)
+volumetric_fog_length = 120.0
+volumetric_fog_detail_spread = 1.0
+
+[resource]
+script = ExtResource("3_ashas")
+id = "drive_in"
+display_name = "Drive-In (1950s)"
+scene_path = "res://rooms/drive_in/drive_in_room.tscn"
+sort_order = 5
+environment = SubResource("Environment_35qo3")
+screen_light_multiplier = 3.0
+screen_light_range = 110.0
+reverb_room_size = 0.1
+reverb_damping = 0.8
+reverb_wet = 0.03

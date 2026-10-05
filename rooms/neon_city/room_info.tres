@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=6 format=3]
+
+[ext_resource type="Shader" path="res://rooms/neon_city/smog_sky.gdshader" id="1_80kob"]
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="2_euxu1"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_e62v5"]
+shader = ExtResource("1_80kob")
+shader_parameter/zenith_color = null
+shader_parameter/horizon_glow = null
+shader_parameter/cloud_base = null
+shader_parameter/cloud_lit_warm = null
+shader_parameter/cloud_lit_neon = null
+shader_parameter/cloud_lit_cool = null
+shader_parameter/cloud_coverage = null
+shader_parameter/cloud_scale = null
+shader_parameter/cloud_wind = null
+shader_parameter/ground_color = null
+
+[sub_resource type="Sky" id="Sky_4l8gy"]
+sky_material = SubResource("ShaderMaterial_e62v5")
+radiance_size = 1
+
+[sub_resource type="Environment" id="Environment_acfys"]
+background_mode = 2
+sky = SubResource("Sky_4l8gy")
+ambient_light_source = 2
+ambient_light_color = Color(0.06, 0.08, 0.12, 1)
+ambient_light_energy = 0.5
+tonemap_mode = 2
+ssr_enabled = true
+glow_enabled = true
+glow_bloom = 0.12
+glow_hdr_threshold = 1.25
+fog_enabled = true
+fog_light_color = Color(0.07, 0.07, 0.12, 1)
+fog_density = 0.004
+fog_sky_affect = 0.15
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.012
+volumetric_fog_albedo = Color(0.55, 0.65, 0.8, 1)
+volumetric_fog_emission = Color(0.004, 0.006, 0.012, 1)
+volumetric_fog_length = 200.0
+
+[resource]
+script = ExtResource("2_euxu1")
+id = "neon_city"
+display_name = "Neon City (night)"
+scene_path = "res://rooms/neon_city/neon_city_room.tscn"
+sort_order = 7
+environment = SubResource("Environment_acfys")
+screen_light_multiplier = 10.0
+screen_light_range = 220.0
+screen_led_amount = 0.85
+screen_hologram = true
+screen_led_count = Vector2(256, 144)
+reverb_room_size = 0.6
+reverb_damping = 0.35
+reverb_wet = 0.1

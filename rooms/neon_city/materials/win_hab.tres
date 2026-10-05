@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://core/interiors/interior_windows.gdshader" id="1_shd"]
+[ext_resource type="Texture2D" path="res://core/interiors/interior_atlas.png" id="2_atl"]
+
+[resource]
+resource_name = "win_hab"
+shader = ExtResource("1_shd")
+shader_parameter/room_atlas = ExtResource("2_atl")
+shader_parameter/seed = 6.0
+shader_parameter/glass_rect = Vector4(0.3, 0.3, 0.7, 0.75)
+shader_parameter/mullions = 0
+shader_parameter/wall_color = Color(0.2, 0.19, 0.18, 1)
+shader_parameter/wall_color_2 = Color(0.14, 0.13, 0.13, 1)
+shader_parameter/wall_variation = 0.6
+shader_parameter/wall_roughness = 0.7
+shader_parameter/lit_ratio = 0.55
+shader_parameter/variant_min = 0
+shader_parameter/variant_max = 1
+shader_parameter/room_depth = 3.0
+shader_parameter/neon_chance = 0.18
+shader_parameter/tv_chance = 0.15

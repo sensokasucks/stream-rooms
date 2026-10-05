@@ -1,0 +1,29 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://core/interiors/interior_windows.gdshader" id="1_shd"]
+[ext_resource type="Texture2D" path="res://core/interiors/interior_atlas.png" id="2_atl"]
+
+[resource]
+resource_name = "win_storefront"
+shader = ExtResource("1_shd")
+shader_parameter/room_atlas = ExtResource("2_atl")
+shader_parameter/seed = 7.0
+shader_parameter/glass_rect = Vector4(0.04, 0.04, 0.96, 0.82)
+shader_parameter/mullions = 1
+shader_parameter/wall_color = Color(0.08, 0.08, 0.09, 1)
+shader_parameter/wall_color_2 = Color(0.08, 0.08, 0.09, 1)
+shader_parameter/wall_variation = 0.0
+shader_parameter/wall_roughness = 0.4
+shader_parameter/frame_color = Color(0.12, 0.12, 0.13, 1)
+shader_parameter/lit_ratio = 0.85
+shader_parameter/cluster_bays = 1.0
+shader_parameter/variant_min = 5
+shader_parameter/variant_max = 7
+shader_parameter/room_depth = 7.0
+shader_parameter/props_depth = 0.3
+shader_parameter/light_energy = 1.6
+shader_parameter/blinds_chance = 0.1
+shader_parameter/curtain_chance = 0.0
+shader_parameter/cool_chance = 0.5
+shader_parameter/neon_chance = 0.25
+shader_parameter/tv_chance = 0.0

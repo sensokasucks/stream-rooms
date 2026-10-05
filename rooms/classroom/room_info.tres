@@ -1,0 +1,40 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+
+[sub_resource type="Environment" id="Environment_class"]
+background_mode = 1
+ambient_light_source = 2
+ambient_light_color = Color(0.32, 0.28, 0.22, 1)
+ambient_light_energy = 0.1
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_energy = 1.1
+glow_enabled = true
+glow_intensity = 0.5
+glow_bloom = 0.04
+glow_hdr_threshold = 1.2
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.025
+volumetric_fog_albedo = Color(0.95, 0.9, 0.82, 1)
+volumetric_fog_length = 16.0
+
+[resource]
+script = ExtResource("1_ri")
+id = "classroom"
+display_name = "Old Classroom (film day)"
+scene_path = "res://rooms/classroom/classroom_room.tscn"
+sort_order = 6
+environment = SubResource("Environment_class")
+screen_light_multiplier = 0.35
+screen_light_range = 12.0
+screen_film_amount = 0.85
+screen_film_tint = Color(1, 0.9, 0.74, 1)
+screen_matte = 0.5
+reverb_room_size = 0.3
+reverb_damping = 0.35
+reverb_wet = 0.2
+speaker_lofi = 0.85

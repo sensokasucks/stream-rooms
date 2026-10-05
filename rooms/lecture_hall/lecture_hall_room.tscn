@@ -1,0 +1,94 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://rooms/lecture_hall/lecture_hall_room.gd" id="1_lh"]
+[ext_resource type="PackedScene" path="res://rooms/lecture_hall/lecture_hall.glb" id="2_glb"]
+[ext_resource type="Script" path="res://core/audience/audience_row.gd" id="audrow_1"]
+
+[node name="LectureHallRoom" type="Node3D"]
+script = ExtResource("1_lh")
+dimmed_level = 0.15
+fade_speed = 0.5
+glow_materials = PackedStringArray("Bulb", "Arcade_Glow")
+crowd_seats_file = "res://rooms/lecture_hall/crowd_seats.json"
+side_chat_extra_gap = -0.4
+side_chat_height_scale = 0.66
+side_chat_forward = 1.2
+lamp_color = Color(1, 0.8, 0.55, 1)
+lamp_energy = 2.0
+lamp_range = 20.0
+
+[node name="Model" parent="." instance=ExtResource("2_glb")]
+
+[node name="Audience_Seats" type="Node3D" parent="."]
+
+[node name="Pit_Row_1_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 1.38)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_1_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 1.38)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_2_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 2.33)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_2_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 2.33)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_3_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 3.28)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_3_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 3.28)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_4_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 4.23)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_4_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 4.23)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_5_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 5.18)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_5_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 5.18)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_6_Left" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -4.5, 0.46, 6.13)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6
+
+[node name="Pit_Row_6_Right" type="Marker3D" parent="Audience_Seats"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0.9, 0.46, 6.13)
+script = ExtResource("audrow_1")
+count = 7
+spacing = 0.6

@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room.gd" id="1_sn26i"]
+[ext_resource type="PackedScene" path="res://rooms/drive_in/drive_in.glb" id="2_iwaev"]
+
+[node name="DriveInRoom" type="Node3D"]
+script = ExtResource("1_sn26i")
+
+[node name="Model" type="Node3D" parent="." instance=ExtResource("2_iwaev")]
+
+[node name="Moonlight" type="DirectionalLight3D" parent="."]
+transform = Transform3D(-0.907627, 0.197513, -0.370408, 0, 0.88239, 0.470518, 0.419778, 0.427055, -0.800882, 0, 0, 0)
+light_color = Color(0.62, 0.7, 0.95, 1)
+light_energy = 0.14
+shadow_enabled = true
+directional_shadow_max_distance = 120.0

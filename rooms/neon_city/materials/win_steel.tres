@@ -1,0 +1,22 @@
+[gd_resource type="ShaderMaterial" load_steps=3 format=3]
+
+[ext_resource type="Shader" path="res://core/interiors/interior_windows.gdshader" id="1_shd"]
+[ext_resource type="Texture2D" path="res://core/interiors/interior_atlas.png" id="2_atl"]
+
+[resource]
+resource_name = "win_steel"
+shader = ExtResource("1_shd")
+shader_parameter/room_atlas = ExtResource("2_atl")
+shader_parameter/seed = 5.0
+shader_parameter/glass_rect = Vector4(0.0, 0.4, 1.0, 0.85)
+shader_parameter/mullions = 2
+shader_parameter/wall_color = Color(0.1, 0.13, 0.18, 1)
+shader_parameter/wall_color_2 = Color(0.08, 0.1, 0.14, 1)
+shader_parameter/wall_variation = 0.3
+shader_parameter/wall_roughness = 0.35
+shader_parameter/wall_metallic = 0.5
+shader_parameter/lit_ratio = 0.4
+shader_parameter/variant_min = 2
+shader_parameter/variant_max = 4
+shader_parameter/room_depth = 5.0
+shader_parameter/cool_chance = 0.5

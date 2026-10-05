@@ -1,0 +1,37 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+
+[sub_resource type="Environment" id="Environment_hall"]
+background_mode = 1
+ambient_light_source = 2
+ambient_light_color = Color(0.4, 0.28, 0.18, 1)
+ambient_light_energy = 0.18
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_energy = 1.2
+glow_enabled = true
+glow_intensity = 0.55
+glow_bloom = 0.05
+glow_hdr_threshold = 1.2
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.008
+volumetric_fog_albedo = Color(0.95, 0.88, 0.78, 1)
+volumetric_fog_length = 48.0
+
+[resource]
+script = ExtResource("1_ri")
+id = "lecture_hall"
+display_name = "Lecture Hall"
+scene_path = "res://rooms/lecture_hall/lecture_hall_room.tscn"
+sort_order = 3
+environment = SubResource("Environment_hall")
+screen_light_multiplier = 3.0
+screen_light_range = 45.0
+screen_matte = 0.25
+reverb_room_size = 0.8
+reverb_damping = 0.45
+reverb_wet = 0.2

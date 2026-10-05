@@ -1,0 +1,244 @@
+diff --git a/src/video_stream_ndi.cpp b/src/video_stream_ndi.cpp
+index 88f4751..33b0bb7 100644
+--- a/src/video_stream_ndi.cpp
++++ b/src/video_stream_ndi.cpp
+@@ -97,7 +97,36 @@ Ref<VideoStreamPlayback> VideoStreamNDI::_instantiate_playback() {
+ 	recv_desc.p_ndi_recv_name = nullptr;
+ 
+ 	print_verbose("NDI: Instantiating video stream playback with name=" + String(name) + " and url=" + String(url));
+-	return memnew(VideoStreamPlaybackNDI(recv_desc));
++	Ref<VideoStreamPlaybackNDI> playback = memnew(VideoStreamPlaybackNDI(recv_desc));
++	playback->set_external_audio(external_audio);
++	playback_id = playback->get_instance_id();
++	return playback;
++}
++
++VideoStreamPlaybackNDI *VideoStreamNDI::_get_playback() const {
++	return Object::cast_to<VideoStreamPlaybackNDI>(ObjectDB::get_instance(playback_id));
++}
++
++void VideoStreamNDI::set_external_audio(bool p_enabled) {
++	external_audio = p_enabled;
++	VideoStreamPlaybackNDI *playback = _get_playback();
++	if (playback != nullptr) {
++		playback->set_external_audio(p_enabled);
++	}
++}
++
++bool VideoStreamNDI::get_external_audio() const {
++	return external_audio;
++}
++
++PackedVector2Array VideoStreamNDI::pull_audio(int p_frames, int p_mix_rate) {
++	VideoStreamPlaybackNDI *playback = _get_playback();
++	return playback != nullptr ? playback->pull_audio(p_frames, p_mix_rate) : PackedVector2Array();
++}
++
++int VideoStreamNDI::get_audio_queue_depth() const {
++	VideoStreamPlaybackNDI *playback = _get_playback();
++	return playback != nullptr ? playback->get_audio_queue_depth() : 0;
+ }
+ 
+ void VideoStreamNDI::_bind_methods() {
+@@ -113,6 +142,12 @@ void VideoStreamNDI::_bind_methods() {
+ 	ClassDB::bind_method(D_METHOD("get_bandwidth"), &VideoStreamNDI::get_bandwidth);
+ 	ADD_PROPERTY(PropertyInfo(Variant::INT, "bandwidth", PROPERTY_HINT_ENUM, "Metadata only:-10,Audio only:10,Lowest:0,Highest:100"), "set_bandwidth", "get_bandwidth");
+ 
++	ClassDB::bind_method(D_METHOD("set_external_audio", "enabled"), &VideoStreamNDI::set_external_audio);
++	ClassDB::bind_method(D_METHOD("get_external_audio"), &VideoStreamNDI::get_external_audio);
++	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "external_audio"), "set_external_audio", "get_external_audio");
++	ClassDB::bind_method(D_METHOD("pull_audio", "frames", "mix_rate"), &VideoStreamNDI::pull_audio);
++	ClassDB::bind_method(D_METHOD("get_audio_queue_depth"), &VideoStreamNDI::get_audio_queue_depth);
++
+ 	ADD_NDI_BUTTON
+ 
+ 	BIND_ENUM_CONSTANT(NDIlib_recv_bandwidth_metadata_only);
+diff --git a/src/video_stream_ndi.hpp b/src/video_stream_ndi.hpp
+index e9a2a44..4b3bec9 100644
+--- a/src/video_stream_ndi.hpp
++++ b/src/video_stream_ndi.hpp
+@@ -38,6 +38,12 @@ public:
+ 
+ 	Ref<VideoStreamPlayback> _instantiate_playback() override;
+ 
++	// Stream Rooms patch: let the game pull the audio (see VideoStreamPlaybackNDI::pull_audio).
++	void set_external_audio(bool p_enabled);
++	bool get_external_audio() const;
++	PackedVector2Array pull_audio(int p_frames, int p_mix_rate);
++	int get_audio_queue_depth() const;
++
+ protected:
+ 	static void _bind_methods();
+ 	void _validate_property(PropertyInfo &p_property);
+@@ -52,6 +58,10 @@ private:
+ 
+ 	NDIFinder *finder = nullptr;
+ 	void sources_changed();
++
++	bool external_audio = false;
++	uint64_t playback_id = 0;
++	VideoStreamPlaybackNDI *_get_playback() const;
+ };
+ 
+ VARIANT_ENUM_CAST(NDIlib_recv_bandwidth_e);
+diff --git a/src/video_stream_playback_ndi.cpp b/src/video_stream_playback_ndi.cpp
+index e80d28d..e30cc31 100644
+--- a/src/video_stream_playback_ndi.cpp
++++ b/src/video_stream_playback_ndi.cpp
+@@ -53,6 +53,8 @@ void VideoStreamPlaybackNDI::_play() {
+ 	}
+ 
+ 	playing = true;
++	audio_owed = 0.0;
++	audio_primed = false;
+ }
+ 
+ void VideoStreamPlaybackNDI::_stop() {
+@@ -119,7 +121,9 @@ void VideoStreamPlaybackNDI::_update(double p_delta) {
+ 		// First frame is ticked with delta of 0
+ 		wait_for_non_empty_frame();
+ 	} else {
+-		render_audio(p_delta);
++		if (!external_audio) {
++			render_audio(p_delta);
++		}
+ 		render_video();
+ 	}
+ }
+@@ -225,35 +229,85 @@ bool VideoStreamPlaybackNDI::render_video() {
+ 	return updated;
+ }
+ 
++// Stream Rooms patch (fallback path, used when the game doesn't pull the audio itself):
++//  - fractional samples are carried over instead of truncated every frame (that drained the
++//    player's buffer by up to one sample per frame);
++//  - no cap at the frame-sync queue depth (the frame-sync is meant to be pulled at the rate you
++//    want; capping lost audio whenever a packet was late);
++//  - a short pre-roll gives the player's buffer some slack against frame-time jitter;
++//  - large pulls are written in chunks instead of dropping everything past 4096 samples.
+ void VideoStreamPlaybackNDI::render_audio(double p_delta) {
+-	int requested_samples = Math::min((double)_get_mix_rate() * p_delta, (double)ndi->framesync_audio_queue_depth(sync));
+-	ndi->framesync_capture_audio_v2(sync, &audio_frame, _get_mix_rate(), _get_channels(), requested_samples);
+-
+-	if (audio_frame.p_data != nullptr) {
+-		audio_buffer_planar.resize(audio_frame.no_channels * audio_frame.no_samples);
+-		audio_buffer_interleaved.resize(audio_buffer_planar.size());
+-
+-		memcpy((uint8_t *)audio_buffer_planar.ptrw(), audio_frame.p_data, audio_buffer_planar.size() * 4);
+-
+-		for (int64_t i = 0; i < audio_buffer_interleaved.size(); i++) {
+-			int channel = i % audio_frame.no_channels;
+-			int stride_index = channel * audio_frame.no_samples;
+-			int stride_offset = i / audio_frame.no_channels;
++	const int rate = _get_mix_rate();
++	audio_owed += (double)rate * p_delta;
++	if (!audio_primed) {
++		audio_owed += rate * 0.06; // 60 ms of slack
++		audio_primed = true;
++	}
++	int requested_samples = (int)audio_owed;
++	if (requested_samples <= 0) {
++		return;
++	}
++	audio_owed -= requested_samples;
++
++	ndi->framesync_capture_audio_v2(sync, &audio_frame, rate, _get_channels(), requested_samples);
++
++	if (audio_frame.p_data != nullptr && audio_frame.no_samples > 0) {
++		const int channels = audio_frame.no_channels;
++		const int samples = audio_frame.no_samples;
++		const int stride = audio_frame.channel_stride_in_bytes > 0 ? audio_frame.channel_stride_in_bytes : samples * 4;
++		audio_buffer_interleaved.resize((int64_t)samples * channels);
++		float *out = audio_buffer_interleaved.ptrw();
++		for (int c = 0; c < channels; c++) {
++			const float *plane = (const float *)(audio_frame.p_data + (int64_t)c * stride);
++			for (int s = 0; s < samples; s++) {
++				out[(int64_t)s * channels + c] = plane[s];
++			}
++		}
+ 
+-			audio_buffer_interleaved.set(i, audio_buffer_planar[stride_index + stride_offset]);
++		const int chunk = 4096;
++		for (int done = 0; done < samples;) {
++			int n = Math::min(chunk, samples - done);
++			int written = mix_audio(n, audio_buffer_interleaved, done * channels);
++			if (written < n) {
++				print_verbose("NDI: player audio buffer full, dropped " + String::num_int64(samples - done - written) + " samples");
++				break;
++			}
++			done += n;
+ 		}
++	}
+ 
+-		// There is a maximum to how many samples can be submitted at once, because otherwise the buffer will overflow
+-		int processed_samples = Math::min(audio_frame.no_samples, 4096); // FIXME: dont hardcode this (https://github.com/unvermuthet/godot-ndi/issues/4)
+-		int skipped_samples = audio_frame.no_samples - processed_samples;
++	ndi->framesync_free_audio_v2(sync, &audio_frame);
++}
+ 
+-		if (skipped_samples > 0) {
+-			print_verbose("NDI: Skipped " + String::num_int64(skipped_samples) + " audio samples!");
+-		}
++void VideoStreamPlaybackNDI::set_external_audio(bool p_enabled) {
++	external_audio = p_enabled;
++}
+ 
+-		// Skip the older samples by playing the last ones in the array
+-		mix_audio(processed_samples, audio_buffer_interleaved, skipped_samples * _get_channels());
++// Pulls p_frames stereo frames at p_mix_rate from the frame-sync. The frame-sync resamples to match
++// the rate this is called at, so pulling what the sound card has used keeps audio clock-locked.
++// Silence is returned while no audio has arrived.
++PackedVector2Array VideoStreamPlaybackNDI::pull_audio(int p_frames, int p_mix_rate) {
++	PackedVector2Array out;
++	if (sync == nullptr || p_frames <= 0 || p_mix_rate <= 0) {
++		return out;
+ 	}
++	NDIlib_audio_frame_v3_t frame;
++	ndi->framesync_capture_audio_v2(sync, &frame, p_mix_rate, 2, p_frames);
++	if (frame.p_data != nullptr && frame.no_samples > 0) {
++		const int samples = frame.no_samples;
++		const int stride = frame.channel_stride_in_bytes > 0 ? frame.channel_stride_in_bytes : samples * 4;
++		const float *left = (const float *)frame.p_data;
++		const float *right = frame.no_channels > 1 ? (const float *)(frame.p_data + stride) : left;
++		out.resize(samples);
++		Vector2 *w = out.ptrw();
++		for (int s = 0; s < samples; s++) {
++			w[s] = Vector2(left[s], right[s]);
++		}
++	}
++	ndi->framesync_free_audio_v2(sync, &frame);
++	return out;
++}
+ 
+-	ndi->framesync_free_audio_v2(sync, &audio_frame);
++int VideoStreamPlaybackNDI::get_audio_queue_depth() const {
++	return sync != nullptr ? ndi->framesync_audio_queue_depth(sync) : 0;
+ }
+diff --git a/src/video_stream_playback_ndi.hpp b/src/video_stream_playback_ndi.hpp
+index f1cbad5..8fa3367 100644
+--- a/src/video_stream_playback_ndi.hpp
++++ b/src/video_stream_playback_ndi.hpp
+@@ -38,6 +38,12 @@ public:
+ 	Ref<Texture2D> _get_texture() const override;
+ 	void _update(double p_delta) override;
+ 
++	// Stream Rooms patch: audio pulled by the game (at the sound card's pace) instead of being
++	// pushed into the VideoStreamPlayer once per game frame.
++	void set_external_audio(bool p_enabled);
++	PackedVector2Array pull_audio(int p_frames, int p_mix_rate);
++	int get_audio_queue_depth() const;
++
+ protected:
+ 	static void _bind_methods();
+ 
+@@ -57,6 +63,10 @@ private:
+ 	void wait_for_non_empty_frame();
+ 	bool render_video();
+ 
++	bool external_audio = false;
++	double audio_owed = 0.0; // fractional samples carried between frames
++	bool audio_primed = false;
++
+ 	NDIlib_audio_frame_v3_t audio_frame;
+ 	PackedFloat32Array audio_buffer_planar;
+ 	PackedFloat32Array audio_buffer_interleaved;

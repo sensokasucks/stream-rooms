@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- Stream Rooms: shows a web page over a solid key colour so a page with a see-through
+     background (a reactive PNGTuber / avatar page, an overlay) can be shared as a presenter
+     feed and chroma-keyed in the game. Opened by the sender page: /backdrop?slot=1&url=...&bg=00ff00 -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Presenter web page</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #00ff00; }
+  iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: normal; }
+  #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+         font: 16px system-ui, sans-serif; color: #111; padding: 24px; }
+</style>
+</head>
+<body>
+<div id="msg"></div>
+<script>
+"use strict";
+const q = new URLSearchParams(location.search);
+const slot = q.get("slot") || "";
+const bg = (q.get("bg") || "00ff00").replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "00ff00";
+document.documentElement.style.background = document.body.style.background = "#" + bg;
+document.title = "Presenter " + slot + " web page";
+let url = null;
+try { url = new URL(q.get("url") || ""); } catch (_) { url = null; }
+if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+  document.getElementById("msg").textContent = "No web page address. Type it in the game (Presenters tab > Web page).";
+} else {
+  const f = document.createElement("iframe");
+  f.src = url.href;
+  f.allow = "autoplay";
+  f.setAttribute("allowtransparency", "true");
+  document.body.appendChild(f);
+}
+</script>
+</body>
+</html>

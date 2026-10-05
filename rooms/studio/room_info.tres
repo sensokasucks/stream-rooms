@@ -1,0 +1,28 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_4wck4"]
+
+[sub_resource type="Environment" id="Environment_vw8va"]
+background_mode = 1
+background_color = Color(0.02, 0.02, 0.025, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.2, 0.2, 0.24, 1)
+ambient_light_energy = 0.25
+tonemap_mode = 2
+ssao_enabled = true
+glow_enabled = true
+glow_intensity = 0.5
+glow_hdr_threshold = 1.2
+
+[resource]
+script = ExtResource("1_4wck4")
+id = "studio"
+display_name = "Studio (test room)"
+scene_path = "res://rooms/studio/studio_room.tscn"
+sort_order = 10
+environment = SubResource("Environment_vw8va")
+screen_light_multiplier = 0.6
+screen_light_range = 12.0
+reverb_room_size = 0.2
+reverb_damping = 0.5
+reverb_wet = 0.05

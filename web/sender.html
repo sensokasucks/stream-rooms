@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stream Rooms sender</title>
+<style>
+  :root { --bg:#111317; --panel:#1b1e24; --text:#e8e8ea; --muted:#9aa0aa; --accent:#e0852f; --ok:#5fbf77; --warn:#e6b84a; --err:#e06060; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 16px; color: var(--muted); }
+  section { background: var(--panel); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 6px 0; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3f49; background:#262a32; color:var(--text); cursor:pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color:#1a1206; font-weight:600; }
+  button:disabled { opacity: .5; cursor: default; }
+  select, label { font: inherit; color: var(--text); }
+  select { background:#262a32; border:1px solid #3a3f49; border-radius:6px; padding:5px 8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background: var(--err); display:inline-block; }
+  .dot.ok { background: var(--ok); }
+  .status { color: var(--muted); font-size: 14px; }
+  .warn { color: var(--warn); }
+  .err { color: var(--err); }
+  video { width: 100%; border-radius: 8px; background:#000; margin-top: 8px; }
+  small { color: var(--muted); }
+  .pres { display:grid; grid-template-columns: 96px 1fr; gap: 10px; align-items:center; padding: 8px 0; border-top: 1px solid #2a2e36; }
+  .pres:first-of-type { border-top: 0; }
+  .pres video { width: 96px; height: 54px; object-fit: cover; margin: 0; }
+  .pres .name { font-weight: 600; }
+  .pres.want-web .openweb, .pres.want-tab .pick { background: var(--accent); border-color: var(--accent); color:#1a1206; font-weight:600; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Stream Rooms sender</h1>
+  <p class="sub">Shares a tab or window with the game. Keep this page open, ideally in its own small window.</p>
+
+  <section>
+    <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span></div>
+  </section>
+
+  <section>
+    <div class="row">
+      <button id="shareBtn" class="primary">Share a tab or window</button>
+      <button id="stopBtn" disabled>Stop sharing</button>
+    </div>
+    <div class="row">
+      <label>Quality
+        <select id="quality">
+          <option value="540">540p</option>
+          <option value="720" selected>720p</option>
+          <option value="1080">1080p</option>
+        </select>
+      </label>
+      <label>FPS
+        <select id="fps">
+          <option>24</option><option selected>30</option><option>60</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="sendAudio" checked> Send tab audio to the game</label>
+    </div>
+    <div id="shareStatus" class="status">Not sharing.</div>
+    <div id="audioStatus" class="status"></div>
+    <video id="preview" muted playsinline></video>
+  </section>
+
+  <section>
+    <div class="row">
+      <button id="camBtn">Start webcam</button>
+      <span id="camStatus" class="status">Webcam off.</span>
+    </div>
+    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
+  </section>
+
+  <section id="presSection">
+    <div class="row"><b>Presenter feeds</b> <small>(rooms with podiums)</small></div>
+    <small>Choose each presenter's source in the game (Presenters tab). Cameras start by themselves;
+      for a tab or window, click its button here and pick it.</small>
+    <div class="row hidden" id="camPermRow">
+      <button id="camPermBtn" class="primary">Allow cameras</button>
+      <span class="status">The browser needs permission once before cameras can start.</span>
+    </div>
+    <div id="presList"></div>
+  </section>
+</main>
+
+<script>
+"use strict";
+const WS_URL = "ws://127.0.0.1:{{WS_PORT}}";
+const PKT_VIDEO = 1, PKT_AUDIO = 2, PKT_WEBCAM = 3, PKT_PRESENTER = 4;
+const PRESENTERS = 4;
+const PRES_HEIGHT = 480, PRES_FPS = 20, PRES_JPEG = 0.88;  // keyed pictures need clean edges
+// Everything shares one socket. When it backs up, pictures are skipped - never audio -
+// and presenter feeds give way first, so the main video and its sound stay smooth.
+const MAX_BUFFERED = 3 * 1024 * 1024;        // main video / webcam frames
+const MAX_BUFFERED_PRES = 768 * 1024;        // presenter frames
+const MAX_BUFFERED_PRES_BUSY = 256 * 1024;   // presenter frames while a tab is being shared
+const MAX_BUFFERED_AUDIO = 16 * 1024 * 1024; // audio is only dropped if something is badly stuck
+// A tab only produces frames when its picture changes (a quiet avatar = no frames),
+// so presenter feeds re-send their last frame this often to show they're still live.
+const PRES_KEEPALIVE_MS = 1000;
+const JPEG_QUALITY = 0.82;
+
+const $ = (id) => document.getElementById(id);
+let ws = null;
+let share = null;          // { stream, videoPump, audio }
+let cam = null;            // { stream, pump }
+let sentFrames = 0, fps = 0;
+
+// ── WebSocket link (auto-reconnects) ─────────────────────────
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => { setLink(true); sendStatus(); };
+  ws.onmessage = (e) => {
+    if (typeof e.data !== "string") return;
+    let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+    if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots);
+  };
+  ws.onclose = () => { setLink(false); setTimeout(connect, 1000); };
+  ws.onerror = () => {};
+}
+function setLink(ok) {
+  $("linkDot").classList.toggle("ok", ok);
+  $("linkText").textContent = ok ? "Connected to the game." : "Waiting for the game... (is it running?)";
+}
+function bufferLimit(type) {
+  if (type === PKT_AUDIO) return MAX_BUFFERED_AUDIO;
+  if (type === PKT_PRESENTER) return share ? MAX_BUFFERED_PRES_BUSY : MAX_BUFFERED_PRES;
+  return MAX_BUFFERED;
+}
+function canSend(type) {
+  return ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < bufferLimit(type === undefined ? PKT_VIDEO : type);
+}
+function sendPacket(type, bytes, slot) {
+  if (!canSend(type)) return false;
+  const head = slot === undefined ? 1 : 2;
+  const out = new Uint8Array(head + bytes.byteLength);
+  out[0] = type;
+  if (head === 2) out[1] = slot;
+  out.set(new Uint8Array(bytes), head);
+  ws.send(out);
+  return true;
+}
+function sendStatus() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  const a = share && share.audio;
+  ws.send(JSON.stringify({
+    type: "status",
+    capturing: !!share,
+    has_audio: !!(a && a.track),
+    suppress_local_audio: !!(a && a.suppressed),
+    webcam: !!cam,
+    fps: fps,
+    label: share ? share.label : "",
+    cameras: cameraList,
+    presenters: pres.map((p, i) => ({ slot: i, want: p.want.kind, active: !!p.stream, kind: p.kind, label: p.label, error: p.error })),
+  }));
+}
+setInterval(() => { fps = sentFrames; sentFrames = 0; sendStatus(); }, 1000);
+
+// ── Frame pump: track -> scaled JPEG -> socket ───────────────
+// Uses MediaStreamTrackProcessor where available (keeps running when this tab
+// is in the background); falls back to <video> + requestVideoFrameCallback.
+function startFramePump(track, type, maxHeight, maxFps, slot, quality) {
+  const state = { stopped: false, busy: false, last: 0 };
+  const canvas = new OffscreenCanvas(16, 16);
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const minGap = 1000 / maxFps;
+
+  async function encode(source, w, h) {
+    const scale = Math.min(1, maxHeight / h);
+    const cw = Math.max(2, Math.round(w * scale / 2) * 2), ch = Math.max(2, Math.round(h * scale / 2) * 2);
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    ctx.drawImage(source, 0, 0, cw, ch);
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: quality || JPEG_QUALITY });
+    const bytes = await blob.arrayBuffer();
+    if (sendPacket(type, bytes, slot)) {
+      if (type === PKT_VIDEO) sentFrames++;
+      state.lastBytes = bytes; state.lastSent = performance.now();
+    }
+  }
+  function shouldTake(now) {
+    if (state.busy || !canSend(type) || now - state.last < minGap) return false;
+    state.last = now; state.busy = true; return true;
+  }
+
+  if ("MediaStreamTrackProcessor" in window) {
+    const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    (async () => {
+      while (!state.stopped) {
+        const { value: frame, done } = await reader.read();
+        if (done) break;
+        if (shouldTake(performance.now())) {
+          encode(frame, frame.displayWidth, frame.displayHeight)
+            .catch(() => {}).finally(() => { frame.close(); state.busy = false; });
+        } else {
+          frame.close();
+        }
+      }
+    })();
+    state.stop = () => { state.stopped = true; reader.cancel().catch(() => {}); };
+  } else {
+    const v = document.createElement("video");
+    v.muted = true; v.playsInline = true;
+    v.srcObject = new MediaStream([track]);
+    v.play();
+    const tick = () => {
+      if (state.stopped) return;
+      if (v.videoWidth && shouldTake(performance.now())) {
+        encode(v, v.videoWidth, v.videoHeight).catch(() => {}).finally(() => { state.busy = false; });
+      }
+      v.requestVideoFrameCallback(tick);
+    };
+    v.requestVideoFrameCallback(tick);
+    state.stop = () => { state.stopped = true; v.srcObject = null; };
+  }
+  if (type === PKT_PRESENTER) {
+    const keep = setInterval(() => {
+      if (state.stopped) { clearInterval(keep); return; }
+      if (state.lastBytes && !state.busy && performance.now() - state.lastSent > PRES_KEEPALIVE_MS &&
+          sendPacket(type, state.lastBytes, slot)) state.lastSent = performance.now();
+    }, PRES_KEEPALIVE_MS / 2);
+    const stop = state.stop;
+    state.stop = () => { clearInterval(keep); stop(); };
+  }
+  return state;
+}
+
+// ── Audio pump: track -> 20 ms float32 stereo chunks -> socket ─
+const WORKLET_SRC = `
+class PcmTap extends AudioWorkletProcessor {
+  constructor() { super(); this.buf = new Float32Array(960 * 2); this.n = 0; }
+  process(inputs) {
+    const inp = inputs[0];
+    if (inp && inp.length) {
+      const l = inp[0], r = inp[1] || inp[0];
+      for (let i = 0; i < l.length; i++) {
+        this.buf[this.n * 2] = l[i]; this.buf[this.n * 2 + 1] = r[i];
+        if (++this.n === 960) { this.port.postMessage(this.buf.buffer, [this.buf.buffer]); this.buf = new Float32Array(960 * 2); this.n = 0; }
+      }
+    }
+    return true;
+  }
+}
+registerProcessor("pcm-tap", PcmTap);`;
+
+async function startAudioPump(track) {
+  const ctx = new AudioContext({ sampleRate: 48000 });
+  const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
+  await ctx.audioWorklet.addModule(url);
+  const src = ctx.createMediaStreamSource(new MediaStream([track]));
+  const tap = new AudioWorkletNode(ctx, "pcm-tap", { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+  const mute = ctx.createGain();
+  mute.gain.value = 0;                        // keep the graph running, but silent here
+  src.connect(tap).connect(mute).connect(ctx.destination);
+  tap.port.onmessage = (e) => sendPacket(PKT_AUDIO, e.data);
+  await ctx.resume();
+  return { ctx, stop: () => ctx.close() };
+}
+
+// ── Share a tab / window ─────────────────────────────────────
+async function startShare() {
+  const wantAudio = $("sendAudio").checked;
+  const h = parseInt($("quality").value, 10), maxFps = parseInt($("fps").value, 10);
+  const supported = navigator.mediaDevices.getSupportedConstraints();
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: maxFps }, height: { ideal: h } },
+      audio: wantAudio ? { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
+      selfBrowserSurface: "exclude",
+      surfaceSwitching: "include",
+      systemAudio: "include",
+    });
+  } catch (e) {
+    $("shareStatus").textContent = "Sharing was cancelled or blocked (" + e.name + ").";
+    return;
+  }
+  const vtrack = stream.getVideoTracks()[0];
+  const atrack = stream.getAudioTracks()[0] || null;
+  share = { stream, label: vtrack.label, audio: { track: atrack, suppressed: false } };
+  share.videoPump = startFramePump(vtrack, PKT_VIDEO, h, maxFps);
+
+  if (atrack) {
+    share.audio.suppressed = !!(atrack.getSettings().suppressLocalAudioPlayback);
+    try { share.audio.pump = await startAudioPump(atrack); }
+    catch (e) { $("audioStatus").innerHTML = '<span class="err">Couldn\'t start audio: ' + e.message + "</span>"; }
+  }
+  describeAudio(wantAudio, supported.suppressLocalAudioPlayback);
+
+  vtrack.addEventListener("ended", stopShare);
+  $("preview").srcObject = stream;
+  $("preview").play().catch(() => {});
+  $("shareStatus").textContent = "Sharing: " + (vtrack.label || "screen");
+  $("shareBtn").disabled = true; $("stopBtn").disabled = false;
+  sendStatus();
+}
+
+function describeAudio(wanted, supported) {
+  const el = $("audioStatus");
+  const a = share.audio;
+  if (!wanted) { el.textContent = "Audio stays in the browser (not sent to the game)."; return; }
+  if (!a.track) {
+    el.innerHTML = '<span class="warn">No audio shared. In the share picker, pick a <b>tab</b> and turn on "Share tab audio".</span>';
+    return;
+  }
+  if (a.suppressed) { el.textContent = "Audio goes to the game only. The tab is silent here, so nothing doubles."; return; }
+  el.innerHTML = '<span class="warn">This browser ' + (supported ? "didn't silence" : "can't silence") +
+    " the tab, so you'll hear it twice. Mute the tab, or turn the game's volume down.</span>";
+}
+
+function stopShare() {
+  if (!share) return;
+  share.videoPump && share.videoPump.stop();
+  share.audio.pump && share.audio.pump.stop();
+  share.stream.getTracks().forEach((t) => t.stop());
+  share = null;
+  $("preview").srcObject = null;
+  $("shareStatus").textContent = "Not sharing.";
+  $("audioStatus").textContent = "";
+  $("shareBtn").disabled = false; $("stopBtn").disabled = true;
+  sendStatus();
+}
+
+// ── Webcam ───────────────────────────────────────────────────
+async function toggleCam() {
+  if (cam) {
+    cam.pump.stop(); cam.stream.getTracks().forEach((t) => t.stop()); cam = null;
+    $("camBtn").textContent = "Start webcam"; $("camStatus").textContent = "Webcam off.";
+    sendStatus(); return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    const track = stream.getVideoTracks()[0];
+    cam = { stream, pump: startFramePump(track, PKT_WEBCAM, 480, 20) };
+    $("camBtn").textContent = "Stop webcam"; $("camStatus").textContent = "Webcam: " + track.label;
+    sendStatus();
+  } catch (e) {
+    $("camStatus").innerHTML = '<span class="err">Webcam blocked or missing (' + e.name + ").</span>";
+  }
+}
+
+// ── Presenter feeds (podium rooms) ────────────────────────────
+// The game sends {"type":"presenters","slots":[{kind:"off"|"camera"|"tab"|"web", device, url, bg}]}.
+// Cameras start right away (after a one-time permission); a tab needs a click here.
+// "web": a page with a see-through background (e.g. a reactive avatar). "Open page" shows it
+// over the key colour in a small window (/backdrop), "Share it" captures that window, and
+// the game's chroma key removes the colour again.
+let cameraList = [];
+const pres = Array.from({ length: PRESENTERS }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "" }));
+
+function buildPresenterRows() {
+  const list = $("presList");
+  pres.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "pres";
+    row.innerHTML = `<video muted playsinline></video><div>
+      <div><span class="name">Presenter ${i + 1}</span> <span class="status"></span></div>
+      <div class="row"><button class="openweb">1. Open page</button><button class="pick">Pick a tab or window</button><button class="stop">Stop</button></div></div>`;
+    list.appendChild(row);
+    p.row = row;
+    row.querySelector(".pick").onclick = () => startPresenterTab(i);
+    row.querySelector(".openweb").onclick = () => openWebPage(i);
+    row.querySelector(".stop").onclick = () => { stopPresenter(i); p.error = ""; renderPresenter(i); };
+  });
+}
+
+function renderPresenter(i) {
+  const p = pres[i], row = p.row;
+  const st = row.querySelector(".status");
+  const want = p.want.kind;
+  const web = want === "web";
+  const winOpen = !!(p.win && !p.win.closed);
+  row.classList.toggle("want-tab", (want === "tab" || (web && winOpen)) && !(p.stream && p.kind === want));
+  row.classList.toggle("want-web", web && !winOpen && !p.stream);
+  row.querySelector(".pick").classList.toggle("hidden", want !== "tab" && !web);
+  row.querySelector(".pick").textContent = web ? "2. Share it" : "Pick a tab or window";
+  row.querySelector(".openweb").classList.toggle("hidden", !web);
+  row.querySelector(".openweb").disabled = web && !p.want.url;
+  row.querySelector(".stop").classList.toggle("hidden", !p.stream);
+  if (p.error) st.innerHTML = `<span class="err">${p.error}</span>`;
+  else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "");
+  else if (want === "camera") st.textContent = "Starting camera...";
+  else if (want === "tab") st.innerHTML = '<span class="warn">Click the button and pick a tab or window.</span>';
+  else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (Presenters tab).</span>';
+  else if (web && !winOpen) st.innerHTML = '<span class="warn">Click "1. Open page" (keep that window open, it can sit behind the game).</span>';
+  else if (web) st.innerHTML = `<span class="warn">Click "2. Share it" and pick "Presenter ${i + 1} web page". If it says the site refused to connect, that site doesn't allow being shown inside another page.</span>`;
+  else st.textContent = "Not used (silhouette, green screen or off in the game).";
+  const v = row.querySelector("video");
+  if (v.srcObject !== p.stream) { v.srcObject = p.stream; if (p.stream) v.play().catch(() => {}); }
+}
+
+function backdropUrl(i) {
+  const w = pres[i].want;
+  return "/backdrop?slot=" + (i + 1) + "&bg=" + encodeURIComponent(w.bg || "00ff00") + "&url=" + encodeURIComponent(w.url || "");
+}
+
+function openWebPage(i) {
+  const p = pres[i];
+  if (p.win && !p.win.closed) { p.win.location.href = backdropUrl(i); p.win.focus(); }
+  else p.win = window.open(backdropUrl(i), "presenter_web_" + (i + 1), "popup,width=640,height=720");
+  if (!p.win) p.error = "The browser blocked the window - allow pop-ups for this page.";
+  else { p.error = ""; p.win.addEventListener("beforeunload", () => setTimeout(() => renderPresenter(i), 300)); }
+  renderPresenter(i);
+}
+
+function closeWebPage(i) {
+  const p = pres[i];
+  if (p.win && !p.win.closed) p.win.close();
+  p.win = null;
+}
+
+function stopPresenter(i) {
+  const p = pres[i];
+  if (p.pump) p.pump.stop();
+  if (p.stream) p.stream.getTracks().forEach((t) => t.stop());
+  p.stream = null; p.pump = null; p.kind = ""; p.device = ""; p.label = "";
+}
+
+function runPresenter(i, stream, kind, device) {
+  const p = pres[i];
+  const track = stream.getVideoTracks()[0];
+  p.stream = stream; p.kind = kind; p.device = device || ""; p.label = track.label; p.error = "";
+  p.pump = startFramePump(track, PKT_PRESENTER, PRES_HEIGHT, PRES_FPS, i, PRES_JPEG);
+  track.addEventListener("ended", () => { if (pres[i].stream === stream) { stopPresenter(i); renderPresenter(i); sendStatus(); } });
+}
+
+async function startPresenterCamera(i) {
+  const p = pres[i];
+  const device = p.want.device;
+  if (p.stream && p.kind === "camera" && p.device === device) return;
+  stopPresenter(i);
+  try {
+    const video = { width: { ideal: 1280 }, height: { ideal: 720 } };
+    if (device) video.deviceId = { exact: device };
+    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    if (pres[i].want.kind !== "camera") { stream.getTracks().forEach((t) => t.stop()); return; }
+    runPresenter(i, stream, "camera", device);
+    $("camPermRow").classList.add("hidden");
+    refreshCameras();
+  } catch (e) {
+    p.error = e.name === "NotAllowedError" ? "Camera permission needed - click Allow cameras above."
+      : e.name === "NotFoundError" || e.name === "OverconstrainedError" ? "That camera isn't connected."
+      : "Couldn't start the camera (" + e.name + ").";
+    if (e.name === "NotAllowedError") $("camPermRow").classList.remove("hidden");
+  }
+  renderPresenter(i); sendStatus();
+}
+
+async function startPresenterTab(i) {
+  stopPresenter(i);
+  try {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: { ideal: PRES_FPS }, height: { ideal: 720 } }, audio: false,
+      selfBrowserSurface: "exclude", surfaceSwitching: "include",
+    });
+    runPresenter(i, stream, pres[i].want.kind === "web" ? "web" : "tab", "");
+  } catch (e) {
+    pres[i].error = "Sharing was cancelled or blocked (" + e.name + ").";
+  }
+  renderPresenter(i); sendStatus();
+}
+
+function applyPresenterWishes(slots) {
+  slots.slice(0, PRESENTERS).forEach((w, i) => {
+    const p = pres[i];
+    const before = backdropUrl(i);
+    p.want = { kind: w.kind || "off", device: w.device || "", url: w.url || "", bg: w.bg || "00ff00" };
+    if (p.want.kind === "off" || (p.stream && p.kind !== p.want.kind)) { stopPresenter(i); p.error = ""; }
+    if (p.want.kind !== "web") closeWebPage(i);
+    else if (p.win && !p.win.closed && backdropUrl(i) !== before) p.win.location.href = backdropUrl(i);
+    if (p.want.kind === "camera") startPresenterCamera(i);
+    renderPresenter(i);
+  });
+  sendStatus();
+}
+
+async function refreshCameras() {
+  try {
+    const all = await navigator.mediaDevices.enumerateDevices();
+    cameraList = all.filter((d) => d.kind === "videoinput").map((d, n) => ({ id: d.deviceId, label: d.label || ("Camera " + (n + 1)) }));
+  } catch (_) { cameraList = []; }
+  sendStatus();
+}
+
+$("camPermBtn").onclick = async () => {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    s.getTracks().forEach((t) => t.stop());
+    $("camPermRow").classList.add("hidden");
+    await refreshCameras();
+    pres.forEach((p, i) => { if (p.want.kind === "camera") startPresenterCamera(i); });
+  } catch (e) { $("camPermRow").querySelector(".status").textContent = "Camera permission was refused (" + e.name + ")."; }
+};
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener("devicechange", refreshCameras);
+  buildPresenterRows();
+  pres.forEach((_, i) => renderPresenter(i));
+  refreshCameras();
+}
+
+$("shareBtn").onclick = startShare;
+$("stopBtn").onclick = stopShare;
+$("camBtn").onclick = toggleCam;
+if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+  $("shareStatus").innerHTML = '<span class="err">This browser can\'t share tabs. Use Brave, Chrome or Edge.</span>';
+  $("shareBtn").disabled = true;
+}
+connect();
+</script>
+</body>
+</html>

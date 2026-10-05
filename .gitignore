@@ -1,0 +1,14 @@
+# Redot / Godot editor cache (rebuilt on open)
+.godot/
+
+# Built exes and their data (rebuild with Project > Export)
+exported/
+
+# Downloaded tools (tools/get_tools.ps1 fetches them again)
+tools/*.exe
+
+# Backups and big test videos kept out of history
+_backup/
+/reaction*.ogv
+/reaction*.ogv.uid
+
