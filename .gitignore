@@ -12,3 +12,6 @@ _backup/
 /reaction*.ogv
 /reaction*.ogv.uid
 
+
+# Temporary copies the editor makes of GDExtension DLLs
+addons/**/~*.dll
