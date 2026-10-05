@@ -51,6 +51,15 @@ var _chart: SeatingChart
 var _section_label: Label
 var _section_boxes: Dictionary = {}       # group -> CheckBox (the picked section's platforms)
 var _capacity_label: Label
+var _texts: Dictionary = {}               # setting key -> LineEdit (text settings)
+var _syncing: bool = false                # a control is being set to match a setting (don't write it back)
+var _curtain_buttons: Array[Button] = []
+var _net_status: Label
+var _net_peers: VBoxContainer
+var _net_host_btn: Button
+var _net_join_btn: Button
+var _net_leave_btn: Button
+var _net_medium: HBoxContainer
 
 
 func _ready() -> void:
@@ -72,6 +81,8 @@ func _ready() -> void:
 	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_ndi_label())
 	_on_chat_status(ChatFeed.get_status())
 	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _refresh_curtain_label())
+	EventBus.net_state_changed.connect(_on_net_state)
+	_on_net_state(NetSession.get_info())
 	if bool(AppState.get_setting("panel_window")):
 		_apply_window_mode.call_deferred()
 
@@ -295,7 +306,8 @@ func _build() -> void:
 	outer.add_child(_tabs)
 	# every tab scrolls, so nothing is cut off at the bottom of a small screen / window
 	for page: Control in [_build_source_tab(), _build_room_tab(), _build_react_tab(), _build_audio_tab(),
-			_build_chat_tab(), _build_audience_tab(), _build_seating_tab(), _build_games_tab(), _build_presenters_tab()]:
+			_build_chat_tab(), _build_audience_tab(), _build_seating_tab(), _build_games_tab(), _build_presenters_tab(),
+			_build_together_tab()]:
 		var sc := ScrollContainer.new()
 		sc.name = page.name
 		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -471,12 +483,14 @@ func _build_curtain_controls(v: VBoxContainer) -> void:
 	v.add_child(_heading("Stage curtain (B, Shift+B = reveal)"))
 	var row := HFlowContainer.new()
 	v.add_child(row)
-	row.add_child(_button("Close", func() -> void: AppState.set_curtain(true)))
-	row.add_child(_button("Open", func() -> void: AppState.set_curtain(false)))
-	row.add_child(_button("Reveal", func() -> void: AppState.reveal_curtain()))
-	row.add_child(_button("Be right back", func() -> void:
-		AppState.set_setting("curtain_sign", "Be right back")
-		AppState.set_curtain(true)))
+	_curtain_buttons = [_button("Close", func() -> void: AppState.set_curtain(true)),
+		_button("Open", func() -> void: AppState.set_curtain(false)),
+		_button("Reveal", func() -> void: AppState.reveal_curtain()),
+		_button("Be right back", func() -> void:
+			AppState.set_setting("curtain_sign", "Be right back")
+			AppState.set_curtain(true))]
+	for b in _curtain_buttons:
+		row.add_child(b)
 	_curtain_label = Label.new()
 	_curtain_label.modulate = Color(1, 1, 1, 0.7)
 	row.add_child(_curtain_label)
@@ -1142,8 +1156,132 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 		e.release_focus())
 	e.focus_exited.connect(apply)
 	h.add_child(e)
+	_texts[key] = e
 	return h
 
+
+## Streaming together (autoload/net_session.gd, docs/MULTIPLAYER.md).
+func _build_together_tab() -> Control:
+	var v := _tab("Together")
+	v.add_child(_heading("Streaming together"))
+	v.add_child(_hint("Up to four people in the same room. The host runs the show (room, curtain, presenters); guests fly their own camera and stream their own view. Chat reactions from every channel play for everyone. Connect over Tailscale: guests type the host's 100.x address."))
+	var name_row := _text_setting("together_name", "Your name", "shown to the others")
+	(name_row.get_child(1) as Control).tooltip_text = "The name the others see next to your camera and in the list below."
+	v.add_child(name_row)
+	var pw_row := _text_setting("together_password", "Password", "everyone types the same one")
+	var pw := pw_row.get_child(1) as LineEdit
+	pw.secret = true
+	pw.tooltip_text = "The session password. The host picks it (at least 4 characters) and tells the guests. It stays on this PC; only a scrambled check of it is sent."
+	v.add_child(pw_row)
+
+	v.add_child(_heading("Host"))
+	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["all", "Any network"], ["local", "This PC only"]])
+	bind.tooltip_text = "Where guests can reach you. Tailscale is the safe choice: only your Tailscale network can connect. Any network also lets PCs on your home network in. This PC only is for testing two copies side by side."
+	v.add_child(bind)
+	_net_host_btn = _button("Host a session", func() -> void: NetSession.host())
+	_net_host_btn.tooltip_text = "Start a session others can join. The address to give them appears below."
+	v.add_child(_net_host_btn)
+
+	v.add_child(_heading("Join"))
+	var addr := _text_setting("together_address", "Host address", "e.g. 100.101.102.103 (add :port if not 7350)")
+	(addr.get_child(1) as Control).tooltip_text = "The host's address, shown on their Together tab. Over Tailscale it starts with 100."
+	v.add_child(addr)
+	_net_join_btn = _button("Join", func() -> void: NetSession.join())
+	_net_join_btn.tooltip_text = "Connect to the host. Your room, curtain and presenters then follow theirs."
+	v.add_child(_net_join_btn)
+
+	_net_leave_btn = _button("Leave / stop hosting", func() -> void: NetSession.leave())
+	_net_leave_btn.tooltip_text = "End your part in the session. Everything stays as it is now."
+	v.add_child(_net_leave_btn)
+	_net_status = _hint("")
+	v.add_child(_net_status)
+	_net_medium = HBoxContainer.new()
+	var mh := _hint("Every guest draws the whole room while streaming. Medium graphics keeps it smooth.")
+	mh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_net_medium.add_child(mh)
+	var use_med := _button("Use Medium", func() -> void: AppState.set_setting("graphics_quality", "medium"))
+	use_med.tooltip_text = "Switch this PC to Medium graphics (Room tab > Performance)."
+	_net_medium.add_child(use_med)
+	var keep := _button("No thanks", func() -> void: NetSession.dismiss_medium())
+	keep.tooltip_text = "Keep your graphics setting."
+	_net_medium.add_child(keep)
+	v.add_child(_net_medium)
+
+	v.add_child(_heading("In the session"))
+	_net_peers = VBoxContainer.new()
+	v.add_child(_net_peers)
+	var cams := _check("together_show_cameras", "Show the others' cameras")
+	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
+	v.add_child(cams)
+	return v
+
+
+func _on_net_state(info: Dictionary) -> void:
+	if _net_status == null:
+		return
+	var role := String(info.get("role", "off"))
+	_net_status.text = String(info.get("status", ""))
+	_net_status.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if bool(info.get("error", false)) else Color(1, 1, 1, 0.78))
+	_net_host_btn.disabled = role != "off"
+	_net_join_btn.disabled = role != "off"
+	_net_leave_btn.disabled = role == "off"
+	_net_medium.visible = bool(info.get("suggest_medium", false))
+	for c in _net_peers.get_children():
+		c.queue_free()
+	var peers: Array = info.get("peers", [])
+	if peers.is_empty():
+		_net_peers.add_child(_hint("Nobody yet."))
+	for p: Dictionary in peers:
+		var row := HBoxContainer.new()
+		var l := Label.new()
+		var id := int(p["id"])
+		var text := String(p["name"])
+		if id == 1:
+			text += " (host)"
+		if bool(p["me"]):
+			text += " (you)"
+		if id != 1 and bool(p["cohost"]) and role != "host":
+			text += " - co-host"
+		l.text = text
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(l)
+		if role == "host" and id != 1:
+			var co := CheckBox.new()
+			co.text = "Co-host"
+			co.button_pressed = bool(p["cohost"])
+			co.tooltip_text = "Let this guest change the room, curtain and presenters too."
+			co.toggled.connect(func(on: bool) -> void: NetSession.set_cohost(id, on))
+			row.add_child(co)
+			var rm := _button("Remove", func() -> void: NetSession.remove_peer(id))
+			rm.tooltip_text = "Send this guest out of the session."
+			row.add_child(rm)
+		_net_peers.add_child(row)
+	_refresh_locks()
+
+
+## A guest who isn't a co-host can't change shared things: those controls are greyed out.
+func _refresh_locks() -> void:
+	for d: Dictionary in [_sliders, _checks, _options, _colors, _texts]:
+		for key: String in d:
+			if NetSession.is_shared(key):
+				_lock(d[key], key)
+	if _room_select:
+		_lock(_room_select, "room")
+	for b in _curtain_buttons:
+		_lock(b, "curtain")
+
+
+func _lock(c: Control, what: String) -> void:
+	var locked := NetSession.is_locked(what)
+	if not c.has_meta("tip"):
+		c.set_meta("tip", c.tooltip_text)
+	if c is Range:
+		(c as Range).editable = not locked
+	elif c is LineEdit:
+		(c as LineEdit).editable = not locked
+	elif c is BaseButton:
+		(c as BaseButton).disabled = locked
+	c.tooltip_text = "The host controls this while you're a guest." if locked else String(c.get_meta("tip"))
 
 # ── EventBus handlers ────────────────────────────────────────
 func _on_chat_status(info: Dictionary) -> void:
@@ -1348,9 +1486,13 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 	if _sliders.has(key):
 		var s: HSlider = _sliders[key]
 		s.set_value_no_signal(float(value) * float(s.get_meta("scale", 1.0)))
+		_syncing = true
 		s.value_changed.emit(s.value)  # refresh the number label only
+		_syncing = false
 	if _checks.has(key):
 		(_checks[key] as CheckBox).set_pressed_no_signal(bool(value))
+	if _texts.has(key) and not (_texts[key] as LineEdit).has_focus():
+		(_texts[key] as LineEdit).text = String(value)
 	if _colors.has(key):
 		(_colors[key] as ColorPickerButton).color = value
 	if _options.has(key):
@@ -1501,6 +1643,8 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 	s.value_changed.connect(func(x: float) -> void:
 		if not num.has_focus():
 			num.text = fmt % x
+		if _syncing:
+			return      # only matching a setting that changed elsewhere (it may round differently)
 		var raw := x / scale
 		AppState.set_setting(key, int(raw) if is_int else raw))
 	num.text_submitted.connect(func(t: String) -> void:

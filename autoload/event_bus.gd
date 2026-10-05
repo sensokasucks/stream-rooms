@@ -102,3 +102,12 @@ signal board_changed(board: Dictionary)
 ## A board went away.
 signal board_cleared(board_id: String)
 
+
+# ── Streaming together (NetSession, docs/MULTIPLAYER.md) ─────
+## The session changed: {role: "off" | "host" | "guest", status: String, error: bool,
+## address: String, cohost: bool, peers: [{id, name, cohost}]}. NetSession.get_info() has the same.
+signal net_state_changed(info: Dictionary)
+## Someone else's camera moved (peer id, their name, camera transform in the room).
+signal net_camera_moved(peer_id: int, peer_name: String, xform: Transform3D)
+## Someone left the session (their camera marker goes away).
+signal net_peer_left(peer_id: int)

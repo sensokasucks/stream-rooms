@@ -193,6 +193,7 @@ func _on_reaction(d: Dictionary) -> void:
 	if id != "":
 		_pending[id] = RESULT_TIMEOUT
 	_remember(d, "sent")
+	d["seed"] = randi()        # streaming together: the same throw lands in the same place on every PC
 	EventBus.reaction_play.emit(d)
 
 
@@ -243,7 +244,7 @@ func _meter_add(d: Dictionary) -> void:
 		EventBus.reaction_meter_changed.emit(mid, String(m["label"]), 0.0, goal)
 		if get_effect_ids().has(payoff) and payoff != "meter":
 			EventBus.reaction_play.emit({"id": "", "reaction": mid, "label": String(m["label"]), "effect": payoff,
-				"params": {"count": 160}, "count": 1, "target": null, "from": d.get("from", {}), "route": "game"})
+				"params": {"count": 160}, "count": 1, "target": null, "from": d.get("from", {}), "route": "game", "seed": randi()})
 
 
 func _decay_meters(delta: float) -> void:

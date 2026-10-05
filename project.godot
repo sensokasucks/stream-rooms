@@ -12,6 +12,7 @@ config_version=5
 
 config/name="Stream Rooms"
 config/description="Swappable 3D rooms whose screen shows a video file or a shared browser tab, lights the room, and has reaction-stream tools."
+config/version="2026.10.1"
 run/main_scene="res://core/main.tscn"
 config/features=PackedStringArray("26.2", "Forward Plus", "Redot")
 
@@ -31,6 +32,7 @@ ChatFeed="*res://autoload/chat_feed.gd"
 AudienceManager="*res://autoload/audience_manager.gd"
 EmoteCache="*res://autoload/emote_cache.gd"
 Reactions="*res://autoload/reactions.gd"
+NetSession="*res://autoload/net_session.gd"
 
 [debug]
 

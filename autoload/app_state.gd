@@ -164,6 +164,13 @@ const BASE_DEFAULTS: Dictionary = {
 	"ndi_audio_buffer_ms": 500.0,  # NDI sound kept queued (patched plugin): rides out network / OBS hiccups, adds delay
 	"max_height": 720,           # file/URL conversion height
 	"loop_files": true,
+	# Streaming together (Together tab, autoload/net_session.gd)
+	"together_name": "",         # your name in the session ("" = the profile name, or "Host" / "Guest")
+	"together_address": "",      # the host's address to join, e.g. 100.101.102.103 (Tailscale)
+	"together_port": 7350,       # the port the host listens on
+	"together_password": "",     # session password (stays on this PC)
+	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local"
+	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
 }
 
 ## Presenter podiums (rooms with PRESENTER_<n> markers). Keys are "presenter_<n>_<field>", n = 1..4.
@@ -208,6 +215,9 @@ var _room_has_reply_screen: bool = false
 ## Launch profile from `-- --mp-profile=guest1` ("" = the normal app). Lets several copies run on
 ## one PC for multiplayer testing without sharing a settings file or capture ports.
 var _profile: String = _parse_profile(OS.get_cmdline_user_args())
+## Set by NetSession while a guest: asked before shared state changes (room, curtain, shared
+## settings). call(what: String, value: Variant) -> bool; false = don't change it here.
+var net_gate: Callable
 
 
 # ── Launch profile ───────────────────────────────────────────
@@ -279,6 +289,8 @@ func set_setting(key: String, value: Variant) -> void:
 		push_warning("Unknown setting: %s" % key)
 		return
 	if _settings.get(key) == value:
+		return
+	if net_gate.is_valid() and not bool(net_gate.call(key, value)):
 		return
 	_settings[key] = value
 	EventBus.setting_changed.emit(key, value)
@@ -365,6 +377,8 @@ func set_curtain(closed: bool, style: String = "normal") -> void:
 	if closed and not bool(get_setting("curtain_enabled")):
 		EventBus.status_message.emit("The curtain is switched off (Room tab > Curtain).", false)
 		return
+	if net_gate.is_valid() and not bool(net_gate.call("curtain", [closed, style])):
+		return
 	_curtain_closed = closed
 	EventBus.curtain_changed.emit(closed, style)
 	EventBus.status_message.emit("Curtain closed" if closed else "Curtain opening", false)
@@ -447,6 +461,8 @@ func set_room_has_reply_screen(on: bool) -> void:
 func request_room(room_id: String) -> void:
 	if RoomCatalog.get_info(room_id) == null:
 		EventBus.status_message.emit("Unknown room: %s" % room_id, true)
+		return
+	if net_gate.is_valid() and not bool(net_gate.call("room", room_id)):
 		return
 	set_setting("room_id", room_id)
 	EventBus.room_requested.emit(room_id)

@@ -466,9 +466,40 @@ point costs, opt-outs) and the game plays it. Set reactions up in Stream Core:
   (effects, attached to each room by RoomHost). Test: `_tests/test_reactions.tscn` (runs a fake
   Stream Core).
 
-## Streaming together (multiplayer, in progress)
+## Streaming together (Together tab)
 
-Up to four people will be able to share one room: a host who runs the show and up to three guests, each streaming their own view. This is being built in steps; the first step is below.
+Up to four people share one room: a **host** who runs the show and up to three **guests**. Everyone runs their own copy of Stream Rooms, flies their own camera and streams their own view from their own OBS. Only small messages travel between the PCs (no video), so it needs almost no bandwidth.
+
+### Connecting
+
+Everyone connects over [Tailscale](https://tailscale.com) (free). Nobody has to open ports on their router.
+
+1. Everyone installs Tailscale and joins the host's Tailscale network.
+2. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 4 characters) and tells the guests.
+3. The host leaves **Listen on** at **Tailscale (else this PC only)** and clicks **Host a session**. The tab then shows the address guests should use, starting with 100.
+4. Each guest types that address into **Host address** and clicks **Join**.
+
+**Leave / stop hosting** ends your part. A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
+
+The password stays on your PC. Only a scrambled check of it is sent, which proves you know it without giving it away.
+
+### What's shared
+
+- **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
+- **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone. A presenter showing the host's **camera**, **browser tab** or **NDI** only exists on the host's PC, so guests see a silhouette there instead.
+- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
+
+Each person keeps their own camera, graphics, sound, chat windows, audience and Stream Core connection.
+
+### Host and guests
+
+Guests can't change the shared things. Those controls are greyed out, and the hotkeys show a message saying the host controls them. The host can tick **Co-host** next to a guest's name to let them change the room, curtain and presenters too, or click **Remove** to send them out.
+
+**Show the others' cameras** shows a small floating camera with each person's name, so you can see where the others are looking.
+
+Every guest draws the whole room while streaming. When you join on **High** or **Custom** graphics, the tab offers **Use Medium** (or **No thanks**).
+
+Not shared yet: the big screen's video. Watching the same video in sync comes next.
 
 ### Running two copies on one PC
 
@@ -485,6 +516,8 @@ A copy started with a profile:
 - shows the name in the window title, for example **Stream Rooms [guest1]**.
 
 Profile names can use letters, numbers, `_` and `-` (up to 24 characters).
+
+To connect them, set the host's **Listen on** to **This PC only**, click **Host a session**, and have the second copy join `127.0.0.1`.
 
 ### A note on copyright
 

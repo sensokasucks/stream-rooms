@@ -1,6 +1,12 @@
 # Multiplayer rooms: plan
 
-Status: Phase 1 started (October 2026). The `--mp-profile` option is done. The owner's answers to the open questions are at the end.
+Status: Phase 1 built (October 2026): `--mp-profile`, `autoload/net_session.gd` (host / join, password challenge, version check, co-hosts), the Together tab, shared room / curtain / house lights / presenters, reactions for everyone, camera markers (`core/net_markers.gd`). Tested with copies on one PC (`_tests/test_together`); still to do for Phase 1: two PCs over Tailscale. The owner's answers to the open questions are at the end.
+
+Implementation notes:
+- Guests are stopped by `AppState.net_gate` (room, curtain and shared setting keys). A co-host's change goes to the host as a request and comes back with the host's broadcast.
+- The password is checked in SceneMultiplayer's authentication step (nonce + SHA-256), so nothing can be called before it passes. `server_relay` is off; the host forwards reactions and cameras.
+- Reactions: each PC keeps its own Stream Core rules and results. A reaction played on any PC is sent to the host and on to the others with a `seed` (ReactionLayer seeds the RNG with it) and an id starting `net-`, so nobody reports it to Core twice. `object_image` is dropped (it's on the sender's Core).
+- Close the ENet peer with `call_deferred` from network signals: closing inside SceneMultiplayer's poll crashes the engine.
 
 ## Goal
 

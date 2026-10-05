@@ -265,6 +265,8 @@ func _sender_slot(from: Variant) -> int:
 # ── Playing ──────────────────────────────────────────────────
 func _on_play(d: Dictionary) -> void:
 	var id := String(d.get("id", ""))
+	if d.has("seed"):
+		seed(int(d["seed"]))     # the same random spread on every PC in a shared session
 	var outcome := _play(d)
 	EventBus.reaction_finished.emit(id, outcome)
 

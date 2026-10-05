@@ -8,6 +8,7 @@ extends Node3D
 
 func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
+	add_child(NetMarkers.new())     # the others' cameras while streaming together
 
 	var start_id: String = AppState.get_setting("room_id")
 	if RoomCatalog.get_info(start_id) == null and not RoomCatalog.get_ids().is_empty():
