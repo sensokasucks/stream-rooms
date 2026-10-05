@@ -466,6 +466,30 @@ point costs, opt-outs) and the game plays it. Set reactions up in Stream Core:
   (effects, attached to each room by RoomHost). Test: `_tests/test_reactions.tscn` (runs a fake
   Stream Core).
 
+## Streaming together (multiplayer, in progress)
+
+Up to four people will be able to share one room: a host who runs the show and up to three guests, each streaming their own view. This is being built in steps; the first step is below.
+
+### Running two copies on one PC
+
+To try a host and a guest side by side, start a second copy with a profile name:
+
+```
+redot.windows.editor.x86_64.exe --path . -- --mp-profile=guest1
+```
+
+A copy started with a profile:
+
+- keeps its own settings in `settings_guest1.cfg`, so it never changes your normal settings,
+- moves the browser-tab ports up so both copies can run at once (`guest1` uses 8775 / 8776, `guest2` uses 8785 / 8786, and so on; a name without a number uses +10),
+- shows the name in the window title, for example **Stream Rooms [guest1]**.
+
+Profile names can use letters, numbers, `_` and `-` (up to 24 characters).
+
+### A note on copyright
+
+When several channels watch the same video together, each one is broadcasting it. That is the same risk as showing it on one channel, just on more channels at once. Only share videos you're allowed to stream.
+
 ## Adding a room
 Create `rooms/<name>/` with:
 - a scene whose root uses `rooms/room.gd`, containing:
@@ -623,4 +647,4 @@ Included rooms:
   *Export > Resources > Filters to export non-resource files*.
 - `rooms/`: one folder per room
 
-The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppState's defaults.
+The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppState's defaults (a copy started with `--mp-profile` shifts them, see Streaming together).

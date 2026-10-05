@@ -59,7 +59,11 @@ Each test in `_tests/` is a scene (`test_x.tscn` plus `test_x.gd`). It builds `c
 <redot console exe> --path . _tests/test_performance.tscn -- C:/temp/sr_tests
 ```
 
-(Use the console build of the Redot editor exe. Ask the owner for its path the first time and note it here.)
+(Use the console build of the Redot editor exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64edot.windows.editor.x86_64.console.exe`.)
+
+- If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. Run the exe once with `--headless --path . --import` to rebuild it.
+- The exe can crash with a segmentation fault while quitting after a test. Judge a test by its printed results, not by its exit code.
+- `test_mp_profile` needs a profile after the output folder (`-- C:/temp/sr_tests --mp-profile=guest2`). It writes `settings_<profile>.cfg`, not the live settings, so two copies with different profiles may run at once.
 
 - **Tests change the real settings.** `user://settings.cfg` is the owner's live settings file (in the Redot app_userdata folder, `Stream Rooms`). Back it up before a test session and restore it afterwards. Run tests **one at a time**, never in parallel.
 - Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`.

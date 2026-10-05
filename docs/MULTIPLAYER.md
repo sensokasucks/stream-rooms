@@ -1,6 +1,6 @@
 # Multiplayer rooms: plan
 
-Status: planned, not started (October 2026). The owner agreed on the overall shape. Questions still open are listed at the end; **ask the owner before deciding them**.
+Status: Phase 1 started (October 2026). The `--mp-profile` option is done. The owner's answers to the open questions are at the end.
 
 ## Goal
 
@@ -82,10 +82,10 @@ Then run a host plus one or two guests side by side. Write automated scene tests
 
 Update README.md (a new "Streaming together" section) and the tests in each phase.
 
-## Open decisions (ask the owner)
+## Decisions (owner, 5 October 2026)
 
-- **Reactions:** when a viewer on a guest's channel throws a tomato, does everyone see it, or only that guest?
-- **Guest permissions:** can guests change the room, curtain or screen, or only the host? Maybe a per-guest "co-host" tick.
-- **Panel name** for the multiplayer tab, and whether guests see the host's controls as locked or hidden.
-- **Guest hardware:** every guest renders the full room while streaming. Should joining suggest Medium or Low graphics quality?
-- **Copyright:** synced playback means up to four channels broadcasting the same video. It's the same risk as one channel today, multiplied. Worth stating in the README.
+- **Reactions:** a tomato thrown by a viewer on any channel (host or guest) plays for **everyone** in the room.
+- **Guest permissions:** only the host changes the room, curtain and screen. The host can tick **co-host** per guest to let that guest change them too.
+- **Panel:** the tab is called **Together**. Guests see host-only controls **locked** (greyed out) with a tooltip saying the host controls them, not hidden.
+- **Guest hardware:** joining as a guest **suggests Medium** graphics quality, and the guest can say no.
+- **Copyright:** the README states the risk plainly (done, in "Streaming together").

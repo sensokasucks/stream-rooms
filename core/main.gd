@@ -17,10 +17,14 @@ func _ready() -> void:
 	if bool(AppState.get_setting("curtain_start_closed")):
 		AppState.set_curtain(true, "instant")
 
+	get_window().title = AppState.with_profile(str(ProjectSettings.get_setting("application/config/name")))
+
 	# Optional: play a file/URL passed on the command line:  redot --path . -- "C:/clip.mp4"
-	var args := OS.get_cmdline_user_args()
-	if args.size() > 0:
-		EventBus.file_play_requested.emit.call_deferred(args[0])
+	# Options such as --mp-profile=guest1 start with "--" and aren't files.
+	for arg in OS.get_cmdline_user_args():
+		if not arg.begins_with("--"):
+			EventBus.file_play_requested.emit.call_deferred(arg)
+			break
 
 
 func _on_room_ready(room: Room, _info: RoomInfo) -> void:

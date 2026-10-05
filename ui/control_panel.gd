@@ -176,7 +176,7 @@ func _apply_window_mode() -> void:
 			return
 		get_tree().root.gui_embed_subwindows = false
 		_window = Window.new()
-		_window.title = "Stream Rooms — controls"
+		_window.title = AppState.with_profile("Stream Rooms — controls")
 		_window.wrap_controls = false
 		var w := int((maxf(panel_width, _panel.get_combined_minimum_size().x) + 20.0) * _panel_scale())     # (every tab name fits)
 		_window.min_size = Vector2i(w, 360)

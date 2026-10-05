@@ -1,8 +1,8 @@
 extends Node
-## SaveManager: persists AppState settings to user://settings.cfg.
+## SaveManager: persists AppState settings to user://settings.cfg
+## (user://settings_<profile>.cfg when started with --mp-profile, see AppState.get_settings_path).
 ## Saves are debounced so dragging a slider doesn't write the file every frame.
 
-const PATH: String = "user://settings.cfg"
 const SECTION: String = "settings"
 const SAVE_DELAY: float = 0.75
 
@@ -21,7 +21,7 @@ func _ready() -> void:
 
 func load_settings() -> void:
 	var cfg := ConfigFile.new()
-	if cfg.load(PATH) != OK:
+	if cfg.load(AppState.get_settings_path()) != OK:
 		return
 	var saved: Dictionary = {}
 	for key in cfg.get_section_keys(SECTION) if cfg.has_section(SECTION) else PackedStringArray():
@@ -34,7 +34,7 @@ func save_now() -> void:
 	var all := AppState.get_all_settings()
 	for key in all.keys():
 		cfg.set_value(SECTION, key, all[key])
-	var err := cfg.save(PATH)
+	var err := cfg.save(AppState.get_settings_path())
 	if err != OK:
 		push_warning("Could not save settings (%d)" % err)
 

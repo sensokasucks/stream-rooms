@@ -80,7 +80,7 @@ func _ready() -> void:
 	capture_server.presenter_frame_ready.connect(_on_presenter_frame)
 	capture_server.audio_received.connect(_on_capture_audio)
 	capture_server.sender_status_changed.connect(_on_sender_status)
-	capture_server.start(AppState.get_setting("capture_http_port"), AppState.get_setting("capture_ws_port"))
+	capture_server.start(AppState.get_capture_port("capture_http_port"), AppState.get_capture_port("capture_ws_port"))
 
 	EventBus.file_play_requested.connect(_on_file_play_requested)
 	EventBus.file_stop_requested.connect(stop_file)
@@ -376,7 +376,7 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "ndi_audio_buffer_ms":
 		_ndi_buffer_apply_in = 0.4     # apply once the slider stops moving
 	if key == "capture_http_port" or key == "capture_ws_port":
-		capture_server.start(AppState.get_setting("capture_http_port"), AppState.get_setting("capture_ws_port"))
+		capture_server.start(AppState.get_capture_port("capture_http_port"), AppState.get_capture_port("capture_ws_port"))
 
 
 func _apply_ndi_buffer_setting() -> void:

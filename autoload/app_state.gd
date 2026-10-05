@@ -205,6 +205,53 @@ var _curtain_owner: int = 0
 var _show_dimmed: bool = false
 var _room_has_webcam_frame: bool = false
 var _room_has_reply_screen: bool = false
+## Launch profile from `-- --mp-profile=guest1` ("" = the normal app). Lets several copies run on
+## one PC for multiplayer testing without sharing a settings file or capture ports.
+var _profile: String = _parse_profile(OS.get_cmdline_user_args())
+
+
+# ── Launch profile ───────────────────────────────────────────
+## Finds "--mp-profile=<name>" in the user arguments. Names become part of a file name,
+## so only letters, digits, "_" and "-" are allowed (up to 24 characters).
+static func _parse_profile(args: PackedStringArray) -> String:
+	for a in args:
+		if not a.begins_with("--mp-profile="):
+			continue
+		var name := a.trim_prefix("--mp-profile=").strip_edges()
+		var re := RegEx.create_from_string("^[A-Za-z0-9_-]{1,24}$")
+		if re.search(name) == null:
+			push_warning("Ignoring --mp-profile=%s: use up to 24 letters, digits, _ or -" % name)
+			return ""
+		return name
+	return ""
+
+
+func get_profile() -> String:
+	return _profile
+
+
+## Where SaveManager keeps this copy's settings.
+func get_settings_path() -> String:
+	return "user://settings.cfg" if _profile.is_empty() else "user://settings_%s.cfg" % _profile
+
+
+## How far this copy's capture ports move up so copies on one PC don't clash:
+## no profile = 0, "guest2" = 20 (the number at the end x 10, at least 10), a name without a number = 10.
+func get_port_offset() -> int:
+	if _profile.is_empty():
+		return 0
+	var m := RegEx.create_from_string("(\\d+)$").search(_profile)
+	return maxi(10, (int(m.get_string(1)) % 100) * 10) if m else 10
+
+
+## Adds the profile to a window title ("Stream Rooms [guest1]") so copies are easy to tell apart.
+func with_profile(title: String) -> String:
+	return title if _profile.is_empty() else "%s [%s]" % [title, _profile]
+
+
+## A capture port setting ("capture_http_port" / "capture_ws_port") with the profile offset added.
+func get_capture_port(key: String) -> int:
+	return int(get_setting(key)) + get_port_offset()
 
 
 # ── Settings ─────────────────────────────────────────────────
