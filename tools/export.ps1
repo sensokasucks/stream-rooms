@@ -56,6 +56,12 @@ echo.
 echo The game has closed. The same text is in %%APPDATA%%\Redot\app_userdata\Stream Rooms\logs\godot.log
 pause
 "@
+# for a PC where starting the microphone (auto-duck) freezes the game: turns auto-duck off for good
+Set-Content -Path (Join-Path $Out "Start without microphone.bat") -Encoding ascii -Value @"
+@echo off
+cd /d "%~dp0"
+start "" StreamRooms.exe -- --no-mic
+"@
 
 Write-Host ""
 Write-Host "Done: $Out ($mb MB of game data)."

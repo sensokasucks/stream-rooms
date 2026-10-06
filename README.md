@@ -59,6 +59,10 @@ walls get collision shapes for this (only these rays use them).
 **Auto-duck:** in the *React* tab the video audio drops (14 dB by default) while your mic hears
 you, then comes back up. Set **Talk threshold** by watching the mic meter. Windows may ask for
 microphone permission the first time.
+On some PCs starting the microphone freezes the game (it happened on a PC with no speakers set up).
+The game notices: the next start switches **Lower the video while the mic hears me** off and says
+so. Starting with `-- --no-mic` (or **Start without microphone.bat** next to an exported game)
+does the same on purpose.
 
 ### Chat windows by platform (Chat tab)
 Twitch's terms ask for its chat to be kept apart from other platforms' chat, so every chat

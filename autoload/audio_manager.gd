@@ -6,10 +6,17 @@ extends Node
 ##   Video     - file playback and captured tab audio (reverb + ducking live here)
 ##   Ambience  - room background loop
 ##   Mic       - microphone input, only analysed for ducking; never heard
+##
+## Starting the microphone can hang the whole game on some PCs (Windows' sound system never
+## answers). So a marker file is written just before it starts and removed once it's running: if
+## the game finds the marker at the next start, the last start hung there, and auto-duck is
+## switched off instead of hanging again. "-- --no-mic" on the command line switches it off too.
 
 const VIDEO_BUS: String = "Video"
 const AMBIENCE_BUS: String = "Ambience"
 const MIC_BUS: String = "Mic"
+## How long the microphone must run before the start counts as fine.
+const MIC_OK_AFTER_S: float = 3.0
 
 ## How long talking must stop before the video comes back up.
 @export var duck_hold_s: float = 0.45
@@ -27,6 +34,7 @@ var _speaker_fx: Array[AudioEffect] = []
 var _room_info: RoomInfo
 var _mic_capture: AudioEffectCapture
 var _mic_player: AudioStreamPlayer
+var _mic_marker: String = "user://mic_starting" + ("" if AppState.get_profile().is_empty() else "_" + AppState.get_profile())
 var _ambience_player: AudioStreamPlayer
 
 var _duck_gain_db: float = 0.0     # current ducking offset (0 or negative)
@@ -65,6 +73,14 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.curtain_covering_changed.connect(func(_c: bool) -> void: _apply_curtain_mute())
 	_apply_volumes()
+	var hung := FileAccess.file_exists(_mic_marker)
+	if hung or OS.get_cmdline_user_args().has("--no-mic"):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mic_marker))
+		print("[audio] %s: auto-duck switched off" % ("the microphone hung the last start" if hung else "--no-mic"))
+		AppState.set_setting("duck_enabled", false)     # (saved, so later starts skip it too)
+		var why := "Starting the microphone froze the game last time" if hung else "Started without the microphone"
+		get_tree().create_timer(4.0).timeout.connect(func() -> void:   # (once the panel can show it)
+			EventBus.status_message.emit(why + ", so auto-duck is off now. Tick it again in the React tab to try again.", true))
 	_update_mic_input()
 
 
@@ -187,6 +203,10 @@ func _update_mic_input() -> void:
 	var want: bool = AppState.get_setting("duck_enabled")
 	var input_on: bool = ProjectSettings.get_setting("audio/driver/enable_input", false)
 	if want and input_on:
+		if AudioServer.get_driver_name() == "Dummy":
+			print("[audio] no sound device: auto-duck can't listen")
+			EventBus.status_message.emit("No sound device here, so auto-duck can't hear you.", true)
+			return
 		var devices := AudioServer.get_input_device_list()
 		if devices.size() <= 1 and (devices.is_empty() or devices[0] == "Default"):
 			print("[audio] no microphone found: auto-duck can't listen")
@@ -199,7 +219,13 @@ func _update_mic_input() -> void:
 			add_child(_mic_player)
 		if not _mic_player.playing:
 			print("[audio] microphone on (", AudioServer.input_device, ")")
+			var marker := FileAccess.open(_mic_marker, FileAccess.WRITE)
+			if marker:
+				marker.store_string("starting")
+				marker.close()        # (written to disk now: if play() hangs, the next start finds it)
 			_mic_player.play()
+			get_tree().create_timer(MIC_OK_AFTER_S).timeout.connect(func() -> void:
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(_mic_marker)))
 	elif _mic_player and _mic_player.playing:
 		print("[audio] microphone off")
 		_mic_player.stop()
