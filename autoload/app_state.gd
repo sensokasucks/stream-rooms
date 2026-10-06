@@ -172,7 +172,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_address": "",      # the host's address to join, e.g. 100.101.102.103 (Tailscale)
 	"together_port": 7350,       # the port the host listens on
 	"together_password": "",     # session password (stays on this PC)
-	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local"
+	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local" | "tunnel" (Cloudflare)
+	"together_live_relay": false, # live feed through VDO.Ninja's relay servers, so host and guests don't see each other's addresses
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
 	"together_shared_audience": true, # host: everyone's chat sits in one audience, the same on every PC
 	"together_audience_areas": true,  # host: each streamer's viewers get their own part of the audience

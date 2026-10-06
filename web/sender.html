@@ -371,7 +371,7 @@ function stopShare() {
 // Host: the shared tab is published under a random stream name the game makes for the session.
 // Guest: "Watch" receives it and hands it to the game exactly like a tab shared here.
 // The SDK (MPL-2.0, web/vdoninja-sdk.min.js) is only loaded when this is used.
-let live = { role: "off", id: "", key: "", live: false };
+let live = { role: "off", id: "", key: "", live: false, relay: false };
 let vdo = null;              // the VDO.Ninja connection (host: publishing, guest: viewing)
 let vdoPublished = null;     // host: the stream being published
 let watching = false;        // guest: clicked Watch
@@ -416,14 +416,16 @@ async function vdoClose() {
 }
 async function vdoOpen() {
   await loadSdk();
-  const v = new VDONinjaSDK({ salt: "vdo.ninja", password: live.key });
+  // relay: every connection goes through VDO.Ninja's TURN servers, so the browsers never learn
+  // each other's addresses (turnServers null = the SDK fetches the list itself)
+  const v = new VDONinjaSDK({ salt: "vdo.ninja", password: live.key, forceTURN: !!live.relay, turnServers: null });
   await v.connect();
   return v;
 }
 
 function applyLiveFeed(msg) {
-  const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live };
-  const changed = next.role !== live.role || next.id !== live.id || next.key !== live.key;
+  const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live, relay: !!msg.relay };
+  const changed = next.role !== live.role || next.id !== live.id || next.key !== live.key || next.relay !== live.relay;
   live = next;
   $("liveSection").classList.toggle("hidden", live.role === "off");
   $("liveHost").classList.toggle("hidden", live.role !== "publish");

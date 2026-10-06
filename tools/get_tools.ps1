@@ -1,5 +1,6 @@
 # Downloads yt-dlp.exe and ffmpeg.exe into this tools folder so the game can
-# fetch YouTube videos and convert any video to .ogv (Ogg Theora).
+# fetch YouTube videos and convert any video to .ogv (Ogg Theora), and
+# cloudflared.exe for the Together tab's Cloudflare tunnel.
 # Run: right-click this file > "Run with PowerShell"
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -7,6 +8,9 @@ $here = $PSScriptRoot
 
 Write-Host "Downloading yt-dlp..."
 Invoke-WebRequest "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe" -OutFile (Join-Path $here "yt-dlp.exe")
+
+Write-Host "Downloading cloudflared (for the Together tab's Cloudflare tunnel)..."
+Invoke-WebRequest "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -OutFile (Join-Path $here "cloudflared.exe")
 
 Write-Host "Downloading ffmpeg (GPL build with Theora/Vorbis)..."
 $zip = Join-Path $env:TEMP "ffmpeg-win64-gpl.zip"

@@ -67,6 +67,8 @@ var _net_leave_btn: Button
 var _net_medium: HBoxContainer
 var _net_live: HBoxContainer
 var _net_live_label: Label
+var _net_copy_btn: Button
+var _net_addr_label: Label
 
 
 func _ready() -> void:
@@ -1232,16 +1234,31 @@ func _build_together_tab() -> Control:
 	v.add_child(pw_row)
 
 	v.add_child(_heading("Host"))
-	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["all", "Any network"], ["local", "This PC only"]])
-	bind.tooltip_text = "Where guests can reach you. Tailscale is the safe choice: only your Tailscale network can connect. Any network also lets PCs on your home network in. This PC only is for testing two copies side by side."
+	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["tunnel", "Cloudflare tunnel (hide my address)"],
+		["all", "Any network"], ["local", "This PC only"]])
+	bind.tooltip_text = "Where guests can reach you. Tailscale: only your Tailscale network can connect. Cloudflare tunnel: a one-off trycloudflare.com address that hides your real address from everyone (needs cloudflared.exe in the tools folder; no Tailscale or router setup). Any network also lets PCs on your home network in. This PC only is for testing two copies side by side."
 	v.add_child(bind)
+	var host_row := HBoxContainer.new()
+	v.add_child(host_row)
 	_net_host_btn = _button("Host a session", func() -> void: NetSession.host())
-	_net_host_btn.tooltip_text = "Start a session others can join. The address to give them appears below."
-	v.add_child(_net_host_btn)
+	_net_host_btn.tooltip_text = "Start a session others can join. Then click Copy address and give it to your guests."
+	host_row.add_child(_net_host_btn)
+	# the address never shows on screen (an OBS window capture would put it on the stream): copy it instead
+	_net_copy_btn = _button("Copy address", func() -> void:
+		var a := String(NetSession.get_info().get("address", ""))
+		if a != "":
+			DisplayServer.clipboard_set(a)
+			EventBus.status_message.emit("Address copied. Paste it to your guests.", false))
+	_net_copy_btn.tooltip_text = "Copies the address guests need to the clipboard. It isn't shown on screen, so it can't end up on your stream."
+	host_row.add_child(_net_copy_btn)
+	_net_addr_label = Label.new()
+	_net_addr_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	host_row.add_child(_net_addr_label)
 
 	v.add_child(_heading("Join"))
-	var addr := _text_setting("together_address", "Host address", "e.g. 100.101.102.103 (add :port if not 7350)")
-	(addr.get_child(1) as Control).tooltip_text = "The host's address, shown on their Together tab. Over Tailscale it starts with 100."
+	var addr := _text_setting("together_address", "Host address", "paste what the host sent you")
+	(addr.get_child(1) as LineEdit).secret = true      # (hidden, like the password: it could be on your stream)
+	(addr.get_child(1) as Control).tooltip_text = "The address the host copied for you: a 100.x Tailscale address (add :port if it isn't 7350), or a trycloudflare.com address. It shows as dots so it can't end up on your stream."
 	v.add_child(addr)
 	_net_join_btn = _button("Join", func() -> void: NetSession.join())
 	_net_join_btn.tooltip_text = "Connect to the host. Your room, curtain and presenters then follow theirs."
@@ -1277,6 +1294,9 @@ func _build_together_tab() -> Control:
 	v.add_child(_heading("In the session"))
 	_net_peers = VBoxContainer.new()
 	v.add_child(_net_peers)
+	var relay := _check("together_live_relay", "Relay the live feed (hide addresses)")
+	relay.tooltip_text = "Host: send the live feed through VDO.Ninja's relay servers instead of straight between browsers, so you and your guests never see each other's addresses. Adds a little delay and can lower the quality."
+	v.add_child(relay)
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
@@ -1299,6 +1319,9 @@ func _on_net_state(info: Dictionary) -> void:
 	_net_status.text = String(info.get("status", ""))
 	_net_status.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if bool(info.get("error", false)) else Color(1, 1, 1, 0.78))
 	_net_host_btn.disabled = role != "off"
+	var has_addr := role == "host" and String(info.get("address", "")) != ""
+	_net_copy_btn.visible = has_addr
+	_net_addr_label.text = ("tunnel: ••••••.trycloudflare.com" if NetSession.is_tunnel() else "••••••••") if has_addr else ""
 	_net_join_btn.disabled = role != "off"
 	_net_leave_btn.disabled = role == "off"
 	_net_medium.visible = bool(info.get("suggest_medium", false))

@@ -6,6 +6,7 @@ extends Node
 ## headless Chrome, uses "?autowatch" (no click needed). The guest writes its PASS / FAIL lines to a
 ## file in the output folder; the host prints them at the end.
 ##   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_live_feed -TimeLimit 300
+## With "--relay" after the profile (run the exe directly) the feed is relayed (addresses hidden).
 ## With "--manual-watch" after the profile (run the exe directly), the guest doesn't open Chrome:
 ## open its sender page (the address is printed) in a normal browser and click "Watch" yourself.
 
@@ -60,6 +61,8 @@ func _ready() -> void:
 	AppState.set_setting("together_password", PASSWORD)
 	AppState.set_setting("together_address", "127.0.0.1:%d" % SESSION_PORT)
 	AppState.set_setting("together_live_feed", true)
+	# "--relay" after the profile: the feed goes through VDO.Ninja's relay servers (hide addresses)
+	AppState.set_setting("together_live_relay", args.has("--relay"))
 	_main = load("res://core/main.tscn").instantiate()
 	add_child(_main)
 	(_main.get_node("ScreenFeed").capture_server as Node).audio_received.connect(func(frames: PackedVector2Array) -> void:
@@ -115,6 +118,7 @@ func _host() -> void:
 
 	var args := PackedStringArray(["--path", ProjectSettings.globalize_path("res://"), "--resolution", "960x540",
 		"--position", "980,0", "res://_tests/test_live_feed.tscn", "--", _out, "--mp-profile=liveguest2", "--role=guest"]
+		+ (["--relay"] if OS.get_cmdline_user_args().has("--relay") else [])
 		+ (["--manual-watch"] if OS.get_cmdline_user_args().has("--manual-watch") else []))
 	_check(OS.create_process(OS.get_executable_path(), args) > 0, "started the guest copy")
 	_check(await _wait_for(func() -> bool: return (NetSession.get_info()["peers"] as Array).size() == 2, 90.0), "the guest joined")

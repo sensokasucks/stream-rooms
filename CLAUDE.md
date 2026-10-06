@@ -13,7 +13,7 @@ The owner streams with it. Changes should be practical, tested and explained in 
 - New `.gd` files get a `.gd.uid` file when the editor opens them. Keep the `.uid` files (and commit them).
 - Optional NDI support comes from the `addons/godot-ndi` GDExtension (patched; the original is in `_backup/`). The app must keep working when the extension isn't there.
 - Optional Spout input comes from the `addons/godot-spout` GDExtension (built here for Redot's 4.5 API with Vulkan, patched; see its `STREAM_ROOMS_PATCH.md`). Same rule: the app must keep working without it. `core/spout_receiver.gd` looks it up by name.
-- `tools/` holds `ffmpeg.exe` and `yt-dlp.exe`, used by `core/video_loader.gd`.
+- `tools/` holds `ffmpeg.exe` and `yt-dlp.exe` (used by `core/video_loader.gd`) and `cloudflared.exe` (the Together tab's Cloudflare tunnel, `autoload/net_session.gd`). `tools/get_tools.ps1` downloads all three.
 
 ## Related project: Fridge Stream Core
 
@@ -72,7 +72,7 @@ It rebuilds the editor's class cache first, runs each test one at a time with `-
 - Every test should end with "exit 0" in the runner table. Anything else means Redot crashed (the old quit crash in the NDI plugin is fixed; see `addons/godot-ndi/STREAM_ROOMS_PATCH.md`).
 - Running a test by hand without a profile still changes the live settings: back up `settings.cfg` first (Redot app_userdata folder, `Stream Rooms`).
 - Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`, `test_mp_profile`, `test_together`, `test_panel_clicks`, `test_spout`, `test_watch_together`, `test_mic_safety`, `test_shared_audience`.
-- `test_live_feed` needs the internet (VDO.Ninja) and Google Chrome, so run it on its own: `-Tests test_live_feed -TimeLimit 300`.
+- `test_live_feed` needs the internet (VDO.Ninja) and Google Chrome, so run it on its own: `-Tests test_live_feed -TimeLimit 300`. `test_tunnel` needs the internet and `tools/cloudflared.exe`: `-Tests test_tunnel -TimeLimit 400`.
 - Known open issue (Oct 2026): some tests (crowd, performance, reactions, accessibility, spout) sometimes end with an access-violation exit code after all their results are printed. It comes and goes between runs and isn't tied to one plugin; the Windows event log shows the fault inside the Redot exe. Judge those runs by their PASS / FAIL lines and rerun; still to be tracked down.
 - Run tests while the owner's own Stream Rooms / VTube Studio / sender pages are closed: a running Spout sender or a sender page connected to a test profile's ports can make `test_spout` fail.
 - Look at the screenshots a test saves. Many bugs are visual.

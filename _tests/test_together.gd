@@ -87,6 +87,7 @@ func _host() -> void:
 	AppState.set_setting("together_password", PASSWORD)
 	NetSession.host()
 	_check(NetSession.get_role() == "host", "hosting started (%s)" % NetSession.get_info()["status"])
+	_check(not String(NetSession.get_info()["status"]).contains("127.0.0.1"), "the status never shows an address")
 
 	for p in ["testguest", "testbad"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://settings_%s.cfg" % p))
@@ -173,6 +174,10 @@ func _unit_checks() -> void:
 	_check(NetSession.is_web_address("https://vdo.ninja/?view=abc") and NetSession.is_web_address(""), "web addresses are allowed")
 	_check(not NetSession.is_web_address("file:///C:/x.html") and not NetSession.is_web_address("C:/x.html")
 		and not NetSession.is_web_address("https://a b"), "file paths and odd addresses are refused")
+	_check(NetSession.join_url("100.1.2.3", 7350) == "ws://100.1.2.3:7350" and NetSession.join_url("100.1.2.3:7400", 7350) == "ws://100.1.2.3:7400"
+		and NetSession.join_url("abc-def.trycloudflare.com", 7350) == "wss://abc-def.trycloudflare.com"
+		and NetSession.join_url(" https://abc.trycloudflare.com/ ", 7350) == "https://abc.trycloudflare.com"
+		and NetSession.join_url("", 7350) == "", "typed addresses turn into the right connection address")
 	var r := NetSession._shareable_reaction({"id": "abc", "effect": "throw", "count": 999,
 		"params": {"object": "🍅", "object_image": {"url": "/reactions/images/x.png"}},
 		"target": {"type": "user", "name": "bob", "extra": 1}, "from": {"display_name": "Al", "token": "x"}})

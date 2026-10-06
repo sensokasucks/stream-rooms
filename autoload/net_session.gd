@@ -3,6 +3,11 @@ extends Node
 ## running their own copy of Stream Rooms and drawing the room from their own camera. Only
 ## small state messages travel between the PCs, never video.
 ##
+## The connection is a WebSocket (not UDP), so it can go through a Cloudflare tunnel: with
+## "together_bind" = "tunnel" the host runs cloudflared (tools/cloudflared.exe), gets a one-off
+## https://....trycloudflare.com address, and guests join through Cloudflare. Nobody sees anyone's
+## real address then. Addresses never go in status messages (they show on the stream).
+##
 ## The host is in charge: guests ask, the host decides and tells everyone. AppState.net_gate
 ## stops a guest changing shared state (room, curtain, the shared settings) on its own; a
 ## co-host's change goes to the host as a request, and comes back once the host applied it.
@@ -18,9 +23,12 @@ extends Node
 
 const PROTOCOL: int = 1
 const MAX_GUESTS: int = 3
-const AUTH_TIMEOUT: float = 8.0
+const AUTH_TIMEOUT: float = 20.0        # (a fresh Cloudflare tunnel can be slow for its first connection)
+const HANDSHAKE_TIMEOUT: float = 20.0
 const CAMERA_SEND_GAP: float = 0.1      # camera updates at most 10 times a second
 const MIN_PASSWORD: int = 4
+const TUNNEL_TIMEOUT: float = 40.0      # cloudflared usually has the address within 5 s
+const PING_GAP: float = 2.0             # guest: round-trip time to the host, for video sync
 ## Synced video: start without whoever isn't ready after this long (they catch up when they are).
 const READY_TIMEOUT: float = 120.0
 
@@ -50,11 +58,18 @@ var _applying: bool = false             # guest: applying the host's state (the 
 var _medium_dismissed: bool = false
 var _cam_wait: float = 0.0
 var _last_cam: Transform3D
+var _tunnel_pid: int = -1               # host: the cloudflared process
+var _tunnel_log: String = ""
+var _tunnel_wait: float = -1.0
+var _tunnel_warm: HTTPRequest           # host: one request through the new tunnel, so it's awake before guests use it
+var _ping_wait: float = 0.0
+var _rtt: float = 0.0                   # guest: seconds for a message to the host and back
 ## The host's live feed (its shared tab, through VDO.Ninja): a random stream name and key per
 ## session, only ever sent to guests who passed the password check.
 var _live_id: String = ""
 var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
+var _live_relay: bool = false           # guest: the host wants the feed relayed (addresses hidden)
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
 var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
 var _video_count: int = 0
@@ -106,6 +121,12 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_video_timeout(delta)
+	_tunnel_poll(delta)
+	if _role == "guest":
+		_ping_wait -= delta
+		if _ping_wait <= 0.0:
+			_ping_wait = PING_GAP
+			_net_ping.rpc_id(1, Time.get_ticks_msec())
 	if _roster_wait >= 0.0:
 		_roster_wait -= delta
 		if _roster_wait < 0.0:
@@ -179,9 +200,11 @@ func host() -> void:
 		ip = "*"
 	elif bind == "auto" and ts != "":
 		ip = ts
-	var peer := ENetMultiplayerPeer.new()
-	peer.set_bind_ip(ip)
-	if peer.create_server(port, MAX_GUESTS) != OK:
+	if bind == "tunnel" and _cloudflared() == "":
+		_set_status("cloudflared.exe isn't in the tools folder. Run tools\\get_tools.ps1 to download it, then try again.", true)
+		return
+	var peer := _make_peer()
+	if peer.create_server(port, ip) != OK:
 		_set_status("Couldn't start hosting on port %d. Is another copy already hosting on it?" % port, true)
 		return
 	multiplayer.multiplayer_peer = peer
@@ -199,9 +222,13 @@ func host() -> void:
 		_address = "%s:%d" % [ip, port]
 	_last_cam = Transform3D()
 	set_process(true)
-	var where := "Guests join with %s." % _address
+	if bind == "tunnel":
+		_address = ""
+		_tunnel_start(port)
+		return
+	var where := "Click Copy address and give it to your guests."
 	if ip == "127.0.0.1":
-		where += " Only copies on this PC can join" + (" (Tailscale isn't running)." if bind == "auto" else ".")
+		where = "Only copies on this PC can join" + (" (Tailscale isn't running)." if bind == "auto" else ".")
 	_set_status("Hosting. " + where)
 
 
@@ -212,24 +239,22 @@ func join() -> void:
 	if pw == "":
 		_set_status("Type the session password first.", true)
 		return
-	var addr := String(AppState.get_setting("together_address")).strip_edges()
-	var port := int(AppState.get_setting("together_port"))
-	if addr.contains(":"):
-		port = addr.get_slice(":", 1).to_int()
-		addr = addr.get_slice(":", 0)
-	if addr == "" or port <= 0 or port > 65535:
-		_set_status("Type the host's address first (for example 100.101.102.103).", true)
+	var url := join_url(String(AppState.get_setting("together_address")), int(AppState.get_setting("together_port")))
+	if url == "":
+		_set_status("Type the host's address first (a 100.x Tailscale address, or the host's trycloudflare.com address).", true)
 		return
-	var peer := ENetMultiplayerPeer.new()
-	if peer.create_client(addr, port) != OK:
-		_set_status("Couldn't connect to %s:%d." % [addr, port], true)
+	var peer := _make_peer()
+	if peer.create_client(url) != OK:
+		_set_status("Couldn't connect to the host.", true)
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "guest"
 	_peers.clear()
 	_refused = ""
-	_address = "%s:%d" % [addr, port]
-	_set_status("Connecting to %s..." % _address)
+	_rtt = 0.0
+	_ping_wait = 0.5
+	_address = url
+	_set_status("Connecting to the host...")
 
 
 func leave() -> void:
@@ -364,7 +389,7 @@ func _on_peer_connected(id: int) -> void:
 	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
 	for other: int in _cams:
 		_net_camera.rpc_id(id, other, _cams[other])
-	_set_status("%s joined. Guests join with %s." % [_peers[id]["name"], _address])
+	_set_status("%s joined." % _peers[id]["name"])
 
 
 func _on_peer_disconnected(id: int) -> void:
@@ -386,12 +411,12 @@ func _on_connected() -> void:
 	AppState.net_gate = _gate
 	_last_cam = Transform3D()
 	set_process(true)
-	_set_status("Joined the session at %s. The host controls the room, curtain and presenters." % _address)
+	_set_status("Joined the session. The host controls the room, curtain and presenters.")
 
 
 func _on_connection_failed() -> void:
 	if _role == "guest":
-		_close.call_deferred("Couldn't reach a host at %s. Check the address, and that the host is hosting." % _address, true)
+		_close.call_deferred("Couldn't reach the host. Check the address, and that the host is hosting. A new Cloudflare tunnel can need a second try.", true)
 
 
 func _on_server_disconnected() -> void:
@@ -423,6 +448,7 @@ func _close(message: String, is_error: bool = false) -> void:
 	AudienceManager.set_mirror(false)
 	AudienceManager.set_streamer_areas(0)
 	_address = ""
+	_tunnel_stop()
 	AppState.net_gate = Callable()
 	set_process(false)
 	if message != "":
@@ -456,7 +482,7 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_emit_state()
 	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
 		_update_audience_sharing()
-	if key == "together_live_feed" and _role == "host":
+	if (key == "together_live_feed" or key == "together_live_relay") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
 
@@ -743,11 +769,21 @@ func _apply_video_state() -> void:
 
 ## Round trip to the host in seconds (ENet keeps a running average).
 func _rtt_s() -> float:
-	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
-	if enet == null:
-		return 0.0
-	var host_peer := enet.get_peer(1)
-	return host_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) / 1000.0 if host_peer else 0.0
+	return _rtt
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_ping(sent_ms: int) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role == "host" and _peers.has(id):
+		_net_pong.rpc_id(id, sent_ms)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_pong(sent_ms: int) -> void:
+	if _from_host():
+		var sample := float(Time.get_ticks_msec() - sent_ms) / 1000.0
+		_rtt = sample if _rtt == 0.0 else _rtt * 0.7 + sample * 0.3
 
 
 # ── Shared audience ──────────────────────────────────────────
@@ -911,7 +947,8 @@ func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
 ## Guests: their sender page views it and hands it to their game like their own shared tab.
 func _live_info_for_guests() -> Dictionary:
 	var sharing := bool(AppState.get_setting("together_live_feed")) and AppState.get_source_mode() == "capture"
-	return {"id": _live_id, "key": _live_key, "live": sharing} if bool(AppState.get_setting("together_live_feed")) else {}
+	return {"id": _live_id, "key": _live_key, "live": sharing, "relay": bool(AppState.get_setting("together_live_relay"))} \
+		if bool(AppState.get_setting("together_live_feed")) else {}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -929,16 +966,17 @@ func _apply_live(info: Dictionary) -> void:
 	_live_id = id
 	_live_key = key
 	_live_on = id != "" and bool(info.get("live", false))
+	_live_relay = bool(info.get("relay", false))
 	_emit_live()
 	_emit_state()
 
 
 func _emit_live() -> void:
-	var info := {"role": "off", "id": "", "key": "", "live": false}
+	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
-		info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true}
+		info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": bool(AppState.get_setting("together_live_relay"))}
 	elif _role == "guest" and _live_id != "":
-		info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on}
+		info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay}
 	EventBus.live_feed_changed.emit(info)
 
 
@@ -1037,6 +1075,105 @@ func _net_guest_camera(x: Transform3D) -> void:
 	for other: int in _peers:
 		if other != 1 and other != id:
 			_net_camera.rpc_id(other, id, x)
+
+
+# ── Connection helpers ───────────────────────────────────────
+func _make_peer() -> WebSocketMultiplayerPeer:
+	var peer := WebSocketMultiplayerPeer.new()
+	peer.inbound_buffer_size = 4 * 1024 * 1024       # (a whole audience roster in one message)
+	peer.outbound_buffer_size = 4 * 1024 * 1024
+	peer.max_queued_packets = 4096
+	peer.handshake_timeout = HANDSHAKE_TIMEOUT   # (the default 3 s isn't enough through a cold tunnel)
+	return peer
+
+
+## The WebSocket address for what a guest typed: "ws://..." / "wss://..." as is, a trycloudflare
+## address as wss://, anything else as ws://host:port (the session port when none is given).
+static func join_url(typed: String, default_port: int) -> String:
+	var a := typed.strip_edges().trim_suffix("/")
+	if a == "":
+		return ""
+	if a.contains("://"):
+		return a
+	if a.ends_with(".trycloudflare.com"):
+		return "wss://" + a
+	if not a.contains(":"):
+		a = "%s:%d" % [a, default_port]
+	return "ws://" + a
+
+
+## Host: cloudflared.exe next to the exported game or in the project's tools folder ("" = missing).
+static func _cloudflared() -> String:
+	for d in [OS.get_executable_path().get_base_dir().path_join("tools"), ProjectSettings.globalize_path("res://tools")]:
+		var p: String = d.path_join("cloudflared.exe")
+		if FileAccess.file_exists(p):
+			return p
+	return ""
+
+
+## Host: a Try Cloudflare quick tunnel to this PC's session port. cloudflared writes its log to a
+## file; the one-off address is read from there (it takes a few seconds).
+func _tunnel_start(port: int) -> void:
+	_tunnel_log = ProjectSettings.globalize_path("user://cloudflared%s.log" % ("" if AppState.get_profile().is_empty() else "_" + AppState.get_profile()))
+	DirAccess.remove_absolute(_tunnel_log)
+	_tunnel_pid = OS.create_process(_cloudflared(), PackedStringArray(["tunnel", "--url", "http://127.0.0.1:%d" % port,
+		"--no-autoupdate", "--logfile", _tunnel_log]))
+	if _tunnel_pid <= 0:
+		_close("Couldn't start cloudflared.exe.", true)
+		return
+	_tunnel_wait = TUNNEL_TIMEOUT
+	_set_status("Hosting. Asking Cloudflare for a tunnel address...")
+
+
+func _tunnel_poll(delta: float) -> void:
+	if _tunnel_wait < 0.0:
+		return
+	_tunnel_wait -= delta
+	var text := FileAccess.get_file_as_string(_tunnel_log) if FileAccess.file_exists(_tunnel_log) else ""
+	var m := RegEx.create_from_string("https://[a-z0-9-]+\\.trycloudflare\\.com").search(text)
+	if m:
+		_tunnel_wait = -1.0
+		_tunnel_warm_up(m.get_string())
+		return
+	if _tunnel_wait <= 0.0 or (_tunnel_pid > 0 and not OS.is_process_running(_tunnel_pid)):
+		_tunnel_wait = -1.0
+		_close("Cloudflare didn't give a tunnel address (is this PC online?). Try again, or pick another Listen on option.", true)
+
+
+## A new quick tunnel takes a while to answer its first request (name lookup, Cloudflare's edge).
+## The host makes that first request itself, so the address works as soon as a guest gets it.
+func _tunnel_warm_up(url: String) -> void:
+	_tunnel_warm = HTTPRequest.new()
+	_tunnel_warm.timeout = 25.0
+	add_child(_tunnel_warm)
+	var announce := func() -> void:
+		if _tunnel_warm:
+			_tunnel_warm.queue_free()
+			_tunnel_warm = null
+		if _role != "host":
+			return
+		_address = url.trim_prefix("https://")
+		_set_status("Hosting through a Cloudflare tunnel. Click Copy address and give it to your guests. Nobody sees your real address.")
+	_tunnel_warm.request_completed.connect(func(_r: int, _c: int, _h: PackedStringArray, _b: PackedByteArray) -> void: announce.call())
+	if _tunnel_warm.request(url) != OK:
+		announce.call()
+	else:
+		_set_status("Hosting. Waking the tunnel up...")
+
+
+func _tunnel_stop() -> void:
+	_tunnel_wait = -1.0
+	if _tunnel_warm:
+		_tunnel_warm.queue_free()
+		_tunnel_warm = null
+	if _tunnel_pid > 0:
+		OS.kill(_tunnel_pid)
+		_tunnel_pid = -1
+
+
+## True while this host's address is a Cloudflare tunnel.
+func is_tunnel() -> bool:
+	return _role == "host" and _address.ends_with(".trycloudflare.com")
 
 
 # ── Helpers ──────────────────────────────────────────────────

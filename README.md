@@ -498,16 +498,34 @@ Up to four people share one room: a **host** who runs the show and up to three *
 
 ### Connecting
 
-Everyone connects over [Tailscale](https://tailscale.com) (free). Nobody has to open ports on their router.
+Two ways, and nobody has to open ports on their router either way:
 
-1. Everyone installs Tailscale and joins the host's Tailscale network.
-2. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 4 characters) and tells the guests.
-3. The host leaves **Listen on** at **Tailscale (else this PC only)** and clicks **Host a session**. The tab then shows the address guests should use, starting with 100.
-4. Each guest types that address into **Host address** and clicks **Join**.
+- **Cloudflare tunnel (hides your address).** The host sets **Listen on** to **Cloudflare tunnel
+  (hide my address)**. Hosting then runs `cloudflared` in the background and gets a one-off address
+  like `something.trycloudflare.com`. Guests reach you through Cloudflare, so nobody ever sees
+  anybody's real address, and no Tailscale is needed. The address is new every session. It needs
+  `cloudflared.exe` in the `tools` folder (`tools\get_tools.ps1` downloads it; exports include it).
+  Try Cloudflare is a free service with no uptime promise, and a brand-new tunnel sometimes needs a
+  second try from a guest.
+- **Tailscale** ([tailscale.com](https://tailscale.com), free). Everyone joins the host's Tailscale
+  network and the host leaves **Listen on** at **Tailscale (else this PC only)**. Guests on the
+  same Tailscale network do see each other's Tailscale addresses.
+
+Then:
+
+1. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 4 characters) and tells the guests.
+2. The host clicks **Host a session**, then **Copy address**, and sends the copied address to the guests (in a private message, not on stream).
+3. Each guest pastes it into **Host address** and clicks **Join**.
 
 **Leave / stop hosting** ends your part. A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
 
-The password stays on your PC. Only a scrambled check of it is sent, which proves you know it without giving it away.
+**Nothing to leak on stream:** the host address is never shown on screen, only copied, and the
+**Host address** box shows dots, like the password. Messages on screen never contain an address
+either. The password stays on your PC: only a scrambled check of it is sent.
+
+**A proxy for guests** isn't something the game can do (Redot can't send its connection through
+an HTTP or SOCKS proxy). With the tunnel, a guest's address is seen only by Cloudflare, never by the
+host or the other guests. A guest who wants to hide from Cloudflare too can run a VPN.
 
 ### What's shared
 
@@ -575,6 +593,9 @@ anything live: a game, a stream you're reacting to, a website.
 - It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
   about 0.2 to 1 second behind the host. Each guest costs the host roughly 3 to 6 Mbps of upload,
   so a host on a slow connection may want to untick it.
+- Straight from browser to browser means the host's and the guests' browsers see each other's
+  addresses. **Relay the live feed (hide addresses)** (Together tab, host) sends it through
+  VDO.Ninja's relay servers instead, so they don't. It adds a little delay and can lower the quality.
 - The stream's name and key are random for each session and only go to guests who got the
   password right.
 
