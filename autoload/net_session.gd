@@ -21,6 +21,8 @@ const MAX_GUESTS: int = 3
 const AUTH_TIMEOUT: float = 8.0
 const CAMERA_SEND_GAP: float = 0.1      # camera updates at most 10 times a second
 const MIN_PASSWORD: int = 4
+## Synced video: start without whoever isn't ready after this long (they catch up when they are).
+const READY_TIMEOUT: float = 120.0
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
 const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
@@ -48,6 +50,11 @@ var _applying: bool = false             # guest: applying the host's state (the 
 var _medium_dismissed: bool = false
 var _cam_wait: float = 0.0
 var _last_cam: Transform3D
+var _video_count: int = 0
+## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
+var _video: Dictionary = {}
+## Guest: the host's video. {id, url, ready, state: [position, playing, time received in ms] or []}
+var _guest_video: Dictionary = {}
 
 
 func _ready() -> void:
@@ -71,6 +78,10 @@ func _ready() -> void:
 	EventBus.room_requested.connect(_on_room_requested)
 	EventBus.curtain_changed.connect(_on_curtain_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
+	EventBus.file_prepared.connect(_on_file_prepared)
+	EventBus.file_prepare_failed.connect(_on_file_prepare_failed)
+	EventBus.file_progress.connect(_on_file_progress)
+	EventBus.source_changed.connect(_on_source_changed)
 	set_process(false)
 
 
@@ -80,6 +91,7 @@ func _exit_tree() -> void:
 
 
 func _process(delta: float) -> void:
+	_video_timeout(delta)
 	_cam_wait -= delta
 	if _cam_wait > 0.0:
 		return
@@ -158,6 +170,8 @@ func host() -> void:
 	_role = "host"
 	_peers = {1: {"name": display_name(), "cohost": true}}
 	_cams.clear()
+	_video.clear()
+	AppState.net_gate = _gate
 	if ip == "*":
 		_address = "%s:%d" % [ts if ts != "" else _lan_ip(), port]
 	else:
@@ -375,6 +389,8 @@ func _close(message: String, is_error: bool = false) -> void:
 	_nonces.clear()
 	_hello_names.clear()
 	_cams.clear()
+	_video.clear()
+	_guest_video.clear()
 	_address = ""
 	AppState.net_gate = Callable()
 	set_process(false)
@@ -386,11 +402,14 @@ func _close(message: String, is_error: bool = false) -> void:
 
 
 # ── Shared state ─────────────────────────────────────────────
-## Guest: asked by AppState before shared state changes here.
+## Asked by AppState before shared state changes here. Host: only a video for the big screen
+## (a web link is loaded on every PC and started together). Guest: anything shared.
 func _gate(what: String, value: Variant) -> bool:
+	if _role == "host":
+		return what != "video" or _host_video_request(String(value))
 	if _role != "guest" or _applying:
 		return true
-	if what != "room" and what != "curtain" and not _shared.has(what):
+	if what != "room" and what != "curtain" and what != "video" and not _shared.has(what):
 		return true
 	if _is_cohost():
 		_net_request.rpc_id(1, what, value)
@@ -420,7 +439,10 @@ func _snapshot() -> Dictionary:
 	var s := {}
 	for k: String in _shared:
 		s[k] = AppState.get_setting(k)
-	return {"room": String(AppState.get_setting("room_id")), "curtain": AppState.is_curtain_closed(), "settings": s}
+	var snap := {"room": String(AppState.get_setting("room_id")), "curtain": AppState.is_curtain_closed(), "settings": s}
+	if bool(_video.get("live", false)):
+		snap["video"] = {"id": int(_video["id"]), "url": String(_video["url"])}
+	return snap
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -433,6 +455,9 @@ func _net_snapshot(snap: Dictionary) -> void:
 			_apply_setting(String(k), s[k])
 	_apply_room(snap.get("room"))
 	_apply_curtain(snap.get("curtain"), "instant")
+	var v: Variant = snap.get("video")
+	if v is Dictionary and (v as Dictionary).get("id") is int and (v as Dictionary).get("url") is String:
+		_guest_load_video(int(v["id"]), String(v["url"]))      # joined mid-video: catch up once loaded
 	_emit_state()
 
 
@@ -483,6 +508,9 @@ func _net_request(what: String, value: Variant) -> void:
 	elif what == "curtain":
 		if value is Array and (value as Array).size() == 2 and value[0] is bool and CURTAIN_STYLES.has(String(value[1])):
 			AppState.set_curtain(value[0], String(value[1]))
+	elif what == "video":
+		if value is String and value != "" and is_web_address(value):
+			EventBus.file_play_requested.emit(value)
 	elif _setting_ok(what, value):
 		AppState.set_setting(what, value)
 
@@ -522,6 +550,162 @@ func _setting_ok(key: String, value: Variant) -> bool:
 	if key.ends_with("_url") and not is_web_address(String(value)):
 		return false
 	return true
+
+
+# ── Synced video ─────────────────────────────────────────────
+## Host: a video for the big screen. A web link is downloaded and converted on every PC (each with
+## its own yt-dlp / ffmpeg), everyone waits on the first frame, and the host starts them all at
+## once. A file on the host's PC can't reach the guests, so it plays here only.
+func _host_video_request(input: String) -> bool:
+	if _peers.size() < 2:
+		return true                  # nobody to watch with: play as usual
+	if not (input.begins_with("http://") or input.begins_with("https://")) or not is_web_address(input):
+		EventBus.status_message.emit("Guests can't see a file from your PC, so only you will see it. Use a web link (YouTube...) to watch together.", false)
+		if not _video.is_empty():
+			_to_guests("_net_video_stop", [int(_video["id"])])     # (they'd keep watching the old one)
+			_video.clear()
+		return true
+	_video_count += 1
+	_video = {"id": _video_count, "url": input, "ready": {}, "live": false, "started": false, "wait": READY_TIMEOUT}
+	_to_guests("_net_video_load", [_video_count, input])
+	_set_status("Loading the video on every PC. It starts when everyone's ready.")
+	EventBus.file_prepare_requested.emit(input)
+	return false
+
+
+func _on_file_prepared(input: String) -> void:
+	if _role == "host" and not _video.is_empty() and input == String(_video["url"]) and not bool(_video["live"]):
+		_video["live"] = true
+		_mark_ready(1)
+	elif _role == "guest" and not _guest_video.is_empty() and input == String(_guest_video["url"]):
+		_guest_video["ready"] = true
+		_net_video_ready.rpc_id(1, int(_guest_video["id"]))
+		_apply_video_state()      # (a late joiner catches up with the last position it heard)
+
+
+func _on_file_prepare_failed(input: String, message: String) -> void:
+	if _role == "host" and not _video.is_empty() and input == String(_video["url"]):
+		_set_status("The video didn't load here: " + message, true)
+		_video.clear()
+		_to_guests("_net_video_stop", [_video_count])
+	elif _role == "guest" and not _guest_video.is_empty() and input == String(_guest_video["url"]):
+		_net_video_failed.rpc_id(1, int(_guest_video["id"]), message.left(200))
+
+
+func _mark_ready(peer_id: int) -> void:
+	_video["ready"][peer_id] = true
+	for id: int in _peers:
+		if not _video["ready"].has(id):
+			return
+	_start_video()
+
+
+func _video_timeout(delta: float) -> void:
+	if _role != "host" or _video.is_empty() or bool(_video["started"]) or not bool(_video["live"]):
+		return
+	_video["wait"] = float(_video["wait"]) - delta
+	if float(_video["wait"]) <= 0.0:
+		var late := PackedStringArray()
+		for id: int in _peers:
+			if not _video["ready"].has(id):
+				late.append(_peer_name(id))
+		EventBus.status_message.emit("Starting without %s (still loading; they'll catch up)." % ", ".join(late), false)
+		_start_video()
+
+
+func _start_video() -> void:
+	if bool(_video["started"]):
+		return
+	_video["started"] = true
+	_set_status("Everyone's ready: playing.")
+	EventBus.file_sync_requested.emit(0.0, true)
+	_to_guests("_net_video_state", [int(_video["id"]), 0.0, true])
+
+
+## Host: where the video is, about once a second (and on pause / resume), to every guest.
+func _on_file_progress(position: float, playing: bool) -> void:
+	if _role == "host" and bool(_video.get("started", false)):
+		_to_guests("_net_video_state", [int(_video["id"]), position, playing])
+
+
+func _on_source_changed(mode: String) -> void:
+	# the host's screen moved on from the synced video (Stop, another source): guests stop too
+	if _role == "host" and bool(_video.get("live", false)) and mode != "file":
+		_to_guests("_net_video_stop", [int(_video["id"])])
+		_video.clear()
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_video_ready(id: int) -> void:
+	var from := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(from) or _video.is_empty() or id != int(_video["id"]):
+		return
+	if bool(_video["started"]):
+		return       # a late joiner: the next position update brings it along
+	_mark_ready(from)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_video_failed(id: int, message: String) -> void:
+	var from := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(from) or _video.is_empty() or id != int(_video["id"]):
+		return
+	EventBus.status_message.emit("%s couldn't load the video: %s" % [_peer_name(from), message.left(200)], true)
+	if not bool(_video["started"]):
+		_mark_ready(from)        # don't keep everyone waiting
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_video_load(id: int, url: String) -> void:
+	if _from_host():
+		_guest_load_video(id, url)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_video_state(id: int, position: float, playing: bool) -> void:
+	if not _from_host() or _guest_video.is_empty() or id != int(_guest_video["id"]):
+		return
+	_guest_video["state"] = [position, playing, Time.get_ticks_msec()]
+	_apply_video_state()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_video_stop(id: int) -> void:
+	if not _from_host() or _guest_video.is_empty() or id != int(_guest_video["id"]):
+		return
+	_guest_video.clear()
+	EventBus.file_stop_requested.emit()
+
+
+## Guest: download / convert the host's web link here, and wait on its first frame.
+func _guest_load_video(id: int, url: String) -> void:
+	if url == "" or not (url.begins_with("http://") or url.begins_with("https://")) or not is_web_address(url):
+		return           # never a file path from the network
+	_guest_video = {"id": id, "url": url, "ready": false, "state": []}
+	EventBus.status_message.emit("Loading the host's video...", false)
+	EventBus.file_prepare_requested.emit(url)
+
+
+## Guest: go where the host is, allowing for the time the message took (half the round trip)
+## and for how long ago it arrived.
+func _apply_video_state() -> void:
+	if _guest_video.is_empty() or not bool(_guest_video["ready"]) or (_guest_video["state"] as Array).is_empty():
+		return
+	var st: Array = _guest_video["state"]
+	var playing := bool(st[1])
+	var pos := float(st[0])
+	if playing:
+		pos += _rtt_s() * 0.5 + float(Time.get_ticks_msec() - int(st[2])) / 1000.0
+	EventBus.file_sync_requested.emit(pos, playing)
+
+
+## Round trip to the host in seconds (ENet keeps a running average).
+func _rtt_s() -> float:
+	var enet := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if enet == null:
+		return 0.0
+	var host_peer := enet.get_peer(1)
+	return host_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) / 1000.0 if host_peer else 0.0
 
 
 # ── Reactions ────────────────────────────────────────────────

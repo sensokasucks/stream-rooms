@@ -11,7 +11,9 @@ signal status(message: String)
 signal ready_to_play(path: String)
 signal failed(message: String)
 
-const CACHE_DIR := "user://video_cache"
+## (A copy started with --mp-profile keeps its own cache, so two copies on one PC never convert
+## into the same file at once.)
+var _cache_dir: String = "user://video_cache" if AppState.get_profile().is_empty() else "user://video_cache_%s" % AppState.get_profile()
 
 ## Max height of converted video. Lower = faster conversion.
 var max_height := 720
@@ -28,7 +30,7 @@ func request(raw: String) -> void:
 	if busy:
 		failed.emit("Still working on the previous video - hang on.")
 		return
-	DirAccess.make_dir_recursive_absolute(CACHE_DIR)
+	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	if input.begins_with("http://") or input.begins_with("https://"):
 		_start(_job_url.bind(input))
@@ -82,7 +84,7 @@ func _done(ok: bool, payload: String) -> void:
 func _job_local(path: String) -> void:
 	var abs_src := ProjectSettings.globalize_path(path)
 	var mtime := FileAccess.get_modified_time(path)
-	var out := "%s/%s_%d.ogv" % [CACHE_DIR, ("%s|%d" % [abs_src, mtime]).md5_text(), max_height]
+	var out := "%s/%s_%d.ogv" % [_cache_dir, ("%s|%d" % [abs_src, mtime]).md5_text(), max_height]
 	if FileAccess.file_exists(out):
 		_done(true, out)
 		return
@@ -97,7 +99,7 @@ func _job_local(path: String) -> void:
 
 func _job_url(url: String) -> void:
 	var key := url.md5_text()
-	var out := "%s/%s_%d.ogv" % [CACHE_DIR, key, max_height]
+	var out := "%s/%s_%d.ogv" % [_cache_dir, key, max_height]
 	if FileAccess.file_exists(out):
 		_done(true, out)
 		return
@@ -111,7 +113,7 @@ func _job_url(url: String) -> void:
 		return
 
 	_say("Downloading video with yt-dlp...")
-	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [CACHE_DIR, key])
+	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [_cache_dir, key])
 	var fmt := "bv*[height<=%d]+ba/b[height<=%d]/b" % [max_height, max_height]
 	var args := PackedStringArray([
 		"--no-playlist", "--no-progress", "--no-warnings",

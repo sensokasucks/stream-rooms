@@ -15,6 +15,16 @@ signal playback_active_changed(active: bool)
 
 # ── Requests (UI / hotkeys -> systems) ───────────────────────
 signal file_play_requested(input: String)
+## Streaming together: load a file / URL like file_play_requested, but stop on its first frame
+## (paused at 0) and announce file_prepared instead of playing, so every PC can start together.
+signal file_prepare_requested(input: String)
+signal file_prepared(input: String)
+signal file_prepare_failed(input: String, message: String)
+## Streaming together: put the playing file at this position (seconds), playing or paused.
+## Small differences are left alone (see ScreenFeed.SYNC_TOLERANCE_S).
+signal file_sync_requested(position: float, playing: bool)
+## The playing file's position, about once a second and whenever it pauses / resumes.
+signal file_progress(position: float, playing: bool)
 signal file_stop_requested
 signal file_pause_toggle_requested
 signal camera_preset_requested(index: int)

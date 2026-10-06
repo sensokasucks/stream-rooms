@@ -13,6 +13,10 @@ extends Node
 
 const IDLE_COLOR: Color = Color(0.06, 0.08, 0.16)
 const MAX_VIDEO_QUEUE: int = 90
+## Streaming together: a synced video further than this from the host's position jumps to it.
+const SYNC_TOLERANCE_S: float = 0.3
+## ...and doesn't jump again for this long (a jump itself takes a moment to settle).
+const SYNC_COOLDOWN_S: float = 1.5
 ## Extra audio kept beyond the target delay before old chunks are dropped (drift guard).
 const AUDIO_SLACK_S: float = 0.35
 ## NDI sound (patched plugin): how much audio to keep queued for the sound card. It grows when
@@ -61,6 +65,10 @@ var _ndi_player: VideoStreamPlayer          # main screen
 var _ndi_name: String = ""
 var _ndi_size: Vector2i = Vector2i.ZERO
 var _ndi_presenters: Dictionary = {}        # presenter -> {"name", "player", "size"}
+var _prepare_input: String = ""            # loading to stop on the first frame (streaming together)
+var _sync_cooldown: float = 0.0
+var _progress_wait: float = 0.0
+var _progress_playing: bool = false
 var _spout: SpoutReceiver
 var _spout_tex: Texture2D                   # main screen (a SpoutTexture: updates itself every frame)
 var _spout_name: String = ""
@@ -78,7 +86,7 @@ func _ready() -> void:
 	stream_audio_player.bus = AudioManager.VIDEO_BUS
 
 	video_loader.status.connect(func(m: String) -> void: EventBus.status_message.emit(m, false))
-	video_loader.failed.connect(func(m: String) -> void: EventBus.status_message.emit(m, true))
+	video_loader.failed.connect(_on_loader_failed)
 	video_loader.ready_to_play.connect(_play_file)
 
 	capture_server.video_frame_ready.connect(_on_capture_frame)
@@ -89,6 +97,8 @@ func _ready() -> void:
 	capture_server.start(AppState.get_capture_port("capture_http_port"), AppState.get_capture_port("capture_ws_port"))
 
 	EventBus.file_play_requested.connect(_on_file_play_requested)
+	EventBus.file_prepare_requested.connect(_on_file_prepare_requested)
+	EventBus.file_sync_requested.connect(_on_file_sync_requested)
 	EventBus.file_stop_requested.connect(stop_file)
 	EventBus.file_pause_toggle_requested.connect(_on_file_pause_toggle)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
@@ -126,6 +136,7 @@ func _process(delta: float) -> void:
 			_sample_frame(sampled)
 	_watch_ndi_sizes()
 	_watch_spout_sizes()
+	_report_progress(delta)
 	_watch_hitches(delta)
 	_pump_ndi_audio(delta)
 	if _webcam_texture and now - _webcam_last_s > 2.0:
@@ -167,10 +178,30 @@ func _on_file_play_requested(input: String) -> void:
 	if AppState.get_source_mode() == "capture":
 		EventBus.status_message.emit("A browser tab is being shared - stop sharing in the browser first.", true)
 		return
+	if not AppState.net_allows("video", input):
+		return          # streaming together: the session loads it on every PC instead
+	_prepare_input = ""
 	stop_ndi()
 	stop_spout()
 	video_loader.max_height = AppState.get_setting("max_height")
 	video_loader.request(input)
+
+
+## Streaming together: like a play request, but it stops on the first frame (see _play_file).
+func _on_file_prepare_requested(input: String) -> void:
+	stop_ndi()
+	stop_spout()
+	_prepare_input = input
+	video_loader.max_height = AppState.get_setting("max_height")
+	video_loader.request(input)
+
+
+func _on_loader_failed(message: String) -> void:
+	EventBus.status_message.emit(message, true)
+	if _prepare_input != "":
+		var input := _prepare_input
+		_prepare_input = ""
+		EventBus.file_prepare_failed.emit(input, message)
 
 
 func _play_file(path: String) -> void:
@@ -181,11 +212,49 @@ func _play_file(path: String) -> void:
 	video_player.play()
 	if not video_player.is_playing():
 		EventBus.status_message.emit("Couldn't play %s (needs to be Ogg Theora .ogv)." % path.get_file(), true)
+		if _prepare_input != "":
+			_on_loader_failed("Couldn't play the converted video.")
 		return
 	_file_path = path
 	_set_source("file")
 	EventBus.screen_texture_changed.emit(video_player.get_video_texture())
+	if _prepare_input != "":
+		# streaming together: wait on the first frame until the host starts everyone at once
+		video_player.paused = true
+		video_player.stream_position = 0.0
+		var input := _prepare_input
+		_prepare_input = ""
+		EventBus.status_message.emit("%s is ready; waiting for everyone else." % path.get_file(), false)
+		EventBus.file_prepared.emit(input)
+		return
 	EventBus.status_message.emit("Playing %s" % path.get_file(), false)
+
+
+## Streaming together: follow the host. Small differences are left alone; a jump is followed by
+## a short pause in corrections so it can settle.
+func _on_file_sync_requested(position: float, playing: bool) -> void:
+	if AppState.get_source_mode() != "file" or not video_player.is_playing():
+		return
+	var length := video_player.get_stream_length()
+	var target := clampf(position, 0.0, length - 0.05) if length > 0.0 else maxf(position, 0.0)
+	if absf(video_player.stream_position - target) > SYNC_TOLERANCE_S and _sync_cooldown <= 0.0:
+		video_player.stream_position = target
+		_sync_cooldown = SYNC_COOLDOWN_S
+	video_player.paused = not playing
+
+
+## About once a second, and right away when it pauses or resumes: where the file is.
+func _report_progress(delta: float) -> void:
+	_sync_cooldown = maxf(_sync_cooldown - delta, 0.0)
+	if AppState.get_source_mode() != "file" or not video_player.is_playing():
+		return
+	var playing := not video_player.paused
+	_progress_wait -= delta
+	if _progress_wait > 0.0 and playing == _progress_playing:
+		return
+	_progress_wait = 1.0
+	_progress_playing = playing
+	EventBus.file_progress.emit(video_player.stream_position, playing)
 
 
 func _on_file_finished() -> void:

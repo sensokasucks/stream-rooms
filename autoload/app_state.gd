@@ -219,9 +219,15 @@ var _room_has_reply_screen: bool = false
 ## Launch profile from `-- --mp-profile=guest1` ("" = the normal app). Lets several copies run on
 ## one PC for multiplayer testing without sharing a settings file or capture ports.
 var _profile: String = _parse_profile(OS.get_cmdline_user_args())
-## Set by NetSession while a guest: asked before shared state changes (room, curtain, shared
-## settings). call(what: String, value: Variant) -> bool; false = don't change it here.
+## Set by NetSession during a session: asked before shared state changes (room, curtain, shared
+## settings, "video" = a file / URL for the big screen). call(what: String, value: Variant) -> bool;
+## false = don't change it here (NetSession deals with it).
 var net_gate: Callable
+
+
+## False when a shared session handles this change instead (see net_gate).
+func net_allows(what: String, value: Variant) -> bool:
+	return not net_gate.is_valid() or bool(net_gate.call(what, value))
 
 
 # ── Launch profile ───────────────────────────────────────────

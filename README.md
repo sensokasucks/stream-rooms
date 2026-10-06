@@ -521,7 +521,23 @@ Guests can't change the shared things. Those controls are greyed out, and the ho
 
 Every guest draws the whole room while streaming. When you join on **High** or **Custom** graphics, the tab offers **Use Medium** (or **No thanks**).
 
-Not shared yet: the big screen's video. Watching the same video in sync comes next.
+### Watching a video together
+
+When the host plays a **web link** (YouTube or any page yt-dlp understands) in **File or URL**,
+everyone watches it in sync:
+
+1. Every PC downloads and converts the video itself, so each one needs the `tools` folder
+   (yt-dlp and ffmpeg). Each person hears the sound from their own copy.
+2. Everyone waits on the first frame. When every PC is ready, the host starts them all at once.
+   If someone takes longer than two minutes, the others start without them and they catch up.
+3. The host's pause (Space), jumps and Stop reach everyone. Each guest stays within about a third
+   of a second of the host and jumps to catch up if it drifts further.
+4. Someone joining mid-video downloads it, then joins in at the host's spot.
+
+A video **file** on the host's PC can't reach the guests, so only the host sees it (it says
+so in a message). A co-host's **Play** sends the link to the host, who starts it for everyone.
+
+Browser-tab sharing, NDI and Spout aren't shared yet: they only exist on the host's PC.
 
 ### Running two copies on one PC
 
