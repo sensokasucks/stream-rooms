@@ -7,6 +7,8 @@
 # - Release build (the plugins' release DLLs). Add -DebugBuild for a debug build.
 # - Copies tools\ (yt-dlp, ffmpeg) along, which File or URL and watching together need.
 # - Checks the game data (.pck) is complete.
+# - Also makes StreamRooms.console.exe: the same game with a text window showing what it's doing
+#   (for when something goes wrong on another PC).
 #
 # Run from PowerShell in the project folder (the editor can stay open):
 #   powershell -ExecutionPolicy Bypass -File tools\export.ps1
@@ -45,8 +47,18 @@ if ($mb -lt 100) {
 New-Item -ItemType Directory -Force (Join-Path $Out "tools") | Out-Null
 Copy-Item (Join-Path $project "tools\*.exe") (Join-Path $Out "tools")
 Remove-Item $log, "$log.err" -ErrorAction SilentlyContinue
+# double-click helper: the console version with step-by-step output (also written to godot.log)
+Set-Content -Path (Join-Path $Out "Start with details.bat") -Encoding ascii -Value @"
+@echo off
+cd /d "%~dp0"
+StreamRooms.console.exe --verbose
+echo.
+echo The game has closed. The same text is in %%APPDATA%%\Redot\app_userdata\Stream Rooms\logs\godot.log
+pause
+"@
 
 Write-Host ""
 Write-Host "Done: $Out ($mb MB of game data)."
 Get-ChildItem $Out -Recurse -File | ForEach-Object { Write-Host ("  " + $_.FullName.Substring($Out.Length + 1)) }
 Write-Host "Copy the whole folder to the other PC. The first start there takes a little longer while it prepares its shaders."
+Write-Host "If it doesn't start there, double-click 'Start with details.bat': its black window shows what the game is doing."
