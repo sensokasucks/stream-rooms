@@ -381,7 +381,11 @@ func _clear_presenter(n: int) -> void:
 
 ## Tells the sender page which presenter feeds to run: camera (started automatically),
 ## tab (the page asks you to pick one) or off. Only while the room has podiums.
+## Streaming together with avatars on: the podium that's mine also goes out to the others
+## ("publish"), and a podium that belongs to someone else shows their avatar ("view") instead of a
+## capture here (the shader keys it here, so the key colour still travels along).
 func _sync_presenter_feeds() -> void:
+	var avatars: Array = _live_feed.get("avatars", []) if _live_feed.get("avatars") is Array else []
 	var slots: Array = []
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
 		var kind := "off"
@@ -390,8 +394,18 @@ func _sync_presenter_feeds() -> void:
 			if src == "camera" or src == "tab" or src == "web":
 				kind = src
 		var key_color: Color = AppState.get_setting(AppState.presenter_key(n, "key_color"))
-		slots.append({"kind": kind, "device": String(AppState.get_setting(AppState.presenter_key(n, "camera"))),
-			"url": String(AppState.get_setting(AppState.presenter_key(n, "url"))), "bg": key_color.to_html(false)})
+		var slot := {"kind": kind, "device": String(AppState.get_setting(AppState.presenter_key(n, "camera"))),
+			"url": String(AppState.get_setting(AppState.presenter_key(n, "url"))), "bg": key_color.to_html(false)}
+		for a: Dictionary in avatars:
+			if int(a["slot"]) != n - 1:
+				continue
+			if bool(a["mine"]):
+				slot["publish"] = String(a["id"])
+			elif kind != "off":
+				slot["kind"] = "view"
+				slot["view"] = String(a["id"])
+				slot["who"] = String(a.get("name", ""))
+		slots.append(slot)
 	capture_server.send_to_sender({"type": "presenters", "slots": slots})
 
 
@@ -400,6 +414,7 @@ func _sync_presenter_feeds() -> void:
 func _on_live_feed_changed(info: Dictionary) -> void:
 	_live_feed = info.duplicate()
 	_send_live_feed()
+	_sync_presenter_feeds()
 
 
 func _send_live_feed() -> void:

@@ -522,7 +522,24 @@ function stopShare() {
 // Host: the shared tab is published under a random stream name the game makes for the session.
 // Guest: "Watch" receives it and hands it to the game exactly like a tab shared here.
 // The SDK (MPL-2.0, web/vdoninja-sdk.min.js) is only loaded when this is used.
-let live = { role: "off", id: "", key: "", live: false, relay: false };
+let live = { role: "off", id: "", key: "", live: false, relay: false, quality: null, avatars: [] };
+let publishedClone = null;   // the copy of the shared tab's video track that goes to the guests (quality applies to it)
+
+// A copy of a video track limited to the host's quality setting ({height, fps}); the original
+// keeps feeding this PC's own game at full quality.
+function constrainedCopy(track, q) {
+  const copy = track.clone();
+  if (q && (q.height || q.fps)) {
+    const c = {};
+    if (q.height) c.height = { ideal: q.height };
+    if (q.fps) c.frameRate = { ideal: q.fps };
+    copy.applyConstraints(c).catch(() => {});
+  }
+  return copy;
+}
+function mediaFor(q) {
+  return q && q.kbps ? { video: { maxBitrate: q.kbps } } : undefined;
+}
 let vdo = null;              // the VDO.Ninja connection (host: publishing, guest: viewing)
 let vdoPublished = null;     // host: the stream being published
 let watching = false;        // guest: clicked Watch
@@ -563,7 +580,97 @@ function liveSay(text, cls) {
 }
 async function vdoClose() {
   const v = vdo; vdo = null; vdoPublished = null;
+  if (publishedClone) { publishedClone.stop(); publishedClone = null; }
   if (v) { try { await v.disconnect(); } catch (_) {} }
+}
+
+// The host changed the quality while things are being sent: apply it live.
+function applyQuality() {
+  const sq = live.quality && live.quality.screen;
+  if (vdo && vdoPublished && publishedClone && sq) {
+    const c = {};
+    if (sq.height) c.height = { ideal: sq.height };
+    if (sq.fps) c.frameRate = { ideal: sq.fps };
+    publishedClone.applyConstraints(c).catch(() => {});
+    if (sq.kbps && vdo.updatePublisherMedia) vdo.updatePublisherMedia({ videoBitrate: sq.kbps }).catch(() => {});
+  }
+  const aq = live.quality && live.quality.avatar;
+  if (avatar.vdo && avatar.publishedClone && aq) {
+    const c = {};
+    if (aq.height) c.height = { ideal: aq.height };
+    if (aq.fps) c.frameRate = { ideal: aq.fps };
+    avatar.publishedClone.applyConstraints(c).catch(() => {});
+    if (aq.kbps && avatar.vdo.updatePublisherMedia) avatar.vdo.updatePublisherMedia({ videoBitrate: aq.kbps }).catch(() => {});
+  }
+}
+
+// ── Avatars: my podium's picture goes to the others, theirs come here ────────────────────────
+// One more VDO.Ninja connection (a connection publishes at most one stream): it publishes the
+// presenter feed of the podium that's mine under my avatar name, and views the other podiums'
+// avatars, which then reach the game like a camera feed for that podium.
+const avatar = { vdo: null, opening: null, publishedStream: null, publishedId: "", publishedClone: null, views: new Map() };
+
+async function avatarOpen() {
+  if (avatar.vdo) return avatar.vdo;
+  if (!avatar.opening) avatar.opening = (async () => {
+    const v = await vdoOpen();
+    v.addEventListener("track", (ev) => {
+      const sid = ev.detail.streamID || "";
+      const entry = [...avatar.views.values()].find((e) => e.id === sid);
+      if (!entry || ev.detail.track.kind !== "video") return;
+      const stream = new MediaStream([ev.detail.track]);
+      runPresenter(entry.slot, stream, "view", "");
+      renderPresenter(entry.slot);
+      sendStatus();
+    });
+    avatar.vdo = v;
+    avatar.opening = null;
+    return v;
+  })().catch((e) => { avatar.opening = null; throw e; });
+  return avatar.opening;
+}
+
+async function avatarClose() {
+  const v = avatar.vdo;
+  avatar.vdo = null; avatar.publishedStream = null; avatar.publishedId = "";
+  if (avatar.publishedClone) { avatar.publishedClone.stop(); avatar.publishedClone = null; }
+  avatar.views.clear();
+  if (v) { try { await v.disconnect(); } catch (_) {} }
+}
+
+async function syncAvatars() {
+  const wantPublish = pres.map((p, i) => ({ p, i })).find((x) => x.p.want.publish && x.p.stream && x.p.kind !== "view");
+  const wantViews = pres.map((p, i) => ({ p, i })).filter((x) => x.p.want.kind === "view" && x.p.want.view);
+  // (live.key is set for the whole session, whether or not the big screen is shared)
+  if (!live.key || (!wantPublish && wantViews.length === 0)) {
+    if (avatar.vdo) await avatarClose();
+    return;
+  }
+  // publishing: a new or changed feed means a fresh connection (one publish per connection)
+  const pubId = wantPublish ? wantPublish.p.want.publish : "";
+  const pubStream = wantPublish ? wantPublish.p.stream : null;
+  if (avatar.vdo && (avatar.publishedStream !== pubStream || avatar.publishedId !== pubId)) await avatarClose();
+  try {
+    const v = await avatarOpen();
+    if (pubStream && !avatar.publishedStream) {
+      const q = live.quality && live.quality.avatar;
+      avatar.publishedClone = constrainedCopy(pubStream.getVideoTracks()[0], q);
+      await v.publish(new MediaStream([avatar.publishedClone]), { streamID: pubId, label: "Stream Rooms avatar", media: mediaFor(q) });
+      avatar.publishedStream = pubStream; avatar.publishedId = pubId;
+    }
+    // viewing: start what's new, stop what's gone
+    for (const [slot, e] of [...avatar.views]) {
+      const still = wantViews.find((x) => x.i === slot && x.p.want.view === e.id);
+      if (!still) { try { v.stopViewing(e.id); } catch (_) {} avatar.views.delete(slot); if (pres[slot].kind === "view") { stopPresenter(slot); renderPresenter(slot); } }
+    }
+    for (const x of wantViews) {
+      if (avatar.views.has(x.i)) continue;
+      avatar.views.set(x.i, { id: x.p.want.view, slot: x.i });
+      v.view(x.p.want.view, { audio: false, video: true, label: "Stream Rooms podium " + (x.i + 1) }).catch(() => {});
+    }
+  } catch (e) {
+    console.log("avatars: " + e.message);
+  }
 }
 async function vdoOpen() {
   await loadSdk();
@@ -575,9 +682,13 @@ async function vdoOpen() {
 }
 
 function applyLiveFeed(msg) {
-  const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live, relay: !!msg.relay };
+  const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live, relay: !!msg.relay,
+    quality: msg.quality && typeof msg.quality === "object" ? msg.quality : null, avatars: Array.isArray(msg.avatars) ? msg.avatars : [] };
   const changed = next.role !== live.role || next.id !== live.id || next.key !== live.key || next.relay !== live.relay;
+  const qualityChanged = JSON.stringify(next.quality) !== JSON.stringify(live.quality);
   live = next;
+  if (qualityChanged) applyQuality();
+  syncAvatars();
   $("liveSection").classList.toggle("hidden", live.role === "off");
   $("liveHost").classList.toggle("hidden", live.role !== "publish");
   $("liveGuest").classList.toggle("hidden", live.role !== "view");
@@ -602,7 +713,10 @@ async function syncLive() {
       try {
         const v = await vdoOpen();
         if (!share || share.stream !== stream || live.role !== "publish") { v.disconnect(); return; }
-        await v.publish(stream, { streamID: live.id, label: "Stream Rooms host" });
+        const q = live.quality && live.quality.screen;
+        publishedClone = constrainedCopy(stream.getVideoTracks()[0], q);
+        const out = new MediaStream([publishedClone, ...stream.getAudioTracks()]);
+        await v.publish(out, { streamID: live.id, label: "Stream Rooms host", media: mediaFor(q) });
         vdo = v; vdoPublished = stream;
         liveSay("Your guests get this tab too.");
       } catch (e) { liveSay("Couldn't send the tab to your guests: " + e.message, "err"); }
@@ -711,7 +825,7 @@ async function toggleCam() {
 // over the key colour in a small window (/backdrop), "Share it" captures that window, and
 // the game's chroma key removes the colour again.
 let cameraList = [];
-const pres = Array.from({ length: PRESENTERS }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "" }));
+const pres = Array.from({ length: PRESENTERS }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00", publish: "", view: "", who: "" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "" }));
 
 function buildPresenterRows() {
   const list = $("presList");
@@ -737,13 +851,14 @@ function renderPresenter(i) {
   const winOpen = !!(p.win && !p.win.closed);
   row.classList.toggle("want-tab", (want === "tab" || (web && winOpen)) && !(p.stream && p.kind === want));
   row.classList.toggle("want-web", web && !winOpen && !p.stream);
-  row.querySelector(".pick").classList.toggle("hidden", want !== "tab" && !web);
+  row.querySelector(".pick").classList.toggle("hidden", (want !== "tab" && !web) || want === "view");
   row.querySelector(".pick").textContent = web ? "2. Share it" : "Pick a tab or window";
   row.querySelector(".openweb").classList.toggle("hidden", !web);
   row.querySelector(".openweb").disabled = web && !p.want.url;
-  row.querySelector(".stop").classList.toggle("hidden", !p.stream);
+  row.querySelector(".stop").classList.toggle("hidden", !p.stream || want === "view");
   if (p.error) st.innerHTML = `<span class="err">${p.error}</span>`;
-  else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "");
+  else if (want === "view") st.textContent = p.stream ? "Showing " + (p.want.who || "a guest") + "'s avatar." : "Waiting for " + (p.want.who || "a guest") + "'s avatar...";
+  else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "") + (p.want.publish ? " (sent to the others)" : "");
   else if (want === "camera") st.textContent = "Starting camera...";
   else if (want === "tab") st.innerHTML = '<span class="warn">Click the button and pick a tab or window.</span>';
   else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (Presenters tab).</span>';
@@ -786,7 +901,8 @@ function runPresenter(i, stream, kind, device) {
   const track = stream.getVideoTracks()[0];
   p.stream = stream; p.kind = kind; p.device = device || ""; p.label = track.label; p.error = "";
   p.pump = startFramePump(track, PKT_PRESENTER, PRES_HEIGHT, PRES_FPS, i, PRES_JPEG);
-  track.addEventListener("ended", () => { if (pres[i].stream === stream) { stopPresenter(i); renderPresenter(i); sendStatus(); } });
+  track.addEventListener("ended", () => { if (pres[i].stream === stream) { stopPresenter(i); renderPresenter(i); sendStatus(); syncAvatars(); } });
+  if (kind !== "view") syncAvatars();
 }
 
 async function startPresenterCamera(i) {
@@ -797,7 +913,7 @@ async function startPresenterCamera(i) {
   try {
     const video = { width: { ideal: 1280 }, height: { ideal: 720 } };
     if (device) video.deviceId = { exact: device };
-    const stream = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+    const stream = TEST_SHARE ? testPatternStream() : await navigator.mediaDevices.getUserMedia({ video, audio: false });
     if (pres[i].want.kind !== "camera") { stream.getTracks().forEach((t) => t.stop()); return; }
     runPresenter(i, stream, "camera", device);
     $("camPermRow").classList.add("hidden");
@@ -829,7 +945,8 @@ function applyPresenterWishes(slots) {
   slots.slice(0, PRESENTERS).forEach((w, i) => {
     const p = pres[i];
     const before = backdropUrl(i);
-    p.want = { kind: w.kind || "off", device: w.device || "", url: w.url || "", bg: w.bg || "00ff00" };
+    p.want = { kind: w.kind || "off", device: w.device || "", url: w.url || "", bg: w.bg || "00ff00",
+      publish: w.publish || "", view: w.view || "", who: w.who || "" };
     if (p.want.kind === "off" || (p.stream && p.kind !== p.want.kind)) { stopPresenter(i); p.error = ""; }
     if (p.want.kind !== "web") closeWebPage(i);
     else if (p.win && !p.win.closed && backdropUrl(i) !== before) p.win.location.href = backdropUrl(i);
@@ -837,6 +954,7 @@ function applyPresenterWishes(slots) {
     renderPresenter(i);
   });
   sendStatus();
+  syncAvatars();
 }
 
 async function refreshCameras() {

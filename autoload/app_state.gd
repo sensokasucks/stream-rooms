@@ -174,6 +174,15 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_password": "",     # session password (stays on this PC)
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local" | "tunnel" (Cloudflare)
 	"together_live_relay": false, # live feed through VDO.Ninja's relay servers, so host and guests don't see each other's addresses
+	# Everyone's avatar on a podium (host = podium 1, guests in the order they joined), through VDO.Ninja
+	"together_avatars": true,
+	# Quality of what goes between the PCs (the host decides for everyone); kbps caps the bitrate per viewer
+	"together_screen_height": 720,   # 480 | 540 | 720 | 1080
+	"together_screen_fps": 30,       # 15 | 30 | 60
+	"together_screen_kbps": 4000,
+	"together_avatar_height": 480,   # 240 | 360 | 480 | 720
+	"together_avatar_fps": 20,       # 15 | 20 | 30
+	"together_avatar_kbps": 800,
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
 	# Host: which parts guests follow. Off = each PC keeps its own (guests may change theirs).
 	"together_share_room": true,

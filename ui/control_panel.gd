@@ -1333,6 +1333,30 @@ func _build_together_tab() -> Control:
 	_net_medium.add_child(keep)
 	v.add_child(_net_medium)
 
+	v.add_child(_heading("Avatars and quality"))
+	var avs := _check("together_avatars", "Everyone's avatar on a podium")
+	avs.tooltip_text = "Host: podium 1 is yours, the guests take the next podiums in the order they joined. Each podium's Show setting (Camera, Tab / window or Web page) is what that person's own sender page captures and sends to everyone. NDI and Spout can't be sent this way."
+	v.add_child(avs)
+	v.add_child(_hint("Quality of what travels between the PCs. Lower it on a slow upload: everything is sent once per viewer."))
+	var sh := _option("together_screen_height", "Big screen to guests", [[480, "480p"], [540, "540p"], [720, "720p"], [1080, "1080p"]])
+	sh.tooltip_text = "The size of the shared tab as the guests get it. Your own game keeps the sender page's quality."
+	v.add_child(sh)
+	var sf := _option("together_screen_fps", "Big screen frame rate", [[15, "15 fps"], [30, "30 fps"], [60, "60 fps"]])
+	sf.tooltip_text = "Frames a second of the shared tab as the guests get it."
+	v.add_child(sf)
+	var sk := _slider("together_screen_kbps", "Big screen bitrate", 500.0, 10000.0, 100.0, "%d kbps")
+	sk.tooltip_text = "Upload spent on the shared tab per guest. 3000 to 6000 is normal for 720p; 1500 to 2500 for 540p."
+	v.add_child(sk)
+	var ah := _option("together_avatar_height", "Avatars", [[240, "240p"], [360, "360p"], [480, "480p"], [720, "720p"]])
+	ah.tooltip_text = "The size of everyone's avatar as the others get it. Avatars are small on the podiums: 360p or 480p is plenty, 240p saves the most."
+	v.add_child(ah)
+	var af := _option("together_avatar_fps", "Avatar frame rate", [[15, "15 fps"], [20, "20 fps"], [30, "30 fps"]])
+	af.tooltip_text = "Frames a second for the avatars."
+	v.add_child(af)
+	var ak := _slider("together_avatar_kbps", "Avatar bitrate", 100.0, 3000.0, 50.0, "%d kbps")
+	ak.tooltip_text = "Upload spent on your avatar per viewer. 500 to 1000 is normal for 480p; 200 to 400 for 240p."
+	v.add_child(ak)
+
 	v.add_child(_heading("In the session"))
 	_net_peers = VBoxContainer.new()
 	v.add_child(_net_peers)

@@ -622,6 +622,23 @@ anything live: a game, a stream you're reacting to, a website.
 
 NDI and Spout aren't shared: they only exist on the host's PC.
 
+### Everyone's avatar on a podium
+
+With **Everyone's avatar on a podium** ticked (Together tab, host), each person in the session gets
+a podium: the host has podium 1, the guests take the next ones in the order they joined. Each
+podium's **Show** setting (**Camera**, **Tab / window** or **Web page**) is what that person's own
+sender page captures, and it's sent to everyone else through VDO.Ninja, so all of you appear in
+everyone's room and on everyone's stream. Each person's sender page shows "sent to the others" on
+their own podium's feed and "Showing <name>'s avatar" on the others'. NDI and Spout avatars can't
+travel this way (they live in the game, not the browser); for those, send them to OBS and from
+there into VDO.Ninja.
+
+**Quality** (Together tab, host decides for everyone; everything is sent once per viewer, so lower
+it on a slow upload): **Big screen to guests** 480p / 540p / 720p / 1080p, **Big screen frame rate**
+and **Big screen bitrate** for the shared tab; **Avatars** 240p / 360p / 480p / 720p, **Avatar frame
+rate** and **Avatar bitrate**. Rough costs per viewer: a 720p tab 3 to 6 Mbps, a 540p tab about 2;
+a 480p avatar 0.5 to 1 Mbps, a 240p avatar 0.2 to 0.4. Changes apply while live.
+
 The VDO.Ninja SDK (`web/vdoninja-sdk.min.js`, version 1.6.2 from npm `@vdoninja/sdk`, MPL-2.0,
 licence in `web/vdoninja-sdk-LICENSE.txt`) is only loaded when the live feed is used.
 
