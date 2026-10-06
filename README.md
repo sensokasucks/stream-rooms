@@ -275,8 +275,11 @@ for none.
 
 **Podium picture:** a picture on the front of the podium: a logo, an avatar, a badge. **Browse...**
 picks a PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB; **Clear** removes it. The picture
-keeps its shape and fits the podium. When streaming together, guests get a copy of the picture
-(the file itself travels, so it works even though it only exists on your PC).
+is stuck to the podium's front surface (it finds the surface itself, so a slanted front works) and
+keeps its shape. **Picture size** scales it, **Picture self-lit** shows it in its own colours
+whatever the room's light, and **Move left/right** / **Move up/down** slide it along the front.
+When streaming together, guests get a copy of the picture (the file itself travels, so it works
+even though it only exists on your PC).
 
 ## NDI (OBS / NDI Tools)
 The main screen and the presenters can show **NDI** sources. That's lighter than the browser

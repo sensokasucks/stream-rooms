@@ -1166,6 +1166,22 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	clear_pic.tooltip_text = "No podium picture."
 	pic.add_child(clear_pic)
 	d.add_child(pic)
+	var pic_rows: Array = []
+	var ps := _slider(k.call("picture_scale"), "Picture size", 0.2, 3.0, 0.05, "%d%%", 100.0)
+	ps.tooltip_text = "How big the podium picture is. 100% fits the front of the podium."
+	pic_rows.append(ps)
+	var plit := _check(k.call("picture_self_lit"), "Picture self-lit")
+	plit.tooltip_text = "Show the podium picture in its own colours, however dark or coloured the room's light is."
+	pic_rows.append(plit)
+	var px := _slider(k.call("picture_x"), "Move left/right", -0.5, 0.5, 0.01, "%.2f m")
+	px.tooltip_text = "Slide the podium picture sideways, as the audience sees it (right is +)."
+	pic_rows.append(px)
+	var py := _slider(k.call("picture_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f m")
+	py.tooltip_text = "Slide the podium picture up (+) or down (-)."
+	pic_rows.append(py)
+	for pr in pic_rows:
+		d.add_child(pr)
+	rows["picture_rows"] = pic_rows
 	var chat := _text_setting(k.call("chat"), "Chat name", "their chat name(s), e.g. sensoka, kick:sensoka")
 	chat.tooltip_text = "Link this presenter to their chat name. They sit on this podium instead of taking an audience seat, and their chat commands (throws, signs, !highfive ...) come from here. Several names: comma separated. \"kick:name\" only matches on that platform."
 	d.add_child(chat)
@@ -1705,7 +1721,7 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_refresh_capacity()
 	if key == "graphics_quality" and _gfx_hint:
 		_gfx_hint.text = GraphicsQuality.describe(String(value))
-	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_key")):
+	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_key") or key.ends_with("_picture")):
 		_refresh_presenter_rows(int(key.get_slice("_", 1)))
 
 
@@ -1719,6 +1735,8 @@ func _refresh_presenter_rows(n: int) -> void:
 	(rows["camera"] as Control).visible = src == "camera"
 	(rows["ndi"] as Control).visible = src == "ndi"
 	(rows["spout"] as Control).visible = src == "spout"
+	for pr in rows.get("picture_rows", []):
+		(pr as Control).visible = String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges() != ""
 	(rows["url"] as Control).visible = src == "web"
 	var picture := src in ["camera", "tab", "web", "ndi", "spout"]
 	var keyed := picture and bool(AppState.get_setting(AppState.presenter_key(n, "key")))

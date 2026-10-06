@@ -60,6 +60,29 @@ func _ready() -> void:
 	var q: QuadMesh = p._badge.mesh
 	_check(absf(q.size.x / q.size.y - 2.0) < 0.05, "the podium picture keeps the picture's shape (%.2f:1)" % (q.size.x / q.size.y))
 	var podium_mesh: MeshInstance3D = p._podium_mesh()
+	# it's on the podium's surface: a ray at the podium's shape found a hit
+	var n_local: Vector3 = (podium_mesh.global_transform.basis.inverse() * p._badge.global_transform.basis.z).normalized()
+	var badge_local: Vector3 = podium_mesh.to_local(p._badge.global_position)
+	var hit: Dictionary = p._nearest_hit(badge_local + n_local * 0.3, -n_local)
+	_check(hit.has("point") and (hit["point"] as Vector3).distance_to(badge_local) < 0.05, "the picture sits on a real face of the podium (%.3f m off it)" % ((hit["point"] as Vector3).distance_to(badge_local) if hit.has("point") else -1.0))
+	# size, self-lighting and shifting
+	var size0: Vector2 = (p._badge.mesh as QuadMesh).size
+	AppState.set_setting(AppState.presenter_key(2, "picture_scale"), 1.5)
+	var size1: Vector2 = (p._badge.mesh as QuadMesh).size
+	_check(absf(size1.x / size0.x - 1.5) < 0.05, "Picture size scales it (%.2f -> %.2f m wide)" % [size0.x, size1.x])
+	AppState.set_setting(AppState.presenter_key(2, "picture_scale"), 1.0)
+	AppState.set_setting(AppState.presenter_key(2, "picture_self_lit"), true)
+	_check(p._badge_mat.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED, "Picture self-lit shows it in its own colours")
+	AppState.set_setting(AppState.presenter_key(2, "picture_self_lit"), false)
+	var at0 := p.to_local(p._badge.global_position)
+	AppState.set_setting(AppState.presenter_key(2, "picture_y"), 0.2)
+	var at_up := p.to_local(p._badge.global_position)
+	AppState.set_setting(AppState.presenter_key(2, "picture_y"), 0.0)
+	AppState.set_setting(AppState.presenter_key(2, "picture_x"), 0.15)
+	var at_right := p.to_local(p._badge.global_position)
+	AppState.set_setting(AppState.presenter_key(2, "picture_x"), 0.0)
+	_check(at_up.y > at0.y + 0.1, "Move up/down moves it up (%.2f -> %.2f)" % [at0.y, at_up.y])
+	_check(at_right.x < at0.x - 0.08, "Move left/right moves it to the audience's right (%.2f -> %.2f)" % [at0.x, at_right.x])
 	var podium_centre: Vector3 = podium_mesh.global_transform * podium_mesh.get_aabb().get_center() if podium_mesh else Vector3.ZERO
 	_check(podium_mesh != null and p.to_local(p._badge.global_position).z > p.to_local(podium_centre).z,
 		"the picture sits on the podium's front (towards the audience)")

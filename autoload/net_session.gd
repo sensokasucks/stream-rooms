@@ -39,7 +39,8 @@ const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)
 const SHARED_PRESENTER_FIELDS: Array[String] = ["on", "source", "url", "self_lit", "light", "key",
-	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y", "name"]
+	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y", "name",
+	"picture_scale", "picture_self_lit", "picture_x", "picture_y"]
 ## The host picks which of these groups guests follow (together_share_*). An unshared group is
 ## each PC's own: guests change theirs freely and the host's changes stay on the host.
 const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]

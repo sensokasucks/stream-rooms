@@ -207,6 +207,10 @@ const PRESENTER_FIELDS: Dictionary = {
 	                             # chat commands and bubbles come from here
 	"name": "",                  # name tag shown above the picture ("" = none)
 	"picture": "",               # a picture file (png / jpg / webp / gif) on the front of the podium ("" = none)
+	"picture_scale": 1.0,        # podium picture size (1 = fits the podium front)
+	"picture_self_lit": false,   # podium picture shows its own colours, whatever the room light
+	"picture_x": 0.0,            # podium picture moved right (+) / left (-), metres, as the audience sees it
+	"picture_y": 0.0,            # podium picture moved up (+) / down (-), metres
 	"chat_look": true,           # silhouette mode: look like the chat audience (their colour + picture)
 	"chat_bubbles": true,        # their chat messages pop up as speech bubbles over the podium
 }

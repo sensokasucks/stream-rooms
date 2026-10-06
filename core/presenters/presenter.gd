@@ -28,6 +28,7 @@ var _badge: MeshInstance3D        # the podium picture
 var _badge_mat: StandardMaterial3D
 var _badge_path: String = ""      # the picture file the badge shows (so it isn't reloaded for nothing)
 var _badge_task: int = -1
+var _podium_faces: PackedVector3Array = []   # the podium's triangles, for sticking the picture to its front
 var _plane_size: Vector2
 var _feed: Texture2D
 var _chat_look: bool = false     # the linked chatter's silhouette stands in (AudienceView draws it)
@@ -151,9 +152,11 @@ func _apply_all() -> void:
 
 
 # ── Podium picture ───────────────────────────────────────────
-## A quad flush with the front of the podium (the podium's own bounds; its side that faces the
-## audience, found from this presenter's +Z). It's a child of the podium mesh, so it turns with it.
-## Without a podium it hangs just below the picture.
+## The podium picture: a quad stuck to the podium's real front surface. A ray is cast at the
+## podium's shape (its triangles) from the audience's side, at the chosen height and sideways
+## offset, so the picture lands on the surface it hits and faces the way that surface faces (a
+## slanted front works). It's a child of the podium mesh, so it turns with the podium. Without a
+## podium it hangs just below the picture.
 func _make_badge() -> void:
 	_badge = MeshInstance3D.new()
 	_badge.name = "PodiumPicture"
@@ -167,39 +170,13 @@ func _make_badge() -> void:
 	_badge.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_badge.visible = false
 	var mesh_node := _podium_mesh()
-	if mesh_node == null:
+	if mesh_node:
+		mesh_node.add_child(_badge)
+		if mesh_node.mesh:
+			_podium_faces = mesh_node.mesh.get_faces()
+	else:
 		add_child(_badge)
-		_badge.position = Vector3(0, -0.4, 0.02)
-		(_badge.mesh as QuadMesh).size = Vector2(0.5, 0.5)
-		_badge.set_meta("max_size", Vector2(0.5, 0.5))
-		return
-	mesh_node.add_child(_badge)
-	var box := mesh_node.get_aabb()
-	# the audience direction (this presenter's +Z) in the podium's own space -> its front axis
-	var to_podium := mesh_node.global_transform.basis.inverse()
-	var front_dir := (to_podium * global_transform.basis.z).normalized()
-	var up_dir := (to_podium * global_transform.basis.y).normalized()
-	var front_axis := front_dir.abs().max_axis_index()
-	var up_axis := up_dir.abs().max_axis_index()
-	if up_axis == front_axis:
-		up_axis = Vector3.AXIS_Y if front_axis != Vector3.AXIS_Y else Vector3.AXIS_Z
-	var side_axis := 3 - front_axis - up_axis
-	var centre := box.get_center()
-	var pos := centre
-	var sign := 1.0 if front_dir[front_axis] >= 0.0 else -1.0
-	pos[front_axis] = (box.end[front_axis] if sign > 0.0 else box.position[front_axis]) + sign * 0.015
-	pos[up_axis] = box.position[up_axis] + box.size[up_axis] * 0.55
-	_badge.position = pos
-	var normal := Vector3.ZERO
-	normal[front_axis] = sign
-	var up := Vector3.ZERO
-	up[up_axis] = 1.0 if up_dir[up_axis] >= 0.0 else -1.0
-	# the quad faces its local +Z: turn that onto the front axis, keeping "up" up
-	_badge.basis = Basis.looking_at(-normal, up)
-	var width := clampf(box.size[side_axis] * 0.6, 0.15, 0.7)
-	var height := clampf(box.size[up_axis] * 0.5, 0.15, 0.7)
-	(_badge.mesh as QuadMesh).size = Vector2(width, height)
-	_badge.set_meta("max_size", Vector2(width, height))
+	_place_badge()
 
 
 func _podium_mesh() -> MeshInstance3D:
@@ -211,6 +188,89 @@ func _podium_mesh() -> MeshInstance3D:
 	return meshes[0] as MeshInstance3D if not meshes.is_empty() else null
 
 
+## Where the picture goes and how big it may be (also after a size / position setting changes).
+func _place_badge() -> void:
+	var scale := clampf(float(_setting("picture_scale")), 0.2, 3.0)
+	var dx := float(_setting("picture_x"))      # + = to the right, as the audience sees it
+	var dy := float(_setting("picture_y"))      # + = up
+	var mesh_node := _podium_mesh()
+	if mesh_node == null:
+		_badge.position = Vector3(-dx, -0.4 + dy, 0.02)
+		_badge.basis = Basis()
+		_badge.set_meta("max_size", Vector2(0.5, 0.5) * scale)
+		_fit_badge()
+		return
+	var box := mesh_node.get_aabb()
+	# the audience direction (this presenter's +Z) and up, in the podium's own space
+	var to_podium := mesh_node.global_transform.basis.inverse()
+	var front_dir := (to_podium * global_transform.basis.z).normalized()
+	var up_dir := (to_podium * global_transform.basis.y).normalized()
+	var right_dir := -(to_podium * global_transform.basis.x).normalized()   # the audience's right
+	var front_axis := front_dir.abs().max_axis_index()
+	var up_axis := up_dir.abs().max_axis_index()
+	if up_axis == front_axis:
+		up_axis = Vector3.AXIS_Y if front_axis != Vector3.AXIS_Y else Vector3.AXIS_Z
+	var side_axis := 3 - front_axis - up_axis
+	var sign := 1.0 if front_dir[front_axis] >= 0.0 else -1.0
+	var aim := box.get_center()
+	aim[up_axis] = box.position[up_axis] + box.size[up_axis] * 0.55
+	aim += up_dir * dy + right_dir * dx
+	# a ray from well in front of the podium, straight at it
+	var dir := Vector3.ZERO
+	dir[front_axis] = -sign
+	var origin := aim
+	origin[front_axis] = (box.end[front_axis] if sign > 0.0 else box.position[front_axis]) + sign * 1.0
+	var hit := _nearest_hit(origin, dir)
+	var normal := -dir
+	var pos := origin + dir * (1.0 - 0.015)      # the bounding box's front, if the ray misses
+	if not hit.is_empty():
+		normal = hit["normal"]
+		pos = hit["point"] + normal * 0.012
+	var up := Vector3.ZERO
+	up[up_axis] = 1.0 if up_dir[up_axis] >= 0.0 else -1.0
+	if absf(normal.dot(up)) > 0.95:
+		up = -dir                                 # (a flat top: keep the picture upright anyway)
+	_badge.position = pos
+	_badge.basis = Basis.looking_at(-normal, up)   # the quad faces its +Z: onto the surface normal
+	var width := clampf(box.size[side_axis] * 0.6, 0.15, 0.7)
+	var height := clampf(box.size[up_axis] * 0.5, 0.15, 0.7)
+	_badge.set_meta("max_size", Vector2(width, height) * scale)
+	_fit_badge()
+
+
+## The podium triangle the ray hits first: {point, normal} in the podium's space, or {}.
+func _nearest_hit(origin: Vector3, dir: Vector3) -> Dictionary:
+	var best := {}
+	var best_d := INF
+	var i := 0
+	while i + 2 < _podium_faces.size():
+		var hit: Variant = Geometry3D.ray_intersects_triangle(origin, dir, _podium_faces[i], _podium_faces[i + 1], _podium_faces[i + 2])
+		if hit != null:
+			var d := origin.distance_to(hit)
+			if d < best_d:
+				best_d = d
+				var n := (_podium_faces[i + 1] - _podium_faces[i]).cross(_podium_faces[i + 2] - _podium_faces[i]).normalized()
+				if n.dot(dir) > 0.0:
+					n = -n                     # face the picture towards where the ray came from
+				best = {"point": hit, "normal": n}
+		i += 3
+	return best
+
+
+## The quad's size: the picture's shape inside the space allowed (times the size setting).
+func _fit_badge() -> void:
+	var tex := _badge_mat.albedo_texture
+	var max_size: Vector2 = _badge.get_meta("max_size", Vector2(0.5, 0.5))
+	if tex == null:
+		(_badge.mesh as QuadMesh).size = max_size
+		return
+	var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
+	var size := Vector2(max_size.y * aspect, max_size.y)
+	if size.x > max_size.x:
+		size = Vector2(max_size.x, max_size.x / aspect)
+	(_badge.mesh as QuadMesh).size = size
+
+
 func _apply_badge(on: bool) -> void:
 	var path := String(_setting("picture")).strip_edges()
 	if path != _badge_path:
@@ -219,6 +279,8 @@ func _apply_badge(on: bool) -> void:
 		_badge.visible = false
 		if path != "":
 			_load_badge(path)
+	_badge_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED if bool(_setting("picture_self_lit")) else BaseMaterial3D.SHADING_MODE_PER_PIXEL
+	_place_badge()
 	_badge.visible = on and _badge_mat.albedo_texture != null
 
 
@@ -243,13 +305,7 @@ func _finish_badge(task: int, path: String, out: Array) -> void:
 		EventBus.status_message.emit("Presenter %d: that picture couldn't be decoded." % number, true)
 		return
 	_badge_mat.albedo_texture = tex
-	# keep the picture's shape inside the space on the podium
-	var max_size: Vector2 = _badge.get_meta("max_size", Vector2(0.5, 0.5))
-	var aspect := float(tex.get_width()) / maxf(float(tex.get_height()), 1.0)
-	var size := Vector2(max_size.y * aspect, max_size.y)
-	if size.x > max_size.x:
-		size = Vector2(max_size.x, max_size.x / aspect)
-	(_badge.mesh as QuadMesh).size = size
+	_fit_badge()
 	_badge.visible = bool(_setting("on"))
 
 
