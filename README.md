@@ -294,6 +294,28 @@ sender: OBS (or NDI Tools) does the encoding and a native plugin decodes it, wit
 - `core/ndi_receiver.gd` looks the plugin's classes up by name; `_tests/test_ndi.tscn` runs the
   whole path with a stand-in finder (`_tests/mock_ndi/`).
 
+## Spout (programs on this PC)
+The main screen and the presenters can show a **Spout** sender: another program on this PC that
+shares its picture, such as VTube Studio, OBS (with the Spout2 plugin), TouchDesigner or some
+games. The picture goes straight from the graphics card, so there's no delay, no blur and no
+compression, and transparency is kept.
+- **Main screen:** Source tab > *Spout (programs on this PC)*: pick the sender, click **Show**.
+  **Stop** lets go. The room lighting follows the picture like the other sources.
+  - Spout carries **no sound**. The program's sound reaches your stream the way it already does
+    (OBS, desktop audio).
+  - **Show the last sender again by itself**: when that sender starts again (the program was
+    restarted) and nothing else is on the screen, it comes back on its own.
+  - While Spout is showing, a browser share doesn't take over (click **Stop** first).
+- **Presenters:** set **Show** to **Spout (this PC)**, then pick the sender. A see-through avatar
+  (VTube Studio: Settings > Spout2 output) keeps its transparency: turn **Chroma key** off.
+- Turning Spout on in other programs: VTube Studio has it in its settings; OBS needs the free
+  *Spout2 Plugin for OBS*.
+- Streaming together: Spout only exists on your PC, so guests see a silhouette on a podium that
+  shows your Spout sender.
+- Needs the **godot-spout** extension in `addons/godot-spout` (github.com/buresu/godot-spout,
+  MIT), built for Redot 26.2 with a small patch (see `addons/godot-spout/STREAM_ROOMS_PATCH.md`).
+  Without it the game runs as before and the Source tab says the plugin isn't loaded.
+
 ## Chat audience (Fridge Stream Core)
 Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill up with your chat:
 - **Seats:** everyone who chats gets a seat with a head-and-shoulders silhouette in their own

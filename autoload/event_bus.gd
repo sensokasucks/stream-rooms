@@ -58,6 +58,13 @@ signal ndi_sources_changed(names: PackedStringArray, available: bool)
 signal ndi_connect_requested(source_name: String)
 signal ndi_stop_requested
 
+# ── Spout (addons/godot-spout) ───────────────────────────────
+## Spout senders running on this PC changed (names), or the plugin isn't loaded (available = false).
+signal spout_senders_changed(names: PackedStringArray, available: bool)
+## UI -> ScreenFeed: show this Spout sender on the main screen / stop it.
+signal spout_connect_requested(sender_name: String)
+signal spout_stop_requested
+
 # ── Settings / messages ──────────────────────────────────────
 signal setting_changed(key: String, value: Variant)
 signal status_message(text: String, is_error: bool)

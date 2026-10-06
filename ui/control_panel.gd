@@ -37,6 +37,11 @@ var _ndi_label: Label
 var _ndi_names: PackedStringArray = []
 var _ndi_available: bool = false
 var _pres_ndi_menus: Array[OptionButton] = []
+var _spout_menu: OptionButton
+var _spout_label: Label
+var _spout_names: PackedStringArray = []
+var _spout_available: bool = false
+var _pres_spout_menus: Array[OptionButton] = []
 var _user_hidden: bool = false
 var _window: Window               # the panel's own OS window (F9), null while docked
 var _window_btn: Button
@@ -64,6 +69,7 @@ var _net_medium: HBoxContainer
 
 func _ready() -> void:
 	_ndi_available = NdiReceiver.is_available()
+	_spout_available = SpoutReceiver.is_available()
 	_build()
 	EventBus.capture_status_changed.connect(_on_capture_status)
 	EventBus.camera_presets_changed.connect(_on_camera_presets)
@@ -78,7 +84,10 @@ func _ready() -> void:
 	EventBus.audience_count_changed.connect(_on_audience_count)
 	EventBus.room_presenters_changed.connect(_on_room_presenters)
 	EventBus.ndi_sources_changed.connect(_on_ndi_sources)
-	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_ndi_label())
+	EventBus.source_changed.connect(func(_m: String) -> void:
+		_refresh_ndi_label()
+		_refresh_spout_label())
+	EventBus.spout_senders_changed.connect(_on_spout_senders)
 	_on_chat_status(ChatFeed.get_status())
 	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _refresh_curtain_label())
 	EventBus.net_state_changed.connect(_on_net_state)
@@ -389,6 +398,33 @@ func _build_source_tab() -> Control:
 	v.add_child(nb)
 	_fill_ndi_menu(_ndi_menu, String(AppState.get_setting("ndi_source")), "(pick a source)")
 	_refresh_ndi_label()
+
+	v.add_child(_heading("Spout (programs on this PC)"))
+	var sr := HBoxContainer.new()
+	v.add_child(sr)
+	_spout_menu = OptionButton.new()
+	_spout_menu.focus_mode = Control.FOCUS_ALL
+	_spout_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spout_menu.fit_to_longest_item = false
+	_spout_menu.tooltip_text = "Programs on this PC sharing their picture over Spout: VTube Studio, OBS (with the Spout2 plugin), TouchDesigner, some games. The picture goes straight from the graphics card, with no delay or blur."
+	sr.add_child(_spout_menu)
+	var show_spout := _button("Show", func() -> void:
+		if _spout_menu.selected >= 0 and _spout_menu.get_item_metadata(_spout_menu.selected) != null:
+			EventBus.spout_connect_requested.emit(String(_spout_menu.get_item_metadata(_spout_menu.selected))))
+	show_spout.tooltip_text = "Show the picked Spout sender on the big screen."
+	sr.add_child(show_spout)
+	var stop_spout := _button("Stop", func() -> void: EventBus.spout_stop_requested.emit())
+	stop_spout.tooltip_text = "Stop showing the Spout sender."
+	sr.add_child(stop_spout)
+	_spout_label = Label.new()
+	_spout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_spout_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(_spout_label)
+	var sauto := _check("spout_auto", "Show the last sender again by itself")
+	sauto.tooltip_text = "When the last Spout sender you showed starts again (and nothing else is on the screen), show it without clicking."
+	v.add_child(sauto)
+	_fill_name_menu(_spout_menu, _spout_names, String(AppState.get_setting("spout_source")), "(pick a sender)")
+	_refresh_spout_label()
 
 	v.add_child(_heading("File or URL"))
 	var r1 := HBoxContainer.new()
@@ -964,7 +1000,7 @@ func _build_games_tab() -> Control:
 const COLOR_SAFE: Dictionary = {"kick": "009e73", "twitch": "cc79a7", "youtube": "e69f00", "other": "56b4e9"}
 
 const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green screen"],
-	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"]]
+	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"], ["spout", "Spout (this PC)"]]
 
 
 func _build_presenters_tab() -> Control:
@@ -1056,6 +1092,24 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	d.add_child(ndi_row)
 	_pres_ndi_menus.append(ndi)
 	_fill_ndi_menu(ndi, String(AppState.get_setting(k.call("ndi"))), "(none)")
+	var spout_row := HBoxContainer.new()
+	rows["spout"] = spout_row
+	var sl := Label.new()
+	sl.text = "Spout sender"
+	sl.custom_minimum_size = Vector2(120, 0)
+	spout_row.add_child(sl)
+	var spm := OptionButton.new()
+	spm.focus_mode = Control.FOCUS_ALL
+	spm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	spm.fit_to_longest_item = false
+	spm.tooltip_text = "A program on this PC sharing its picture over Spout, e.g. VTube Studio (Settings > Spout2 output). Transparency is kept, so turn off the chroma key for a see-through avatar."
+	spm.item_selected.connect(func(i: int) -> void:
+		if spm.get_item_metadata(i) != null:
+			AppState.set_setting(k.call("spout"), String(spm.get_item_metadata(i))))
+	spout_row.add_child(spm)
+	d.add_child(spout_row)
+	_pres_spout_menus.append(spm)
+	_fill_name_menu(spm, _spout_names, String(AppState.get_setting(k.call("spout"))), "(none)")
 	var url := _text_setting(k.call("url"), "Web page", "https://... (for \"Web page\")")
 	url.tooltip_text = "For pages with a see-through background (e.g. a reactive PNGTuber page). The sender page shows it over the key colour, you share that, and the chroma key cuts the colour out again."
 	rows["url"] = url
@@ -1329,6 +1383,8 @@ func _update_presenter_feeds(info: Dictionary) -> void:
 				text = "Starting the camera..."
 		elif src == "ndi":
 			text = _ndi_presenter_text(n)
+		elif src == "spout":
+			text = _spout_presenter_text(n)
 		_pres_feed_labels[n - 1].text = text
 
 
@@ -1351,16 +1407,22 @@ func _on_ndi_sources(names: PackedStringArray, available: bool) -> void:
 ## NDI sources in a dropdown (metadata = source name). A wanted source that isn't on the network
 ## right now stays listed as "(offline)" so the choice isn't lost.
 func _fill_ndi_menu(menu: OptionButton, want: String, empty_text: String) -> void:
+	_fill_name_menu(menu, _ndi_names, want, empty_text)
+
+
+## Names in a dropdown (metadata = the name; the first item, empty_text, has none). A wanted name
+## that isn't there right now stays listed as "(offline)" so the choice isn't lost.
+func _fill_name_menu(menu: OptionButton, names: PackedStringArray, want: String, empty_text: String) -> void:
 	menu.clear()
 	menu.add_item(empty_text)
 	menu.set_item_metadata(0, null)
 	menu.select(0)
-	for src in _ndi_names:
+	for src in names:
 		menu.add_item(src)
 		menu.set_item_metadata(menu.item_count - 1, src)
 		if src == want:
 			menu.select(menu.item_count - 1)
-	if want != "" and not _ndi_names.has(want):
+	if want != "" and not names.has(want):
 		menu.add_item("%s (offline)" % want)
 		menu.set_item_metadata(menu.item_count - 1, want)
 		menu.select(menu.item_count - 1)
@@ -1389,6 +1451,47 @@ func _ndi_presenter_text(n: int) -> String:
 	if not _ndi_names.has(want):
 		return "Waiting for NDI source %s..." % want
 	return "Live: NDI %s" % want
+
+
+# ── Spout ────────────────────────────────────────────────────
+func _on_spout_senders(names: PackedStringArray, available: bool) -> void:
+	_spout_names = names
+	_spout_available = available
+	if _spout_menu and not _spout_menu.get_popup().visible:
+		var cur: Variant = _spout_menu.get_item_metadata(_spout_menu.selected) if _spout_menu.selected >= 0 else null
+		_fill_name_menu(_spout_menu, names, String(cur) if cur != null else String(AppState.get_setting("spout_source")), "(pick a sender)")
+	for n in range(1, mini(AppState.PRESENTER_COUNT, _pres_spout_menus.size()) + 1):
+		var m: OptionButton = _pres_spout_menus[n - 1]
+		if not m.get_popup().visible:
+			_fill_name_menu(m, names, String(AppState.get_setting(AppState.presenter_key(n, "spout"))), "(none)")
+		if String(AppState.get_setting(AppState.presenter_key(n, "source"))) == "spout":
+			_pres_feed_labels[n - 1].text = _spout_presenter_text(n)
+	_refresh_spout_label()
+
+
+func _refresh_spout_label() -> void:
+	if _spout_label == null:
+		return
+	if not _spout_available:
+		_spout_label.text = "Spout plugin not loaded (addons/godot-spout)."
+	elif AppState.get_source_mode() == "spout":
+		_spout_label.text = "Showing %s on the screen. Spout carries no sound: the program's sound reaches your stream as it already does." \
+			% String(AppState.get_setting("spout_source"))
+	elif _spout_names.is_empty():
+		_spout_label.text = "No Spout senders running. Turn on Spout output in the other program (VTube Studio: Settings > Spout2; OBS: the Spout2 plugin)."
+	else:
+		_spout_label.text = "%d Spout sender(s) running. Pick one and click Show." % _spout_names.size()
+
+
+func _spout_presenter_text(n: int) -> String:
+	var want := String(AppState.get_setting(AppState.presenter_key(n, "spout")))
+	if not _spout_available:
+		return "Spout plugin not loaded."
+	if want == "":
+		return "Pick a Spout sender above."
+	if not _spout_names.has(want):
+		return "Waiting for Spout sender %s..." % want
+	return "Live: Spout %s" % want
 
 
 func _on_room_presenters(count: int) -> void:
@@ -1484,6 +1587,12 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		var pn := int(key.get_slice("_", 1))
 		if pn >= 1 and pn <= _pres_feed_labels.size() and String(AppState.get_setting(AppState.presenter_key(pn, "source"))) == "ndi":
 			_pres_feed_labels[pn - 1].text = _ndi_presenter_text(pn)
+	if key == "spout_source" and _spout_menu and not _spout_menu.get_popup().visible:
+		_fill_name_menu(_spout_menu, _spout_names, String(value), "(pick a sender)")
+	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_spout")):
+		var sn := int(key.get_slice("_", 1))
+		if sn >= 1 and sn <= _pres_feed_labels.size() and String(AppState.get_setting(AppState.presenter_key(sn, "source"))) == "spout":
+			_pres_feed_labels[sn - 1].text = _spout_presenter_text(sn)
 	if _sliders.has(key):
 		var s: HSlider = _sliders[key]
 		s.set_value_no_signal(float(value) * float(s.get_meta("scale", 1.0)))
@@ -1523,8 +1632,9 @@ func _refresh_presenter_rows(n: int) -> void:
 	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
 	(rows["camera"] as Control).visible = src == "camera"
 	(rows["ndi"] as Control).visible = src == "ndi"
+	(rows["spout"] as Control).visible = src == "spout"
 	(rows["url"] as Control).visible = src == "web"
-	var picture := src in ["camera", "tab", "web", "ndi"]
+	var picture := src in ["camera", "tab", "web", "ndi", "spout"]
 	var keyed := picture and bool(AppState.get_setting(AppState.presenter_key(n, "key")))
 	for i in (rows["picture"] as Array).size():
 		# the chroma key row itself shows for any picture; its sliders only while the key is on

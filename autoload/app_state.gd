@@ -162,6 +162,9 @@ const BASE_DEFAULTS: Dictionary = {
 	"ndi_source": "",            # last NDI source picked for the main screen
 	"ndi_auto": true,            # reconnect to it by itself when it shows up (and nothing else is playing)
 	"ndi_audio_buffer_ms": 500.0,  # NDI sound kept queued (patched plugin): rides out network / OBS hiccups, adds delay
+	# Spout (addons/godot-spout): another program on this PC shares its picture (VTube Studio, OBS, games...)
+	"spout_source": "",          # last Spout sender picked for the main screen
+	"spout_auto": true,          # show it again by itself when it comes back (and nothing else is playing)
 	"max_height": 720,           # file/URL conversion height
 	"loop_files": true,
 	# Streaming together (Together tab, autoload/net_session.gd)
@@ -177,10 +180,11 @@ const BASE_DEFAULTS: Dictionary = {
 const PRESENTER_COUNT: int = 4
 const PRESENTER_FIELDS: Dictionary = {
 	"on": false,                 # on set (podium, picture and lamp shown)
-	"source": "silhouette",      # "silhouette" | "green" | "camera" | "tab" | "web" | "ndi"
+	"source": "silhouette",      # "silhouette" | "green" | "camera" | "tab" | "web" | "ndi" | "spout"
 	"camera": "",                # camera device id for "camera" ("" = default camera)
 	"url": "",                   # web page for "web" (shown over the key colour, e.g. a transparent avatar page)
 	"ndi": "",                   # NDI source name for "ndi"
+	"spout": "",                 # Spout sender name for "spout"
 	"self_lit": false,           # glows like a light panel instead of taking the room's light
 	"light": 1.0,                # podium lamp brightness (0..3)
 	"key": true,                 # chroma key on camera / tab pictures

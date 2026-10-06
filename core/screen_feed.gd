@@ -5,8 +5,9 @@ extends Node
 ##   file    - local file / URL via VideoLoader + VideoStreamPlayer (Theora)
 ##   capture - browser tab via CaptureServer (JPEG frames + float PCM audio)
 ##   ndi     - an NDI source (OBS / NDI Tools) via NdiReceiver (optional godot-ndi extension)
-## A capture connection takes over from a playing file (not from NDI, which you pick on purpose).
-## Presenters can also show NDI sources (presenter source "ndi").
+##   spout   - a Spout sender on this PC via SpoutReceiver (optional godot-spout extension; picture only)
+## A capture connection takes over from a playing file (not from NDI / Spout, which you pick on purpose).
+## Presenters can also show NDI sources and Spout senders (presenter sources "ndi" / "spout").
 ## Publishes: EventBus.screen_texture_changed, screen_colors_changed,
 ## webcam_texture_changed, and AppState source / playback state.
 
@@ -60,6 +61,11 @@ var _ndi_player: VideoStreamPlayer          # main screen
 var _ndi_name: String = ""
 var _ndi_size: Vector2i = Vector2i.ZERO
 var _ndi_presenters: Dictionary = {}        # presenter -> {"name", "player", "size"}
+var _spout: SpoutReceiver
+var _spout_tex: Texture2D                   # main screen (a SpoutTexture: updates itself every frame)
+var _spout_name: String = ""
+var _spout_size: Vector2i = Vector2i.ZERO
+var _spout_presenters: Dictionary = {}      # presenter -> {"name", "tex", "size"}
 
 
 func _ready() -> void:
@@ -98,6 +104,13 @@ func _ready() -> void:
 	add_child(_ndi)
 	EventBus.ndi_sources_changed.connect(_on_ndi_sources)
 	EventBus.ndi_connect_requested.connect(start_ndi)
+
+	_spout = SpoutReceiver.new()
+	_spout.name = "SpoutReceiver"
+	add_child(_spout)
+	EventBus.spout_senders_changed.connect(_on_spout_senders)
+	EventBus.spout_connect_requested.connect(start_spout)
+	EventBus.spout_stop_requested.connect(stop_spout)
 	EventBus.ndi_stop_requested.connect(stop_ndi)
 
 
@@ -105,13 +118,14 @@ func _process(delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	_flush_video(now)
 	_flush_audio(now)
-	var sampled := _sampled_player()
+	var sampled := _sampled_texture()
 	if sampled:
 		_sample_timer -= delta
 		if _sample_timer <= 0.0:
 			_sample_timer = 1.0 / sample_rate_hz
-			_sample_player_frame(sampled)
+			_sample_frame(sampled)
 	_watch_ndi_sizes()
+	_watch_spout_sizes()
 	_watch_hitches(delta)
 	_pump_ndi_audio(delta)
 	if _webcam_texture and now - _webcam_last_s > 2.0:
@@ -132,6 +146,7 @@ func get_texture() -> Texture2D:
 		"file": return video_player.get_video_texture()
 		"capture": return _capture_texture
 		"ndi": return _ndi_player.get_video_texture() if _ndi_player else null
+		"spout": return _spout_tex
 	return null
 
 
@@ -153,6 +168,7 @@ func _on_file_play_requested(input: String) -> void:
 		EventBus.status_message.emit("A browser tab is being shared - stop sharing in the browser first.", true)
 		return
 	stop_ndi()
+	stop_spout()
 	video_loader.max_height = AppState.get_setting("max_height")
 	video_loader.request(input)
 
@@ -184,21 +200,24 @@ func _on_file_pause_toggle() -> void:
 		video_player.paused = not video_player.paused
 
 
-## The player whose picture is on the screen, when the room colours should follow it.
-func _sampled_player() -> VideoStreamPlayer:
+## The picture on the screen, when the room colours should follow it.
+func _sampled_texture() -> Texture2D:
 	match AppState.get_source_mode():
 		"file":
 			if video_player.is_playing() and not video_player.paused:
-				return video_player
+				return video_player.get_video_texture()
 		"ndi":
 			if _ndi_player and _ndi_player.is_playing():
-				return _ndi_player
+				return _ndi_player.get_video_texture()
+		"spout":
+			if _spout_tex and _spout_size.x > 0:
+				return _spout_tex
 	return null
 
 
-func _sample_player_frame(player: VideoStreamPlayer) -> void:
+func _sample_frame(tex: Texture2D) -> void:
 	# the GPU shrinks the frame first: only a 36x20 image is read back, not the whole picture
-	var c := _gpu_sampler.sample(player.get_video_texture())
+	var c := _gpu_sampler.sample(tex)
 	if c.size() == 3:
 		EventBus.screen_colors_changed.emit(c[0], c[1], c[2])
 
@@ -219,8 +238,8 @@ func _flush_video(now: float) -> void:
 		return
 	var img: Image = latest[1]
 	var colors: Array[Color] = latest[2]
-	if AppState.get_source_mode() == "ndi":
-		return          # NDI was picked on purpose: a browser share doesn't take over
+	if AppState.get_source_mode() == "ndi" or AppState.get_source_mode() == "spout":
+		return          # NDI / Spout was picked on purpose: a browser share doesn't take over
 	if AppState.get_source_mode() != "capture":
 		if AppState.get_source_mode() == "file":
 			video_player.stop()
@@ -309,6 +328,7 @@ func _on_room_presenters(count: int) -> void:
 	_room_presenters = count
 	_sync_presenter_feeds()
 	_sync_ndi_presenters()
+	_sync_spout_presenters()
 
 
 func _on_sender_status(info: Dictionary) -> void:
@@ -341,7 +361,7 @@ func _on_react_pause_changed(paused: bool) -> void:
 	match AppState.get_source_mode():
 		"file":
 			video_player.paused = paused
-		"capture", "ndi":
+		"capture", "ndi", "spout":
 			# The game can't confirm the browser obeyed, so report what was sent.
 			if SystemMedia.send_play_pause():
 				EventBus.status_message.emit("Sent Play/Pause to the browser.", false)
@@ -364,6 +384,7 @@ func _update_playback_active(now: float) -> void:
 		"file": active = video_player.is_playing() and not video_player.paused
 		"capture": active = now - _last_capture_frame_s < 1.0 and not AppState.is_react_paused()
 		"ndi": active = _ndi_player != null and _ndi_player.is_playing() and not AppState.is_react_paused()
+		"spout": active = _spout_tex != null and not AppState.is_react_paused()
 	AppState.set_playback_active(active)
 
 
@@ -373,6 +394,8 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_sync_presenter_feeds()
 	if key.begins_with("presenter_") and (key.ends_with("_on") or key.ends_with("_source") or key.ends_with("_ndi")):
 		_sync_ndi_presenters()
+	if key.begins_with("presenter_") and (key.ends_with("_on") or key.ends_with("_source") or key.ends_with("_spout")):
+		_sync_spout_presenters()
 	if key == "ndi_audio_buffer_ms":
 		_ndi_buffer_apply_in = 0.4     # apply once the slider stops moving
 	if key == "capture_http_port" or key == "capture_ws_port":
@@ -403,6 +426,7 @@ func start_ndi(source_name: String) -> void:
 	if _ndi_player and _ndi_name == source_name and _ndi_player.is_playing():
 		return
 	_stop_ndi_player()
+	stop_spout()
 	var pull := NdiReceiver.supports_pull_audio()
 	var p := _ndi.make_player(source_name, self, AudioManager.VIDEO_BUS, pull)
 	if p == null:
@@ -619,3 +643,97 @@ func _trim_ndi_padding(chunk: PackedVector2Array) -> PackedVector2Array:
 		_ndi_padded += 1
 		return chunk.slice(0, i + 1)
 	return chunk
+
+
+# ── Spout source ─────────────────────────────────────────────
+## Shows a Spout sender on the main screen (stops a file or NDI). Spout carries no sound: the
+## program's sound reaches the stream the way it already does (OBS, desktop audio).
+func start_spout(sender_name: String) -> void:
+	if sender_name == "":
+		return
+	if not SpoutReceiver.is_available():
+		EventBus.status_message.emit("Spout isn't available: the godot-spout plugin didn't load (addons/godot-spout).", true)
+		return
+	if _spout_tex and _spout_name == sender_name:
+		return
+	_spout.refresh()
+	if not _spout.has_sender(sender_name):
+		EventBus.status_message.emit("Spout sender \"%s\" isn't running right now." % sender_name, true)
+		return
+	_stop_spout_texture()
+	stop_ndi()
+	if AppState.get_source_mode() == "file":
+		video_player.stop()
+		_file_path = ""
+	_spout_tex = SpoutReceiver.make_texture(sender_name)
+	_spout_name = sender_name
+	_spout_size = Vector2i.ZERO
+	AppState.set_setting("spout_source", sender_name)
+	_set_source("spout")
+	EventBus.screen_texture_changed.emit(_spout_tex)
+	EventBus.status_message.emit("Showing Spout sender %s" % sender_name, false)
+
+
+func stop_spout() -> void:
+	if _spout_tex == null:
+		return
+	_stop_spout_texture()
+	if AppState.get_source_mode() == "spout":
+		_set_source("none")
+
+
+func get_spout_sender() -> String:
+	return _spout_name if _spout_tex else ""
+
+
+func _stop_spout_texture() -> void:
+	_spout_tex = null       # (freed with its last reference; the extension stops receiving then)
+	_spout_name = ""
+	_spout_size = Vector2i.ZERO
+
+
+func _on_spout_senders(names: PackedStringArray, _available: bool) -> void:
+	if _spout_tex and not names.has(_spout_name):
+		EventBus.status_message.emit("Spout sender %s went away." % _spout_name, true)
+		stop_spout()
+	var last := String(AppState.get_setting("spout_source"))
+	if bool(AppState.get_setting("spout_auto")) and names.has(last) and AppState.get_source_mode() == "none":
+		start_spout.call_deferred(last)
+	_sync_spout_presenters()
+
+
+## The screen keeps its shape: tell it again when the sender's picture size changes
+## (the texture is empty until the first frame arrives).
+func _watch_spout_sizes() -> void:
+	if _spout_tex and AppState.get_source_mode() == "spout":
+		var sz := Vector2i(_spout_tex.get_size())
+		if sz != _spout_size and sz.x > 0:
+			_spout_size = sz
+			EventBus.screen_texture_changed.emit(_spout_tex)
+	for n: int in _spout_presenters.keys():
+		var e: Dictionary = _spout_presenters[n]
+		var tex: Texture2D = e["tex"]
+		var sz := Vector2i(tex.get_size())
+		if sz != e["size"] and sz.x > 0:
+			e["size"] = sz
+			EventBus.presenter_texture_changed.emit(n, tex)
+
+
+func _sync_spout_presenters() -> void:
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var want := ""
+		if n <= _room_presenters and bool(AppState.get_setting(AppState.presenter_key(n, "on"))) \
+				and String(AppState.get_setting(AppState.presenter_key(n, "source"))) == "spout":
+			want = String(AppState.get_setting(AppState.presenter_key(n, "spout")))
+		var cur: Dictionary = _spout_presenters.get(n, {})
+		if not cur.is_empty() and String(cur["name"]) == want and _spout.has_sender(want):
+			continue
+		if not cur.is_empty():
+			_spout_presenters.erase(n)
+			EventBus.presenter_texture_changed.emit(n, null)
+		if want == "" or not _spout.has_sender(want):
+			continue
+		var tex := SpoutReceiver.make_texture(want)
+		if tex == null:
+			continue
+		_spout_presenters[n] = {"name": want, "tex": tex, "size": Vector2i.ZERO}

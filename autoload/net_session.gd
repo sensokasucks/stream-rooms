@@ -29,9 +29,9 @@ const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_
 ## podium to one streamer's own audience, so those stay local.
 const SHARED_PRESENTER_FIELDS: Array[String] = ["on", "source", "url", "self_lit", "light", "key",
 	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y"]
-## Presenter sources that only exist on the host's PC (its camera, browser tab, NDI): guests show
+## Presenter sources that only exist on the host's PC (its camera, browser tab, NDI, Spout): guests show
 ## a silhouette instead. A "web" page (e.g. a VDO.Ninja link) works for everyone.
-const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi"]
+const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
 
 var _shared: Dictionary = {}            # setting key -> true

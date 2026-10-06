@@ -12,6 +12,7 @@ The owner streams with it. Changes should be practical, tested and explained in 
 - `project.godot` features: `"26.2", "Forward Plus", "Redot"`. Don't change the renderer.
 - New `.gd` files get a `.gd.uid` file when the editor opens them. Keep the `.uid` files (and commit them).
 - Optional NDI support comes from the `addons/godot-ndi` GDExtension (patched; the original is in `_backup/`). The app must keep working when the extension isn't there.
+- Optional Spout input comes from the `addons/godot-spout` GDExtension (built here for Redot's 4.5 API with Vulkan, patched; see its `STREAM_ROOMS_PATCH.md`). Same rule: the app must keep working without it. `core/spout_receiver.gd` looks it up by name.
 - `tools/` holds `ffmpeg.exe` and `yt-dlp.exe`, used by `core/video_loader.gd`.
 
 ## Related project: Fridge Stream Core
@@ -69,7 +70,7 @@ It rebuilds the editor's class cache first, runs each test one at a time with `-
 - If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. The runner fixes that (or run the exe with `--headless --path . --import`).
 - Every test should end with "exit 0" in the runner table. Anything else means Redot crashed (the old quit crash in the NDI plugin is fixed; see `addons/godot-ndi/STREAM_ROOMS_PATCH.md`).
 - Running a test by hand without a profile still changes the live settings: back up `settings.cfg` first (Redot app_userdata folder, `Stream Rooms`).
-- Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`, `test_mp_profile`, `test_together`, `test_panel_clicks`.
+- Good regression set after audience, panel or room changes: `test_performance`, `test_accessibility`, `test_crowd`, `test_platform_split`, `test_reactions`, `test_mp_profile`, `test_together`, `test_panel_clicks`, `test_spout`.
 - Look at the screenshots a test saves. Many bugs are visual.
 
 ## Working rules

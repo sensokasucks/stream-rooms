@@ -6,7 +6,7 @@ extends Node3D
 
 const SHADER: Shader = preload("res://core/presenters/presenter.gdshader")
 const SILHOUETTE: Texture2D = preload("res://core/presenters/presenter_silhouette.png")
-const SOURCE_MODE: Dictionary = {"silhouette": 0, "green": 1, "camera": 2, "tab": 2, "web": 2, "ndi": 2}
+const SOURCE_MODE: Dictionary = {"silhouette": 0, "green": 1, "camera": 2, "tab": 2, "web": 2, "ndi": 2, "spout": 2}
 
 @export var lamp_energy: float = 2.5
 @export var lamp_range: float = 3.5
@@ -123,6 +123,7 @@ func _apply_all() -> void:
 			"waiting for the camera (sender page)" if source == "camera"
 			else "open the web page in the sender page" if source == "web"
 			else "waiting for NDI source %s" % String(_setting("ndi")) if source == "ndi"
+			else "waiting for Spout sender %s" % String(_setting("spout")) if source == "spout"
 			else "pick a tab or window in the sender page"]
 
 
