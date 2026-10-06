@@ -128,3 +128,6 @@ signal net_state_changed(info: Dictionary)
 signal net_camera_moved(peer_id: int, peer_name: String, xform: Transform3D)
 ## Someone left the session (their camera marker goes away).
 signal net_peer_left(peer_id: int)
+## The live feed for the sender page (the host's shared tab, sent to guests through VDO.Ninja):
+## {role: "off" | "publish" | "view", id: String, key: String, live: bool}. ScreenFeed passes it on.
+signal live_feed_changed(info: Dictionary)

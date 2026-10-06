@@ -1,6 +1,8 @@
 # Multiplayer rooms: plan
 
-Status: Phase 2 built (October 2026): synced web videos (`NetSession` "Synced video" section, `ScreenFeed` prepare / sync), tested with a host and two guests on one PC (`_tests/test_watch_together`: they stay within ~0.02 s, including pause, a jump and a late joiner). Theora seeking in Redot 26.2 works and takes 20-80 ms. Each profile has its own video cache (`user://video_cache_<profile>`), so copies on one PC don't convert into the same file.
+Status: Phase 3 built (October 2026): the host's sender page publishes its shared tab with the VDO.Ninja SDK (bundled as `web/vdoninja-sdk.min.js`, served by CaptureServer), under a random stream name and key per session (`NetSession` "Live feed"); a guest's sender page views it ("Watch the host's live feed") and feeds it into the normal capture path, so no new video code in the game. `_tests/test_live_feed` runs it end to end with headless Chrome (`?testshare` / `?autowatch` on the sender page); it needs the internet, so it's not in the default set. Camera markers near your own camera now hide.
+
+Phase 2 built (October 2026): synced web videos (`NetSession` "Synced video" section, `ScreenFeed` prepare / sync), tested with a host and two guests on one PC (`_tests/test_watch_together`: they stay within ~0.02 s, including pause, a jump and a late joiner). Theora seeking in Redot 26.2 works and takes 20-80 ms. Each profile has its own video cache (`user://video_cache_<profile>`), so copies on one PC don't convert into the same file.
 
 Phase 1 built (October 2026): `--mp-profile`, `autoload/net_session.gd` (host / join, password challenge, version check, co-hosts), the Together tab, shared room / curtain / house lights / presenters, reactions for everyone, camera markers (`core/net_markers.gd`). Tested with copies on one PC (`_tests/test_together`); still to do for Phase 1: two PCs over Tailscale. The owner's answers to the open questions are at the end.
 

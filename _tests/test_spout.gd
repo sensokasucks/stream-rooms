@@ -79,7 +79,8 @@ func _ready() -> void:
 	var sender := _start_sender()
 	_check(await _wait_for(func() -> bool: return _senders.has(SENDER), 8.0), "the new sender shows up in the list (%s)" % ", ".join(_senders))
 	var panel: Node = main.get_node("ControlPanel")
-	_check((panel._spout_menu as OptionButton).item_count >= 2, "the Source tab's Spout menu lists it")
+	_check(await _wait_for(func() -> bool: return (panel._spout_menu as OptionButton).item_count >= 2, 4.0),
+		"the Source tab's Spout menu lists it")
 
 	EventBus.spout_connect_requested.emit(SENDER)
 	_check(AppState.get_source_mode() == "spout", "it's on the big screen")

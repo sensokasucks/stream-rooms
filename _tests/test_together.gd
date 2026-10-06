@@ -206,6 +206,10 @@ func _guest() -> void:
 	_check(await _wait_for(func() -> bool: return _remote_reactions > 0, 20.0), "the host's reaction played here")
 	_check(await _wait_for(func() -> bool: return _markers() != null and _markers().get_marker_count() >= 1, 10.0),
 		"the host's camera shows here")
+	await _secs(0.5)
+	var mk: Node3D = _markers().get_marker(1) if _markers() else null
+	var near := mk != null and mk.global_position.distance_to(get_viewport().get_camera_3d().global_position) <= NetMarkers.HIDE_NEAR_M
+	_check(mk != null and mk.visible != near, "a camera marker on top of this camera hides (near=%s)" % near)
 
 	# not a co-host yet: shared things are locked
 	var panel: Node = _main.get_node("ControlPanel")

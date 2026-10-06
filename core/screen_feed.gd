@@ -65,6 +65,7 @@ var _ndi_player: VideoStreamPlayer          # main screen
 var _ndi_name: String = ""
 var _ndi_size: Vector2i = Vector2i.ZERO
 var _ndi_presenters: Dictionary = {}        # presenter -> {"name", "player", "size"}
+var _live_feed: Dictionary = {"role": "off"}   # streaming together: what the sender page should do
 var _prepare_input: String = ""            # loading to stop on the first frame (streaming together)
 var _sync_cooldown: float = 0.0
 var _progress_wait: float = 0.0
@@ -99,6 +100,7 @@ func _ready() -> void:
 	EventBus.file_play_requested.connect(_on_file_play_requested)
 	EventBus.file_prepare_requested.connect(_on_file_prepare_requested)
 	EventBus.file_sync_requested.connect(_on_file_sync_requested)
+	EventBus.live_feed_changed.connect(_on_live_feed_changed)
 	EventBus.file_stop_requested.connect(stop_file)
 	EventBus.file_pause_toggle_requested.connect(_on_file_pause_toggle)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
@@ -393,6 +395,19 @@ func _sync_presenter_feeds() -> void:
 	capture_server.send_to_sender({"type": "presenters", "slots": slots})
 
 
+## Streaming together: the sender page sends the host's shared tab to the guests, or (on a guest)
+## receives it and hands it to the game like a tab of its own.
+func _on_live_feed_changed(info: Dictionary) -> void:
+	_live_feed = info.duplicate()
+	_send_live_feed()
+
+
+func _send_live_feed() -> void:
+	var msg := _live_feed.duplicate()
+	msg["type"] = "live_feed"
+	capture_server.send_to_sender(msg)
+
+
 func _on_room_presenters(count: int) -> void:
 	_room_presenters = count
 	_sync_presenter_feeds()
@@ -405,6 +420,7 @@ func _on_sender_status(info: Dictionary) -> void:
 	status["connected"] = capture_server.is_connected_to_sender()
 	if status["connected"] and not _sender_was_connected:
 		_sync_presenter_feeds.call_deferred()
+		_send_live_feed.call_deferred()
 	_sender_was_connected = bool(status["connected"])
 	var feeds: Array = info.get("presenters", []) if info.get("presenters") is Array else []
 	for i in AppState.PRESENTER_COUNT:

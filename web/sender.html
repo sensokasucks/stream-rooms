@@ -42,6 +42,17 @@
     <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span></div>
   </section>
 
+  <section id="liveSection" class="hidden">
+    <div class="row"><b>Streaming together</b></div>
+    <div id="liveHost" class="hidden"><small>The tab or window you share below also goes to your guests' big
+      screens, with its sound (VDO.Ninja, straight from this browser to theirs).</small></div>
+    <div id="liveGuest" class="row hidden">
+      <button id="watchBtn" class="primary">Watch the host's live feed</button>
+      <button id="unwatchBtn" disabled>Stop watching</button>
+    </div>
+    <div id="liveStatus" class="status"></div>
+  </section>
+
   <section>
     <div class="row">
       <button id="shareBtn" class="primary">Share a tab or window</button>
@@ -105,6 +116,8 @@ const PRES_KEEPALIVE_MS = 1000;
 const JPEG_QUALITY = 0.82;
 
 const $ = (id) => document.getElementById(id);
+// Tests only: "?testshare" shares a generated picture and tone instead of asking for a tab.
+const TEST_SHARE = new URLSearchParams(location.search).has("testshare");
 let ws = null;
 let share = null;          // { stream, videoPump, audio }
 let cam = null;            // { stream, pump }
@@ -119,6 +132,7 @@ function connect() {
     if (typeof e.data !== "string") return;
     let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
     if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots);
+    if (msg.type === "live_feed") applyLiveFeed(msg);
   };
   ws.onclose = () => { setLink(false); setTimeout(connect, 1000); };
   ws.onerror = () => {};
@@ -269,7 +283,7 @@ async function startShare() {
   const supported = navigator.mediaDevices.getSupportedConstraints();
   let stream;
   try {
-    stream = await navigator.mediaDevices.getDisplayMedia({
+    stream = TEST_SHARE ? testPatternStream() : await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: { ideal: maxFps }, height: { ideal: h } },
       audio: wantAudio ? { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false } : false,
       selfBrowserSurface: "exclude",
@@ -298,6 +312,23 @@ async function startShare() {
   $("shareStatus").textContent = "Sharing: " + (vtrack.label || "screen");
   $("shareBtn").disabled = true; $("stopBtn").disabled = false;
   sendStatus();
+  syncLive();
+}
+
+// Tests only: a colour-cycling picture with a 440 Hz tone, standing in for a shared tab.
+function testPatternStream() {
+  const c = document.createElement("canvas");
+  c.width = 640; c.height = 360;
+  const g = c.getContext("2d");
+  let hue = 0;
+  setInterval(() => { hue = (hue + 4) % 360; g.fillStyle = "hsl(" + hue + ",80%,50%)"; g.fillRect(0, 0, 640, 360); }, 33);
+  const stream = c.captureStream(30);
+  const ac = new AudioContext();
+  const osc = ac.createOscillator();
+  const dest = ac.createMediaStreamDestination();
+  osc.connect(dest); osc.start();
+  stream.addTrack(dest.stream.getAudioTracks()[0]);
+  return stream;
 }
 
 function describeAudio(wanted, supported) {
@@ -315,6 +346,7 @@ function describeAudio(wanted, supported) {
 
 function stopShare() {
   if (!share) return;
+  const wasRemote = !!share.remote;
   share.videoPump && share.videoPump.stop();
   share.audio.pump && share.audio.pump.stop();
   share.stream.getTracks().forEach((t) => t.stop());
@@ -324,7 +356,157 @@ function stopShare() {
   $("audioStatus").textContent = "";
   $("shareBtn").disabled = false; $("stopBtn").disabled = true;
   sendStatus();
+  if (wasRemote) watching = false;
+  syncLive();
 }
+
+// ── Streaming together: the host's shared tab, through VDO.Ninja ─
+// Host: the shared tab is published under a random stream name the game makes for the session.
+// Guest: "Watch" receives it and hands it to the game exactly like a tab shared here.
+// The SDK (MPL-2.0, web/vdoninja-sdk.min.js) is only loaded when this is used.
+let live = { role: "off", id: "", key: "", live: false };
+let vdo = null;              // the VDO.Ninja connection (host: publishing, guest: viewing)
+let vdoPublished = null;     // host: the stream being published
+let watching = false;        // guest: clicked Watch
+let sdkLoading = null;
+
+function loadSdk() {
+  if (window.VDONinjaSDK) return Promise.resolve();
+  if (!sdkLoading) sdkLoading = new Promise((ok, fail) => {
+    const el = document.createElement("script");
+    el.src = "/vdoninja-sdk.min.js";
+    el.onload = ok;
+    el.onerror = () => { sdkLoading = null; fail(new Error("couldn't load the VDO.Ninja SDK")); };
+    document.head.appendChild(el);
+  });
+  return sdkLoading;
+}
+function liveSay(text, cls) {
+  const el = $("liveStatus");
+  el.textContent = text;
+  el.className = "status" + (cls ? " " + cls : "");
+}
+async function vdoClose() {
+  const v = vdo; vdo = null; vdoPublished = null;
+  if (v) { try { await v.disconnect(); } catch (_) {} }
+}
+async function vdoOpen() {
+  await loadSdk();
+  const v = new VDONinjaSDK({ salt: "vdo.ninja", password: live.key });
+  await v.connect();
+  return v;
+}
+
+function applyLiveFeed(msg) {
+  const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live };
+  const changed = next.role !== live.role || next.id !== live.id || next.key !== live.key;
+  live = next;
+  $("liveSection").classList.toggle("hidden", live.role === "off");
+  $("liveHost").classList.toggle("hidden", live.role !== "publish");
+  $("liveGuest").classList.toggle("hidden", live.role !== "view");
+  if (changed) {
+    if (share && share.remote) stopShare();
+    watching = false;
+    vdoClose();
+  }
+  if (new URLSearchParams(location.search).has("autowatch") && live.role === "view" && live.live && !watching) {
+    startWatching();     // (tests: no click needed)
+    return;
+  }
+  syncLive();
+}
+
+async function syncLive() {
+  if (live.role === "publish") {
+    if (share && !share.remote && vdoPublished !== share.stream) {
+      await vdoClose();
+      const stream = share.stream;
+      liveSay("Sending this tab to your guests...");
+      try {
+        const v = await vdoOpen();
+        if (!share || share.stream !== stream || live.role !== "publish") { v.disconnect(); return; }
+        await v.publish(stream, { streamID: live.id, label: "Stream Rooms host" });
+        vdo = v; vdoPublished = stream;
+        liveSay("Your guests get this tab too.");
+      } catch (e) { liveSay("Couldn't send the tab to your guests: " + e.message, "err"); }
+    } else if (!share) {
+      if (vdo) await vdoClose();
+      liveSay("Share a tab or window and your guests get it too.");
+    }
+  } else if (live.role === "view") {
+    $("watchBtn").disabled = watching || !live.live;
+    $("unwatchBtn").disabled = !watching;
+    if (watching && live.live && !share) startWatching();       // the host shares again
+    else if (!watching) liveSay(live.live ? "The host is sharing a tab." : "The host isn't sharing a tab right now.");
+  } else if (vdo) {
+    vdoClose();
+  }
+}
+
+async function startWatching() {
+  if (live.role !== "view" || !live.id) return;
+  watching = true;
+  $("watchBtn").disabled = true; $("unwatchBtn").disabled = false;
+  if (share && !share.remote) stopShare();     // the host's tab takes the place of your own
+  watching = true;
+  liveSay("Connecting to the host's feed...");
+  try {
+    await vdoClose();
+    const v = await vdoOpen();
+    vdo = v;
+    const incoming = new MediaStream();
+    v.addEventListener("track", (ev) => {
+      if (vdo !== v) return;
+      const t = ev.detail.track;
+      incoming.getTracks().filter((x) => x.kind === t.kind).forEach((x) => incoming.removeTrack(x));
+      incoming.addTrack(t);
+      startRemoteShare(incoming, t);
+    });
+    await v.view(live.id, { audio: true, video: true, label: "Stream Rooms guest" });
+  } catch (e) {
+    watching = false;
+    liveSay("Couldn't watch the host's feed: " + e.message, "err");
+    syncLive();
+  }
+}
+
+// The host's feed goes to the game through the same picture and sound pumps as a shared tab.
+async function startRemoteShare(stream, track) {
+  if (!share || !share.remote) {
+    if (share) stopShare();
+    share = { stream, remote: true, label: "Host's live feed", audio: { track: null, suppressed: true } };
+    $("preview").srcObject = stream;           // (muted here; it also keeps the WebRTC sound flowing)
+    $("preview").play().catch(() => {});
+    $("shareBtn").disabled = true; $("stopBtn").disabled = false;
+    $("shareStatus").textContent = "Showing the host's live feed.";
+  }
+  if (track.kind === "video") {
+    share.videoPump && share.videoPump.stop();
+    share.videoPump = startFramePump(track, PKT_VIDEO, parseInt($("quality").value, 10), parseInt($("fps").value, 10));
+    track.addEventListener("ended", () => {
+      if (share && share.remote && share.stream === stream) {
+        stopShare();
+        watching = true;          // keep watching: the feed comes back when the host shares again
+        syncLive();
+      }
+    });
+  } else if (track.kind === "audio") {
+    share.audio.pump && share.audio.pump.stop();
+    share.audio.track = track;
+    try { share.audio.pump = await startAudioPump(track); } catch (_) {}
+    $("audioStatus").textContent = "The host's sound goes to your game.";
+  }
+  liveSay("Watching the host's live feed.");
+  sendStatus();
+}
+
+$("watchBtn").onclick = startWatching;
+$("unwatchBtn").onclick = () => {
+  if (share && share.remote) stopShare();
+  watching = false;
+  vdoClose();
+  syncLive();
+};
 
 // ── Webcam ───────────────────────────────────────────────────
 async function toggleCam() {
@@ -511,6 +693,7 @@ if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
   $("shareBtn").disabled = true;
 }
 connect();
+if (TEST_SHARE) setTimeout(startShare, 1500);
 </script>
 </body>
 </html>

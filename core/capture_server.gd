@@ -4,6 +4,7 @@ extends Node
 ##   http://127.0.0.1:<http_port>/  serves web/sender.html (localhost counts as a
 ##                                 secure context, which getDisplayMedia requires)
 ##   /backdrop?url=..&bg=00ff00    web/backdrop.html: a web page over a solid key colour
+##   /vdoninja-sdk.min.js          the VDO.Ninja SDK (MPL-2.0) for the live feed while streaming together
 ##   ws://127.0.0.1:<ws_port>       receives the stream
 ##
 ## Binary packets: first byte = type
@@ -154,6 +155,13 @@ func _respond_http(peer: StreamPeerTCP, request: String) -> void:
 			_send_http(peer, "404 Not Found", "text/plain", "Missing web/backdrop.html".to_utf8_buffer())
 		else:
 			_send_http(peer, "200 OK", "text/html; charset=utf-8", page.to_utf8_buffer())
+		return
+	if first_line.begins_with("GET ") and path == "/vdoninja-sdk.min.js":
+		var js := FileAccess.get_file_as_bytes(sender_html_path.get_base_dir().path_join("vdoninja-sdk.min.js"))
+		if js.is_empty():
+			_send_http(peer, "404 Not Found", "text/plain", "Missing web/vdoninja-sdk.min.js".to_utf8_buffer())
+		else:
+			_send_http(peer, "200 OK", "text/javascript; charset=utf-8", js)
 		return
 	if not first_line.begins_with("GET ") or not (path == "/" or path.begins_with("/?") or path == "/sender.html"):
 		_send_http(peer, "404 Not Found", "text/plain", "Not found".to_utf8_buffer())

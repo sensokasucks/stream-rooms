@@ -537,7 +537,28 @@ everyone watches it in sync:
 A video **file** on the host's PC can't reach the guests, so only the host sees it (it says
 so in a message). A co-host's **Play** sends the link to the host, who starts it for everyone.
 
-Browser-tab sharing, NDI and Spout aren't shared yet: they only exist on the host's PC.
+### The host's live tab
+
+When the host shares a browser tab or window in their **sender page** (Source tab > **Open sender
+page**, as usual), the guests can watch it on their big screens too, with its sound. Use it for
+anything live: a game, a stream you're reacting to, a website.
+
+- **Host:** nothing extra to do while **Send my shared tab to the guests** (Together tab) is ticked.
+  The sender page says "Your guests get this tab too."
+- **Guest:** the Together tab says when the host is sharing. Open your own sender page (the
+  **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
+  takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
+  again. **Stop watching** lets go.
+- It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
+  about 0.2 to 1 second behind the host. Each guest costs the host roughly 3 to 6 Mbps of upload,
+  so a host on a slow connection may want to untick it.
+- The stream's name and key are random for each session and only go to guests who got the
+  password right.
+
+NDI and Spout aren't shared: they only exist on the host's PC.
+
+The VDO.Ninja SDK (`web/vdoninja-sdk.min.js`, version 1.6.2 from npm `@vdoninja/sdk`, MPL-2.0,
+licence in `web/vdoninja-sdk-LICENSE.txt`) is only loaded when the live feed is used.
 
 ### Running two copies on one PC
 

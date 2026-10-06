@@ -174,6 +174,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_password": "",     # session password (stays on this PC)
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local"
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
+	"together_live_feed": true,  # host: the tab shared in the sender page also goes to the guests (VDO.Ninja)
 }
 
 ## Presenter podiums (rooms with PRESENTER_<n> markers). Keys are "presenter_<n>_<field>", n = 1..4.

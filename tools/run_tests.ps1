@@ -3,7 +3,8 @@
 # - Rebuilds the editor's class cache first (a stale cache makes scripts fail with
 #   "Identifier ... not declared").
 # - Runs every test with --mp-profile=test, starting from a fresh settings_test.cfg each time,
-#   so tests start from the default settings and never touch your real settings.cfg.
+#   so tests start from the default settings and never touch your real settings.cfg. Chat is off
+#   and points at a dead address, so a test never talks to a Stream Core you have running.
 # - Stops a test that runs longer than the time limit (a script error can leave a test hanging).
 #
 # Run from PowerShell in the project folder:
@@ -46,7 +47,8 @@ foreach ($t in $Tests) {
 	Write-Host "Running $t..."
 	$dir = Join-Path $Out $t
 	New-Item -ItemType Directory -Force $dir | Out-Null
-	if (Test-Path $profileCfg) { Remove-Item $profileCfg -Force }
+	# fresh defaults, except: never talk to the real Stream Core (it may be running for a stream)
+	Set-Content -Path $profileCfg -Encoding ascii -Value "[settings]`r`n`r`nchat_enabled=false`r`nchat_core_url=`"ws://127.0.0.1:9/ws`"`r`n"
 	$log = Join-Path $Out "$t.log"
 	$ended = Invoke-Redot @("--path", "`"$project`"", "_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test") $log $TimeLimit
 	$text = @(Get-Content $log -ErrorAction SilentlyContinue) + @(Get-Content "$log.err" -ErrorAction SilentlyContinue)

@@ -65,6 +65,8 @@ var _net_host_btn: Button
 var _net_join_btn: Button
 var _net_leave_btn: Button
 var _net_medium: HBoxContainer
+var _net_live: HBoxContainer
+var _net_live_label: Label
 
 
 func _ready() -> void:
@@ -1250,6 +1252,16 @@ func _build_together_tab() -> Control:
 	v.add_child(_net_leave_btn)
 	_net_status = _hint("")
 	v.add_child(_net_status)
+	# guest: the host is sharing a tab, watch it through your own sender page
+	_net_live = HBoxContainer.new()
+	_net_live_label = _hint("")
+	_net_live_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_net_live.add_child(_net_live_label)
+	var open_sender := _button("Open sender page", func() -> void:
+		if _capture_url != "": OS.shell_open(_capture_url))
+	open_sender.tooltip_text = "Opens the sender page in your browser. Click \"Watch the host's live feed\" there and the host's tab shows on your big screen."
+	_net_live.add_child(open_sender)
+	v.add_child(_net_live)
 	_net_medium = HBoxContainer.new()
 	var mh := _hint("Every guest draws the whole room while streaming. Medium graphics keeps it smooth.")
 	mh.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1265,6 +1277,9 @@ func _build_together_tab() -> Control:
 	v.add_child(_heading("In the session"))
 	_net_peers = VBoxContainer.new()
 	v.add_child(_net_peers)
+	var live := _check("together_live_feed", "Send my shared tab to the guests")
+	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
+	v.add_child(live)
 	var cams := _check("together_show_cameras", "Show the others' cameras")
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)
@@ -1281,6 +1296,9 @@ func _on_net_state(info: Dictionary) -> void:
 	_net_join_btn.disabled = role != "off"
 	_net_leave_btn.disabled = role == "off"
 	_net_medium.visible = bool(info.get("suggest_medium", false))
+	_net_live.visible = role == "guest"
+	_net_live_label.text = ("The host is sharing a live tab. Open your sender page and click \"Watch the host's live feed\"."
+		if bool(info.get("host_live", false)) else "The host isn't sharing a live tab right now.")
 	for c in _net_peers.get_children():
 		c.queue_free()
 	var peers: Array = info.get("peers", [])

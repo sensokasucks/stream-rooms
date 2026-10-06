@@ -50,6 +50,11 @@ var _applying: bool = false             # guest: applying the host's state (the 
 var _medium_dismissed: bool = false
 var _cam_wait: float = 0.0
 var _last_cam: Transform3D
+## The host's live feed (its shared tab, through VDO.Ninja): a random stream name and key per
+## session, only ever sent to guests who passed the password check.
+var _live_id: String = ""
+var _live_key: String = ""
+var _live_on: bool = false              # guest: the host is sharing a tab right now
 var _video_count: int = 0
 ## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
 var _video: Dictionary = {}
@@ -110,7 +115,7 @@ func _process(delta: float) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
-## {role, status, error, address, cohost, suggest_medium, peers: [{id, name, cohost, me}]}
+## {role, status, error, address, cohost, suggest_medium, host_live, peers: [{id, name, cohost, me}]}
 func get_info() -> Dictionary:
 	var me := multiplayer.get_unique_id() if _role != "off" else 0
 	var peers: Array = []
@@ -119,7 +124,7 @@ func get_info() -> Dictionary:
 	var q := String(AppState.get_setting("graphics_quality"))
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
-		"peers": peers}
+		"host_live": is_host_live(), "peers": peers}
 
 
 func get_role() -> String:
@@ -172,6 +177,9 @@ func host() -> void:
 	_cams.clear()
 	_video.clear()
 	AppState.net_gate = _gate
+	_live_id = _random_token(20)
+	_live_key = _random_token(24)
+	_emit_live()
 	if ip == "*":
 		_address = "%s:%d" % [ts if ts != "" else _lan_ip(), port]
 	else:
@@ -391,6 +399,10 @@ func _close(message: String, is_error: bool = false) -> void:
 	_cams.clear()
 	_video.clear()
 	_guest_video.clear()
+	_live_id = ""
+	_live_key = ""
+	_live_on = false
+	_emit_live()
 	_address = ""
 	AppState.net_gate = Callable()
 	set_process(false)
@@ -423,6 +435,9 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_to_guests("_net_setting", [key, value])
 	elif key == "graphics_quality" and _role == "guest":
 		_emit_state()
+	if key == "together_live_feed" and _role == "host":
+		_emit_live()
+		_to_guests("_net_live", [_live_info_for_guests()])
 
 
 func _on_room_requested(room_id: String) -> void:
@@ -439,7 +454,8 @@ func _snapshot() -> Dictionary:
 	var s := {}
 	for k: String in _shared:
 		s[k] = AppState.get_setting(k)
-	var snap := {"room": String(AppState.get_setting("room_id")), "curtain": AppState.is_curtain_closed(), "settings": s}
+	var snap := {"room": String(AppState.get_setting("room_id")), "curtain": AppState.is_curtain_closed(), "settings": s,
+		"live": _live_info_for_guests()}
 	if bool(_video.get("live", false)):
 		snap["video"] = {"id": int(_video["id"]), "url": String(_video["url"])}
 	return snap
@@ -455,6 +471,9 @@ func _net_snapshot(snap: Dictionary) -> void:
 			_apply_setting(String(k), s[k])
 	_apply_room(snap.get("room"))
 	_apply_curtain(snap.get("curtain"), "instant")
+	var lv: Variant = snap.get("live")
+	if lv is Dictionary:
+		_apply_live(lv)
 	var v: Variant = snap.get("video")
 	if v is Dictionary and (v as Dictionary).get("id") is int and (v as Dictionary).get("url") is String:
 		_guest_load_video(int(v["id"]), String(v["url"]))      # joined mid-video: catch up once loaded
@@ -629,6 +648,8 @@ func _on_file_progress(position: float, playing: bool) -> void:
 
 
 func _on_source_changed(mode: String) -> void:
+	if _role == "host":
+		_to_guests("_net_live", [_live_info_for_guests()])     # sharing a tab started / stopped
 	# the host's screen moved on from the synced video (Stop, another source): guests stop too
 	if _role == "host" and bool(_video.get("live", false)) and mode != "file":
 		_to_guests("_net_video_stop", [int(_video["id"])])
@@ -706,6 +727,61 @@ func _rtt_s() -> float:
 		return 0.0
 	var host_peer := enet.get_peer(1)
 	return host_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) / 1000.0 if host_peer else 0.0
+
+
+# ── Live feed ────────────────────────────────────────────────
+## Host: the sender page publishes its shared tab under _live_id (VDO.Ninja, peer to peer).
+## Guests: their sender page views it and hands it to their game like their own shared tab.
+func _live_info_for_guests() -> Dictionary:
+	var sharing := bool(AppState.get_setting("together_live_feed")) and AppState.get_source_mode() == "capture"
+	return {"id": _live_id, "key": _live_key, "live": sharing} if bool(AppState.get_setting("together_live_feed")) else {}
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_live(info: Dictionary) -> void:
+	if _from_host():
+		_apply_live(info)
+
+
+func _apply_live(info: Dictionary) -> void:
+	var id := String(info.get("id", ""))
+	var key := String(info.get("key", ""))
+	if not (_token_ok(id) and _token_ok(key)):
+		id = ""
+		key = ""
+	_live_id = id
+	_live_key = key
+	_live_on = id != "" and bool(info.get("live", false))
+	_emit_live()
+	_emit_state()
+
+
+func _emit_live() -> void:
+	var info := {"role": "off", "id": "", "key": "", "live": false}
+	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
+		info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true}
+	elif _role == "guest" and _live_id != "":
+		info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on}
+	EventBus.live_feed_changed.emit(info)
+
+
+## Guest: the host is sharing a tab that this PC can watch.
+func is_host_live() -> bool:
+	return _role == "guest" and _live_on
+
+
+static func _random_token(n: int) -> String:
+	var chars := "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	var bytes := Crypto.new().generate_random_bytes(n)
+	var out := ""
+	for b in bytes:
+		out += chars[b % chars.length()]
+	return out
+
+
+## Stream names and keys from the network: letters and digits only.
+static func _token_ok(t: String) -> bool:
+	return t.length() >= 8 and t.length() <= 64 and RegEx.create_from_string("^[A-Za-z0-9]+$").search(t) != null
 
 
 # ── Reactions ────────────────────────────────────────────────
