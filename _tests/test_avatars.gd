@@ -1,8 +1,9 @@
 extends Node
-## Streaming together: everyone's avatar on a podium. The host (podium 1) and a guest (podium 2)
-## each run their sender page in headless Chrome with "?testshare" (a generated picture stands in
-## for the camera). The host's podium-1 picture should show up on the guest's podium 1, and the
-## guest's podium-2 picture on the host's podium 2. Needs the internet (VDO.Ninja) and Google
+## Streaming together: avatars. Everyone picks "My avatar" in the Together tab; the host puts them on
+## podiums (Show > Someone's avatar) and on the big screen. The host (AvatarHost) and a guest
+## (AvatarGuest) each run their sender page in headless Chrome with "?testshare" (a generated picture
+## stands in for the camera). Host podium 1 = the host's own avatar, podium 2 = the guest's, big
+## screen = the guest's; the guest follows those settings. Needs the internet (VDO.Ninja) and Google
 ## Chrome, so it isn't in the default set.
 ##   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_avatars -TimeLimit 300
 
@@ -16,6 +17,8 @@ var _lines: PackedStringArray = []
 var _main: Node
 var _chrome_pids: Array[int] = []
 var _pres_tex: Dictionary = {}       # presenter -> texture (null when it went away)
+var _screen_label: String = ""       # what the sender page says the big screen shows
+var _screen_live: bool = false
 
 
 func _check(ok: bool, what: String) -> void:
@@ -45,6 +48,9 @@ func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[0]
 	EventBus.presenter_texture_changed.connect(func(n: int, t: Texture2D) -> void: _pres_tex[n] = t)
+	EventBus.capture_status_changed.connect(func(info: Dictionary) -> void:
+		_screen_label = String(info.get("label", ""))
+		_screen_live = bool(info.get("capturing", false)))
 	AppState.set_setting("chat_enabled", false)
 	AppState.set_setting("chat_core_url", "ws://127.0.0.1:9/ws")
 	AppState.set_setting("panel_window", false)
@@ -52,7 +58,7 @@ func _ready() -> void:
 	AppState.set_setting("together_password", PASSWORD)
 	AppState.set_setting("together_address", "127.0.0.1:%d" % SESSION_PORT)
 	AppState.set_setting("together_live_feed", false)      # (only the avatars here)
-	AppState.set_setting("together_avatars", true)
+	AppState.set_setting("together_avatar_source", "camera")
 	_main = load("res://core/main.tscn").instantiate()
 	add_child(_main)
 	await _secs(1.0)
@@ -81,6 +87,10 @@ func _has_tex(n: int) -> bool:
 	return _pres_tex.get(n) != null
 
 
+func _screen_shows(who: String) -> bool:
+	return _screen_live and AppState.get_source_mode() == "capture" and _screen_label.to_lower().contains(who.to_lower())
+
+
 # ── Host ─────────────────────────────────────────────────────
 func _host() -> void:
 	AppState.set_setting("together_bind", "local")
@@ -88,12 +98,16 @@ func _host() -> void:
 	AppState.set_setting("together_avatar_height", 240)
 	for n in [1, 2]:
 		AppState.set_setting(AppState.presenter_key(n, "on"), true)
-		AppState.set_setting(AppState.presenter_key(n, "source"), "camera")
+		AppState.set_setting(AppState.presenter_key(n, "source"), "peer")
 		AppState.set_setting(AppState.presenter_key(n, "key"), false)
+	AppState.set_setting(AppState.presenter_key(1, "peer"), "AvatarHost")
+	AppState.set_setting(AppState.presenter_key(2, "peer"), "AvatarGuest")
+	AppState.set_setting("screen_peer", "AvatarGuest")
 	NetSession.host()
 	_open_sender()
-	_check(await _wait_for(func() -> bool: return _has_tex(1), 30.0), "my own avatar (podium 1) shows here, from my sender page")
-	# nobody else yet: podium 2 wants a camera too, and this sender page gives it one (its own second feed)
+	_check(await _wait_for(func() -> bool: return _has_tex(1), 30.0), "my own avatar shows on podium 1 here (a copy from my sender page, no network)")
+	await _secs(2.0)
+	_check(not _has_tex(2), "podium 2 waits while its person isn't in the session")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://settings_avguest2.cfg"))
 	var result := _out.path_join("together_avguest2.txt")
 	DirAccess.remove_absolute(result)
@@ -101,15 +115,16 @@ func _host() -> void:
 		"--position", "980,0", "res://_tests/test_avatars.tscn", "--", _out, "--mp-profile=avguest2", "--role=guest"])
 	_check(OS.create_process(OS.get_executable_path(), pargs) > 0, "started the guest copy")
 	_check(await _wait_for(func() -> bool: return (NetSession.get_info()["peers"] as Array).size() == 2, 90.0), "the guest joined")
-	var slots: Array = NetSession.avatar_slots()
-	_check(slots.size() == 2 and bool(slots[0]["mine"]) and not bool(slots[1]["mine"]), "podium 1 is mine, podium 2 is the guest's")
-	# podium 2 is the guest's now: its picture should come from the guest, not from my sender page
-	_pres_tex.erase(2)
-	await _secs(3.0)
+	var list: Array = NetSession.avatar_list()
+	_check(list.size() == 2 and bool(list[0]["mine"]) and String(list[1]["name"]) == "AvatarGuest", "the avatar list has both of us, me first")
 	_check(await _wait_for(func() -> bool: return _has_tex(2) and _pres_tex[2].get_width() > 0, 90.0), "the guest's avatar arrived on podium 2 here")
+	_check(await _wait_for(func() -> bool: return _screen_shows("AvatarGuest"), 60.0), "the guest's avatar is on my big screen (%s)" % _screen_label)
 	await _secs(2.0)
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(_out.path_join("avatars_host.png"))
+	# the big screen back to nothing: the sender page lets the avatar go
+	AppState.set_setting("screen_peer", "")
+	_check(await _wait_for(func() -> bool: return not _screen_live, 20.0), "picking (nobody) clears the big screen again")
 	await _wait_for(func() -> bool: return FileAccess.file_exists(result), 120.0)
 	var text := FileAccess.get_file_as_string(result)
 	if text == "":
@@ -126,19 +141,25 @@ func _guest() -> void:
 	NetSession.join()
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "guest" and (NetSession.get_info()["peers"] as Array).size() == 2, 30.0),
 		"joined the host")
-	_check(await _wait_for(func() -> bool: return NetSession.avatar_slots().size() == 2 and bool(NetSession.avatar_slots()[1]["mine"]), 20.0),
-		"podium 2 is mine here")
-	_check(await _wait_for(func() -> bool: return String(AppState.get_setting(AppState.presenter_key(1, "source"))) == "camera", 20.0),
-		"the host's camera podium stays a camera here (not a silhouette), since the avatar is sent over")
+	_check(await _wait_for(_podium1_is_hosts, 20.0), "the host's podium choices arrived (podium 1 = the host's avatar)")
+	_check(String(AppState.get_setting(AppState.presenter_key(2, "peer"))) == "AvatarGuest", "podium 2 is my avatar here too")
+	_check(await _wait_for(func() -> bool: return String(AppState.get_setting("screen_peer")) == "AvatarGuest", 10.0), "the host's big screen choice arrived")
 	_open_sender()
-	_check(await _wait_for(func() -> bool: return _has_tex(2), 40.0), "my own avatar (podium 2) shows here, from my sender page")
+	_check(await _wait_for(func() -> bool: return _has_tex(2), 40.0), "my own avatar shows on podium 2 here (no network)")
+	_check(await _wait_for(func() -> bool: return _screen_shows("my avatar"), 40.0), "my own avatar is on my big screen (%s)" % _screen_label)
 	_check(await _wait_for(func() -> bool: return _has_tex(1) and _pres_tex[1].get_width() > 0, 90.0), "the host's avatar arrived on podium 1 here")
 	if _has_tex(1):
 		_check(_pres_tex[1].get_height() <= 400, "the host's avatar came at the host's quality setting (%dp)" % _pres_tex[1].get_height())
 	await _secs(2.0)
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(_out.path_join("avatars_guest.png"))
+	_check(await _wait_for(func() -> bool: return String(AppState.get_setting("screen_peer")) == "" and not _screen_live, 60.0),
+		"the host clearing the big screen clears mine too")
 	await _finish()
+
+
+func _podium1_is_hosts() -> bool:
+	return String(AppState.get_setting(AppState.presenter_key(1, "source"))) == "peer" 		and String(AppState.get_setting(AppState.presenter_key(1, "peer"))) == "AvatarHost"
 
 
 func _finish() -> void:

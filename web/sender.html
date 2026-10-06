@@ -86,6 +86,13 @@
     <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
   </section>
 
+  <section id="avatarSection" class="hidden">
+    <div class="row"><b>My avatar</b> <small>(Streaming together)</small></div>
+    <small>What the others in the session can show of you (Together tab > My avatar in the game). The host
+      puts it on a podium or the big screen.</small>
+    <div id="avatarList"></div>
+  </section>
+
   <section id="presSection">
     <div class="row"><b>Presenter feeds</b> <small>(rooms with podiums)</small></div>
     <small>Choose each presenter's source in the game (Presenters tab). Cameras start by themselves;
@@ -148,7 +155,7 @@ function connect() {
     else if (m.type === "done") { const cb = pumpDone.get(m.id); if (cb) cb(); }
     else if (m.type === "message") {
       let msg; try { msg = JSON.parse(m.text); } catch (_) { return; }
-      if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots);
+      if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots, msg.avatar, msg.screen);
       if (msg.type === "live_feed") applyLiveFeed(msg);
     }
   };
@@ -188,7 +195,9 @@ function sendStatus() {
     pump: pumpMode,
     label: share ? share.label : "",
     cameras: cameraList,
-    presenters: pres.map((p, i) => ({ slot: i, want: p.want.kind, active: !!p.stream, kind: p.kind, label: p.label, error: p.error })),
+    presenters: pres.slice(0, PRESENTERS).map((p, i) => ({ slot: i, want: p.want.kind, active: !!p.stream, kind: p.kind, label: p.label, error: p.error })),
+    avatar: { want: pres[AVATAR].want.kind, active: !!pres[AVATAR].stream, kind: pres[AVATAR].kind, label: pres[AVATAR].label, error: pres[AVATAR].error,
+      sent: !!(avatar.publishedStream && avatar.publishedStream === pres[AVATAR].stream) },
   }) });
 }
 // (the once-a-second status goes out when the worker says so: a page's own timers slow to once a
@@ -422,6 +431,7 @@ async function startAudioPump(track, shared) {
 
 // ── Share a tab / window ─────────────────────────────────────
 async function startShare() {
+  if (share) return;          // (already showing something: the host's feed or someone's avatar)
   const wantAudio = $("sendAudio").checked;
   const h = parseInt($("quality").value, 10), maxFps = parseInt($("fps").value, 10);
   const supported = navigator.mediaDevices.getSupportedConstraints();
@@ -616,11 +626,15 @@ async function avatarOpen() {
     const v = await vdoOpen();
     v.addEventListener("track", (ev) => {
       const sid = ev.detail.streamID || "";
-      const entry = [...avatar.views.values()].find((e) => e.id === sid);
-      if (!entry || ev.detail.track.kind !== "video") return;
-      const stream = new MediaStream([ev.detail.track]);
-      runPresenter(entry.slot, stream, "view", "");
-      renderPresenter(entry.slot);
+      const entries = [...avatar.views.values()].filter((e) => e.id === sid);
+      if (entries.length === 0 || ev.detail.track.kind !== "video") return;
+      for (const entry of entries) {
+        // (the same person on a podium and the big screen: each gets its own copy of the track)
+        const track = entries.length > 1 ? ev.detail.track.clone() : ev.detail.track;
+        const stream = new MediaStream([track]);
+        if (entry.slot === "screen") startRemoteShare(stream, track, (screenWant.who || "a guest") + "'s avatar", sid);
+        else { runPresenter(entry.slot, stream, "view", ""); renderPresenter(entry.slot); }
+      }
       sendStatus();
     });
     avatar.vdo = v;
@@ -638,39 +652,54 @@ async function avatarClose() {
   if (v) { try { await v.disconnect(); } catch (_) {} }
 }
 
+let avatarSyncing = null;
 async function syncAvatars() {
-  const wantPublish = pres.map((p, i) => ({ p, i })).find((x) => x.p.want.publish && x.p.stream && x.p.kind !== "view");
-  const wantViews = pres.map((p, i) => ({ p, i })).filter((x) => x.p.want.kind === "view" && x.p.want.view);
+  if (avatarSyncing) { avatarSyncing.again = true; return; }   // (one at a time; run once more after)
+  avatarSyncing = { again: false };
+  try { await syncAvatarsNow(); } catch (e) { console.log("avatars: " + e.message); }
+  const again = avatarSyncing.again;
+  avatarSyncing = null;
+  if (again) syncAvatars();
+}
+async function syncAvatarsNow() {
+  const me = pres[AVATAR];
+  const pubId = me.want.publish && me.stream ? me.want.publish : "";
+  const pubStream = pubId ? me.stream : null;
+  // what to view: podiums set to someone's avatar, and the big screen (slot "screen")
+  const wantViews = pres.slice(0, PRESENTERS).map((p, i) => ({ i, id: p.want.view })).filter((x) => pres[x.i].want.kind === "view" && x.id);
+  if (screenWant.kind === "view" && screenWant.view) wantViews.push({ i: "screen", id: screenWant.view });
   // (live.key is set for the whole session, whether or not the big screen is shared)
-  if (!live.key || (!wantPublish && wantViews.length === 0)) {
+  if (!live.key || (!pubStream && wantViews.length === 0)) {
     if (avatar.vdo) await avatarClose();
+    if (share && share.avatarOf && share.avatarOf !== "mine") stopShare();
+    renderPresenter(AVATAR);
     return;
   }
   // publishing: a new or changed feed means a fresh connection (one publish per connection)
-  const pubId = wantPublish ? wantPublish.p.want.publish : "";
-  const pubStream = wantPublish ? wantPublish.p.stream : null;
   if (avatar.vdo && (avatar.publishedStream !== pubStream || avatar.publishedId !== pubId)) await avatarClose();
-  try {
-    const v = await avatarOpen();
-    if (pubStream && !avatar.publishedStream) {
-      const q = live.quality && live.quality.avatar;
-      avatar.publishedClone = constrainedCopy(pubStream.getVideoTracks()[0], q);
-      await v.publish(new MediaStream([avatar.publishedClone]), { streamID: pubId, label: "Stream Rooms avatar", media: mediaFor(q) });
-      avatar.publishedStream = pubStream; avatar.publishedId = pubId;
-    }
-    // viewing: start what's new, stop what's gone
-    for (const [slot, e] of [...avatar.views]) {
-      const still = wantViews.find((x) => x.i === slot && x.p.want.view === e.id);
-      if (!still) { try { v.stopViewing(e.id); } catch (_) {} avatar.views.delete(slot); if (pres[slot].kind === "view") { stopPresenter(slot); renderPresenter(slot); } }
-    }
-    for (const x of wantViews) {
-      if (avatar.views.has(x.i)) continue;
-      avatar.views.set(x.i, { id: x.p.want.view, slot: x.i });
-      v.view(x.p.want.view, { audio: false, video: true, label: "Stream Rooms podium " + (x.i + 1) }).catch(() => {});
-    }
-  } catch (e) {
-    console.log("avatars: " + e.message);
+  const v = await avatarOpen();
+  if (pubStream && !avatar.publishedStream) {
+    const q = live.quality && live.quality.avatar;
+    avatar.publishedClone = constrainedCopy(pubStream.getVideoTracks()[0], q);
+    await v.publish(new MediaStream([avatar.publishedClone]), { streamID: pubId, label: "Stream Rooms avatar", media: mediaFor(q) });
+    avatar.publishedStream = pubStream; avatar.publishedId = pubId;
+    renderPresenter(AVATAR);
   }
+  // viewing: start what's new, stop what's gone
+  for (const [slot, e] of [...avatar.views]) {
+    const still = wantViews.find((x) => x.i === slot && x.id === e.id);
+    if (still) continue;
+    try { v.stopViewing(e.id); } catch (_) {}
+    avatar.views.delete(slot);
+    if (slot === "screen") { if (share && share.avatarOf === e.id) stopShare(); }
+    else if (pres[slot].kind === "view") { stopPresenter(slot); renderPresenter(slot); }
+  }
+  for (const x of wantViews) {
+    if (avatar.views.has(x.i)) continue;
+    avatar.views.set(x.i, { id: x.id, slot: x.i });
+    v.view(x.id, { audio: false, video: true, label: "Stream Rooms " + (x.i === "screen" ? "big screen" : "podium " + (x.i + 1)) }).catch(() => {});
+  }
+  sendStatus();
 }
 async function vdoOpen() {
   await loadSdk();
@@ -690,6 +719,7 @@ function applyLiveFeed(msg) {
   if (qualityChanged) applyQuality();
   syncAvatars();
   $("liveSection").classList.toggle("hidden", live.role === "off");
+  $("avatarSection").classList.toggle("hidden", !live.key && pres[AVATAR].want.kind === "off");
   $("liveHost").classList.toggle("hidden", live.role !== "publish");
   $("liveGuest").classList.toggle("hidden", live.role !== "view");
   if (changed) {
@@ -761,22 +791,27 @@ async function startWatching() {
   }
 }
 
-// The host's feed goes to the game through the same picture and sound pumps as a shared tab.
-async function startRemoteShare(stream, track) {
-  if (!share || !share.remote) {
+// The host's feed (or someone's avatar, for the big screen) goes to the game through the same
+// picture and sound pumps as a shared tab. avatarOf: "" for the host's live feed, else the avatar
+// stream it shows ("mine" for my own).
+async function startRemoteShare(stream, track, label, avatarOf) {
+  label = label || "Host's live feed";
+  if (!share || !share.remote || share.stream !== stream) {
     if (share) stopShare();
-    share = { stream, remote: true, label: "Host's live feed", audio: { track: null, suppressed: true } };
+    share = { stream, remote: true, label, avatarOf: avatarOf || "", audio: { track: null, suppressed: true } };
     $("preview").srcObject = stream;           // (muted here; it also keeps the WebRTC sound flowing)
     $("preview").play().catch(() => {});
     $("shareBtn").disabled = true; $("stopBtn").disabled = false;
-    $("shareStatus").textContent = "Showing the host's live feed.";
+    $("shareStatus").textContent = "Showing " + (avatarOf ? label : "the host's live feed") + ".";
   }
   if (track.kind === "video") {
     share.videoPump && share.videoPump.stop();
     share.videoPump = startFramePump(track, PKT_VIDEO, parseInt($("quality").value, 10), parseInt($("fps").value, 10));
     track.addEventListener("ended", () => {
       if (share && share.remote && share.stream === stream) {
+        const wasAvatar = !!share.avatarOf;
         stopShare();
+        if (wasAvatar) return;    // (the game asks again if it still wants that avatar)
         watching = true;          // keep watching: the feed comes back when the host shares again
         syncLive();
       }
@@ -788,7 +823,7 @@ async function startRemoteShare(stream, track) {
     try { share.audio.pump = await startAudioPump(track, liveAudio); } catch (_) {}
     syncLiveSound();
   }
-  liveSay("Watching the host's live feed.");
+  if (!share.avatarOf) liveSay("Watching the host's live feed.");
   sendStatus();
 }
 
@@ -824,16 +859,22 @@ async function toggleCam() {
 // "web": a page with a see-through background (e.g. a reactive avatar). "Open page" shows it
 // over the key colour in a small window (/backdrop), "Share it" captures that window, and
 // the game's chroma key removes the colour again.
+// Streaming together: one more entry, my avatar. It's captured like a presenter feed but isn't
+// sent to the game as a podium; it's published to the others (syncAvatars), and a podium or the
+// big screen set to my own avatar takes a copy of it (syncMine). Podium kinds from the game:
+// "mine" (my avatar), "view" (someone's avatar, through VDO.Ninja), "wait" (that person isn't here).
+const AVATAR = PRESENTERS;
 let cameraList = [];
-const pres = Array.from({ length: PRESENTERS }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00", publish: "", view: "", who: "" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "" }));
+const pres = Array.from({ length: PRESENTERS + 1 }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00", publish: "", view: "", who: "" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "", srcStream: null }));
+let screenWant = { kind: "off", view: "", who: "" };     // the big screen: someone's avatar?
 
 function buildPresenterRows() {
-  const list = $("presList");
   pres.forEach((p, i) => {
+    const list = $(i === AVATAR ? "avatarList" : "presList");
     const row = document.createElement("div");
     row.className = "pres";
     row.innerHTML = `<video muted playsinline></video><div>
-      <div><span class="name">Presenter ${i + 1}</span> <span class="status"></span></div>
+      <div><span class="name">${i === AVATAR ? "My avatar" : "Presenter " + (i + 1)}</span> <span class="status"></span></div>
       <div class="row"><button class="openweb">1. Open page</button><button class="pick">Pick a tab or window</button><button class="stop">Stop</button></div></div>`;
     list.appendChild(row);
     p.row = row;
@@ -848,22 +889,29 @@ function renderPresenter(i) {
   const st = row.querySelector(".status");
   const want = p.want.kind;
   const web = want === "web";
+  const remote = want === "view" || want === "mine" || want === "wait";
   const winOpen = !!(p.win && !p.win.closed);
+  const who = p.want.who || "a guest";
+  const pageName = i === AVATAR ? "My avatar web page" : "Presenter " + (i + 1) + " web page";
   row.classList.toggle("want-tab", (want === "tab" || (web && winOpen)) && !(p.stream && p.kind === want));
   row.classList.toggle("want-web", web && !winOpen && !p.stream);
-  row.querySelector(".pick").classList.toggle("hidden", (want !== "tab" && !web) || want === "view");
+  row.querySelector(".pick").classList.toggle("hidden", (want !== "tab" && !web) || remote);
   row.querySelector(".pick").textContent = web ? "2. Share it" : "Pick a tab or window";
   row.querySelector(".openweb").classList.toggle("hidden", !web);
   row.querySelector(".openweb").disabled = web && !p.want.url;
-  row.querySelector(".stop").classList.toggle("hidden", !p.stream || want === "view");
+  row.querySelector(".stop").classList.toggle("hidden", !p.stream || remote);
+  const sent = i === AVATAR && avatar.publishedStream && avatar.publishedStream === p.stream;
   if (p.error) st.innerHTML = `<span class="err">${p.error}</span>`;
-  else if (want === "view") st.textContent = p.stream ? "Showing " + (p.want.who || "a guest") + "'s avatar." : "Waiting for " + (p.want.who || "a guest") + "'s avatar...";
-  else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "") + (p.want.publish ? " (sent to the others)" : "");
+  else if (want === "view") st.textContent = p.stream ? "Showing " + who + "'s avatar." : "Waiting for " + who + "'s avatar...";
+  else if (want === "mine") st.textContent = p.stream ? "Showing my avatar." : "Waiting for my avatar (above)...";
+  else if (want === "wait") st.textContent = who + " isn't in the session right now.";
+  else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "") + (sent ? " (sent to the others)" : i === AVATAR && live.key ? " (nobody is showing it yet)" : "");
   else if (want === "camera") st.textContent = "Starting camera...";
   else if (want === "tab") st.innerHTML = '<span class="warn">Click the button and pick a tab or window.</span>';
-  else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (Presenters tab).</span>';
+  else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (' + (i === AVATAR ? "Together tab" : "Presenters tab") + ').</span>';
   else if (web && !winOpen) st.innerHTML = '<span class="warn">Click "1. Open page" (keep that window open, it can sit behind the game).</span>';
-  else if (web) st.innerHTML = `<span class="warn">Click "2. Share it" and pick "Presenter ${i + 1} web page". If it says the site refused to connect, that site doesn't allow being shown inside another page.</span>`;
+  else if (web) st.innerHTML = `<span class="warn">Click "2. Share it" and pick "${pageName}". If it says the site refused to connect, that site doesn't allow being shown inside another page.</span>`;
+  else if (i === AVATAR) st.textContent = "Off (Together tab > My avatar in the game).";
   else st.textContent = "Not used (silhouette, green screen or off in the game).";
   const v = row.querySelector("video");
   if (v.srcObject !== p.stream) { v.srcObject = p.stream; if (p.stream) v.play().catch(() => {}); }
@@ -871,7 +919,7 @@ function renderPresenter(i) {
 
 function backdropUrl(i) {
   const w = pres[i].want;
-  return "/backdrop?slot=" + (i + 1) + "&bg=" + encodeURIComponent(w.bg || "00ff00") + "&url=" + encodeURIComponent(w.url || "");
+  return "/backdrop?slot=" + (i === AVATAR ? "avatar" : i + 1) + "&bg=" + encodeURIComponent(w.bg || "00ff00") + "&url=" + encodeURIComponent(w.url || "");
 }
 
 function openWebPage(i) {
@@ -893,16 +941,41 @@ function stopPresenter(i) {
   const p = pres[i];
   if (p.pump) p.pump.stop();
   if (p.stream) p.stream.getTracks().forEach((t) => t.stop());
-  p.stream = null; p.pump = null; p.kind = ""; p.device = ""; p.label = "";
+  p.stream = null; p.pump = null; p.kind = ""; p.device = ""; p.label = ""; p.srcStream = null;
 }
 
 function runPresenter(i, stream, kind, device) {
   const p = pres[i];
   const track = stream.getVideoTracks()[0];
   p.stream = stream; p.kind = kind; p.device = device || ""; p.label = track.label; p.error = "";
-  p.pump = startFramePump(track, PKT_PRESENTER, PRES_HEIGHT, PRES_FPS, i, PRES_JPEG);
-  track.addEventListener("ended", () => { if (pres[i].stream === stream) { stopPresenter(i); renderPresenter(i); sendStatus(); syncAvatars(); } });
-  if (kind !== "view") syncAvatars();
+  // (my avatar itself isn't a podium: the others get it through syncAvatars, my podiums through syncMine)
+  p.pump = i === AVATAR ? null : startFramePump(track, PKT_PRESENTER, PRES_HEIGHT, PRES_FPS, i, PRES_JPEG);
+  track.addEventListener("ended", () => { if (pres[i].stream === stream) { stopPresenter(i); renderPresenter(i); sendStatus(); syncMine(); syncAvatars(); } });
+  if (kind !== "view" && kind !== "mine") { syncMine(); syncAvatars(); }
+}
+
+// A podium (or the big screen) set to my own avatar shows a copy of my avatar capture, no network.
+function syncMine() {
+  const src = pres[AVATAR].stream;
+  const copy = () => { const t = src.getVideoTracks()[0].clone(); return new MediaStream([t]); };
+  pres.slice(0, PRESENTERS).forEach((p, i) => {
+    if (p.want.kind !== "mine") { if (p.kind === "mine") { stopPresenter(i); renderPresenter(i); } return; }
+    if (!src) { if (p.stream) { stopPresenter(i); renderPresenter(i); } return; }
+    if (p.stream && p.kind === "mine" && p.srcStream === src) return;
+    stopPresenter(i);
+    runPresenter(i, copy(), "mine", "");
+    p.srcStream = src;
+    renderPresenter(i);
+  });
+  if (screenWant.kind === "mine") {
+    if (!src) { if (share && share.avatarOf === "mine") stopShare(); }
+    else if (!(share && share.avatarOf === "mine" && share.srcStream === src)) {
+      const c = copy();
+      startRemoteShare(c, c.getVideoTracks()[0], "my avatar", "mine");
+      share.srcStream = src;
+    }
+  } else if (share && share.avatarOf === "mine") stopShare();
+  sendStatus();
 }
 
 async function startPresenterCamera(i) {
@@ -941,19 +1014,25 @@ async function startPresenterTab(i) {
   renderPresenter(i); sendStatus();
 }
 
-function applyPresenterWishes(slots) {
-  slots.slice(0, PRESENTERS).forEach((w, i) => {
+function applyPresenterWishes(slots, myAvatar, screen) {
+  const wishes = slots.slice(0, PRESENTERS);
+  if (myAvatar && typeof myAvatar === "object") wishes[AVATAR] = myAvatar;
+  wishes.forEach((w, i) => {
+    if (!w || typeof w !== "object") return;
     const p = pres[i];
     const before = backdropUrl(i);
     p.want = { kind: w.kind || "off", device: w.device || "", url: w.url || "", bg: w.bg || "00ff00",
       publish: w.publish || "", view: w.view || "", who: w.who || "" };
-    if (p.want.kind === "off" || (p.stream && p.kind !== p.want.kind)) { stopPresenter(i); p.error = ""; }
+    if (p.want.kind === "off" || p.want.kind === "wait" || (p.stream && p.kind !== p.want.kind)) { stopPresenter(i); p.error = ""; }
     if (p.want.kind !== "web") closeWebPage(i);
     else if (p.win && !p.win.closed && backdropUrl(i) !== before) p.win.location.href = backdropUrl(i);
     if (p.want.kind === "camera") startPresenterCamera(i);
     renderPresenter(i);
   });
+  if (screen && typeof screen === "object") screenWant = { kind: screen.kind || "off", view: screen.view || "", who: screen.who || "" };
+  $("avatarSection").classList.toggle("hidden", !live.key && pres[AVATAR].want.kind === "off");
   sendStatus();
+  syncMine();
   syncAvatars();
 }
 

@@ -174,8 +174,12 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_password": "",     # session password (stays on this PC)
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local" | "tunnel" (Cloudflare)
 	"together_live_relay": false, # live feed through VDO.Ninja's relay servers, so host and guests don't see each other's addresses
-	# Everyone's avatar on a podium (host = podium 1, guests in the order they joined), through VDO.Ninja
-	"together_avatars": true,
+	# My avatar: what the others in the session can show of me (their podiums / big screen), sent from
+	# my sender page through VDO.Ninja. Each person picks their own; the host picks where it shows.
+	"together_avatar_source": "off",   # "off" | "camera" | "tab" | "web"
+	"together_avatar_camera": "",      # camera device id ("" = default camera)
+	"together_avatar_url": "",         # web page for "web"
+	"screen_peer": "",                 # the big screen shows this person's avatar ("" = no); shared with guests
 	# Quality of what goes between the PCs (the host decides for everyone); kbps caps the bitrate per viewer
 	"together_screen_height": 720,   # 480 | 540 | 720 | 1080
 	"together_screen_fps": 30,       # 15 | 30 | 60
@@ -197,7 +201,8 @@ const BASE_DEFAULTS: Dictionary = {
 const PRESENTER_COUNT: int = 4
 const PRESENTER_FIELDS: Dictionary = {
 	"on": false,                 # on set (podium, picture and lamp shown)
-	"source": "silhouette",      # "silhouette" | "green" | "camera" | "tab" | "web" | "ndi" | "spout"
+	"source": "silhouette",      # "silhouette" | "green" | "camera" | "tab" | "web" | "ndi" | "spout" | "peer"
+	"peer": "",                  # for "peer": the name (Together tab > Your name) of the person whose avatar shows
 	"camera": "",                # camera device id for "camera" ("" = default camera)
 	"url": "",                   # web page for "web" (shown over the key colour, e.g. a transparent avatar page)
 	"ndi": "",                   # NDI source name for "ndi"

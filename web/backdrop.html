@@ -21,7 +21,7 @@ const q = new URLSearchParams(location.search);
 const slot = q.get("slot") || "";
 const bg = (q.get("bg") || "00ff00").replace(/[^0-9a-fA-F]/g, "").slice(0, 6) || "00ff00";
 document.documentElement.style.background = document.body.style.background = "#" + bg;
-document.title = "Presenter " + slot + " web page";
+document.title = (slot === "avatar" ? "My avatar" : "Presenter " + slot) + " web page";
 let url = null;
 try { url = new URL(q.get("url") || ""); } catch (_) { url = null; }
 if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {

@@ -134,8 +134,9 @@ func _host() -> void:
 
 	# shared state the guest checks
 	AppState.set_setting("house_lights", 0.37)
-	AppState.set_setting(AppState.presenter_key(2, "source"), "camera")       # podium 2 is the guest's: its own camera, sent over
-	AppState.set_setting(AppState.presenter_key(4, "source"), "camera")       # podium 4 has nobody: guests show a silhouette
+	AppState.set_setting(AppState.presenter_key(2, "source"), "peer")         # podium 2 shows the guest's avatar
+	AppState.set_setting(AppState.presenter_key(2, "peer"), "TestGuest")
+	AppState.set_setting(AppState.presenter_key(4, "source"), "camera")       # podium 4: a camera on this PC: guests show a silhouette
 	AppState.set_setting(AppState.presenter_key(2, "url"), "file:///C:/Windows/win.ini")   # never reaches a guest
 	AppState.request_room("lecture_hall_panel")
 	await _secs(6.0)
@@ -269,7 +270,8 @@ func _guest() -> void:
 		"the host's house lights arrived")
 	_check(await _wait_for(func() -> bool: return String(AppState.get_setting(AppState.presenter_key(4, "source"))) == "silhouette", 10.0),
 		"a camera podium with nobody on it shows as a silhouette here")
-	_check(String(AppState.get_setting(AppState.presenter_key(2, "source"))) == "camera", "my own podium's camera stays a camera (avatars are on)")
+	_check(String(AppState.get_setting(AppState.presenter_key(2, "source"))) == "peer"
+		and String(AppState.get_setting(AppState.presenter_key(2, "peer"))) == "TestGuest", "a podium set to someone's avatar arrives as it is (mine, here)")
 	_check(not String(AppState.get_setting(AppState.presenter_key(2, "url"))).begins_with("file:"), "a file address from the host was ignored")
 	_check(await _wait_for(func() -> bool: return String(AppState.get_setting("room_id")) == "lecture_hall_panel", 30.0),
 		"the host's room change arrived")

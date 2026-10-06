@@ -72,6 +72,9 @@ var _pic_dialog: FileDialog
 var _pic_target: String = ""              # the presenter_<n>_picture setting the picture dialog is for
 var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
+var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
+var _avatar_camera: OptionButton        # Together tab: the camera for my avatar
+var _avatar_rows: Dictionary = {}       # Together tab: "camera" / "url" rows, shown by My avatar's source
 
 
 func _ready() -> void:
@@ -394,6 +397,10 @@ func _build_source_tab() -> Control:
 	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	how.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	v.add_child(how)
+	v.add_child(_heading("Someone's avatar (Streaming together)"))
+	var sp := _peer_menu("screen_peer", "Big screen shows")
+	(sp.get_child(1) as Control).tooltip_text = "In a Streaming together session: put a person's avatar (their My avatar from the Together tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
+	v.add_child(sp)
 
 	v.add_child(_heading("NDI (OBS / NDI Tools)"))
 	var nr := HBoxContainer.new()
@@ -1019,7 +1026,8 @@ func _build_games_tab() -> Control:
 const COLOR_SAFE: Dictionary = {"kick": "009e73", "twitch": "cc79a7", "youtube": "e69f00", "other": "56b4e9"}
 
 const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green screen"],
-	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"], ["spout", "Spout (this PC)"]]
+	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"], ["spout", "Spout (this PC)"],
+	["peer", "Someone's avatar (Together)"]]
 
 
 func _build_presenters_tab() -> Control:
@@ -1075,9 +1083,14 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	var d := VBoxContainer.new()
 	d.add_theme_constant_override("separation", 5)
 	d.add_child(_heading("Presenter %d" % n))
-	d.add_child(_option(k.call("source"), "Show", PRESENTER_SOURCES))
+	var show := _option(k.call("source"), "Show", PRESENTER_SOURCES)
+	(show.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your Streaming together session set up as My avatar (Together tab), yours included."
+	d.add_child(show)
 	var rows: Dictionary = {"picture": []}
 	_pres_rows.append(rows)
+	var peer_row := _peer_menu(k.call("peer"), "Whose avatar")
+	rows["peer"] = peer_row
+	d.add_child(peer_row)
 	var cam_row := HBoxContainer.new()
 	rows["camera"] = cam_row
 	var cl := Label.new()
@@ -1201,8 +1214,10 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 
 ## Camera menu for presenter n: "Default camera" + the cameras the sender page reports.
 func _fill_camera_menu(n: int, cameras: Array) -> void:
-	var menu: OptionButton = _pres_camera_menus[n - 1]
-	var want := String(AppState.get_setting(AppState.presenter_key(n, "camera")))
+	_fill_camera_items(_pres_camera_menus[n - 1], String(AppState.get_setting(AppState.presenter_key(n, "camera"))), cameras)
+
+
+func _fill_camera_items(menu: OptionButton, want: String, cameras: Array) -> void:
 	menu.clear()
 	menu.add_item("Default camera")
 	menu.set_item_metadata(0, "")
@@ -1336,11 +1351,33 @@ func _build_together_tab() -> Control:
 	_net_medium.add_child(keep)
 	v.add_child(_net_medium)
 
-	v.add_child(_heading("Avatars and quality"))
-	var avs := _check("together_avatars", "Everyone's avatar on a podium")
-	avs.tooltip_text = "Host: podium 1 is yours, the guests take the next podiums in the order they joined. Each podium's Show setting (Camera, Tab / window or Web page) is what that person's own sender page captures and sends to everyone. NDI and Spout can't be sent this way."
-	v.add_child(avs)
-	v.add_child(_hint("Quality of what travels between the PCs. Lower it on a slow upload: everything is sent once per viewer."))
+	v.add_child(_heading("My avatar"))
+	v.add_child(_hint("What the others can show of you: your sender page captures it and sends it to everyone in the session. The host puts it on a podium (Presenters tab > Show > Someone's avatar) or on the big screen (Source tab)."))
+	var av_src := _option("together_avatar_source", "My avatar", [["off", "Off"], ["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"]])
+	(av_src.get_child(1) as Control).tooltip_text = "Where your avatar comes from, captured by your sender page: a camera, a tab or window you pick there, or a web page with a see-through background (a PNGTuber page, for example). NDI and Spout can't be sent this way: send them to OBS and from there to a VDO.Ninja page."
+	v.add_child(av_src)
+	var av_cam_row := HBoxContainer.new()
+	var av_cl := Label.new()
+	av_cl.text = "Camera"
+	av_cl.custom_minimum_size = Vector2(120, 0)
+	av_cam_row.add_child(av_cl)
+	_avatar_camera = OptionButton.new()
+	_avatar_camera.focus_mode = Control.FOCUS_ALL
+	_avatar_camera.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_avatar_camera.fit_to_longest_item = false
+	_avatar_camera.tooltip_text = "The camera for your avatar (the list comes from your sender page)."
+	_avatar_camera.item_selected.connect(func(i: int) -> void: AppState.set_setting("together_avatar_camera", String(_avatar_camera.get_item_metadata(i))))
+	av_cam_row.add_child(_avatar_camera)
+	_fill_camera_items(_avatar_camera, String(AppState.get_setting("together_avatar_camera")), [])
+	v.add_child(av_cam_row)
+	_avatar_rows["camera"] = av_cam_row
+	var av_url := _text_setting("together_avatar_url", "Web page", "https://... (for \"Web page\")")
+	av_url.tooltip_text = "The page with your avatar on a see-through background. The sender page shows it over a key colour; the podium's chroma key cuts the colour out again."
+	v.add_child(av_url)
+	_avatar_rows["url"] = av_url
+	_refresh_avatar_rows()
+	v.add_child(_heading("Quality"))
+	v.add_child(_hint("Quality of what travels between the PCs (the host decides for everyone). Lower it on a slow upload: everything is sent once per viewer."))
 	var sh := _option("together_screen_height", "Big screen to guests", [[480, "480p"], [540, "540p"], [720, "720p"], [1080, "1080p"]])
 	sh.tooltip_text = "The size of the shared tab as the guests get it. Your own game keeps the sender page's quality."
 	v.add_child(sh)
@@ -1351,7 +1388,7 @@ func _build_together_tab() -> Control:
 	sk.tooltip_text = "Upload spent on the shared tab per guest. 3000 to 6000 is normal for 720p; 1500 to 2500 for 540p."
 	v.add_child(sk)
 	var ah := _option("together_avatar_height", "Avatars", [[240, "240p"], [360, "360p"], [480, "480p"], [720, "720p"]])
-	ah.tooltip_text = "The size of everyone's avatar as the others get it. Avatars are small on the podiums: 360p or 480p is plenty, 240p saves the most."
+	ah.tooltip_text = "The size of everyone's avatar as the others get it. Avatars are small on the podiums: 360p or 480p is plenty, 240p saves the most. An avatar on the big screen uses this too, so pick 720p for that."
 	v.add_child(ah)
 	var af := _option("together_avatar_fps", "Avatar frame rate", [[15, "15 fps"], [20, "20 fps"], [30, "30 fps"]])
 	af.tooltip_text = "Frames a second for the avatars."
@@ -1443,9 +1480,65 @@ func _on_net_confirm_closed(peer_id: int) -> void:
 			d.queue_free()
 
 
+## A dropdown bound to a String setting that names a person in the Streaming together session
+## (whose avatar). It lists everyone in the session and keeps a saved name that isn't there.
+func _peer_menu(key: String, label: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	var l := Label.new()
+	l.text = label
+	l.custom_minimum_size = Vector2(120, 0)
+	h.add_child(l)
+	var o := OptionButton.new()
+	o.focus_mode = Control.FOCUS_ALL
+	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	o.fit_to_longest_item = false
+	o.tooltip_text = "Whose avatar: a person in the session (what they set up under My avatar in their Together tab)."
+	o.item_selected.connect(func(i: int) -> void:
+		var v: Variant = o.get_item_metadata(i)
+		AppState.set_setting(key, String(v) if v != null else ""))
+	h.add_child(o)
+	_peer_menus[key] = o
+	_options[key] = o          # (locked for guests like the other shared controls)
+	_fill_peer_menu(key)
+	return h
+
+
+func _fill_peer_menu(key: String) -> void:
+	var menu: OptionButton = _peer_menus[key]
+	if menu.get_popup().visible:
+		return
+	var want := String(AppState.get_setting(key))
+	menu.clear()
+	menu.add_item("(nobody)")
+	menu.set_item_metadata(0, null)
+	menu.select(0)
+	var found := want == ""
+	for p: Dictionary in NetSession.get_info().get("peers", []):
+		var n := String(p["name"])
+		menu.add_item(n + (" (you)" if bool(p.get("me", false)) else ""))
+		menu.set_item_metadata(menu.item_count - 1, n)
+		if n == want:
+			menu.select(menu.item_count - 1)
+			found = true
+	if not found:
+		menu.add_item("%s (not in the session)" % want)
+		menu.set_item_metadata(menu.item_count - 1, want)
+		menu.select(menu.item_count - 1)
+
+
+func _refresh_avatar_rows() -> void:
+	if _avatar_rows.is_empty():
+		return
+	var src := String(AppState.get_setting("together_avatar_source"))
+	(_avatar_rows["camera"] as Control).visible = src == "camera"
+	(_avatar_rows["url"] as Control).visible = src == "web"
+
+
 func _on_net_state(info: Dictionary) -> void:
 	if _net_status == null:
 		return
+	for key: String in _peer_menus:
+		_fill_peer_menu(key)
 	var role := String(info.get("role", "off"))
 	_net_status.text = String(info.get("status", ""))
 	_net_status.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if bool(info.get("error", false)) else Color(1, 1, 1, 0.78))
@@ -1536,6 +1629,8 @@ func _update_presenter_feeds(info: Dictionary) -> void:
 	var cams_json := JSON.stringify(cams)
 	var cams_changed := cams_json != _last_cams_json
 	_last_cams_json = cams_json
+	if cams_changed and _avatar_camera and not _avatar_camera.get_popup().visible:
+		_fill_camera_items(_avatar_camera, String(AppState.get_setting("together_avatar_camera")), cams)
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
 		var menu: OptionButton = _pres_camera_menus[n - 1]
 		if cams_changed and not menu.get_popup().visible:
@@ -1543,7 +1638,7 @@ func _update_presenter_feeds(info: Dictionary) -> void:
 		var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
 		menu.disabled = src != "camera"
 		var text := ""
-		if src == "camera" or src == "tab" or src == "web":
+		if src == "camera" or src == "tab" or src == "web" or src == "peer":
 			var f: Dictionary = feeds[n - 1] if n - 1 < feeds.size() and feeds[n - 1] is Dictionary else {}
 			if not connected:
 				text = "Open the sender page (Source tab) - the feed comes from there."
@@ -1694,7 +1789,9 @@ func _on_capture_status(info: Dictionary) -> void:
 		_capture_label.text = "Sender connected - not sharing yet."
 		return
 	var text := "Live: %s (%d fps)" % [String(info.get("label", "tab")), int(info.get("fps", 0))]
-	if not info.get("has_audio", false):
+	if String(info.get("label", "")).to_lower().ends_with("avatar"):
+		pass          # (someone's avatar on the big screen: picture only, no sound to share)
+	elif not info.get("has_audio", false):
 		text += "\nNo audio - turn on \"Share tab audio\" in the picker."
 	elif not info.get("suppress_local_audio", false):
 		text += "\nBrowser couldn't silence the tab - mute it to avoid double audio."
@@ -1783,11 +1880,15 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		(_texts[key] as LineEdit).text = String(value)
 	if _colors.has(key):
 		(_colors[key] as ColorPickerButton).color = value
-	if _options.has(key):
+	if _peer_menus.has(key):
+		_fill_peer_menu(key)         # (a saved name that isn't in the session gets its own entry)
+	elif _options.has(key):
 		var o: OptionButton = _options[key]
 		for i in o.item_count:
 			if o.get_item_metadata(i) == value:
 				o.select(i)
+	if key == "together_avatar_source":
+		_refresh_avatar_rows()
 	if _platform_boxes.has(key):
 		var have := String(value).split(",", false)
 		for g: String in (_platform_boxes[key] as Dictionary).keys():
@@ -1809,12 +1910,13 @@ func _refresh_presenter_rows(n: int) -> void:
 	var rows: Dictionary = _pres_rows[n - 1]
 	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
 	(rows["camera"] as Control).visible = src == "camera"
+	(rows["peer"] as Control).visible = src == "peer"
 	(rows["ndi"] as Control).visible = src == "ndi"
 	(rows["spout"] as Control).visible = src == "spout"
 	for pr in rows.get("picture_rows", []):
 		(pr as Control).visible = String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges() != ""
 	(rows["url"] as Control).visible = src == "web"
-	var picture := src in ["camera", "tab", "web", "ndi", "spout"]
+	var picture := src in ["camera", "tab", "web", "ndi", "spout", "peer"]
 	var keyed := picture and bool(AppState.get_setting(AppState.presenter_key(n, "key")))
 	for i in (rows["picture"] as Array).size():
 		# the chroma key row itself shows for any picture; its sliders only while the key is on

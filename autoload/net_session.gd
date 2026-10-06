@@ -36,12 +36,12 @@ const READY_TIMEOUT: float = 120.0
 const CONFIRM_TIMEOUT: float = 120.0
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
-const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
+const SHARED_BASE: Array[String] = ["screen_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
 	"curtain_speed", "curtain_show_lights"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)
-const SHARED_PRESENTER_FIELDS: Array[String] = ["on", "source", "url", "self_lit", "light", "key",
+const SHARED_PRESENTER_FIELDS: Array[String] = ["on", "source", "peer", "url", "self_lit", "light", "key",
 	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y", "name",
 	"picture_scale", "picture_self_lit", "picture_x", "picture_y"]
 ## The host picks which of these groups guests follow (together_share_*). An unshared group is
@@ -91,7 +91,6 @@ var _live_relay: bool = false           # guest: the host wants the feed relayed
 var _live_feed_on: bool = true          # guest: the host sends its shared tab (as opposed to only avatars)
 var _host_sources: Dictionary = {}      # guest: presenter source keys -> what the host said (before any silhouette stand-in)
 var _live_quality: Dictionary = {}      # guest: the host's quality settings for the live feed and avatars
-var _live_avatars: bool = true          # guest: the host puts everyone's avatar on a podium
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
 var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
 var _video_count: int = 0
@@ -211,7 +210,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room":
+	if what == "room" or what == "screen_peer":
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"
@@ -603,11 +602,10 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_emit_state()
 	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
 		_update_audience_sharing()
-	if key.begins_with("together_screen_") or key.begins_with("together_avatar_") or key == "together_avatars":
+	if key.begins_with("together_screen_") or key in ["together_avatar_height", "together_avatar_fps", "together_avatar_kbps"]:
 		if _role == "host":
 			_emit_live()
 			_to_guests("_net_live", [_live_info_for_guests()])
-			_to_guests("_net_snapshot", [_snapshot(["presenters"])])    # (camera podiums may flip to / from silhouettes)
 	if (key == "together_live_feed" or key == "together_live_relay") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
@@ -1171,7 +1169,7 @@ func _live_info_for_guests() -> Dictionary:
 	# whether the big screen is being shared right now
 	return {"id": _live_id, "key": _live_key, "live": sharing and bool(AppState.get_setting("together_live_feed")),
 		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": bool(AppState.get_setting("together_live_relay")),
-		"quality": _quality(), "avatars_on": bool(AppState.get_setting("together_avatars"))}
+		"quality": _quality()}
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1192,7 +1190,6 @@ func _apply_live(info: Dictionary) -> void:
 	_live_relay = bool(info.get("relay", false))
 	_live_feed_on = bool(info.get("feed_on", true))
 	_live_quality = info.get("quality", {}) if info.get("quality") is Dictionary else {}
-	_live_avatars = bool(info.get("avatars_on", true))
 	_refresh_sources()
 	_emit_live()
 	_emit_state()
@@ -1209,7 +1206,7 @@ func _emit_live() -> void:
 	if _role != "off":
 		info["key"] = _live_key
 		info["quality"] = _quality() if _role == "host" else _live_quality
-		info["avatars"] = avatar_slots()
+		info["avatars"] = avatar_list()
 	EventBus.live_feed_changed.emit(info)
 
 
@@ -1221,39 +1218,30 @@ func _quality() -> Dictionary:
 			"kbps": int(AppState.get_setting("together_avatar_kbps"))}}
 
 
-## Who's on which podium: [{slot (0-based podium), id (avatar stream name), name, mine}], the host
-## first, then the guests in the order they joined. Empty when avatars are off or not in a session.
-func avatar_slots() -> Array:
-	var on := bool(AppState.get_setting("together_avatars")) if _role == "host" else _live_avatars
-	if _role == "off" or not on or _live_key == "":
+## Everyone in the session with the stream name their avatar is published under:
+## [{id, name, mine}]. Empty when not in a session. A podium (Show > Someone's avatar) or the big
+## screen names a person; ScreenFeed looks them up here.
+func avatar_list() -> Array:
+	if _role == "off" or _live_key == "":
 		return []
 	var ids: Array = _peers.keys()
 	ids.sort()
 	var me := multiplayer.get_unique_id()
 	var out: Array = []
-	for k in mini(ids.size(), AppState.PRESENTER_COUNT):
-		var id: int = ids[k]
+	for id: int in ids:
 		var av := String(_peers[id].get("avatar", ""))
-		if av == "":
-			continue
-		out.append({"slot": k, "id": av, "name": String(_peers[id]["name"]), "mine": id == me})
+		if av != "":
+			out.append({"id": av, "name": String(_peers[id]["name"]), "mine": id == me})
 	return out
 
 
-## Guest: what a presenter source the host set means on this PC. A camera or tab is on someone's
-## own PC: with avatars on, that person's sender page sends it over, so it stays as it is; otherwise
-## (and for NDI / Spout) a silhouette stands in.
-func _source_here(key: String, host_value: String) -> String:
-	if not LOCAL_ONLY_SOURCES.has(host_value):
-		return host_value
-	var n := int(key.get_slice("_", 1))
-	if (host_value == "camera" or host_value == "tab") and podium_has_streamer(n):
-		return host_value
-	return "silhouette"
+## Guest: what a presenter source the host set means on this PC. A camera, tab, NDI or Spout source
+## is on the host's PC only, so a silhouette stands in; "peer" (someone's avatar) travels, so it stays.
+func _source_here(_key: String, host_value: String) -> String:
+	return "silhouette" if LOCAL_ONLY_SOURCES.has(host_value) else host_value
 
 
-## Guest: the podium list changed (someone joined or left, avatars switched): camera podiums may
-## turn into silhouettes or back.
+## Guest: re-apply the host's presenter sources (kept for roster changes).
 func _refresh_sources() -> void:
 	if _role != "guest":
 		return
@@ -1261,15 +1249,6 @@ func _refresh_sources() -> void:
 		var want := _source_here(key, String(_host_sources[key]))
 		if String(AppState.get_setting(key)) != want:
 			_set_local(key, want)
-
-
-## Guest: does podium n (1-based) belong to someone in the session (so its camera / tab source is
-## theirs, sent over, rather than something on the host's PC only)?
-func podium_has_streamer(n: int) -> bool:
-	for a: Dictionary in avatar_slots():
-		if int(a["slot"]) == n - 1:
-			return true
-	return false
 
 
 ## Guest: the host is sharing a tab that this PC can watch.

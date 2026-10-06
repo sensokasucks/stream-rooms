@@ -554,7 +554,7 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 ### What's shared
 
 - **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
-- **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone. A presenter showing the host's **camera**, **browser tab** or **NDI** only exists on the host's PC, so guests see a silhouette there instead.
+- **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead.
 - **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
@@ -630,16 +630,27 @@ anything live: a game, a stream you're reacting to, a website.
 
 NDI and Spout aren't shared: they only exist on the host's PC.
 
-### Everyone's avatar on a podium
+### Avatars: everyone's picture on podiums and the big screen
 
-With **Everyone's avatar on a podium** ticked (Together tab, host), each person in the session gets
-a podium: the host has podium 1, the guests take the next ones in the order they joined. Each
-podium's **Show** setting (**Camera**, **Tab / window** or **Web page**) is what that person's own
-sender page captures, and it's sent to everyone else through VDO.Ninja, so all of you appear in
-everyone's room and on everyone's stream. Each person's sender page shows "sent to the others" on
-their own podium's feed and "Showing <name>'s avatar" on the others'. NDI and Spout avatars can't
-travel this way (they live in the game, not the browser); for those, send them to OBS and from
-there into VDO.Ninja.
+Each person picks **My avatar** in their own **Together** tab: **Camera**, **Tab / window** or
+**Web page (transparent)** (plus the **Camera** to use, or the **Web page** address). Their sender
+page captures it, exactly like a presenter feed, and sends it to everyone in the session through
+VDO.Ninja. The sender page gets a **My avatar** row for it, and says "sent to the others" once
+somebody shows it.
+
+The host then decides where the avatars show, and every PC follows:
+
+- **On a podium:** Presenters tab, set a podium's **Show** to **Someone's avatar (Together)** and
+  pick the person under **Whose avatar** (the list is everyone in the session, you included). The
+  podium's chroma key and other picture settings apply as usual.
+- **On the big screen:** Source tab, **Big screen shows** lists the same people. Pick one and their
+  avatar takes the big screen on every PC (at the **Avatars** quality, so choose 720p there for
+  this); pick **(nobody)** to go back to your own shared tab.
+
+Your own avatar shows on your PC straight from your sender page (nothing travels), and someone
+who isn't in the session right now leaves their podium waiting until they join. NDI and Spout
+avatars can't travel this way (they live in the game, not the browser); for those, send them to OBS
+and from there into a web page, for example a VDO.Ninja link.
 
 **Quality** (Together tab, host decides for everyone; everything is sent once per viewer, so lower
 it on a slow upload): **Big screen to guests** 480p / 540p / 720p / 1080p, **Big screen frame rate**

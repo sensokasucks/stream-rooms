@@ -384,29 +384,50 @@ func _clear_presenter(n: int) -> void:
 ## Streaming together with avatars on: the podium that's mine also goes out to the others
 ## ("publish"), and a podium that belongs to someone else shows their avatar ("view") instead of a
 ## capture here (the shader keys it here, so the key colour still travels along).
-func _sync_presenter_feeds() -> void:
+## Streaming together: a podium (or the big screen) set to someone's avatar. The sender page shows
+## my own avatar straight from its capture ("mine"), and views anyone else's through VDO.Ninja
+## ("view"). Someone who isn't in the session right now: {} (the podium waits).
+func _peer_slot(who: String) -> Dictionary:
 	var avatars: Array = _live_feed.get("avatars", []) if _live_feed.get("avatars") is Array else []
+	for a: Dictionary in avatars:
+		if String(a.get("name", "")) == who:
+			return {"kind": "mine"} if bool(a.get("mine", false)) else {"kind": "view", "view": String(a["id"]), "who": who}
+	return {}
+
+
+func _sync_presenter_feeds() -> void:
 	var slots: Array = []
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
 		var kind := "off"
 		if n <= _room_presenters and bool(AppState.get_setting(AppState.presenter_key(n, "on"))):
 			var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
-			if src == "camera" or src == "tab" or src == "web":
+			if src == "camera" or src == "tab" or src == "web" or src == "peer":
 				kind = src
 		var key_color: Color = AppState.get_setting(AppState.presenter_key(n, "key_color"))
 		var slot := {"kind": kind, "device": String(AppState.get_setting(AppState.presenter_key(n, "camera"))),
 			"url": String(AppState.get_setting(AppState.presenter_key(n, "url"))), "bg": key_color.to_html(false)}
-		for a: Dictionary in avatars:
-			if int(a["slot"]) != n - 1:
-				continue
-			if bool(a["mine"]):
-				slot["publish"] = String(a["id"])
-			elif kind != "off":
-				slot["kind"] = "view"
-				slot["view"] = String(a["id"])
-				slot["who"] = String(a.get("name", ""))
+		if kind == "peer":
+			var who := String(AppState.get_setting(AppState.presenter_key(n, "peer")))
+			var ps := _peer_slot(who)
+			slot["kind"] = String(ps.get("kind", "wait"))
+			slot["view"] = String(ps.get("view", ""))
+			slot["who"] = who
 		slots.append(slot)
-	capture_server.send_to_sender({"type": "presenters", "slots": slots})
+	# my avatar: what the others may show of me (published under my stream name while in a session)
+	var mine := ""
+	var avatars: Array = _live_feed.get("avatars", []) if _live_feed.get("avatars") is Array else []
+	for a: Dictionary in avatars:
+		if bool(a.get("mine", false)):
+			mine = String(a["id"])
+	var avatar := {"kind": String(AppState.get_setting("together_avatar_source")), "device": String(AppState.get_setting("together_avatar_camera")),
+		"url": String(AppState.get_setting("together_avatar_url")), "publish": mine, "bg": "00ff00"}
+	# the big screen: someone's avatar instead of a shared tab
+	var screen := {"kind": "off"}
+	var screen_who := String(AppState.get_setting("screen_peer"))
+	if screen_who != "":
+		var ps := _peer_slot(screen_who)
+		screen = {"kind": String(ps.get("kind", "wait")), "view": String(ps.get("view", "")), "who": screen_who}
+	capture_server.send_to_sender({"type": "presenters", "slots": slots, "avatar": avatar, "screen": screen})
 
 
 ## Streaming together: the sender page sends the host's shared tab to the guests, or (on a guest)
@@ -490,7 +511,9 @@ func _update_playback_active(now: float) -> void:
 
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key.begins_with("presenter_") and (key.ends_with("_on") or key.ends_with("_source") or key.ends_with("_camera")
-			or key.ends_with("_url") or key.ends_with("_key_color")):
+			or key.ends_with("_url") or key.ends_with("_key_color") or key.ends_with("_peer")):
+		_sync_presenter_feeds()
+	if key.begins_with("together_avatar_") or key == "screen_peer":
 		_sync_presenter_feeds()
 	if key.begins_with("presenter_") and (key.ends_with("_on") or key.ends_with("_source") or key.ends_with("_ndi")):
 		_sync_ndi_presenters()
