@@ -1829,18 +1829,18 @@ func _apply_typed(s: HSlider, num: LineEdit, fmt: String, t: String) -> void:
 	num.text = fmt % s.value
 
 
-func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, scale: float = 1.0) -> HBoxContainer:
+func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, display_scale: float = 1.0) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	var l := Label.new()
 	l.text = label
 	l.custom_minimum_size = Vector2(120, 0)
 	h.add_child(l)
 	var s := HSlider.new()
-	s.min_value = lo * scale
-	s.max_value = hi * scale
-	s.step = step * scale
-	s.set_meta("scale", scale)
-	s.value = float(AppState.get_setting(key)) * scale
+	s.min_value = lo * display_scale
+	s.max_value = hi * display_scale
+	s.step = step * display_scale
+	s.set_meta("scale", display_scale)
+	s.value = float(AppState.get_setting(key)) * display_scale
 	s.focus_mode = Control.FOCUS_ALL
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -1860,7 +1860,7 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 			num.text = fmt % x
 		if _syncing:
 			return      # only matching a setting that changed elsewhere (it may round differently)
-		var raw := x / scale
+		var raw := x / display_scale
 		AppState.set_setting(key, int(raw) if is_int else raw))
 	num.text_submitted.connect(func(t: String) -> void:
 		_apply_typed(s, num, fmt, t)
@@ -1950,14 +1950,14 @@ func _add_help_buttons(root: Node) -> void:
 		var holder: Container = row as Container
 		if not (row is HBoxContainer or row is HFlowContainer):
 			# a lone tick box / button: put it in a row so the "?" can sit beside it
-			var wrap := HBoxContainer.new()
+			var wrap_row := HBoxContainer.new()
 			var idx := row.get_index()
-			box.add_child(wrap)
-			box.move_child(wrap, idx)
-			row.reparent(wrap, false)
-			holder = wrap
-			wrap.set_meta("help_done", true)
-			row = wrap
+			box.add_child(wrap_row)
+			box.move_child(wrap_row, idx)
+			row.reparent(wrap_row, false)
+			holder = wrap_row
+			wrap_row.set_meta("help_done", true)
+			row = wrap_row
 		var hint := _hint(tip)
 		hint.visible = false
 		box.add_child(hint)

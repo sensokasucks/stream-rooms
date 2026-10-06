@@ -185,7 +185,9 @@ func _podium_mesh() -> MeshInstance3D:
 	if _podium is MeshInstance3D:
 		return _podium
 	var meshes := _podium.find_children("*", "MeshInstance3D", true, false)
-	return meshes[0] as MeshInstance3D if not meshes.is_empty() else null
+	if meshes.is_empty():
+		return null
+	return meshes[0] as MeshInstance3D
 
 
 ## Where the picture goes and how big it may be (also after a size / position setting changes).

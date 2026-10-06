@@ -300,7 +300,7 @@ static func _build_defaults() -> Dictionary:
 
 
 ## Shortcut for presenter settings: presenter(2, "source") -> "presenter_2_source".
-static func presenter_key(n: int, field: String) -> String:
+func presenter_key(n: int, field: String) -> String:
 	return "presenter_%d_%s" % [n, field]
 
 
