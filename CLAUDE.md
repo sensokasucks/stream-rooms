@@ -37,6 +37,7 @@ Stream Core is a separate Python app (FastAPI). On the owner's PC it lives at `G
 - `rooms/<id>/`: `room_info.tres` (a RoomInfo: id, name, scene, Environment, reverb...), the `.tscn` room scene, and its script (extends `rooms/room.gd`).
 - `ui/control_panel.gd`: the whole control panel (tabs: Source, Room, React, Sound, Chat, Audience, Seating, Games, Presenters), plus the seating chart, focus view, board HUD and overlay.
 - `_tests/`: scene tests (see below). `web/`: the sender page and backdrop. `exported/`: built exes (don't edit).
+- Build a standalone exe with `tools/export.ps1` (headless export into a fresh `exported/StreamRooms_<date>` folder, checks the .pck, copies `tools/`). Keep the preset's **Shader Baker off** and **Export Mode = all resources**: baked shaders froze a PC with another GPU, and the editor's export dialog can silently put old settings back into `export_presets.cfg`.
 
 ## Conventions
 

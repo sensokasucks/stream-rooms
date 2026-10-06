@@ -693,16 +693,31 @@ Included rooms:
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
-1. *Editor > Manage Export Templates > Download and Install* (once per Redot version).
-2. *Project > Export...*, pick the **Windows Desktop** preset, then **Export Project** and untick
-   *Export With Debug* for a release build. The preset already includes `web/*` (the sender page),
-   leaves out `_tests/`, and writes to `../export/StreamRooms.exe` (+ `StreamRooms.pck`).
-3. For NDI, the PC running the game needs the NDI Runtime; the plugin's files are exported
-   with the game (its demo folder is left out).
-4. Copy the `tools/` folder (yt-dlp.exe, ffmpeg.exe) next to the .exe if you want *File or URL*
-   downloads. Browser-tab capture, chat and presenters don't need it.
-5. Ship the whole export folder. Settings and the emote cache live in the user data folder
-   (*Project > Open User Data Folder* in the editor), shared with editor runs.
+**The easy way:** in PowerShell in the project folder, run
+
+```
+powershell -ExecutionPolicy Bypass -File tools\export.ps1
+```
+
+It builds into a new folder, `exported\StreamRooms_<date-time>\`, with `StreamRooms.exe`, the game
+data `StreamRooms.pck`, the NDI and Spout plugin files and the `tools` folder (yt-dlp, ffmpeg).
+It checks the build is complete. **Copy that whole folder** to the other PC. The editor can stay
+open while it runs.
+
+Why a script: the export window in the editor remembers its own settings, and two of them broke
+builds on another PC. **Export Mode** set to "Export selected scenes" left the game out, and the
+**Shader Baker** packed in shaders prepared for this PC's graphics card, which froze the other PC.
+The script exports without the editor window, so neither can happen.
+
+Exporting from the editor still works (*Project > Export...*, **Windows Desktop**, **Export Project**):
+- **Resources > Export Mode:** **Export all resources in the project**.
+- **Options > Shader Baker > Enabled:** off.
+- **Options > Embed PCK:** off.
+- Export into an empty folder, then copy the exe, the `.pck`, both DLLs and the `tools` folder.
+
+Other PCs: the first start takes a little longer while it prepares its shaders. Keep the graphics
+driver up to date (an old NVIDIA driver froze it once). NDI needs the free NDI Runtime installed.
+Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\Stream Rooms`).
 
 ## Project layout
 - `autoload/`: EventBus (signals only), AppState (settings and state), SaveManager
