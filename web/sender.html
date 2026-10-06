@@ -118,24 +118,42 @@ const JPEG_QUALITY = 0.82;
 const $ = (id) => document.getElementById(id);
 // Tests only: "?testshare" shares a generated picture and tone instead of asking for a tab.
 const TEST_SHARE = new URLSearchParams(location.search).has("testshare");
-let ws = null;
+// Tests only: "?autoshare" clicks Share by itself (Chrome's --auto-select-desktop-capture-source picks the source).
+const AUTO_SHARE = new URLSearchParams(location.search).has("autoshare");
+let pumpMode = "";          // how the main video's frames reach the worker: "track" | "frames" | "video" (see startFramePump)
+let link = null;           // the worker that owns the socket and does the picture work (WORKER_SRC)
+let linkOpen = false;
+let buffered = 0;          // unsent bytes on the socket, as the worker last reported them
 let share = null;          // { stream, videoPump, audio }
 let cam = null;            // { stream, pump }
-let sentFrames = 0, fps = 0;
+let fps = 0;               // main-video frames sent in the last second
+let workerFps = 0, mainSentFrames = 0;
+let pumpIds = 0;
+const pumpDone = new Map();   // pump id -> called when the worker has finished a handed-over frame
 
 // ── WebSocket link (auto-reconnects) ─────────────────────────
+// A Web Worker owns the socket and turns the pictures into JPEGs (WORKER_SRC below). Browsers slow
+// down a tab that isn't in front (timers once a second or less, drawing paused), which dropped the
+// frame rate whenever this page sat behind another tab for a while. A worker isn't slowed down, so
+// the pictures keep flowing with the page in the background. The page itself only sends the
+// small status messages and the sound (the sound engine runs on its own thread too).
 function connect() {
-  ws = new WebSocket(WS_URL);
-  ws.binaryType = "arraybuffer";
-  ws.onopen = () => { setLink(true); sendStatus(); };
-  ws.onmessage = (e) => {
-    if (typeof e.data !== "string") return;
-    let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
-    if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots);
-    if (msg.type === "live_feed") applyLiveFeed(msg);
+  if (link) return;
+  link = new Worker(URL.createObjectURL(new Blob([WORKER_SRC], { type: "text/javascript" })));
+  link.onmessage = (e) => {
+    const m = e.data;
+    if (m.type === "link") { linkOpen = m.ok; setLink(m.ok); if (m.ok) sendStatus(); }
+    else if (m.type === "buffered") buffered = m.buffered;
+    else if (m.type === "fps") { workerFps = m.fps; tick(); }
+    else if (m.type === "done") { const cb = pumpDone.get(m.id); if (cb) cb(); }
+    else if (m.type === "message") {
+      let msg; try { msg = JSON.parse(m.text); } catch (_) { return; }
+      if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots);
+      if (msg.type === "live_feed") applyLiveFeed(msg);
+    }
   };
-  ws.onclose = () => { setLink(false); setTimeout(connect, 1000); };
-  ws.onerror = () => {};
+  link.postMessage({ type: "connect", url: WS_URL, limits: {
+    video: MAX_BUFFERED, pres: MAX_BUFFERED_PRES, presBusy: MAX_BUFFERED_PRES_BUSY, audio: MAX_BUFFERED_AUDIO, keepalive: PRES_KEEPALIVE_MS } });
 }
 function setLink(ok) {
   $("linkDot").classList.toggle("ok", ok);
@@ -147,102 +165,221 @@ function bufferLimit(type) {
   return MAX_BUFFERED;
 }
 function canSend(type) {
-  return ws && ws.readyState === WebSocket.OPEN && ws.bufferedAmount < bufferLimit(type === undefined ? PKT_VIDEO : type);
+  return linkOpen && buffered < bufferLimit(type === undefined ? PKT_VIDEO : type);
 }
+// bytes: an ArrayBuffer (handed to the worker, so don't use it afterwards)
 function sendPacket(type, bytes, slot) {
   if (!canSend(type)) return false;
-  const head = slot === undefined ? 1 : 2;
-  const out = new Uint8Array(head + bytes.byteLength);
-  out[0] = type;
-  if (head === 2) out[1] = slot;
-  out.set(new Uint8Array(bytes), head);
-  ws.send(out);
+  buffered += bytes.byteLength;      // (until the worker reports again)
+  link.postMessage({ type: "packet", kind: type, bytes, slot }, [bytes]);
   return true;
 }
 function sendStatus() {
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!linkOpen) return;
   const a = share && share.audio;
-  ws.send(JSON.stringify({
+  link.postMessage({ type: "busy", on: !!share });
+  link.postMessage({ type: "json", text: JSON.stringify({
     type: "status",
     capturing: !!share,
     has_audio: !!(a && a.track),
     suppress_local_audio: !!(a && a.suppressed),
     webcam: !!cam,
     fps: fps,
+    pump: pumpMode,
     label: share ? share.label : "",
     cameras: cameraList,
     presenters: pres.map((p, i) => ({ slot: i, want: p.want.kind, active: !!p.stream, kind: p.kind, label: p.label, error: p.error })),
-  }));
+  }) });
 }
-setInterval(() => { fps = sentFrames; sentFrames = 0; sendStatus(); }, 1000);
+// (the once-a-second status goes out when the worker says so: a page's own timers slow to once a
+// minute after five minutes in the background, a worker's don't)
+function tick() { fps = workerFps + mainSentFrames; mainSentFrames = 0; sendStatus(); }
 
 // ── Frame pump: track -> scaled JPEG -> socket ───────────────
-// Uses MediaStreamTrackProcessor where available (keeps running when this tab
-// is in the background); falls back to <video> + requestVideoFrameCallback.
+// Best: a copy of the track is handed to the worker, which does everything (the original stays
+// here for the preview and its "ended" event). Most browsers can't hand a track over yet, so then
+// the frames are read here (not slowed down in the background: that's driven by the frames
+// arriving, not by timers) and each frame is handed to the worker, which scales, encodes and
+// sends it. Last resort: <video> + requestVideoFrameCallback here, which does slow down.
 function startFramePump(track, type, maxHeight, maxFps, slot, quality) {
-  const state = { stopped: false, busy: false, last: 0 };
-  const canvas = new OffscreenCanvas(16, 16);
-  const ctx = canvas.getContext("2d", { alpha: false });
-  const minGap = 1000 / maxFps;
-
-  async function encode(source, w, h) {
-    const scale = Math.min(1, maxHeight / h);
-    const cw = Math.max(2, Math.round(w * scale / 2) * 2), ch = Math.max(2, Math.round(h * scale / 2) * 2);
-    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
-    ctx.drawImage(source, 0, 0, cw, ch);
-    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: quality || JPEG_QUALITY });
-    const bytes = await blob.arrayBuffer();
-    if (sendPacket(type, bytes, slot)) {
-      if (type === PKT_VIDEO) sentFrames++;
-      state.lastBytes = bytes; state.lastSent = performance.now();
+  const id = ++pumpIds;
+  const state = { stopped: false, busy: false, last: 0, stop: () => { state.stopped = true; } };
+  const params = { type: "pump", id, kind: type, maxHeight, maxFps, slot, quality: quality || JPEG_QUALITY };
+  if (link && "MediaStreamTrackProcessor" in window) {
+    let copy = null;
+    try {
+      copy = track.clone();
+      link.postMessage({ ...params, track: copy }, [copy]);
+      state.stop = () => { state.stopped = true; link.postMessage({ type: "stopPump", id }); };
+      if (type === PKT_VIDEO) { pumpMode = "track"; console.log("sender: the worker has the track (best: no slow-down in the background)"); }
+      return state;
+    } catch (_) {
+      if (copy) copy.stop();
     }
-  }
-  function shouldTake(now) {
-    if (state.busy || !canSend(type) || now - state.last < minGap) return false;
-    state.last = now; state.busy = true; return true;
-  }
-
-  if ("MediaStreamTrackProcessor" in window) {
+    link.postMessage(params);
+    if (type === PKT_VIDEO) { pumpMode = "frames"; console.log("sender: this browser can't hand the track to the worker; handing over frames instead"); }
     const reader = new MediaStreamTrackProcessor({ track }).readable.getReader();
+    const minGap = 1000 / maxFps;
+    // up to two frames on their way at once: the hand-over has a round trip, and with just one the
+    // rate halves (a hidden page gets less main-thread time, so every bit of overlap counts)
+    let inflight = 0;
+    pumpDone.set(id, () => { inflight = Math.max(0, inflight - 1); });
     (async () => {
       while (!state.stopped) {
-        const { value: frame, done } = await reader.read();
-        if (done) break;
-        if (shouldTake(performance.now())) {
-          encode(frame, frame.displayWidth, frame.displayHeight)
-            .catch(() => {}).finally(() => { frame.close(); state.busy = false; });
+        const r = await reader.read();
+        if (r.done) break;
+        const frame = r.value;
+        const now = performance.now();
+        if (inflight < 2 && canSend(type) && now - state.last >= minGap) {
+          state.last = now; inflight++;
+          link.postMessage({ type: "frame", id, frame }, [frame]);
         } else {
           frame.close();
         }
       }
-    })();
-    state.stop = () => { state.stopped = true; reader.cancel().catch(() => {}); };
-  } else {
-    const v = document.createElement("video");
-    v.muted = true; v.playsInline = true;
-    v.srcObject = new MediaStream([track]);
-    v.play();
-    const tick = () => {
-      if (state.stopped) return;
-      if (v.videoWidth && shouldTake(performance.now())) {
-        encode(v, v.videoWidth, v.videoHeight).catch(() => {}).finally(() => { state.busy = false; });
-      }
-      v.requestVideoFrameCallback(tick);
+    })().catch(() => {});
+    state.stop = () => {
+      state.stopped = true;
+      pumpDone.delete(id);
+      reader.cancel().catch(() => {});
+      link.postMessage({ type: "stopPump", id });
     };
+    return state;
+  }
+  if (type === PKT_VIDEO) { pumpMode = "video"; console.log("sender: no MediaStreamTrackProcessor; using a <video> element (slows down in a background tab)"); }
+  const canvas = new OffscreenCanvas(16, 16);
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const minGap = 1000 / maxFps;
+  const v = document.createElement("video");
+  v.muted = true; v.playsInline = true;
+  v.srcObject = new MediaStream([track]);
+  v.play();
+  const tick = () => {
+    if (state.stopped) return;
+    const now = performance.now();
+    if (v.videoWidth && !state.busy && canSend(type) && now - state.last >= minGap) {
+      state.last = now; state.busy = true;
+      (async () => {
+        const scale = Math.min(1, maxHeight / v.videoHeight);
+        const cw = Math.max(2, Math.round(v.videoWidth * scale / 2) * 2), ch = Math.max(2, Math.round(v.videoHeight * scale / 2) * 2);
+        if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+        ctx.drawImage(v, 0, 0, cw, ch);
+        const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: quality || JPEG_QUALITY });
+        const bytes = await blob.arrayBuffer();
+        state.lastBytes = bytes.slice(0);
+        if (sendPacket(type, bytes, slot)) { if (type === PKT_VIDEO) mainSentFrames++; state.lastSent = performance.now(); }
+      })().catch(() => {}).finally(() => { state.busy = false; });
+    }
     v.requestVideoFrameCallback(tick);
-    state.stop = () => { state.stopped = true; v.srcObject = null; };
-  }
+  };
+  v.requestVideoFrameCallback(tick);
+  let keep = null;
   if (type === PKT_PRESENTER) {
-    const keep = setInterval(() => {
-      if (state.stopped) { clearInterval(keep); return; }
+    keep = setInterval(() => {
       if (state.lastBytes && !state.busy && performance.now() - state.lastSent > PRES_KEEPALIVE_MS &&
-          sendPacket(type, state.lastBytes, slot)) state.lastSent = performance.now();
+          sendPacket(type, state.lastBytes.slice(0), slot)) state.lastSent = performance.now();
     }, PRES_KEEPALIVE_MS / 2);
-    const stop = state.stop;
-    state.stop = () => { clearInterval(keep); stop(); };
   }
+  state.stop = () => { state.stopped = true; if (keep) clearInterval(keep); v.srcObject = null; };
   return state;
 }
+
+// The worker: the socket, and each handed-over track -> scaled JPEG -> socket. The same rules as
+// before: when the socket backs up, pictures are skipped (presenter feeds first), never sound.
+const WORKER_SRC = `
+"use strict";
+const PKT_VIDEO = 1, PKT_AUDIO = 2, PKT_PRESENTER = 4;
+let ws = null, url = "", limits = null, busyShare = false, sentFrames = 0;
+const pumps = new Map();
+function limitFor(kind) {
+  if (kind === PKT_AUDIO) return limits.audio;
+  if (kind === PKT_PRESENTER) return busyShare ? limits.presBusy : limits.pres;
+  return limits.video;
+}
+function canSend(kind) { return ws && ws.readyState === 1 && ws.bufferedAmount < limitFor(kind); }
+function sendPacket(kind, bytes, slot) {
+  if (!canSend(kind)) return false;
+  const head = slot === undefined || slot === null ? 1 : 2;
+  const out = new Uint8Array(head + bytes.byteLength);
+  out[0] = kind;
+  if (head === 2) out[1] = slot;
+  out.set(new Uint8Array(bytes), head);
+  ws.send(out);
+  return true;
+}
+function connect() {
+  ws = new WebSocket(url);
+  ws.binaryType = "arraybuffer";
+  ws.onopen = () => postMessage({ type: "link", ok: true });
+  ws.onmessage = (e) => { if (typeof e.data === "string") postMessage({ type: "message", text: e.data }); };
+  ws.onclose = () => { postMessage({ type: "link", ok: false }); setTimeout(connect, 1000); };
+  ws.onerror = () => {};
+}
+setInterval(() => postMessage({ type: "buffered", buffered: ws ? ws.bufferedAmount : 0 }), 100);
+setInterval(() => { postMessage({ type: "fps", fps: sentFrames }); sentFrames = 0; }, 1000);
+function startPump(m) {
+  const st = { stopped: false, busy: false, last: 0, lastBytes: null, lastSent: 0, keep: null, reader: null };
+  const canvas = new OffscreenCanvas(16, 16);
+  const ctx = canvas.getContext("2d", { alpha: false });
+  const minGap = 1000 / m.maxFps;
+  async function encode(frame) {
+    const w = frame.displayWidth, h = frame.displayHeight;
+    const scale = Math.min(1, m.maxHeight / h);
+    const cw = Math.max(2, Math.round(w * scale / 2) * 2), ch = Math.max(2, Math.round(h * scale / 2) * 2);
+    if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
+    ctx.drawImage(frame, 0, 0, cw, ch);
+    const blob = await canvas.convertToBlob({ type: "image/jpeg", quality: m.quality });
+    const bytes = await blob.arrayBuffer();
+    if (sendPacket(m.kind, bytes, m.slot)) {
+      if (m.kind === PKT_VIDEO) sentFrames++;
+      st.lastBytes = bytes; st.lastSent = performance.now();
+    }
+  }
+  st.encodeHanded = (frame) => {
+    encode(frame).catch(() => {}).finally(() => { frame.close(); postMessage({ type: "done", id: m.id }); });
+  };
+  if (m.track) {
+    st.reader = new MediaStreamTrackProcessor({ track: m.track }).readable.getReader();
+    (async () => {
+      while (!st.stopped) {
+        const r = await st.reader.read();
+        if (r.done) break;
+        const frame = r.value;
+        const now = performance.now();
+        if (!st.busy && canSend(m.kind) && now - st.last >= minGap) {
+          st.last = now; st.busy = true;
+          encode(frame).catch(() => {}).finally(() => { frame.close(); st.busy = false; });
+        } else {
+          frame.close();
+        }
+      }
+    })().catch(() => {});
+  }
+  if (m.kind === PKT_PRESENTER) {
+    st.keep = setInterval(() => {
+      if (st.lastBytes && !st.busy && performance.now() - st.lastSent > limits.keepalive &&
+          sendPacket(m.kind, st.lastBytes, m.slot)) st.lastSent = performance.now();
+    }, limits.keepalive / 2);
+  }
+  st.stop = () => {
+    st.stopped = true;
+    if (st.keep) clearInterval(st.keep);
+    if (st.reader) st.reader.cancel().catch(() => {});
+    if (m.track) m.track.stop();
+  };
+  pumps.set(m.id, st);
+}
+onmessage = (e) => {
+  const m = e.data;
+  if (m.type === "connect") { url = m.url; limits = m.limits; connect(); }
+  else if (m.type === "json") { if (ws && ws.readyState === 1) ws.send(m.text); }
+  else if (m.type === "packet") sendPacket(m.kind, m.bytes, m.slot);
+  else if (m.type === "busy") busyShare = m.on;
+  else if (m.type === "pump") startPump(m);
+  else if (m.type === "frame") { const st = pumps.get(m.id); if (st && !st.stopped) st.encodeHanded(m.frame); else { m.frame.close(); postMessage({ type: "done", id: m.id }); } }
+  else if (m.type === "stopPump") { const st = pumps.get(m.id); if (st) { st.stop(); pumps.delete(m.id); } }
+};
+`;
 
 // ── Audio pump: track -> 20 ms float32 stereo chunks -> socket ─
 const WORKLET_SRC = `
@@ -322,14 +459,28 @@ async function startShare() {
   syncLive();
 }
 
-// Tests only: a colour-cycling picture with a 440 Hz tone, standing in for a shared tab.
+// Tests only: a colour-cycling picture with a 440 Hz tone, standing in for a shared tab. The picture
+// is drawn by a worker (a page's own timers slow to once a second in a background tab, which would
+// make the test picture itself stall) and written into a MediaStreamTrackGenerator; browsers
+// without that fall back to a canvas drawn here.
 function testPatternStream() {
-  const c = document.createElement("canvas");
-  c.width = 640; c.height = 360;
-  const g = c.getContext("2d");
-  let hue = 0;
-  setInterval(() => { hue = (hue + 4) % 360; g.fillStyle = "hsl(" + hue + ",80%,50%)"; g.fillRect(0, 0, 640, 360); }, 33);
-  const stream = c.captureStream(30);
+  let stream;
+  if ("MediaStreamTrackGenerator" in window) {
+    const gen = new MediaStreamTrackGenerator({ kind: "video" });
+    const src = "const c = new OffscreenCanvas(640, 360); const g = c.getContext('2d'); let hue = 0, t = 0;" +
+      "onmessage = (e) => { const w = e.data.getWriter(); setInterval(() => { hue = (hue + 4) % 360; g.fillStyle = 'hsl(' + hue + ',80%,50%)'; g.fillRect(0, 0, 640, 360);" +
+      "  t += 33333; const f = new VideoFrame(c, { timestamp: t }); w.write(f).catch(() => {}); }, 33); };";
+    const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+    w.postMessage(gen.writable, [gen.writable]);
+    stream = new MediaStream([gen]);
+  } else {
+    const c = document.createElement("canvas");
+    c.width = 640; c.height = 360;
+    const g = c.getContext("2d");
+    let hue = 0;
+    setInterval(() => { hue = (hue + 4) % 360; g.fillStyle = "hsl(" + hue + ",80%,50%)"; g.fillRect(0, 0, 640, 360); }, 33);
+    stream = c.captureStream(30);
+  }
   const ac = new AudioContext();
   const osc = ac.createOscillator();
   const dest = ac.createMediaStreamDestination();
@@ -720,7 +871,7 @@ if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
   $("shareBtn").disabled = true;
 }
 connect();
-if (TEST_SHARE) setTimeout(startShare, 1500);
+if (TEST_SHARE || AUTO_SHARE) setTimeout(startShare, 1500);
 </script>
 </body>
 </html>

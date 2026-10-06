@@ -16,6 +16,11 @@ Needs Redot 4.3+ (Forward+). Open `project.godot` in Redot, let it import, and p
 4. The tab appears on the screen within a second or two. Keep the sender page open. A small
    separate window works best, because browsers slow down hidden tabs.
 
+The sender page can sit behind other tabs: the picture work runs in a background worker, which
+browsers don't slow down the way they slow down a tab that isn't in front. (Keeping it in its own
+small window still works too.) Don't minimise the whole browser window: Windows stops drawing a
+minimised window, and a shared tab in it may stop producing frames.
+
 **No double audio:** the sender asks the browser to silence the shared tab
 (`suppressLocalAudioPlayback`) and sends its sound to the game instead. The sender page and the
 game's Source tab both warn you if the browser couldn't silence it. If that happens, mute the tab.
