@@ -14,8 +14,8 @@ config/name="Stream Rooms"
 config/description="Swappable 3D rooms whose screen shows a video file or a shared browser tab, lights the room, and has reaction-stream tools."
 config/version="2026.10.1"
 run/main_scene="res://core/main.tscn"
-run/flush_stdout_on_print=true
 config/features=PackedStringArray("26.2", "Forward Plus", "Redot")
+run/flush_stdout_on_print=true
 
 [audio]
 

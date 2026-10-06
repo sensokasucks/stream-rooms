@@ -278,6 +278,10 @@ func _decode_task(channel: int, data: PackedByteArray) -> void:
 	if img.load_jpg_from_buffer(data) == OK:
 		if channel == PKT_VIDEO:
 			colors = ColorSampler.sample_thirds(img)
+		# JPEGs decode as RGB8, which some graphics cards can't take: the engine would convert every
+		# frame itself and warn each time. Converting here (still on the worker thread) is quiet.
+		if img.get_format() == Image.FORMAT_RGB8:
+			img.convert(Image.FORMAT_RGBA8)
 	else:
 		img = null
 	_on_decoded.call_deferred(channel, img, colors)

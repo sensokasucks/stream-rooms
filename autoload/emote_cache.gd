@@ -204,6 +204,8 @@ func _decode(body: PackedByteArray) -> Texture2D:
 		err = img.load_webp_from_buffer(body)
 	if err != OK or img.is_empty():
 		return null
+	if img.get_format() == Image.FORMAT_RGB8:
+		img.convert(Image.FORMAT_RGBA8)     # (RGB8 isn't supported on every graphics card: avoids a warning per picture)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
 
