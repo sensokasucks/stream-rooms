@@ -549,6 +549,8 @@ anything live: a game, a stream you're reacting to, a website.
   **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
   takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
   again. **Stop watching** lets go.
+  Browsers only let a page's sound through after a click on it, so if the sender page asks,
+  click anywhere on it once.
 - It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
   about 0.2 to 1 second behind the host. Each guest costs the host roughly 3 to 6 Mbps of upload,
   so a host on a slow connection may want to untick it.

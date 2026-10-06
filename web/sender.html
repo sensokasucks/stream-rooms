@@ -262,8 +262,10 @@ class PcmTap extends AudioWorkletProcessor {
 }
 registerProcessor("pcm-tap", PcmTap);`;
 
-async function startAudioPump(track) {
-  const ctx = new AudioContext({ sampleRate: 48000 });
+// ctx: an AudioContext that's already running (the live feed's, unlocked by the Watch click);
+// without one, a new context is made (fine right after a click, e.g. the Share button).
+async function startAudioPump(track, shared) {
+  const ctx = shared || new AudioContext({ sampleRate: 48000 });
   const url = URL.createObjectURL(new Blob([WORKLET_SRC], { type: "text/javascript" }));
   await ctx.audioWorklet.addModule(url);
   const src = ctx.createMediaStreamSource(new MediaStream([track]));
@@ -272,8 +274,13 @@ async function startAudioPump(track) {
   mute.gain.value = 0;                        // keep the graph running, but silent here
   src.connect(tap).connect(mute).connect(ctx.destination);
   tap.port.onmessage = (e) => sendPacket(PKT_AUDIO, e.data);
-  await ctx.resume();
-  return { ctx, stop: () => ctx.close() };
+  if (shared) ctx.resume().catch(() => {});      // (waits for a click if there wasn't one yet)
+  else await ctx.resume();
+  return { ctx, stop: () => {
+    tap.port.onmessage = null;
+    try { src.disconnect(); tap.disconnect(); mute.disconnect(); } catch (_) {}
+    if (!shared) ctx.close();
+  } };
 }
 
 // ── Share a tab / window ─────────────────────────────────────
@@ -369,6 +376,23 @@ let vdo = null;              // the VDO.Ninja connection (host: publishing, gues
 let vdoPublished = null;     // host: the stream being published
 let watching = false;        // guest: clicked Watch
 let sdkLoading = null;
+// Browsers only let a page play / process sound after a click on it. The host's sound arrives
+// some time after "Watch" is clicked, so the sound engine is started during that click and kept.
+let liveAudio = null;
+function unlockLiveAudio() {
+  if (!liveAudio) liveAudio = new AudioContext({ sampleRate: 48000 });
+  if (liveAudio.state !== "running") liveAudio.resume().catch(() => {});
+}
+document.addEventListener("pointerdown", () => {
+  if (liveAudio && liveAudio.state !== "running") liveAudio.resume().then(() => syncLiveSound()).catch(() => {});
+});
+function syncLiveSound() {
+  if (!share || !share.remote || !share.audio.track) return;
+  $("audioStatus").textContent = liveAudio && liveAudio.state === "running"
+    ? "The host's sound goes to your game."
+    : "Click anywhere on this page to let the host's sound through (the browser asks for a click first).";
+  $("audioStatus").className = "status" + (liveAudio && liveAudio.state === "running" ? "" : " warn");
+}
 
 function loadSdk() {
   if (window.VDONinjaSDK) return Promise.resolve();
@@ -493,14 +517,15 @@ async function startRemoteShare(stream, track) {
   } else if (track.kind === "audio") {
     share.audio.pump && share.audio.pump.stop();
     share.audio.track = track;
-    try { share.audio.pump = await startAudioPump(track); } catch (_) {}
-    $("audioStatus").textContent = "The host's sound goes to your game.";
+    if (!liveAudio) liveAudio = new AudioContext({ sampleRate: 48000 });   // (no click: may stay paused, see syncLiveSound)
+    try { share.audio.pump = await startAudioPump(track, liveAudio); } catch (_) {}
+    syncLiveSound();
   }
   liveSay("Watching the host's live feed.");
   sendStatus();
 }
 
-$("watchBtn").onclick = startWatching;
+$("watchBtn").onclick = () => { unlockLiveAudio(); startWatching(); };
 $("unwatchBtn").onclick = () => {
   if (share && share.remote) stopShare();
   watching = false;
