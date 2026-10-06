@@ -11,7 +11,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions
 # Screenshots and logs go to -Out (default C:\temp\sr_tests), outside the project folder.
 param(
-	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together"),
+	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks"),
 	[string]$Out = "C:\temp\sr_tests",
 	[string]$Redot = "G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe",
 	[int]$TimeLimit = 400,

@@ -88,7 +88,8 @@ func _ready() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
+	# on the button's release, not its press: losing focus mid-press cancels a button's click
+	if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed:
 		_drop_mouse_focus.call_deferred(get_viewport())
 		return
 	var key := event as InputEventKey
@@ -256,8 +257,8 @@ func _save_window_pos() -> void:
 
 ## Keys pressed in the panel window still work as hotkeys (unless you're typing in a box).
 func _on_window_input(event: InputEvent) -> void:
-	if event is InputEventMouseButton and (event as InputEventMouseButton).pressed:
-		_drop_mouse_focus.call_deferred(_window)
+	if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed:
+		_drop_mouse_focus.call_deferred(_window)     # (on release, see _input)
 		return
 	var key := event as InputEventKey
 	if key == null or not key.pressed or key.echo:
