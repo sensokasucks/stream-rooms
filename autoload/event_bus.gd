@@ -128,6 +128,12 @@ signal net_state_changed(info: Dictionary)
 signal net_camera_moved(peer_id: int, peer_name: String, xform: Transform3D)
 ## Someone left the session (their camera marker goes away).
 signal net_peer_left(peer_id: int)
+## Someone has to say yes before a connection completes. side "host": a guest called `name` (peer
+## `peer_id`) wants in, answer with NetSession.approve(peer_id, yes). side "guest": this copy is
+## connected to the host called `name` (peer 1), answer with NetSession.confirm(yes).
+signal net_confirm_needed(side: String, peer_id: int, name: String)
+## That question is over (answered, timed out, or the other side left): close its popup.
+signal net_confirm_closed(peer_id: int)
 ## The live feed for the sender page (the host's shared tab, sent to guests through VDO.Ninja):
 ## {role: "off" | "publish" | "view", id: String, key: String, live: bool}. ScreenFeed passes it on.
 signal live_feed_changed(info: Dictionary)

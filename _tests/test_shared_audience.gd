@@ -47,6 +47,7 @@ func _slot(platform: String, who: String) -> int:
 
 
 func _ready() -> void:
+	NetSession.auto_confirm = true      # (no "let them in" popups in a test)
 	_out = OS.get_cmdline_user_args()[0]
 	EventBus.audience_spoke.connect(func(slot: int, _p: Array) -> void: _spoke[slot] = int(_spoke.get(slot, 0)) + 1)
 	AppState.set_setting("chat_enabled", false)                       # (never the real Stream Core)

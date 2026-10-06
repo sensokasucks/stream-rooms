@@ -68,6 +68,7 @@ It rebuilds the editor's class cache first, runs each test one at a time with `-
 
 - Redot console exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe`.
 - Write tests so they set every setting they depend on; they start from the defaults.
+- A test that hosts or joins a session sets `NetSession.auto_confirm = true` first, or it hangs on the "let them in" / "right host?" popups (`test_together` tests the popups themselves).
 - If scripts fail with "Identifier ... not declared", the editor's class cache in `.godot/` is stale. The runner fixes that (or run the exe with `--headless --path . --import`).
 - Every test should end with "exit 0" in the runner table. Anything else means Redot crashed (the old quit crash in the NDI plugin is fixed; see `addons/godot-ndi/STREAM_ROOMS_PATCH.md`).
 - Running a test by hand without a profile still changes the live settings: back up `settings.cfg` first (Redot app_userdata folder, `Stream Rooms`).

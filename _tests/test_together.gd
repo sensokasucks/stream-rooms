@@ -1,7 +1,8 @@
 extends Node
 ## Streaming together (NetSession): password / version checks, then a real session between
 ## copies on this PC. Run as the host (tools/run_tests.ps1 does this); it starts two more copies
-## itself: a guest that joins and checks what arrives, and one with the wrong password.
+## itself: a guest that joins and checks what arrives, one with the wrong password, and one the host
+## declines in the "wants to join" popup.
 ##   <redot console exe> --path . _tests/test_together.tscn -- C:/temp/sr_tests --mp-profile=test
 ## The guests write their PASS / FAIL lines to files in the output folder, which the host prints
 ## at the end as "PASS guest: ...", so one run shows everything.
@@ -15,6 +16,7 @@ var _lines: PackedStringArray = []
 var _main: Node
 var _remote_reactions: int = 0
 var _statuses: PackedStringArray = []
+var _confirms: Array = []             # [{side, id, name}] from EventBus.net_confirm_needed
 
 
 func _check(ok: bool, what: String) -> void:
@@ -46,6 +48,8 @@ func _ready() -> void:
 		if bool(d.get("net_remote", false)):
 			_remote_reactions += 1)
 	EventBus.status_message.connect(func(t: String, _e: bool) -> void: _statuses.append(t))
+	EventBus.net_confirm_needed.connect(func(side: String, id: int, who: String) -> void:
+		_confirms.append({"side": side, "id": id, "name": who}))
 	AppState.set_setting("chat_enabled", false)
 	AppState.set_setting("panel_window", false)
 	AppState.set_setting("reactions_enabled", true)
@@ -54,6 +58,8 @@ func _ready() -> void:
 		await _guest()
 	elif args.has("--role=badguest"):
 		await _bad_guest()
+	elif args.has("--role=declined"):
+		await _declined_guest()
 	else:
 		await _host()
 
@@ -89,13 +95,33 @@ func _host() -> void:
 	_check(NetSession.get_role() == "host", "hosting started (%s)" % NetSession.get_info()["status"])
 	_check(not String(NetSession.get_info()["status"]).contains("127.0.0.1"), "the status never shows an address")
 
-	for p in ["testguest", "testbad"]:
+	for p in ["testguest", "testbad", "testno"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://settings_%s.cfg" % p))
 		DirAccess.remove_absolute(_out.path_join("together_%s.txt" % p))
 	_spawn("testguest", "--role=guest", "0,0")
 
+	# both sides confirm first: the host sees "TestGuest wants to join" and nothing is shared yet
+	var asked := await _wait_for(func() -> bool: return _confirms.size() > 0, 90.0)
+	_check(asked, "the host is asked before a guest gets in")
+	if not asked:
+		await _finish()
+		return
+	var ask: Dictionary = _confirms[0]
+	_check(String(ask["side"]) == "host" and String(ask["name"]) == "TestGuest", "the popup names the guest (%s)" % ask["name"])
+	var panel: Node = _main.get_node("ControlPanel")
+	_check((panel._net_dialogs as Dictionary).has(int(ask["id"])) and (panel._net_dialogs[int(ask["id"])] as Window).visible,
+		"a popup is open on the host")
+	await _secs(2.0)
+	_check((NetSession.get_info()["peers"] as Array).size() == 1 and (NetSession.get_info()["pending"] as Array).size() == 1,
+		"the guest is waiting, not in the session, until both say yes")
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(_out.path_join("together_popup.png"))
+	NetSession.approve(int(ask["id"]), true)
+
 	var joined := await _wait_for(func() -> bool: return (NetSession.get_info()["peers"] as Array).size() == 2, 90.0)
-	_check(joined, "the guest joined")
+	_check(joined, "the guest joined once both confirmed")
+	_check(not (panel._net_dialogs as Dictionary).has(int(ask["id"])), "the host's popup closed by itself")
+	_check((NetSession.get_info()["pending"] as Array).is_empty(), "nobody is waiting any more")
 	if not joined:
 		await _finish()
 		return
@@ -149,12 +175,24 @@ func _host() -> void:
 		return false, 90.0), "a wrong password was refused")
 	await _secs(2.0)
 	_check((NetSession.get_info()["peers"] as Array).size() == 2, "the refused copy isn't in the session")
+	_check(_confirms.size() == 1, "a wrong password never reaches the popup")
+
+	# someone with the right password whom the host declines
+	_spawn("testno", "--role=declined", "980,300")
+	_check(await _wait_for(func() -> bool: return _confirms.size() >= 2, 90.0), "the host is asked about the next guest")
+	if _confirms.size() >= 2:
+		var no: Dictionary = _confirms[1]
+		_check(String(no["name"]) == "TestNo", "the popup names them (%s)" % no["name"])
+		NetSession.approve(int(no["id"]), false)
+		_check(await _wait_for(func() -> bool: return (NetSession.get_info()["pending"] as Array).is_empty(), 10.0), "declining clears the wait")
+		await _secs(3.0)
+		_check((NetSession.get_info()["peers"] as Array).size() == 2, "a declined guest isn't in the session")
 
 	# the guests finish after the session ends
 	await _secs(2.0)
 	NetSession.leave()
 	_check(NetSession.get_role() == "off", "stopped hosting")
-	for p in ["testguest", "testbad"]:
+	for p in ["testguest", "testbad", "testno"]:
 		var f := _out.path_join("together_%s.txt" % p)
 		await _wait_for(func() -> bool: return FileAccess.file_exists(f), 120.0)
 		var text := FileAccess.get_file_as_string(f)
@@ -212,8 +250,20 @@ func _guest() -> void:
 	AppState.set_setting("house_lights", 1.0)
 	await _start_main()
 	NetSession.join()
+	# the host introduces itself; this copy confirms it's the right person before anything is shared
+	_check(await _wait_for(func() -> bool: return _confirms.size() > 0, 30.0), "asked whether this is the right host")
+	if _confirms.size() > 0:
+		_check(String(_confirms[0]["side"]) == "guest" and String(_confirms[0]["name"]) == "TestHost",
+			"the popup names the host (%s)" % _confirms[0]["name"])
+	var panel: Node = _main.get_node("ControlPanel")
+	_check((panel._net_dialogs as Dictionary).has(1), "a popup is open on the guest")
+	_check(bool(NetSession.get_info()["waiting"]) and (NetSession.get_info()["peers"] as Array).is_empty(),
+		"nothing is shared while waiting")
+	NetSession.confirm(true)
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "guest" and (NetSession.get_info()["peers"] as Array).size() == 2, 30.0),
 		"joined the host")
+	_check(String(NetSession.get_info()["status"]).contains("TestHost"), "the status says whose session this is (%s)" % NetSession.get_info()["status"])
+	_check(not (panel._net_dialogs as Dictionary).has(1), "the guest's popup closed by itself")
 	_check(bool(NetSession.get_info()["suggest_medium"]), "suggests Medium graphics on High")
 	_check(await _wait_for(func() -> bool: return absf(float(AppState.get_setting("house_lights")) - 0.37) < 0.001, 30.0),
 		"the host's house lights arrived")
@@ -233,7 +283,6 @@ func _guest() -> void:
 	_check(mk != null and mk.visible != near, "a camera marker on top of this camera hides (near=%s)" % near)
 
 	# not a co-host yet: shared things are locked
-	var panel: Node = _main.get_node("ControlPanel")
 	AppState.set_setting("house_lights", 0.9)
 	_check(absf(float(AppState.get_setting("house_lights")) - 0.37) < 0.001, "a guest can't change the house lights alone")
 	_check(not (panel._sliders["house_lights"] as HSlider).editable and (panel._room_select as OptionButton).disabled,
@@ -264,6 +313,19 @@ func _guest() -> void:
 	_check(await _wait_for(func() -> bool: return NetSession.group_shared("presenters"), 20.0), "heard that presenters are shared again")
 	_check(await _wait_for(func() -> bool: return String(AppState.get_setting(AppState.presenter_key(3, "source"))) != "green", 10.0), "and the host's presenter state came back")
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "off", 120.0), "noticed the session ending")
+	await _finish()
+
+
+func _declined_guest() -> void:
+	AppState.set_setting("together_address", "127.0.0.1:%d" % PORT)
+	AppState.set_setting("together_password", PASSWORD)
+	AppState.set_setting("together_name", "TestNo")
+	await _start_main()
+	NetSession.join()
+	_check(await _wait_for(func() -> bool: return _confirms.size() > 0, 30.0), "asked whether this is the right host")
+	NetSession.confirm(true)
+	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "off", 60.0), "the host's decline ended the connection")
+	_check(String(NetSession.get_info()["status"]).contains("declined"), "it says the host declined (%s)" % NetSession.get_info()["status"])
 	await _finish()
 
 

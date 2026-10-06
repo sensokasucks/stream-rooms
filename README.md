@@ -533,6 +533,14 @@ Then:
 2. The host clicks **Host a session**, then **Copy address**, and sends the copied address to the guests (in a private message, not on stream).
 3. Each guest pastes it into **Host address** and clicks **Join**.
 
+4. **Both of you confirm.** Once the password checks out, a popup opens on the host's screen:
+   "*Name* wants to join your session. Let them in?" with **Let them in** and **Decline**. At the
+   same time the guest gets "You're connected to *Host name*. Is that who you meant to join?" with
+   **Yes, join** and **No, leave**. Nothing is shared and nothing syncs until both have said yes;
+   until then the guest only sits in a waiting line (the status line says who is waiting). A
+   decline, or no answer within two minutes, closes the connection with a message saying why.
+   The names are the **Your name** each person typed.
+
 **Leave / stop hosting** ends your part. A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
 
 **Nothing to leak on stream:** the host address is never shown on screen, only copied, and the

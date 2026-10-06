@@ -36,6 +36,7 @@ func _wait_for(cond: Callable, secs: float) -> bool:
 
 
 func _ready() -> void:
+	NetSession.auto_confirm = true      # (no "let them in" popups in a test)
 	var args := OS.get_cmdline_user_args()
 	_out = args[0]
 	EventBus.status_message.connect(func(t: String, _e: bool) -> void: _statuses.append(t))

@@ -41,6 +41,7 @@ func _wait_for(cond: Callable, secs: float) -> bool:
 
 
 func _ready() -> void:
+	NetSession.auto_confirm = true      # (no "let them in" popups in a test)
 	var args := OS.get_cmdline_user_args()
 	_out = args[0]
 	EventBus.presenter_texture_changed.connect(func(n: int, t: Texture2D) -> void: _pres_tex[n] = t)

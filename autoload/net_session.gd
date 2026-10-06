@@ -31,6 +31,9 @@ const TUNNEL_TIMEOUT: float = 40.0      # cloudflared usually has the address wi
 const PING_GAP: float = 2.0             # guest: round-trip time to the host, for video sync
 ## Synced video: start without whoever isn't ready after this long (they catch up when they are).
 const READY_TIMEOUT: float = 120.0
+## A guest who passed the password check waits this long for both popups (the host's "let them in"
+## and the guest's "is this the right host") before the host sends it away.
+const CONFIRM_TIMEOUT: float = 120.0
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
 const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
@@ -58,6 +61,15 @@ var _address: String = ""               # host: what guests type in; guest: wher
 var _peers: Dictionary = {}             # peer id -> {"name": String, "cohost": bool}; the host is 1
 var _nonces: Dictionary = {}            # host: peer id -> challenge bytes
 var _hello_names: Dictionary = {}       # host: peer id -> name from its hello (until it's connected)
+## Host: guests who passed the password check but aren't in yet. Both sides confirm first (the host
+## sees the guest's name, the guest sees the host's), and nothing syncs until both said yes.
+## peer id -> {"name": String, "host_ok": bool, "guest_ok": bool, "wait": float}
+var _pending: Dictionary = {}
+var _host_name: String = ""              # guest: the host's name, once it has introduced itself
+var _admitted: bool = false              # guest: the host let this copy in (its first roster arrived)
+## Tests: skip both confirmation popups (every guest is let in, every host is accepted). Not a
+## setting, so there's no way to turn the popups off in the app itself.
+var auto_confirm: bool = false
 var _cams: Dictionary = {}              # host: peer id -> last camera Transform3D
 var _refused: String = ""               # guest: why the host said no
 var _applying: bool = false             # guest: applying the host's state (the gate lets it through)
@@ -141,6 +153,7 @@ func _process(delta: float) -> void:
 		_roster_wait -= delta
 		if _roster_wait < 0.0:
 			_send_roster_to_guests()
+	_pending_timeout(delta)
 	_cam_wait -= delta
 	if _cam_wait > 0.0:
 		return
@@ -169,7 +182,17 @@ func get_info() -> Dictionary:
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
 		"host_live": is_host_live(), "shares": {"room": group_shared("room"), "curtain": group_shared("curtain"),
-		"presenters": group_shared("presenters")}, "peers": peers}
+		"presenters": group_shared("presenters")}, "peers": peers, "pending": pending_guests(),
+		"waiting": _role == "guest" and not _admitted, "host_name": _host_name}
+
+
+## Host: who is waiting to be let in, [{id, name, host_ok, guest_ok}].
+func pending_guests() -> Array:
+	var list: Array = []
+	for id: int in _pending:
+		var p: Dictionary = _pending[id]
+		list.append({"id": id, "name": String(p["name"]), "host_ok": bool(p["host_ok"]), "guest_ok": bool(p["guest_ok"])})
+	return list
 
 
 func get_role() -> String:
@@ -319,6 +342,28 @@ func dismiss_medium() -> void:
 	_emit_state()
 
 
+## Host: the answer to "<name> wants to join": let them in, or send them away.
+func approve(peer_id: int, yes: bool) -> void:
+	if _role != "host" or not _pending.has(peer_id):
+		return
+	if not yes:
+		_turn_away(peer_id, "The host declined.", "Declined %s." % String(_pending[peer_id]["name"]))
+		return
+	_pending[peer_id]["host_ok"] = true
+	_maybe_admit(peer_id)
+
+
+## Guest: the answer to "you're connected to <host>": join, or leave.
+func confirm(yes: bool) -> void:
+	if _role != "guest" or _admitted:
+		return
+	if not yes:
+		_close("Left: that wasn't the host you meant to join.")
+		return
+	_net_guest_confirm.rpc_id(1)
+	_set_status("Waiting for %s to let you in..." % _host_name)
+
+
 ## "" when this hello may join, else the reason to refuse it (the guest sees it).
 static func check_hello(d: Dictionary, nonce: PackedByteArray, password: String, version: String) -> String:
 	if int(d.get("protocol", -1)) != PROTOCOL or String(d.get("version", "")) != version:
@@ -417,8 +462,25 @@ func _on_auth_failed(id: int) -> void:
 func _on_peer_connected(id: int) -> void:
 	if _role != "host":
 		return
-	_peers[id] = {"name": String(_hello_names.get(id, "Guest")), "cohost": false, "avatar": _random_token(16)}
+	var n := String(_hello_names.get(id, "Guest"))
 	_hello_names.erase(id)
+	# the password was right; now both people confirm before anything is shared
+	_pending[id] = {"name": n, "host_ok": auto_confirm, "guest_ok": false, "wait": CONFIRM_TIMEOUT}
+	_net_welcome.rpc_id(id, display_name())
+	if not auto_confirm:
+		EventBus.net_confirm_needed.emit("host", id, n)
+	_set_status("%s wants to join. Let them in or decline in the popup." % n)
+
+
+## Host: when both have said yes, the guest is in and gets everything.
+func _maybe_admit(id: int) -> void:
+	if not _pending.has(id) or not bool(_pending[id]["host_ok"]) or not bool(_pending[id]["guest_ok"]):
+		_emit_state()
+		return
+	var who := String(_pending[id]["name"])
+	_pending.erase(id)
+	EventBus.net_confirm_closed.emit(id)
+	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16)}
 	_net_snapshot.rpc_id(id, _snapshot())
 	if group_shared("presenters"):
 		for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -432,6 +494,12 @@ func _on_peer_connected(id: int) -> void:
 
 
 func _on_peer_disconnected(id: int) -> void:
+	if _role == "host" and _pending.has(id):
+		var who := String(_pending[id]["name"])
+		_pending.erase(id)
+		EventBus.net_confirm_closed.emit(id)
+		_set_status("%s left before joining." % who)
+		return
 	if _role != "host" or not _peers.has(id):
 		return
 	var n := String(_peers[id]["name"])
@@ -449,8 +517,10 @@ func _on_connected() -> void:
 		return
 	AppState.net_gate = _gate
 	_last_cam = Transform3D()
+	_admitted = false
+	_host_name = ""
 	set_process(true)
-	_set_status("Joined the session. The host controls the room, curtain and presenters.")
+	_set_status("Connected. Waiting for the host to say hello...")
 
 
 func _on_connection_failed() -> void:
@@ -475,6 +545,13 @@ func _close(message: String, is_error: bool = false) -> void:
 	_peers.clear()
 	_nonces.clear()
 	_hello_names.clear()
+	for id: int in _pending:
+		EventBus.net_confirm_closed.emit(id)
+	_pending.clear()
+	if _role == "guest" and not _admitted:
+		EventBus.net_confirm_closed.emit(1)
+	_host_name = ""
+	_admitted = false
 	_cams.clear()
 	_video.clear()
 	_guest_video.clear()
@@ -687,6 +764,10 @@ func _net_roster(list: Array) -> void:
 			var av := String(p.get("avatar", ""))
 			_peers[int(p["id"])] = {"name": _clean_name(String(p.get("name", ""))), "cohost": bool(p.get("cohost", false)),
 				"avatar": av if _token_ok(av) else ""}
+	if not _admitted:
+		_admitted = true
+		EventBus.net_confirm_closed.emit(1)
+		_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -1286,6 +1367,61 @@ func _net_guest_camera(x: Transform3D) -> void:
 	for other: int in _peers:
 		if other != 1 and other != id:
 			_net_camera.rpc_id(other, id, x)
+
+
+# ── Letting a guest in (both sides confirm) ──────────────────
+## Guest: the host introduces itself right after the password check. The guest confirms it's the
+## right person before anything else happens.
+@rpc("authority", "call_remote", "reliable")
+func _net_welcome(host_name: String) -> void:
+	if not _from_host() or _admitted:
+		return
+	_host_name = _clean_name(host_name)
+	if _host_name == "":
+		_host_name = "the host"
+	if auto_confirm:
+		confirm(true)
+	else:
+		_set_status("Connected to %s. Confirm in the popup that it's who you meant to join." % _host_name)
+		EventBus.net_confirm_needed.emit("guest", 1, _host_name)
+
+
+## Host: a waiting guest said "yes, this is the right host".
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_confirm() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _pending.has(id):
+		return
+	_pending[id]["guest_ok"] = true
+	_maybe_admit(id)
+
+
+## Guest: the host sent this copy away before it was in (declined, or took too long).
+@rpc("authority", "call_remote", "reliable")
+func _net_declined(reason: String) -> void:
+	if _from_host() and not _admitted:
+		_refused = reason
+
+
+func _turn_away(id: int, reason: String, status: String) -> void:
+	_pending.erase(id)
+	EventBus.net_confirm_closed.emit(id)
+	_net_declined.rpc_id(id, reason)
+	# a moment for the reason to arrive before the connection closes
+	get_tree().create_timer(0.5).timeout.connect(func() -> void:
+		if _role == "host":
+			_sm().disconnect_peer(id))
+	_set_status(status)
+
+
+func _pending_timeout(delta: float) -> void:
+	if _pending.is_empty():
+		return
+	for id: int in _pending.keys():
+		_pending[id]["wait"] = float(_pending[id]["wait"]) - delta
+		if float(_pending[id]["wait"]) <= 0.0:
+			_turn_away(id, "Nobody confirmed the connection in time. Try joining again.",
+				"%s waited too long to be let in." % String(_pending[id]["name"]))
 
 
 # ── Connection helpers ───────────────────────────────────────

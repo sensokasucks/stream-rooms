@@ -71,6 +71,7 @@ var _net_copy_btn: Button
 var _pic_dialog: FileDialog
 var _pic_target: String = ""              # the presenter_<n>_picture setting the picture dialog is for
 var _net_addr_label: Label
+var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 
 
 func _ready() -> void:
@@ -97,6 +98,8 @@ func _ready() -> void:
 	_on_chat_status(ChatFeed.get_status())
 	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _refresh_curtain_label())
 	EventBus.net_state_changed.connect(_on_net_state)
+	EventBus.net_confirm_needed.connect(_on_net_confirm_needed)
+	EventBus.net_confirm_closed.connect(_on_net_confirm_closed)
 	_on_net_state(NetSession.get_info())
 	if bool(AppState.get_setting("panel_window")):
 		_apply_window_mode.call_deferred()
@@ -1389,6 +1392,55 @@ func _build_together_tab() -> Control:
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)
 	return v
+
+
+## Streaming together: a popup each side answers before a connection completes. Host: "<guest>
+## wants to join" with Let them in / Decline. Guest: "you're connected to <host>" with Yes / Leave.
+## Nothing is shared until both have said yes (NetSession keeps the guest waiting).
+func _on_net_confirm_needed(side: String, peer_id: int, who: String) -> void:
+	_on_net_confirm_closed(peer_id)
+	var d := ConfirmationDialog.new()
+	d.exclusive = false
+	d.unresizable = true
+	d.min_size = Vector2i(420, 0)
+	if side == "host":
+		d.title = "Someone wants to join"
+		d.dialog_text = "%s wants to join your session.\nLet them in? Nothing is shared until you do." % who
+		d.ok_button_text = "Let them in"
+		d.cancel_button_text = "Decline"
+		d.confirmed.connect(func() -> void:
+			if not d.has_meta("done"):
+				NetSession.approve(peer_id, true))
+		d.canceled.connect(func() -> void:
+			if not d.has_meta("done"):
+				NetSession.approve(peer_id, false))
+	else:
+		d.title = "Is this the right host?"
+		d.dialog_text = "You're connected to %s.\nIs that who you meant to join?" % who
+		d.ok_button_text = "Yes, join"
+		d.cancel_button_text = "No, leave"
+		d.confirmed.connect(func() -> void:
+			if not d.has_meta("done"):
+				NetSession.confirm(true))
+		d.canceled.connect(func() -> void:
+			if not d.has_meta("done"):
+				NetSession.confirm(false))
+	d.get_ok_button().tooltip_text = "Complete the connection."
+	d.get_cancel_button().tooltip_text = "Close the connection without sharing anything."
+	for b in [d.get_ok_button(), d.get_cancel_button()]:
+		b.add_to_group("keyboard_panel")        # (hotkeys stay off while the popup has focus)
+	_net_dialogs[peer_id] = d
+	add_child(d)
+	d.popup_centered()
+
+
+func _on_net_confirm_closed(peer_id: int) -> void:
+	if _net_dialogs.has(peer_id):
+		var d: ConfirmationDialog = _net_dialogs[peer_id]
+		_net_dialogs.erase(peer_id)
+		if is_instance_valid(d):
+			d.set_meta("done", true)       # (hiding a dialog counts as cancelling it: not here)
+			d.queue_free()
 
 
 func _on_net_state(info: Dictionary) -> void:
