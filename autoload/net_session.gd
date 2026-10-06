@@ -55,6 +55,8 @@ var _last_cam: Transform3D
 var _live_id: String = ""
 var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
+var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
+var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
 var _video_count: int = 0
 ## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
 var _video: Dictionary = {}
@@ -87,6 +89,13 @@ func _ready() -> void:
 	EventBus.file_prepare_failed.connect(_on_file_prepare_failed)
 	EventBus.file_progress.connect(_on_file_progress)
 	EventBus.source_changed.connect(_on_source_changed)
+	EventBus.audience_seated.connect(_on_aud_seated)
+	EventBus.audience_left.connect(_on_aud_left)
+	EventBus.audience_spoke.connect(_on_aud_spoke)
+	EventBus.audience_updated.connect(_on_aud_updated)
+	EventBus.seating_changed.connect(_on_seating_changed)
+	EventBus.chat_message_received.connect(_on_local_chat)
+	EventBus.chat_user_updated.connect(_on_local_user)
 	set_process(false)
 
 
@@ -97,6 +106,10 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_video_timeout(delta)
+	if _roster_wait >= 0.0:
+		_roster_wait -= delta
+		if _roster_wait < 0.0:
+			_send_roster_to_guests()
 	_cam_wait -= delta
 	if _cam_wait > 0.0:
 		return
@@ -347,6 +360,7 @@ func _on_peer_connected(id: int) -> void:
 	_hello_names.erase(id)
 	_net_snapshot.rpc_id(id, _snapshot())
 	_send_roster()
+	_update_audience_sharing()
 	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
 	for other: int in _cams:
 		_net_camera.rpc_id(id, other, _cams[other])
@@ -362,6 +376,7 @@ func _on_peer_disconnected(id: int) -> void:
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
 	_send_roster()
+	_update_audience_sharing()
 	_set_status("%s left." % n)
 
 
@@ -403,6 +418,10 @@ func _close(message: String, is_error: bool = false) -> void:
 	_live_key = ""
 	_live_on = false
 	_emit_live()
+	_aud_shared = false
+	_roster_wait = -1.0
+	AudienceManager.set_mirror(false)
+	AudienceManager.set_streamer_areas(0)
 	_address = ""
 	AppState.net_gate = Callable()
 	set_process(false)
@@ -435,6 +454,8 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_to_guests("_net_setting", [key, value])
 	elif key == "graphics_quality" and _role == "guest":
 		_emit_state()
+	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
+		_update_audience_sharing()
 	if key == "together_live_feed" and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
@@ -727,6 +748,162 @@ func _rtt_s() -> float:
 		return 0.0
 	var host_peer := enet.get_peer(1)
 	return host_peer.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME) / 1000.0 if host_peer else 0.0
+
+
+# ── Shared audience ──────────────────────────────────────────
+## Host: everyone's viewers sit in one audience. Guests send their chat here; the host seats it
+## (its own seating rules, plan and areas) and tells every guest who sits where and what they say.
+## Guests "mirror" that roster, so all streams show the same audience.
+func _sharing_audience() -> bool:
+	return _role == "host" and bool(AppState.get_setting("together_shared_audience")) and _peers.size() > 1
+
+
+func _update_audience_sharing() -> void:
+	if _role != "host":
+		return
+	var on := bool(AppState.get_setting("together_shared_audience"))
+	_to_guests("_net_aud_mode", [on])
+	var areas := _peers.size() if on and bool(AppState.get_setting("together_audience_areas")) else 0
+	AudienceManager.set_streamer_areas(areas)
+	if on:
+		_roster_wait = 0.1
+
+
+## Whose viewer: 0 = the host, then the guests in the order they joined (peer ids grow).
+func _streamer_index(peer_id: int) -> int:
+	var ids: Array = _peers.keys()
+	ids.sort()
+	return maxi(ids.find(peer_id), 0)
+
+
+func _room() -> String:
+	return String(AppState.get_setting("room_id"))
+
+
+func _on_aud_seated(slot: int) -> void:
+	if _sharing_audience():
+		_to_guests("_net_aud_seat", [_room(), slot, AudienceManager.wire_member(slot)])
+
+
+func _on_aud_left(slot: int) -> void:
+	if _sharing_audience():
+		_to_guests("_net_aud_leave", [_room(), slot])
+
+
+func _on_aud_spoke(slot: int, parts: Array) -> void:
+	if _sharing_audience():
+		_to_guests("_net_aud_speak", [_room(), slot, parts])
+
+
+func _on_aud_updated(slot: int) -> void:
+	if _sharing_audience():
+		_to_guests("_net_aud_update", [_room(), slot, AudienceManager.wire_member(slot)])
+
+
+func _on_seating_changed() -> void:
+	if _sharing_audience():
+		_roster_wait = 0.3          # (a room change seats many at once: one roster after it settles)
+
+
+func _send_roster_to_guests() -> void:
+	if _sharing_audience():
+		_to_guests("_net_aud_roster", [_room(), AudienceManager.get_roster()])
+
+
+## Guest: this PC's chat goes to the host's audience (its own chat windows keep showing it).
+func _on_local_chat(msg: Dictionary) -> void:
+	if _role != "guest" or not _aud_shared or bool(msg.get("system", false)) or bool(msg.get("history", false)):
+		return
+	var out := {}
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar"]:
+		out[k] = String(msg.get(k, "")).left(500)
+	out["timestamp"] = float(msg.get("timestamp", Time.get_unix_time_from_system()))
+	out["emotes"] = msg.get("emotes", []) if msg.get("emotes") is Array else []
+	_net_guest_chat.rpc_id(1, out)
+
+
+func _on_local_user(info: Dictionary) -> void:
+	if _role == "guest" and _aud_shared:
+		_net_guest_user.rpc_id(1, {"platform": String(info.get("platform", "")), "user_id": String(info.get("user_id", "")),
+			"avatar": String(info.get("avatar", ""))})
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_chat(msg: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if not _sharing_audience() or not _peers.has(id):
+		return
+	var clean := {}
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title"]:
+		clean[k] = String(msg.get(k, "")).left(500)
+	var avatar := String(msg.get("avatar", ""))
+	clean["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""
+	clean["timestamp"] = minf(float(msg.get("timestamp", 0.0)), Time.get_unix_time_from_system())
+	var emotes: Array = []
+	if msg.get("emotes") is Array:
+		for e: Variant in (msg["emotes"] as Array).slice(0, 60):
+			if not e is Dictionary:
+				continue
+			# only what an emote needs, and pictures only from https addresses (this PC downloads them)
+			var ce := {"provider": String(e.get("provider", "")).left(20), "id": String(e.get("id", "")).left(80),
+				"start": int(e.get("start", 0)), "end": int(e.get("end", 0))}
+			for u in ["url", "static_url"]:
+				var link := String(e.get(u, ""))
+				ce[u] = link.left(500) if link.begins_with("https://") else ""
+			emotes.append(ce)
+	clean["emotes"] = emotes
+	clean["streamer"] = _streamer_index(id)
+	if String(clean["name"]) != "":
+		AudienceManager.add_chat(clean)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_user(info: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if not _sharing_audience() or not _peers.has(id):
+		return
+	var avatar := String(info.get("avatar", ""))
+	if avatar.begins_with("https://"):
+		AudienceManager.update_user({"platform": String(info.get("platform", "")), "user_id": String(info.get("user_id", "")),
+			"avatar": avatar.left(500)})
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_mode(shared: bool) -> void:
+	if _from_host():
+		_aud_shared = shared
+		AudienceManager.set_mirror(shared)
+		_emit_state()
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_roster(room: String, list: Array) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_roster(room, list)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_seat(room: String, slot: int, wm: Dictionary) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_seat(room, slot, wm)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_leave(room: String, slot: int) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_leave(room, slot)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_speak(room: String, slot: int, parts: Array) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_speak(room, slot, parts)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_update(room, slot, wm)
 
 
 # ── Live feed ────────────────────────────────────────────────

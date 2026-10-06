@@ -174,6 +174,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_password": "",     # session password (stays on this PC)
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local"
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
+	"together_shared_audience": true, # host: everyone's chat sits in one audience, the same on every PC
+	"together_audience_areas": true,  # host: each streamer's viewers get their own part of the audience
 	"together_live_feed": true,  # host: the tab shared in the sender page also goes to the guests (VDO.Ninja)
 }
 

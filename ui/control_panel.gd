@@ -1280,6 +1280,12 @@ func _build_together_tab() -> Control:
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
+	var shared_aud := _check("together_shared_audience", "One audience for everyone's chat")
+	shared_aud.tooltip_text = "Host: your guests' chat sits in your audience too, and every stream shows the same people in the same seats with the same speech bubbles. Your seating settings decide who sits where. Off: each of you has your own audience."
+	v.add_child(shared_aud)
+	var areas := _check("together_audience_areas", "Each streamer's viewers sit together")
+	areas.tooltip_text = "Host: with one audience, each streamer's viewers get their own part of it. Two of you: left and right halves; four: a quarter each. The big crowd sections are shared out the same way."
+	v.add_child(areas)
 	var cams := _check("together_show_cameras", "Show the others' cameras")
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)

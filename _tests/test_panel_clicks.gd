@@ -108,8 +108,15 @@ func _ready() -> void:
 				continue
 			(tabs.get_current_tab_control() as ScrollContainer).ensure_control_visible(cb)   # (long tabs scroll)
 			await get_tree().process_frame
+			await get_tree().process_frame   # (the previous box may still be showing / hiding rows)
 			var was := cb.button_pressed
 			await _click(cb)
+			if cb.button_pressed == was:
+				# the layout moved under the mouse (the test clicks faster than a person): aim again
+				await _secs(0.3)
+				(tabs.get_current_tab_control() as ScrollContainer).ensure_control_visible(cb)
+				await get_tree().process_frame
+				await _click(cb)
 			var changed := cb.button_pressed != was
 			await get_tree().process_frame      # (a tick box can show / hide rows: let the layout settle)
 			(tabs.get_current_tab_control() as ScrollContainer).ensure_control_visible(cb)

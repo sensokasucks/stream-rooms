@@ -21,6 +21,10 @@ extends Node
 ## stage) and the crowd seats as stadium sections (101.. lower tier, 201.. balcony, 301..
 ## gallery). With "seating_by_platform" on, the seating plan ("seating_plan") says which
 ## platforms may sit in each section, so platforms can be kept physically apart.
+## Streaming together (NetSession, docs/MULTIPLAYER.md phase 4): the host seats everyone's
+## viewers (guests send their chat over, add_chat) and can give each streamer's viewers their own
+## area (set_streamer_areas). A guest is a "mirror": it seats nobody itself and shows the host's
+## roster (mirror_*), so every PC shows the same people in the same seats.
 
 const BUBBLE_STYLES: int = 4
 const KIND_SEAT: int = 0
@@ -56,6 +60,11 @@ var _stage_point: Variant = null
 var _plan: Dictionary = {}               # section id -> PackedStringArray of platform groups (empty = anyone)
 const PLATFORMS: PackedStringArray = ["kick", "twitch", "youtube", "other"]
 const PLATFORM_LABELS: Dictionary = {"kick": "Kick", "twitch": "Twitch", "youtube": "YouTube", "other": "Other"}
+var _mirror: bool = false                # guest: showing the host's roster
+var _capacity_room: String = ""          # the room the slots belong to (mirror: rosters are per room)
+var _pending_roster: Dictionary = {}     # mirror: {room, list} that arrived before its room was ready
+var _area_count: int = 0                 # host: streamers sharing the audience (0 = no areas)
+var _area_cache: Dictionary = {}         # section id -> streamer index
 
 
 func _ready() -> void:
@@ -70,6 +79,8 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if _mirror:
+		return            # the host decides who leaves
 	_check_in -= delta
 	if _check_in > 0.0:
 		return
@@ -81,6 +92,20 @@ func _process(delta: float) -> void:
 ## Called by a room's audience view: how many seats this room has (0 = none).
 func set_capacity(count: int) -> void:
 	count = maxi(count, 0)
+	_capacity_room = String(AppState.get_setting("room_id"))
+	if _mirror:
+		for i in _slots.size():
+			if _slots[i] != "":
+				_unseat(i, true)
+		_members.clear()
+		_slots.resize(count)
+		_slots.fill("")
+		if String(_pending_roster.get("room", "")) == _capacity_room:
+			mirror_roster(_capacity_room, _pending_roster["list"])
+		_pending_roster = {}
+		_emit_count()
+		EventBus.seating_changed.emit()
+		return
 	# unseat anyone whose seat no longer exists (they stay in the roster)
 	for i in range(count, _slots.size()):
 		if _slots[i] != "":
@@ -114,6 +139,8 @@ func set_capacity(count: int) -> void:
 func set_slot_kinds(kinds: PackedByteArray, presenter_slots: Dictionary) -> void:
 	_kind = kinds
 	_presenter_slot = presenter_slots.duplicate()
+	if _mirror:
+		return
 	for i in _slots.size():
 		var k := _slots[i]
 		if k == "" or not _members.has(k):
@@ -254,6 +281,8 @@ func get_seated_names() -> PackedStringArray:
 ## Moves the person in a seat to a free seat in the front or back row. Returns the new
 ## seat, or -1 when there's no free seat that's nearer the front / back than where they are.
 func move_to_row(slot: int, where: String) -> int:
+	if _mirror:
+		return -1
 	if slot < 0 or slot >= _slots.size() or _slots[slot] == "" or get_slot_kind(slot) == KIND_PRESENTER:
 		return -1
 	var laid_out := _seat_row.size() == _slots.size()
@@ -289,6 +318,8 @@ func move_to_row(slot: int, where: String) -> int:
 
 ## Two people trade seats. False if either seat is empty.
 func swap_seats(a: int, b: int) -> bool:
+	if _mirror:
+		return false       # the host's seating
 	if a == b or a < 0 or b < 0 or a >= _slots.size() or b >= _slots.size() or _slots[a] == "" or _slots[b] == "":
 		return false
 	if get_slot_kind(a) == KIND_PRESENTER or get_slot_kind(b) == KIND_PRESENTER:
@@ -332,6 +363,14 @@ func clear() -> void:
 
 # ── Chat handling ────────────────────────────────────────────
 func _on_chat(msg: Dictionary) -> void:
+	if _mirror:
+		return            # a guest's chat goes to the host, who seats it (NetSession)
+	add_chat(msg)
+
+
+## Seats the chatter and shows their message. msg as ChatFeed normalizes it; "streamer" (int) says
+## whose viewer they are when streaming together (0 = the host).
+func add_chat(msg: Dictionary) -> void:
 	if bool(msg.get("system", false)):
 		return
 	var who := String(msg.get("name", ""))
@@ -355,6 +394,7 @@ func _on_chat(msg: Dictionary) -> void:
 	var login := String(msg.get("username", "")).strip_edges()
 	if login != "":
 		m["username"] = login
+	m["streamer"] = int(msg.get("streamer", 0))
 	var title := String(msg.get("title", ""))
 	if title != String(m.get("title", "")):
 		m["title"] = title
@@ -476,6 +516,8 @@ func _unseat(slot: int, forget: bool) -> void:
 
 
 func _expire_idle() -> void:
+	if _mirror:
+		return
 	var now := Time.get_unix_time_from_system()
 	var cutoff := now - _idle_seconds()
 	var crowd_cutoff := now - _crowd_idle_seconds()
@@ -501,6 +543,8 @@ func _expire_idle() -> void:
 ## "Crowd chatters move down": chatters sitting in the crowd take main seats as they free up,
 ## most recently active first. Returns true if anyone moved.
 func _fill_from_crowd() -> bool:
+	if _mirror:
+		return false
 	if not bool(AppState.get_setting("audience_crowd_move_down")):
 		return false
 	var crowd: Array = []
@@ -671,6 +715,8 @@ func platform_color(platform: String) -> Color:
 
 
 func _group_of(m: Dictionary) -> String:
+	if _area_count > 1:
+		return "streamer%d" % int(m.get("streamer", 0))
 	if m.has("platform"):
 		return String(m["platform"])
 	return platform_group(String(m.get("key", "")).get_slice(":", 0))
@@ -690,6 +736,7 @@ func _recolor_all() -> void:
 func set_slot_sections(sections: PackedStringArray, info: Dictionary) -> void:
 	_section = sections
 	_section_info = info.duplicate(true)
+	_area_cache.clear()
 
 
 func get_section(slot: int) -> String:
@@ -799,6 +846,9 @@ func apply_preset(preset: String) -> void:
 
 ## Can a chatter of this platform group sit in this slot under the seating plan?
 func slot_allows(slot: int, group: String) -> bool:
+	if group.begins_with("streamer"):
+		var area := _area_of_section(get_section(slot))
+		return area < 0 or area == int(group.trim_prefix("streamer"))
 	if not _plan_on() or group == "":
 		return true
 	var id := get_section(slot)
@@ -825,15 +875,18 @@ func get_chart() -> Dictionary:
 	var taken := PackedStringArray()
 	taken.resize(_slots.size())
 	for i in _slots.size():
-		taken[i] = _group_of(_members[_slots[i]]) if _slots[i] != "" and _members.has(_slots[i]) else ""
+		taken[i] = String(_members[_slots[i]].get("platform", "other")) if _slots[i] != "" and _members.has(_slots[i]) else ""
 	return {"spots": _spots, "sections": _section, "kinds": _kind, "taken": taken, "stage": _stage_point}
 
 
 ## After the plan changes: anyone sitting where their platform no longer may moves to a seat
 ## that allows it; with nowhere to go they wait (strict) or stay put.
 func reseat_by_plan() -> void:
+	if _mirror:
+		EventBus.seating_changed.emit()
+		return
 	var changed := false
-	if _plan_on():
+	if _plan_on() or _area_count > 1:
 		for i in _slots.size():
 			if _slots[i] == "" or get_slot_kind(i) == KIND_PRESENTER:
 				continue
@@ -870,6 +923,12 @@ func is_ignored(who: String) -> bool:
 
 
 func _on_user_updated(info: Dictionary) -> void:
+	if not _mirror:
+		update_user(info)
+
+
+## A chatter's picture arrived (Stream Core's user_update; on the host also a guest's, forwarded).
+func update_user(info: Dictionary) -> void:
 	var key := "%s:%s" % [String(info.get("platform", "")), String(info.get("user_id", ""))]
 	if not _members.has(key):
 		return
@@ -946,6 +1005,8 @@ func _parse_links() -> void:
 
 ## After a presenter's link or on-set switch changes: the right person on each spot.
 func _reconcile_presenters() -> void:
+	if _mirror:
+		return
 	var changed := false
 	for n: int in _presenter_slot.keys():
 		var ps := int(_presenter_slot[n])
@@ -994,3 +1055,148 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_refresh_all_seats()
 	elif key == "audience_avatars":
 		_refresh_all_seats()
+
+
+# ── Streaming together ───────────────────────────────────────
+## Guest: show the host's roster instead of seating this PC's own chat (or go back to normal).
+func set_mirror(on: bool) -> void:
+	if on == _mirror:
+		return
+	clear()
+	_mirror = on
+	_pending_roster = {}
+
+
+func is_mirror() -> bool:
+	return _mirror
+
+
+## Host: give each of `count` streamers' viewers their own sections (0 or 1 = no areas). The main
+## seats split by quadrant (2 streamers: left / right; 4: a quadrant each), each crowd level into
+## `count` runs of neighbouring sections. Everyone is moved to their area right away.
+func set_streamer_areas(count: int) -> void:
+	count = clampi(count, 0, 4)
+	if count == _area_count:
+		return
+	_area_count = count
+	_area_cache.clear()
+	reseat_by_plan()
+
+
+func _area_of_section(id: String) -> int:
+	if _area_count < 2 or id == "":
+		return -1
+	if _area_cache.is_empty():
+		var by_level: Dictionary = {}
+		for sec in get_sections():
+			var sid := String(sec["id"])
+			if int(sec["kind"]) == KIND_SEAT:
+				var q := clampi(int(sid.substr(1)) - 1, 0, 3)       # Q1 front left .. Q4 back right
+				var quad_area := {2: [0, 1, 0, 1], 3: [0, 1, 2, 2], 4: [0, 1, 2, 3]}
+				_area_cache[sid] = int((quad_area[_area_count] as Array)[q])
+			else:
+				var level := int(sid) / 100
+				if not by_level.has(level):
+					by_level[level] = []
+				(by_level[level] as Array).append(sid)
+		for level: int in by_level.keys():
+			var ids: Array = by_level[level]
+			ids.sort_custom(func(x: String, y: String) -> bool: return int(x) < int(y))
+			for k in ids.size():
+				_area_cache[ids[k]] = mini(k * _area_count / ids.size(), _area_count - 1)
+	return int(_area_cache.get(id, -1))
+
+
+## Host: everyone seated, for the guests: [{slot, m}] (m: wire_member()).
+func get_roster() -> Array:
+	var out: Array = []
+	for i in _slots.size():
+		if _slots[i] != "" and _members.has(_slots[i]):
+			out.append({"slot": i, "m": wire_member(i)})
+	return out
+
+
+## Host: what a guest needs to draw the person in a seat ({} = empty seat).
+func wire_member(slot: int) -> Dictionary:
+	if slot < 0 or slot >= _slots.size() or _slots[slot] == "" or not _members.has(_slots[slot]):
+		return {}
+	var m: Dictionary = _members[_slots[slot]]
+	return {"key": String(m["key"]), "name": String(m["name"]), "username": String(m.get("username", "")),
+		"platform": String(m.get("platform", "other")), "hex": String(m.get("hex", "")), "style": int(m["style"]),
+		"color": m["color"], "avatar": String(m.get("avatar", "")), "title": String(m.get("title", ""))}
+
+
+## Mirror: the host's whole roster for a room (it waits if this PC hasn't loaded that room yet).
+func mirror_roster(room: String, list: Array) -> void:
+	if not _mirror:
+		return
+	if room != _capacity_room or room != String(AppState.get_setting("room_id")):
+		_pending_roster = {"room": room, "list": list}
+		return
+	for i in _slots.size():
+		if _slots[i] != "":
+			_unseat(i, true)
+	_members.clear()
+	for e: Variant in list:
+		if e is Dictionary and (e as Dictionary).get("slot") is int and (e as Dictionary).get("m") is Dictionary:
+			mirror_seat(room, int(e["slot"]), e["m"], false)
+	_emit_count()
+	EventBus.seating_changed.emit()
+
+
+func mirror_seat(room: String, slot: int, wm: Dictionary, notify: bool = true) -> void:
+	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size():
+		return
+	var key := String(wm.get("key", "")).left(120)
+	if key == "":
+		return
+	if _slots[slot] != "":
+		_unseat(slot, true)
+	if _members.has(key) and int(_members[key]["slot"]) >= 0:
+		_unseat(int(_members[key]["slot"]), true)
+	var m := {"key": key, "slot": -1, "last": Time.get_unix_time_from_system()}
+	_apply_wire(m, wm)
+	_members[key] = m
+	_seat(m, slot, notify)
+	if notify:
+		EventBus.seating_changed.emit()
+
+
+func mirror_leave(room: String, slot: int) -> void:
+	if _mirror and room == _capacity_room and slot >= 0 and slot < _slots.size() and _slots[slot] != "":
+		_unseat(slot, true)
+		_emit_count()
+		EventBus.seating_changed.emit()
+
+
+func mirror_update(room: String, slot: int, wm: Dictionary) -> void:
+	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
+		return
+	_apply_wire(_members[_slots[slot]], wm)
+	EventBus.audience_updated.emit(slot)
+
+
+## parts: Strings and emote Dictionaries {url, name} (only https pictures are kept).
+func mirror_speak(room: String, slot: int, parts: Array) -> void:
+	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
+		return
+	var clean: Array = []
+	for part: Variant in parts.slice(0, 80):
+		if part is String:
+			clean.append(String(part).left(MAX_TEXT))
+		elif part is Dictionary and String((part as Dictionary).get("url", "")).begins_with("https://"):
+			clean.append({"url": String(part["url"]).left(500), "name": String(part.get("name", "")).left(60)})
+	if not clean.is_empty():
+		EventBus.audience_spoke.emit(slot, clean)
+
+
+func _apply_wire(m: Dictionary, wm: Dictionary) -> void:
+	m["name"] = String(wm.get("name", "?")).left(40)
+	m["username"] = String(wm.get("username", "")).left(40)
+	m["platform"] = platform_group(String(wm.get("platform", "other")))
+	m["hex"] = String(wm.get("hex", "")).left(9)
+	m["style"] = clampi(int(wm.get("style", 0)), 0, BUBBLE_STYLES - 1)
+	m["color"] = wm["color"] if wm.get("color") is Color else color_for(String(m["name"]), String(m["hex"]), String(m["platform"]))
+	var avatar := String(wm.get("avatar", ""))
+	m["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""
+	m["title"] = String(wm.get("title", "")).left(40)

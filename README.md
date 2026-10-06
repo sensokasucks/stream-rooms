@@ -515,7 +515,24 @@ The password stays on your PC. Only a scrambled check of it is sent, which prove
 - **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone. A presenter showing the host's **camera**, **browser tab** or **NDI** only exists on the host's PC, so guests see a silhouette there instead.
 - **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
 
-Each person keeps their own camera, graphics, sound, chat windows, audience and Stream Core connection.
+Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
+
+### One audience for everyone's chat
+
+With **One audience for everyone's chat** ticked (Together tab, on the host's PC), every
+streamer's viewers sit in the same audience, and every stream shows the same people in the same
+seats, with the same speech bubbles:
+
+- Each guest's chat is sent to the host, and the host's PC seats everyone, using the host's
+  seating settings (Audience and Seating tabs). Guests' own chat windows still show only their own chat.
+- **Each streamer's viewers sit together** gives each streamer's viewers their own part of the
+  audience: two of you get the left and right halves, three or four get a quarter each, and the
+  big crowd sections are shared out the same way.
+- A viewer of a guest's channel can be thrown at with a reaction from any channel, because
+  everyone sees the same seats.
+- When a guest leaves, their copy goes back to its own audience.
+
+Untick it and each of you has your own audience again.
 
 ### Host and guests
 
