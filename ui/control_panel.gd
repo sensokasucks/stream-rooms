@@ -68,6 +68,8 @@ var _net_medium: HBoxContainer
 var _net_live: HBoxContainer
 var _net_live_label: Label
 var _net_copy_btn: Button
+var _pic_dialog: FileDialog
+var _pic_target: String = ""              # the presenter_<n>_picture setting the picture dialog is for
 var _net_addr_label: Label
 
 
@@ -360,6 +362,16 @@ func _build() -> void:
 		_url.text = p
 		EventBus.file_play_requested.emit(p))
 	add_child(_dialog)
+	_pic_dialog = FileDialog.new()
+	_pic_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+	_pic_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	_pic_dialog.use_native_dialog = true
+	_pic_dialog.title = "Choose a podium picture"
+	_pic_dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp, *.gif ; Pictures"])
+	_pic_dialog.file_selected.connect(func(p: String) -> void:
+		if _pic_target != "":
+			AppState.set_setting(_pic_target, p))
+	add_child(_pic_dialog)
 
 
 func _build_source_tab() -> Control:
@@ -1140,6 +1152,20 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	_refresh_presenter_rows(n)
 	d.add_child(_slider(k.call("zoom"), "Zoom", 0.3, 3.0, 0.01, "%.2fx"))
 	d.add_child(_slider(k.call("offset_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f"))
+	var tag := _text_setting(k.call("name"), "Name tag", "shown above the picture (blank = none)")
+	tag.tooltip_text = "A name shown above this presenter's picture, for example their channel name."
+	d.add_child(tag)
+	var pic := _text_setting(k.call("picture"), "Podium picture", "a png, jpg, webp or gif (animated gifs play)")
+	pic.tooltip_text = "A picture on the front of the podium: a logo, an avatar, a badge. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. When streaming together, guests get a copy of it."
+	var browse := _button("Browse...", func() -> void:
+		_pic_target = k.call("picture")
+		_pic_dialog.popup_centered_ratio(0.7))
+	browse.tooltip_text = "Pick the picture file."
+	pic.add_child(browse)
+	var clear_pic := _button("Clear", func() -> void: AppState.set_setting(k.call("picture"), ""))
+	clear_pic.tooltip_text = "No podium picture."
+	pic.add_child(clear_pic)
+	d.add_child(pic)
 	var chat := _text_setting(k.call("chat"), "Chat name", "their chat name(s), e.g. sensoka, kick:sensoka")
 	chat.tooltip_text = "Link this presenter to their chat name. They sit on this podium instead of taking an audience seat, and their chat commands (throws, signs, !highfive ...) come from here. Several names: comma separated. \"kick:name\" only matches on that platform."
 	d.add_child(chat)
@@ -1300,6 +1326,19 @@ func _build_together_tab() -> Control:
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
+	v.add_child(_heading("Shared with guests"))
+	v.add_child(_hint("Host: untick a part and every PC keeps its own. For example, untick Presenters to let each guest pick their own presenter sources."))
+	var share_row := HFlowContainer.new()
+	v.add_child(share_row)
+	var sr_room := _check("together_share_room", "Room")
+	sr_room.tooltip_text = "Everyone sees the room the host picks."
+	share_row.add_child(sr_room)
+	var sr_curtain := _check("together_share_curtain", "Curtain and house lights")
+	sr_curtain.tooltip_text = "The curtain (and its look) and the house lights follow the host."
+	share_row.add_child(sr_curtain)
+	var sr_pres := _check("together_share_presenters", "Presenters")
+	sr_pres.tooltip_text = "Who's on set and what each podium shows (name tags and podium pictures too) follow the host. Untick it to let guests set up their own presenters."
+	share_row.add_child(sr_pres)
 	var shared_aud := _check("together_shared_audience", "One audience for everyone's chat")
 	shared_aud.tooltip_text = "Host: your guests' chat sits in your audience too, and every stream shows the same people in the same seats with the same speech bubbles. Your seating settings decide who sits where. Off: each of you has your own audience."
 	v.add_child(shared_aud)

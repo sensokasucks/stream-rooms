@@ -37,14 +37,19 @@ const SHARED_BASE: Array[String] = ["house_lights", "curtain_enabled", "curtain_
 	"curtain_speed", "curtain_show_lights"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
+## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)
 const SHARED_PRESENTER_FIELDS: Array[String] = ["on", "source", "url", "self_lit", "light", "key",
-	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y"]
+	"key_color", "key_similarity", "key_smoothness", "key_spill", "zoom", "offset_y", "name"]
+## The host picks which of these groups guests follow (together_share_*). An unshared group is
+## each PC's own: guests change theirs freely and the host's changes stay on the host.
+const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]
 ## Presenter sources that only exist on the host's PC (its camera, browser tab, NDI, Spout): guests show
 ## a silhouette instead. A "web" page (e.g. a VDO.Ninja link) works for everyone.
 const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
 
 var _shared: Dictionary = {}            # setting key -> true
+var _host_shares: Dictionary = {}       # guest: group -> bool, as the host last said (empty = all)
 var _role: String = "off"               # "off" | "host" | "guest"
 var _status: String = ""
 var _error: bool = false
@@ -158,7 +163,8 @@ func get_info() -> Dictionary:
 	var q := String(AppState.get_setting("graphics_quality"))
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
-		"host_live": is_host_live(), "peers": peers}
+		"host_live": is_host_live(), "shares": {"room": group_shared("room"), "curtain": group_shared("curtain"),
+		"presenters": group_shared("presenters")}, "peers": peers}
 
 
 func get_role() -> String:
@@ -169,10 +175,35 @@ func is_shared(key: String) -> bool:
 	return _shared.has(key)
 
 
-## True when this PC may not change it: a guest who isn't a co-host.
+## True when this PC may not change it: a guest who isn't a co-host, for a group the host shares.
 ## what: a setting key, "room" or "curtain".
 func is_locked(what: String) -> bool:
-	return _role == "guest" and not _is_cohost() and (what == "room" or what == "curtain" or _shared.has(what))
+	return _role == "guest" and not _is_cohost() and _group_of(what) != "" and group_shared(_group_of(what))
+
+
+## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
+func _group_of(what: String) -> String:
+	if what == "room":
+		return "room"
+	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
+		return "curtain"
+	if what.begins_with("presenter_") and _shared.has(what):
+		return "presenters"
+	return ""
+
+
+## Is this group followed by the guests right now? Host: its own setting; guest: what the host said.
+func group_shared(group: String) -> bool:
+	if _role == "guest":
+		return bool(_host_shares.get(group, true))
+	return bool(AppState.get_setting("together_share_" + group))
+
+
+func _share_flags() -> Dictionary:
+	var out := {}
+	for g in SHARE_GROUPS:
+		out[g] = bool(AppState.get_setting("together_share_" + g))
+	return out
 
 
 ## The name others see: the Together tab's name, else the profile name, else Host / Guest.
@@ -384,6 +415,9 @@ func _on_peer_connected(id: int) -> void:
 	_peers[id] = {"name": String(_hello_names.get(id, "Guest")), "cohost": false}
 	_hello_names.erase(id)
 	_net_snapshot.rpc_id(id, _snapshot())
+	if group_shared("presenters"):
+		for n in range(1, AppState.PRESENTER_COUNT + 1):
+			_send_picture(n, id)
 	_send_roster()
 	_update_audience_sharing()
 	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
@@ -466,8 +500,8 @@ func _gate(what: String, value: Variant) -> bool:
 		return what != "video" or _host_video_request(String(value))
 	if _role != "guest" or _applying:
 		return true
-	if what != "room" and what != "curtain" and what != "video" and not _shared.has(what):
-		return true
+	if what != "video" and (_group_of(what) == "" or not group_shared(_group_of(what))):
+		return true          # not shared (or not any more): this PC's own
 	if _is_cohost():
 		_net_request.rpc_id(1, what, value)
 	else:
@@ -476,8 +510,12 @@ func _gate(what: String, value: Variant) -> bool:
 
 
 func _on_setting_changed(key: String, value: Variant) -> void:
-	if _role == "host" and _shared.has(key):
+	if _role == "host" and _shared.has(key) and group_shared(_group_of(key)):
 		_to_guests("_net_setting", [key, value])
+	if _role == "host" and key.begins_with("together_share_"):
+		_share_changed(key.trim_prefix("together_share_"))
+	if _role == "host" and key.begins_with("presenter_") and key.ends_with("_picture") and group_shared("presenters"):
+		_send_picture(int(key.get_slice("_", 1)), -1)
 	elif key == "graphics_quality" and _role == "guest":
 		_emit_state()
 	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
@@ -488,21 +526,38 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 
 
 func _on_room_requested(room_id: String) -> void:
-	if _role == "host":
+	if _role == "host" and group_shared("room"):
 		_to_guests("_net_room", [room_id])
 
 
 func _on_curtain_changed(closed: bool, style: String) -> void:
-	if _role == "host":
+	if _role == "host" and group_shared("curtain"):
 		_to_guests("_net_curtain", [closed, style])
 
 
-func _snapshot() -> Dictionary:
+## Host: a share group was switched on or off. Guests hear the flags; a group switched on also
+## gets that part of the host's state right away.
+func _share_changed(group: String) -> void:
+	_to_guests("_net_share_flags", [_share_flags()])
+	if group_shared(group):
+		_to_guests("_net_snapshot", [_snapshot([group])])
+		if group == "presenters":
+			for n in range(1, AppState.PRESENTER_COUNT + 1):
+				_send_picture(n, -1)
+	_emit_state()
+
+
+## What a guest needs to match the host: the shared groups (all of them by default).
+func _snapshot(groups: Array = SHARE_GROUPS) -> Dictionary:
 	var s := {}
 	for k: String in _shared:
-		s[k] = AppState.get_setting(k)
-	var snap := {"room": String(AppState.get_setting("room_id")), "curtain": AppState.is_curtain_closed(), "settings": s,
-		"live": _live_info_for_guests()}
+		if groups.has(_group_of(k)) and group_shared(_group_of(k)):
+			s[k] = AppState.get_setting(k)
+	var snap := {"settings": s, "shares": _share_flags(), "live": _live_info_for_guests()}
+	if groups.has("room") and group_shared("room"):
+		snap["room"] = String(AppState.get_setting("room_id"))
+	if groups.has("curtain") and group_shared("curtain"):
+		snap["curtain"] = AppState.is_curtain_closed()
 	if bool(_video.get("live", false)):
 		snap["video"] = {"id": int(_video["id"]), "url": String(_video["url"])}
 	return snap
@@ -512,12 +567,16 @@ func _snapshot() -> Dictionary:
 func _net_snapshot(snap: Dictionary) -> void:
 	if not _from_host():
 		return
+	if snap.get("shares") is Dictionary:
+		_apply_share_flags(snap["shares"])
 	var s: Variant = snap.get("settings")
 	if s is Dictionary:
 		for k: Variant in s:
 			_apply_setting(String(k), s[k])
-	_apply_room(snap.get("room"))
-	_apply_curtain(snap.get("curtain"), "instant")
+	if snap.has("room"):
+		_apply_room(snap.get("room"))
+	if snap.has("curtain"):
+		_apply_curtain(snap.get("curtain"), "instant")
 	var lv: Variant = snap.get("live")
 	if lv is Dictionary:
 		_apply_live(lv)
@@ -531,6 +590,68 @@ func _net_snapshot(snap: Dictionary) -> void:
 func _net_setting(key: String, value: Variant) -> void:
 	if _from_host():
 		_apply_setting(key, value)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_share_flags(flags: Dictionary) -> void:
+	if _from_host():
+		_apply_share_flags(flags)
+		_emit_state()
+
+
+func _apply_share_flags(flags: Dictionary) -> void:
+	_host_shares.clear()
+	for g in SHARE_GROUPS:
+		_host_shares[g] = bool(flags.get(g, true))
+
+
+# ── Podium pictures ──────────────────────────────────────────
+## Host: presenter n's podium picture, as bytes, to one guest (peer id) or all (-1). An empty
+## picture clears it. Guests keep the bytes in user://podium_pictures and point their own setting
+## there (never at a path on the host's PC).
+func _send_picture(n: int, to: int) -> void:
+	if _role != "host":
+		return
+	var path := String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges()
+	var bytes := PictureFile.read_file(path) if path != "" else PackedByteArray()
+	if path != "" and bytes.is_empty():
+		return           # unreadable here: say nothing, the guests keep what they had
+	var kind := PictureFile.kind_of(bytes) if not bytes.is_empty() else ""
+	if to > 0:
+		_net_picture.rpc_id(to, n, kind, bytes)
+	else:
+		_to_guests("_net_picture", [n, kind, bytes])
+
+
+@rpc("authority", "call_remote", "reliable")
+func _net_picture(n: int, kind: String, bytes: PackedByteArray) -> void:
+	if not _from_host() or n < 1 or n > AppState.PRESENTER_COUNT or not group_shared("presenters"):
+		return
+	var key := AppState.presenter_key(n, "picture")
+	if bytes.is_empty():
+		_set_local(key, "")
+		return
+	if bytes.size() > PictureFile.MAX_BYTES or PictureFile.kind_of(bytes) != kind or kind == "":
+		return
+	DirAccess.make_dir_recursive_absolute("user://podium_pictures")
+	var path := "user://podium_pictures/host_%d.%s" % [n, kind]
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_buffer(bytes)
+	f.close()
+	# (the same path as before means no change: nudge it so the presenter reloads the picture)
+	if String(AppState.get_setting(key)) == path:
+		_set_local(key, "")
+	_set_local(key, path)
+
+
+## Guest: a setting the host decided, written past the gate ("picture" isn't a shared field: its
+## value here is this PC's own copy of the host's file).
+func _set_local(key: String, value: Variant) -> void:
+	_applying = true
+	AppState.set_setting(key, value)
+	_applying = false
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -568,6 +689,8 @@ func _net_request(what: String, value: Variant) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if _role != "host" or not _peers.has(id) or not bool(_peers[id]["cohost"]):
 		return
+	if what != "video" and (_group_of(what) == "" or not group_shared(_group_of(what))):
+		return          # not a shared group: the guest changes that on their own PC
 	if what == "room":
 		if value is String:
 			AppState.request_room(value)

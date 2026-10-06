@@ -175,6 +175,10 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local" | "tunnel" (Cloudflare)
 	"together_live_relay": false, # live feed through VDO.Ninja's relay servers, so host and guests don't see each other's addresses
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
+	# Host: which parts guests follow. Off = each PC keeps its own (guests may change theirs).
+	"together_share_room": true,
+	"together_share_curtain": true,   # the curtain and its look, house lights
+	"together_share_presenters": true,
 	"together_shared_audience": true, # host: everyone's chat sits in one audience, the same on every PC
 	"together_audience_areas": true,  # host: each streamer's viewers get their own part of the audience
 	"together_live_feed": true,  # host: the tab shared in the sender page also goes to the guests (VDO.Ninja)
@@ -201,6 +205,8 @@ const PRESENTER_FIELDS: Dictionary = {
 	"chat": "",                  # their chat name(s), comma separated ("kick:name" = that platform only):
 	                             # they sit on this podium instead of in the audience, and their
 	                             # chat commands and bubbles come from here
+	"name": "",                  # name tag shown above the picture ("" = none)
+	"picture": "",               # a picture file (png / jpg / webp / gif) on the front of the podium ("" = none)
 	"chat_look": true,           # silhouette mode: look like the chat audience (their colour + picture)
 	"chat_bubbles": true,        # their chat messages pop up as speech bubbles over the podium
 }

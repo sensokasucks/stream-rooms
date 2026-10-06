@@ -125,6 +125,20 @@ func _host() -> void:
 	_check(await _wait_for(func() -> bool: return _markers() != null and _markers().get_marker_count() >= 1, 15.0),
 		"the guest's camera shows on the host")
 
+	# a podium picture travels to the guest as bytes; un-sharing presenters frees the guest's own
+	var img := Image.create(48, 24, false, Image.FORMAT_RGBA8)
+	img.fill(Color(0.2, 0.9, 0.3))
+	var png := _out.path_join("host_badge.png")
+	img.save_png(png)
+	AppState.set_setting(AppState.presenter_key(3, "picture"), png)
+	AppState.set_setting(AppState.presenter_key(3, "name"), "HostName")
+	await _secs(8.0)
+	AppState.set_setting("together_share_presenters", false)
+	await _secs(14.0)          # (the guest changes its own presenter meanwhile)
+	_check(String(AppState.get_setting(AppState.presenter_key(3, "source"))) != "green", "a guest's own presenter change stays on the guest once presenters aren't shared")
+	AppState.set_setting("together_share_presenters", true)
+	await _secs(3.0)
+
 	# someone with the wrong password
 	_spawn("testbad", "--role=badguest", "980,0")
 	_check(await _wait_for(func() -> bool:
@@ -141,7 +155,7 @@ func _host() -> void:
 	_check(NetSession.get_role() == "off", "stopped hosting")
 	for p in ["testguest", "testbad"]:
 		var f := _out.path_join("together_%s.txt" % p)
-		await _wait_for(func() -> bool: return FileAccess.file_exists(f), 40.0)
+		await _wait_for(func() -> bool: return FileAccess.file_exists(f), 120.0)
 		var text := FileAccess.get_file_as_string(f)
 		if text == "":
 			_check(false, "%s wrote its results" % p)
@@ -230,6 +244,23 @@ func _guest() -> void:
 	_check(await _wait_for(func() -> bool: return absf(float(AppState.get_setting("house_lights")) - 0.62) < 0.001, 10.0),
 		"a co-host's change came back from the host")
 	Reactions.play_test("confetti")
+	# the host's podium picture and name tag arrive; the picture is a copy in this PC's user folder
+	_check(await _wait_for(func() -> bool: return String(AppState.get_setting(AppState.presenter_key(3, "picture"))).begins_with("user://podium_pictures/"), 20.0),
+		"the host's podium picture arrived as a copy here (%s)" % AppState.get_setting(AppState.presenter_key(3, "picture")))
+	_check(String(AppState.get_setting(AppState.presenter_key(3, "name"))) == "HostName", "the host's name tag arrived")
+	var stage: Node = _main.get_node("RoomHost").get_current_room().find_child("Presenters", true, false)
+	var p3: Presenter = stage.get_presenter(3) if stage else null
+	_check(await _wait_for(func() -> bool: return p3 != null and p3._badge_mat.albedo_texture != null and p3._badge_mat.albedo_texture.get_width() == 48, 10.0),
+		"and shows on podium 3 here")
+	# the host stops sharing presenters: this PC's presenters are its own again
+	_check(await _wait_for(func() -> bool: return not NetSession.group_shared("presenters"), 20.0), "heard that presenters aren't shared any more")
+	# (this guest is a co-host by now, so nothing is locked for it anyway: check the groups themselves)
+	_check(not NetSession.group_shared("presenters") and NetSession.group_shared("room"), "presenters are this PC's own while the room stays the host's")
+	AppState.set_setting(AppState.presenter_key(3, "source"), "green")
+	await _secs(0.5)
+	_check(String(AppState.get_setting(AppState.presenter_key(3, "source"))) == "green", "this PC can set its own presenter source now")
+	_check(await _wait_for(func() -> bool: return NetSession.group_shared("presenters"), 20.0), "heard that presenters are shared again")
+	_check(await _wait_for(func() -> bool: return String(AppState.get_setting(AppState.presenter_key(3, "source"))) != "green", 10.0), "and the host's presenter state came back")
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "off", 120.0), "noticed the session ending")
 	await _finish()
 

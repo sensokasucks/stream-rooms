@@ -270,6 +270,14 @@ Adding podiums to another room:
 The panel copy is built by `blender/lecture_hall_gen.py` with `PANEL = True` (see the top of
 that file) into `../blender/lecture_hall_panel.blend`.
 
+**Name tag:** a name shown above the presenter's picture, for example their channel name. Blank
+for none.
+
+**Podium picture:** a picture on the front of the podium: a logo, an avatar, a badge. **Browse...**
+picks a PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB; **Clear** removes it. The picture
+keeps its shape and fits the podium. When streaming together, guests get a copy of the picture
+(the file itself travels, so it works even though it only exists on your PC).
+
 ## NDI (OBS / NDI Tools)
 The main screen and the presenters can show **NDI** sources. That's lighter than the browser
 sender: OBS (or NDI Tools) does the encoding and a native plugin decodes it, with the sound in sync.
@@ -539,6 +547,11 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 - **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
+
+**Shared with guests** (Together tab, host): three ticks say which parts the guests follow:
+**Room**, **Curtain and house lights** and **Presenters**. Untick one and every PC keeps its own:
+for example, untick **Presenters** to let each guest pick their own presenter sources, name tags
+and podium pictures. Tick it again and the guests get the host's state back.
 
 ### One audience for everyone's chat
 
