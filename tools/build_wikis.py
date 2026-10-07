@@ -34,7 +34,8 @@ sr = "C:/Users/jonza/Documents/RedotHomeTheater/stream_rooms"
 build("stream-rooms.wiki", "stream-rooms", sr, [("Home", "README.md"), ("Manual", "docs/manual/MANUAL.md", "docs/manual/images"),
     ("Room-Building-Guide", "docs/manual/ROOM_GUIDE.md"), ("Multiplayer-Notes", "docs/MULTIPLAYER.md"), ("Notes-for-Claude-Code", "CLAUDE.md")], "Stream Rooms")
 fl = "G:/AI/claude/FlaVR_leftovers"
-pages = [("Home", "README.md"), ("Release-Notes", "RELEASE_NOTES.md"), ("Git-Helpers", "GIT.md"), ("Stream-Core", "fridge-stream-core/README.md"),
+pages = [("Home", "README.md"), ("Stream-Core-Manual", "fridge-stream-core/docs/manual/MANUAL.md", "fridge-stream-core/docs/manual/images"),
+         ("Release-Notes", "RELEASE_NOTES.md"), ("Git-Helpers", "GIT.md"), ("Stream-Core", "fridge-stream-core/README.md"),
          ("Stream-Core-Scripts", "fridge-stream-core/SCRIPTS.md"), ("Stream-Core-Changelog", "fridge-stream-core/CHANGELOG.md")]
 for f in sorted(glob.glob(os.path.join(fl, "fridge-stream-core/docs/**/*.md"), recursive=True)):
     pages.append(("Stream-Core-" + page_name(os.path.splitext(os.path.basename(f))[0].replace('_', ' ').title()), os.path.relpath(f, fl).replace(os.sep, '/')))
