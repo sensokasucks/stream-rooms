@@ -687,6 +687,7 @@ func _compute_sections(spots: Array[Vector3], kinds: PackedByteArray, stage_poin
 		mc /= float(main.size())
 		var sorted := depths.duplicate()
 		sorted.sort()
+		@warning_ignore("integer_division")
 		var median: float = sorted[sorted.size() / 2]
 		var labels := {"Q1": "Front left", "Q2": "Front right", "Q3": "Back left", "Q4": "Back right"}
 		for k in main.size():

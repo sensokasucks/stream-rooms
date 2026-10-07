@@ -240,6 +240,7 @@ func _handle_binary(pkt: PackedByteArray) -> void:
 				_queue_decode(PRESENTER_CHANNEL + pkt[1], pkt.slice(2))
 		PKT_AUDIO:
 			var samples := pkt.slice(1).to_float32_array()
+			@warning_ignore("integer_division")
 			var n := samples.size() / 2
 			var frames := PackedVector2Array()
 			frames.resize(n)
@@ -256,8 +257,8 @@ func _queue_decode(channel: int, jpeg: PackedByteArray) -> void:
 		_pending[channel] = PackedByteArray()
 		_task_ids[channel] = -1
 	_pending[channel] = jpeg
-	var start: bool = not _busy[channel]
-	if start:
+	var begin: bool = not _busy[channel]
+	if begin:
 		_busy[channel] = true
 	_mutex.unlock()
 	if start:

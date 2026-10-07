@@ -443,10 +443,10 @@ func set_curtain_covering(on: bool) -> void:
 
 ## StageCurtain registers itself while its room is up. The old room is freed after the new
 ## one has registered, so only the curtain that registered last can unregister.
-func set_curtain_present(owner: Object, on: bool) -> void:
+func set_curtain_present(holder: Object, on: bool) -> void:
 	if on:
-		_curtain_owner = owner.get_instance_id()
-	elif owner.get_instance_id() != _curtain_owner:
+		_curtain_owner = holder.get_instance_id()
+	elif holder.get_instance_id() != _curtain_owner:
 		return
 	_curtain_present = on
 	if not on:

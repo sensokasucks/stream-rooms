@@ -451,7 +451,7 @@ func _seat(m: Dictionary, slot: int, notify_count: bool) -> void:
 ## group: the chatter's platform group; with the seating plan on, only seats in sections that
 ## allow it (unless "seating_strict" is off and none is free: then any seat).
 func _free_slot(group: String = "") -> int:
-	var free: Array[int] = []
+	var spare: Array[int] = []
 	var kind := KIND_SEAT
 	for pass_n in 2:
 		var loose := pass_n == 1
@@ -462,30 +462,30 @@ func _free_slot(group: String = "") -> int:
 				break
 			for i in _slots.size():
 				if _slots[i] == "" and get_slot_kind(i) == k and (loose or slot_allows(i, group)):
-					free.append(i)
-			if not free.is_empty():
+					spare.append(i)
+			if not spare.is_empty():
 				kind = k
 				break
-		if not free.is_empty():
+		if not spare.is_empty():
 			break
-	if free.is_empty():
+	if spare.is_empty():
 		return -1
 	var mode := String(AppState.get_setting("audience_seating"))
 	var laid_out := _seat_row.size() == _slots.size()
 	if mode == "front" and laid_out:
 		for i in _seat_order:
-			if _slots[i] == "" and get_slot_kind(i) == kind and free.has(i):
+			if _slots[i] == "" and get_slot_kind(i) == kind and spare.has(i):
 				return i
 	elif mode == "front_random" and laid_out:
 		var best := 1 << 30
-		for i in free:
+		for i in spare:
 			best = mini(best, _seat_row[i])
 		var in_row: Array[int] = []
-		for i in free:
+		for i in spare:
 			if _seat_row[i] == best:
 				in_row.append(i)
-		free = in_row
-	return free[_rng.randi_range(0, free.size() - 1)]
+		spare = in_row
+	return spare[_rng.randi_range(0, spare.size() - 1)]
 
 
 ## Makes room for a new chatter: the one idle the longest gives up their seat. With the
@@ -832,6 +832,7 @@ func apply_preset(preset: String) -> void:
 			else:
 				plan[id] = PackedStringArray([PLATFORMS[clampi(int(id.substr(1)) - 1, 0, 3)]])
 		else:
+			@warning_ignore("integer_division")
 			var level := int(id) / 100
 			if not by_level.has(level):
 				by_level[level] = []
@@ -841,6 +842,7 @@ func apply_preset(preset: String) -> void:
 		ids.sort_custom(func(x: String, y: String) -> bool: return int(x) < int(y))
 		for k in ids.size():
 			if preset == "twitch_apart":
+				@warning_ignore("integer_division")
 				plan[ids[k]] = PackedStringArray(["twitch"]) if k < ids.size() / 2 else others
 			else:
 				plan[ids[k]] = PackedStringArray([PLATFORMS[k % PLATFORMS.size()]])
@@ -1099,6 +1101,7 @@ func _area_of_section(id: String) -> int:
 				var quad_area := {2: [0, 1, 0, 1], 3: [0, 1, 2, 2], 4: [0, 1, 2, 3]}
 				_area_cache[sid] = int((quad_area[_area_count] as Array)[q])
 			else:
+				@warning_ignore("integer_division")
 				var level := int(sid) / 100
 				if not by_level.has(level):
 					by_level[level] = []
@@ -1107,6 +1110,7 @@ func _area_of_section(id: String) -> int:
 			var ids: Array = by_level[level]
 			ids.sort_custom(func(x: String, y: String) -> bool: return int(x) < int(y))
 			for k in ids.size():
+				@warning_ignore("integer_division")
 				_area_cache[ids[k]] = mini(k * _area_count / ids.size(), _area_count - 1)
 	return int(_area_cache.get(id, -1))
 

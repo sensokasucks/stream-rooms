@@ -193,14 +193,14 @@ func _podium_mesh() -> MeshInstance3D:
 
 ## Where the picture goes and how big it may be (also after a size / position setting changes).
 func _place_badge() -> void:
-	var scale := clampf(float(_setting("picture_scale")), 0.2, 3.0)
+	var pic_scale := clampf(float(_setting("picture_scale")), 0.2, 3.0)
 	var dx := float(_setting("picture_x"))      # + = to the right, as the audience sees it
 	var dy := float(_setting("picture_y"))      # + = up
 	var mesh_node := _podium_mesh()
 	if mesh_node == null:
 		_badge.position = Vector3(-dx, -0.4 + dy, 0.02)
 		_badge.basis = Basis()
-		_badge.set_meta("max_size", Vector2(0.5, 0.5) * scale)
+		_badge.set_meta("max_size", Vector2(0.5, 0.5) * pic_scale)
 		_fit_badge()
 		return
 	var box := mesh_node.get_aabb()
@@ -237,7 +237,7 @@ func _place_badge() -> void:
 	_badge.basis = Basis.looking_at(-normal, up)   # the quad faces its +Z: onto the surface normal
 	var width := clampf(box.size[side_axis] * 0.6, 0.15, 0.7)
 	var height := clampf(box.size[up_axis] * 0.5, 0.15, 0.7)
-	_badge.set_meta("max_size", Vector2(width, height) * scale)
+	_badge.set_meta("max_size", Vector2(width, height) * pic_scale)
 	_fit_badge()
 
 
@@ -291,6 +291,7 @@ func _apply_badge(on: bool) -> void:
 func _load_badge(path: String) -> void:
 	var bytes := PictureFile.read_file(path)
 	if bytes.is_empty():
+		@warning_ignore("integer_division")
 		EventBus.status_message.emit("Presenter %d: couldn't read that picture (png, jpg, webp or gif, up to %d MB)." % [number, PictureFile.MAX_BYTES / (1024 * 1024)], true)
 		return
 	var out: Array = [null]

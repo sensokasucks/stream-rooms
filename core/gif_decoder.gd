@@ -219,6 +219,7 @@ static func _draw(canvas: PackedByteArray, w: int, h: int, idx: PackedByteArray,
 	else:
 		for y in fh:
 			rows[y] = y
+	@warning_ignore("integer_division")
 	var ncol := pal.size() / 3
 	for r in fh:
 		var cy := fy + rows[r]

@@ -287,7 +287,9 @@ func _floor_below(from: Vector3, reach: float) -> Variant:
 	if space == null:
 		return null
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * reach))
-	return null if hit.is_empty() else (hit["position"] as Vector3).y
+	if hit.is_empty():
+		return null
+	return (hit["position"] as Vector3).y
 
 
 func _build(pelmet: float, drop: float) -> void:

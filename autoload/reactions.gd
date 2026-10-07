@@ -85,8 +85,8 @@ func _process(delta: float) -> void:
 # ── Public API ───────────────────────────────────────────────
 ## Called by a room's ReactionLayer once it knows what the room offers.
 ## targets: [{id, label, aliases}], guests: [{id, name, aliases}]. owner: the layer itself.
-func set_room_targets(owner: Object, targets: Array, guests: Array) -> void:
-	_room_owner = owner.get_instance_id()
+func set_room_targets(layer: Object, targets: Array, guests: Array) -> void:
+	_room_owner = layer.get_instance_id()
 	_targets = targets.duplicate(true)
 	_guests = guests.duplicate(true)
 	_room_open = true
@@ -95,8 +95,8 @@ func set_room_targets(owner: Object, targets: Array, guests: Array) -> void:
 
 ## Called by the ReactionLayer when its room goes away. The old room is freed after the
 ## new one has registered, so only the layer that registered last can close the room.
-func clear_room(owner: Object) -> void:
-	if owner.get_instance_id() != _room_owner:
+func clear_room(layer: Object) -> void:
+	if layer.get_instance_id() != _room_owner:
 		return
 	_room_open = false
 	_targets.clear()
@@ -127,7 +127,7 @@ func play_test(effect: String, target: Dictionary = {}, params: Dictionary = {})
 	if slot >= 0:
 		who = String(AudienceManager.get_seat_member(slot)["name"])
 	var d := {"id": "test-%d" % Time.get_ticks_msec(), "reaction": effect, "label": effect, "effect": effect,
-		"params": params, "count": 1, "target": target if not target.is_empty() else null,
+		"params": params, "count": 1, "target": _or_null(target),
 		"from": {"platform": "test", "id": who.to_lower(), "username": who.to_lower(), "display_name": who},
 		"route": "game", "message": "", "test": true}
 	_on_reaction(d)
@@ -259,3 +259,10 @@ func _decay_meters(delta: float) -> void:
 		m["value"] = maxf(before - float(m["goal"]) * delta / float(m["decay"]), 0.0)
 		if int(before) != int(float(m["value"])) or float(m["value"]) == 0.0:
 			EventBus.reaction_meter_changed.emit(mid, String(m["label"]), float(m["value"]), float(m["goal"]))
+
+
+## A Dictionary, or null when it's empty (a ternary with two types is a warning).
+func _or_null(d: Dictionary) -> Variant:
+	if d.is_empty():
+		return null
+	return d

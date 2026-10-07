@@ -51,6 +51,7 @@ Stream Core is a separate Python app (FastAPI). On the owner's PC it lives at `G
 - **Performance:** the filler crowd is one MultiMesh draw. Per-chatter cost is what grows. Work that runs every frame should only happen while something changes (for example, the camera moving).
 - **Style:** typed GDScript, tabs, a `##` comment at the top of each file explaining what it is for, and short comments on the "why".
   - Gotcha: `var x := arr.filter(...)` fails type inference, so write `var x: Array = ...`.
+  - The editor's script warnings only show when it opens a script, so the owner finds them one at a time. `python tools\lint_warnings.py` is a rough stand-in: it lists locals, loop variables and parameters named like a base-class member, a global function or a script-level name, and whole-number divisions. Rename the first kind; mark an intended whole-number division with `@warning_ignore("integer_division")` on the line above; write a two-type ternary (`x if c else null`) as an if.
 - **Art:** original designs only. No copyrighted characters, logos or likenesses.
 - **README.md** is for the user. It uses plain language, **bold** control names that match the panel labels exactly, and a section per feature. Update it with every feature.
 

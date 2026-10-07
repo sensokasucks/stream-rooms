@@ -70,6 +70,7 @@ func get_circle_texture(url: String, size: int = 128) -> Texture2D:
 		img.clear_mipmaps()
 	img.convert(Image.FORMAT_RGBA8)
 	var side := mini(img.get_width(), img.get_height())
+	@warning_ignore("integer_division")
 	img = img.get_region(Rect2i((img.get_width() - side) / 2, (img.get_height() - side) / 2, side, side))
 	img.resize(size, size, Image.INTERPOLATE_LANCZOS)
 	var r := size * 0.5

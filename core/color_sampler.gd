@@ -18,6 +18,7 @@ static func sample_thirds(src: Image) -> Array[Color]:
 	var counts: Array[int] = [0, 0, 0]
 	for y in SAMPLE_H:
 		for x in SAMPLE_W:
+			@warning_ignore("integer_division")
 			var col: int = mini(int(x * 3 / SAMPLE_W), 2)
 			sums[col] += img.get_pixel(x, y)
 			counts[col] += 1
