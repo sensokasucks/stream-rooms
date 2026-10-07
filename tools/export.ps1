@@ -41,8 +41,10 @@ if (-not (Test-Path $exe) -or -not (Test-Path $pck)) {
 	throw "The export didn't produce StreamRooms.exe and StreamRooms.pck. See $log"
 }
 $mb = [math]::Round((Get-Item $pck).Length / 1MB)
-if ($mb -lt 100) {
-	throw "StreamRooms.pck is only $mb MB (a complete one is about 140 MB). Check Project > Export > Resources > Export Mode is 'Export all resources in the project'."
+if ($mb -lt 25) {
+	# (a complete one is about 35 MB: the six rooms, the sender page, the fonts and the plugins; the
+	# manual and its screenshots stay out thanks to docs/manual/.gdignore)
+	throw "StreamRooms.pck is only $mb MB (a complete one is about 35 MB). Check Project > Export > Resources > Export Mode is 'Export all resources in the project'."
 }
 New-Item -ItemType Directory -Force (Join-Path $Out "tools") | Out-Null
 Copy-Item (Join-Path $project "tools\*.exe") (Join-Path $Out "tools")
