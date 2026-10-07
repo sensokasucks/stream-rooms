@@ -48,7 +48,7 @@ func get_texture(url: String) -> Texture2D:
 
 
 ## True for textures that change over time (animated emotes).
-static func is_animated(tex: Texture2D) -> bool:
+func is_animated(tex: Texture2D) -> bool:        # (not static: callers reach it through the autoload)
 	return tex is AnimatedTexture
 
 

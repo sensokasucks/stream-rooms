@@ -597,7 +597,7 @@ func _pile_one(p: Dictionary, origin: Dictionary) -> void:
 	var sz: Vector2 = _screen["size"]
 	var base: Vector3 = (_screen["pos"] as Vector3) + (_screen["normal"] as Vector3) * 0.9 \
 		+ (_screen["right"] as Vector3) * randf_range(-0.35, 0.35) * sz.x
-	base.y = _floor_y(base) + 0.12 * _size() / object_size * (1.0 + 0.35 * (_pile.size() / 6))
+	base.y = _floor_y(base) + 0.12 * _size() / object_size * (1.0 + 0.35 * (float(_pile.size()) / 6.0))
 	var obj = _thing(p, "🍅", 1.0)
 	var a: Vector3 = origin["pos"]
 	var mid := (a + base) * 0.5 + Vector3.UP * 1.5

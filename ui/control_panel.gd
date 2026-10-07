@@ -723,12 +723,12 @@ func _build_chat_tab() -> Control:
 	row.add_child(_chat_label)
 	row.add_child(_button("Retry now", func() -> void: ChatFeed.reconnect()))
 	v.add_child(_text_setting("chat_core_url", "Core address", "ws://127.0.0.1:3850/ws"))
-	var tr := HBoxContainer.new()
-	v.add_child(tr)
-	tr.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
+	var test_row := HBoxContainer.new()
+	v.add_child(test_row)
+	test_row.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
 	var tl := _hint("Made-up chatters on Kick, Twitch and YouTube.")
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tr.add_child(tl)
+	test_row.add_child(tl)
 
 	v.add_child(_heading("Chat windows"))
 	v.add_child(_hint("One line per window: tick Show, then tick the platforms it shows. One platform per window keeps chats apart (Twitch asks for its chat to be kept separate); several tick mixes them. Advanced ▸ has replies, header, text size, looks and position."))
@@ -773,9 +773,9 @@ func _chat_window(v: VBoxContainer, key: String, title: String, where: String, s
 	# the summary row: Show, the window's name, its platforms, a ⚠ when the text is too small, Advanced
 	var head := HBoxContainer.new()
 	v.add_child(head)
-	var show := _check(key, "")
-	show.tooltip_text = "Show this window. " + where
-	head.add_child(show)
+	var show_box := _check(key, "")
+	show_box.tooltip_text = "Show this window. " + where
+	head.add_child(show_box)
 	var t := _heading(title)
 	t.add_theme_font_size_override("font_size", 14)
 	t.custom_minimum_size = Vector2(150, 0)
@@ -1180,9 +1180,9 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	var d := VBoxContainer.new()
 	d.add_theme_constant_override("separation", 5)
 	d.add_child(_heading("Presenter %d" % n))
-	var show := _option(k.call("source"), "Show", PRESENTER_SOURCES)
-	(show.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your Streaming together session set up as My avatar (Together tab), yours included."
-	d.add_child(show)
+	var show_row := _option(k.call("source"), "Show", PRESENTER_SOURCES)
+	(show_row.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your Streaming together session set up as My avatar (Together tab), yours included."
+	d.add_child(show_row)
 	var rows: Dictionary = {"picture": []}
 	_pres_rows.append(rows)
 	var peer_row := _peer_menu(k.call("peer"), "Whose avatar")
@@ -2186,7 +2186,10 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 		if _syncing:
 			return      # only matching a setting that changed elsewhere (it may round differently)
 		var raw := x / display_scale
-		AppState.set_setting(key, int(raw) if is_int else raw))
+		if is_int:
+			AppState.set_setting(key, int(raw))
+		else:
+			AppState.set_setting(key, raw))
 	num.text_submitted.connect(func(t: String) -> void:
 		_apply_typed(s, num, fmt, t)
 		num.release_focus())

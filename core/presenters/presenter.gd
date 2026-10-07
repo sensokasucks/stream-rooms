@@ -214,15 +214,15 @@ func _place_badge() -> void:
 	if up_axis == front_axis:
 		up_axis = Vector3.AXIS_Y if front_axis != Vector3.AXIS_Y else Vector3.AXIS_Z
 	var side_axis := 3 - front_axis - up_axis
-	var sign := 1.0 if front_dir[front_axis] >= 0.0 else -1.0
+	var dir_sign := 1.0 if front_dir[front_axis] >= 0.0 else -1.0
 	var aim := box.get_center()
 	aim[up_axis] = box.position[up_axis] + box.size[up_axis] * 0.55
 	aim += up_dir * dy + right_dir * dx
 	# a ray from well in front of the podium, straight at it
 	var dir := Vector3.ZERO
-	dir[front_axis] = -sign
+	dir[front_axis] = -dir_sign
 	var origin := aim
-	origin[front_axis] = (box.end[front_axis] if sign > 0.0 else box.position[front_axis]) + sign * 1.0
+	origin[front_axis] = (box.end[front_axis] if dir_sign > 0.0 else box.position[front_axis]) + dir_sign * 1.0
 	var hit := _nearest_hit(origin, dir)
 	var normal := -dir
 	var pos := origin + dir * (1.0 - 0.015)      # the bounding box's front, if the ray misses

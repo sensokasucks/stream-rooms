@@ -200,9 +200,9 @@ func _draw() -> void:
 	var y := size.y - 6.0
 	for g in AudienceManager.PLATFORMS:
 		draw_circle(Vector2(x + 5, y - 4), 4.0, AudienceManager.platform_color(g))
-		var name := "%s %s" % [LETTER[g], String(AudienceManager.PLATFORM_LABELS[g])]
-		draw_string(font, Vector2(x + 12, y), name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.85))
-		x += 22.0 + font.get_string_size(name, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+		var label_text := "%s %s" % [LETTER[g], String(AudienceManager.PLATFORM_LABELS[g])]
+		draw_string(font, Vector2(x + 12, y), label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.85))
+		x += 22.0 + font.get_string_size(label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 	draw_circle(Vector2(x + 5, y - 4), 4.0, Color(0.45, 0.45, 0.5))
 	draw_string(font, Vector2(x + 12, y), "Anyone", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.8))
 

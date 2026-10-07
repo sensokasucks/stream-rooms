@@ -366,10 +366,10 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	var per_line := ceili(float(chars) / float(lines))
 	var w := clampf(float(per_line) * 0.085 + 0.3, 0.6, 1.8) * sc
 	var h := (0.16 + 0.15 * lines) * sc
-	var sign := Node3D.new()
-	sign.position.y = 0.25 * sc + h * 0.5
-	(s["holder"] as Node3D).add_child(sign)
-	s["sign"] = sign
+	var sign_root := Node3D.new()
+	sign_root.position.y = 0.25 * sc + h * 0.5
+	(s["holder"] as Node3D).add_child(sign_root)
+	s["sign"] = sign_root
 	var board := MeshInstance3D.new()
 	var q := QuadMesh.new()
 	q.size = Vector2(w, h)
@@ -383,7 +383,7 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	mat.albedo_texture = _sign_texture(color)
 	board.material_override = mat
 	board.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sign.add_child(board)
+	sign_root.add_child(board)
 	var l := Label3D.new()
 	l.text = text
 	l.font = SpeechBubble.shared_font()
@@ -398,17 +398,17 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	l.no_depth_test = true
 	l.render_priority = 12
 	l.double_sided = true
-	sign.add_child(l)
-	sign.scale = Vector3.ONE * 0.2
+	sign_root.add_child(l)
+	sign_root.scale = Vector3.ONE * 0.2
 	var tw := create_tween()
-	tw.tween_property(sign, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(sign_root, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# a little wave while it's up
 	var bobs := maxi(int(seconds / 1.2), 1)
 	for i in bobs:
-		tw.tween_property(sign, "position:y", sign.position.y + 0.05 * sc, 0.6).set_trans(Tween.TRANS_SINE)
-		tw.tween_property(sign, "position:y", sign.position.y, 0.6).set_trans(Tween.TRANS_SINE)
-	tw.tween_property(sign, "scale", Vector3.ONE * 0.01, 0.25)
-	tw.tween_callback(sign.queue_free)
+		tw.tween_property(sign_root, "position:y", sign_root.position.y + 0.05 * sc, 0.6).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(sign_root, "position:y", sign_root.position.y, 0.6).set_trans(Tween.TRANS_SINE)
+	tw.tween_property(sign_root, "scale", Vector3.ONE * 0.01, 0.25)
+	tw.tween_callback(sign_root.queue_free)
 	play_motion(slot, "jump", 0.5)
 
 

@@ -268,12 +268,12 @@ static func _parse_profile(args: PackedStringArray) -> String:
 	for a in args:
 		if not a.begins_with("--mp-profile="):
 			continue
-		var name := a.trim_prefix("--mp-profile=").strip_edges()
+		var profile_name := a.trim_prefix("--mp-profile=").strip_edges()
 		var re := RegEx.create_from_string("^[A-Za-z0-9_-]{1,24}$")
-		if re.search(name) == null:
-			push_warning("Ignoring --mp-profile=%s: use up to 24 letters, digits, _ or -" % name)
+		if re.search(profile_name) == null:
+			push_warning("Ignoring --mp-profile=%s: use up to 24 letters, digits, _ or -" % profile_name)
 			return ""
-		return name
+		return profile_name
 	return ""
 
 
