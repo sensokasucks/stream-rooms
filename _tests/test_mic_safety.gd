@@ -34,7 +34,7 @@ func _ready() -> void:
 		var f := FileAccess.open(_out.path_join("mic_safety_child.txt"), FileAccess.WRITE)
 		f.store_string("\n".join(_lines) + "\n")
 		f.close()
-		get_tree().quit()
+		AppState.request_quit()
 		return
 
 	# this copy: auto-duck on by default, the microphone started normally
@@ -62,4 +62,4 @@ func _ready() -> void:
 	cfg.load("user://settings_mictest.cfg")
 	_check(cfg.get_value("settings", "duck_enabled", true) == false, "the switch-off was saved, so later starts skip it too")
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

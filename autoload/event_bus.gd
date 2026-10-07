@@ -78,6 +78,8 @@ signal spout_stop_requested
 # ── Settings / messages ──────────────────────────────────────
 signal setting_changed(key: String, value: Variant)
 signal status_message(text: String, is_error: bool)
+## The app is about to quit (AppState.request_quit): hide the room now, the quit follows shortly.
+signal quit_requested
 ## Chat source (ChatFeed): {"connected": bool, "url": String, "error": String}
 signal chat_status_changed(info: Dictionary)
 ## One normalized chat message (see ChatFeed._normalize for the keys).

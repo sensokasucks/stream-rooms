@@ -57,4 +57,5 @@ func _ready():
 	await _secs(0.5)
 	print("near off=", cam.near)
 	await _shot(out + "/cam_outside_off.png")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

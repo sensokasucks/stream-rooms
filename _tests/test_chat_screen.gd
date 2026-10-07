@@ -58,4 +58,5 @@ func _ready():
 	AppState.set_setting("chat_screen_columns", 2.0)
 	AppState.set_setting("chat_screen_text", 1.0)
 	AppState.set_setting("chat_screen_bg", 0.75)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

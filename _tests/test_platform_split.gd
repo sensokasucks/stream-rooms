@@ -106,4 +106,5 @@ func _ready():
 	await _secs(1.5)
 	await _shot(out + "/p3_room_windows.png")
 	AudienceManager.apply_preset("anyone")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

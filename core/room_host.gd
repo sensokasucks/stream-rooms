@@ -12,6 +12,11 @@ signal room_ready(room: Room, info: RoomInfo)
 @export var fade_time: float = 0.35
 ## Extra time black after the swap, so GI can settle before fading in.
 @export var settle_time: float = 0.25
+## Redot 26.2 crashes (access violation in the renderer, same fault address every time, also seen as
+## garbage in text layout) when a room is freed soon after it was drawn: switching rooms every two
+## seconds crashed within a few swaps. Hidden for a few seconds first (still drawing frames), it's
+## fine, so the old room is hidden at the swap and freed this long after it.
+const OLD_ROOM_FREE_DELAY: float = 3.0
 
 var _room: Room
 var _room_id: String = ""
@@ -29,6 +34,7 @@ func _ready() -> void:
 	fade_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	EventBus.room_requested.connect(load_room)
 	EventBus.setting_changed.connect(_on_setting_changed)
+	EventBus.quit_requested.connect(_on_quit_requested)
 	GraphicsQuality.apply_fps()
 	GraphicsQuality.apply_viewport(get_viewport())
 
@@ -101,7 +107,7 @@ func _apply_graphics() -> void:
 func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 	_loading_id = ""
 	if _room:
-		_room.queue_free()
+		_retire(_room)
 		_room = null
 	var inst := packed.instantiate()
 	if not inst is Room:
@@ -212,6 +218,24 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 	EventBus.room_changed.emit(info.id)
 
 	get_tree().create_timer(settle_time).timeout.connect(_fade_in)
+
+
+## Hide a room now and free it a little later (see OLD_ROOM_FREE_DELAY). It keeps processing
+## meanwhile: pausing it (process_mode disabled) brought the crash straight back.
+func _retire(room: Node3D) -> void:
+	room.visible = false
+	get_tree().create_timer(OLD_ROOM_FREE_DELAY).timeout.connect(func() -> void:
+		if is_instance_valid(room):
+			room.queue_free())
+
+
+## Quitting frees the room too: dark first, AppState quits after its delay.
+func _on_quit_requested() -> void:
+	fade_rect.color.a = 1.0
+	if _room:
+		_room.visible = false
+	# (the window must keep drawing meanwhile: minimizing it brings the crash back, and so did
+	# adding a "Closing..." label here, so the screen just goes black)
 
 
 ## Middle of the main screen (global), or null if the room has none.

@@ -9,6 +9,7 @@ extends Node3D
 func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
 	add_child(NetMarkers.new())     # the others' cameras while streaming together
+	get_tree().auto_accept_quit = false     # closing the window goes through AppState.request_quit
 
 	var start_id: String = AppState.get_setting("room_id")
 	if RoomCatalog.get_info(start_id) == null and not RoomCatalog.get_ids().is_empty():
@@ -26,6 +27,11 @@ func _ready() -> void:
 		if not arg.begins_with("--"):
 			EventBus.file_play_requested.emit.call_deferred(arg)
 			break
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		AppState.request_quit(0)
 
 
 func _on_room_ready(room: Room, _info: RoomInfo) -> void:

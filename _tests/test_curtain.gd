@@ -66,4 +66,5 @@ func _ready():
 	panel.toggle_window()
 	await _secs(0.5)
 	print("panel docked=", not panel.is_in_window())
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

@@ -46,7 +46,7 @@ func _ready() -> void:
 	print("profile=", profile, " offset=", AppState.get_port_offset())
 	if profile.is_empty():
 		_check(false, "this test needs a profile: add --mp-profile=guest2 after the output folder")
-		get_tree().quit(1)
+		AppState.request_quit(1)
 		return
 
 	_check(AppState.get_settings_path() == "user://settings_%s.cfg" % profile, "settings file is settings_%s.cfg" % profile)
@@ -75,4 +75,4 @@ func _ready() -> void:
 	# stay up a moment so a second copy started alongside overlaps with this one
 	await _secs(4.0)
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

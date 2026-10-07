@@ -84,4 +84,5 @@ func _ready():
 	await _shot(out + "/seating_front_random.png")
 	AppState.set_setting("audience_seating", "random")
 	AudienceManager.clear()
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

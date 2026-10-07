@@ -171,4 +171,4 @@ func _finish() -> void:
 			f.store_string("\n".join(_lines) + "\n")
 			f.close()
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

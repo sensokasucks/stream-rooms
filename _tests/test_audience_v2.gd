@@ -81,4 +81,5 @@ func _ready():
 	await _secs(1.5)
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(out + "/v2_fill_main.png")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

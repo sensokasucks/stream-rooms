@@ -12,7 +12,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions
 # Screenshots and logs go to -Out (default C:\temp\sr_tests), outside the project folder.
 param(
-	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks", "test_spout", "test_watch_together", "test_mic_safety", "test_shared_audience", "test_presenter_extras"),
+	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks", "test_spout", "test_watch_together", "test_mic_safety", "test_shared_audience", "test_presenter_extras", "test_room_swaps"),
 	[string]$Out = "C:\temp\sr_tests",
 	[string]$Redot = "G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe",
 	[int]$TimeLimit = 400,
@@ -55,6 +55,7 @@ foreach ($t in $Tests) {
 	$rows += [pscustomobject]@{
 		Test           = $t
 		Ended          = $ended
+		Finished       = if (@($text | Where-Object { $_ -like "DONE*" }).Count -gt 0) { "Y" } else { "N" }
 		Pass           = @($text | Where-Object { $_ -like "PASS *" }).Count
 		Fail           = @($text | Where-Object { $_ -like "FAIL *" }).Count
 		"Script errors" = @($text | Where-Object { $_ -like "*SCRIPT ERROR*" }).Count

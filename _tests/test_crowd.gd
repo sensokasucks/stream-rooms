@@ -154,4 +154,5 @@ func _ready():
 	AppState.set_setting("audience_crowd_fill", 0.2)
 	await _secs(0.2)
 	print("fill 20%: fillers=", aud.get_filler_count())
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

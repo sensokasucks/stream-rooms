@@ -14,4 +14,5 @@ func _ready():
 	await _secs(4.0)
 	print("source mode=", AppState.get_source_mode(), " ndi label=", main.get_node("ControlPanel")._ndi_label.text)
 	AppState.set_setting(AppState.presenter_key(2, "source"), "camera")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

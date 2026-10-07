@@ -118,4 +118,5 @@ func _ready():
 	print("safe: shake started=", cam._shake_left > 0.0, " (want false)")
 	AppState.set_setting("photosensitive_safe", false)
 	AppState.set_setting("flash_strength", 1.0)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

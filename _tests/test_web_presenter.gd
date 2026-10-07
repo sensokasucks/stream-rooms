@@ -30,4 +30,4 @@ func _ready():
 	AppState.set_setting(k.call(1, "on"), false)
 	await _secs(2.0)
 	print("DONE")
-	get_tree().quit()
+	AppState.request_quit()

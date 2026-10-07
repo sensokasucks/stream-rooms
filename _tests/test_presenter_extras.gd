@@ -126,4 +126,4 @@ func _ready() -> void:
 	AppState.set_setting(AppState.presenter_key(2, "name"), "")
 	_check(not p._tag.visible, "clearing the name hides the tag")
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

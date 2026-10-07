@@ -41,4 +41,5 @@ func _ready():
 	_fire("/reactions/images/boot.png?v=1", "throw", {"type": "stage", "name": "stage"}, 4, "stick")
 	await _secs(2.5)
 	await _shot(out + "/boot_thrown.png")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

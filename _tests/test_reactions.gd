@@ -232,4 +232,4 @@ func _ready() -> void:
 	AppState.set_setting(AppState.presenter_key(1, "on"), false)
 	await _secs(1.2)
 	print("DONE fails=%d" % _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

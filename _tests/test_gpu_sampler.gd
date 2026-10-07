@@ -24,4 +24,5 @@ func _ready():
 	for i in 3:
 		print("third ", i, " gpu=", gpu[i], " cpu=", cpu[i])
 	print("gpu path us=", t_gpu, "  cpu path us=", t_cpu)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

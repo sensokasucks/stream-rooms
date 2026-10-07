@@ -506,6 +506,25 @@ func request_room(room_id: String) -> void:
 	EventBus.room_requested.emit(room_id)
 
 
+## How long the room stays hidden (window black, still drawing) before the app quits. Redot 26.2
+## sometimes crashes while the room is freed at exit (the renderer; see RoomHost), and a dark room
+## makes that rarer but not impossible. The settings are saved before the wait, so a crash at exit
+## loses nothing. Tests quit through here too.
+const QUIT_DELAY: float = 1.5
+var _quitting: bool = false
+
+
+## Quit the app the safe way: settings saved, the room goes dark, the quit follows in QUIT_DELAY seconds.
+func request_quit(code: int = 0) -> void:
+	if _quitting:
+		return
+	_quitting = true
+	SaveManager.save_now()
+	EventBus.quit_requested.emit()
+	await get_tree().create_timer(QUIT_DELAY).timeout
+	get_tree().quit(code)
+
+
 func cycle_room(step: int) -> void:
 	var ids := RoomCatalog.get_ids()
 	if ids.is_empty():

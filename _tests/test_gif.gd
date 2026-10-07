@@ -10,4 +10,5 @@ func _ready():
 		print(fname, " frames=", frames.size(), " delays=", r.get("delays"), " ms=", Time.get_ticks_msec() - t0)
 		for i in frames.size():
 			(frames[i] as Image).save_png(out + "/%s_%02d.png" % [fname.get_basename(), i])
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

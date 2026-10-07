@@ -119,4 +119,5 @@ func _ready():
 	cam2.current = true
 	await _secs(0.8)
 	await _shot(out + "/games_lecture.png")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

@@ -74,4 +74,5 @@ func _ready():
 		AppState.set_setting(k, AppState.DEFAULTS[k])
 	AppState.set_setting("chat_screen_replies_for", AppState.DEFAULTS["chat_screen_replies_for"])
 	await _secs(0.3)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

@@ -66,4 +66,5 @@ func _ready():
 	cam.look_at(_b2g(Vector3(0, -10, 1.2)), Vector3.UP)
 	await _secs(1.0)
 	await _shot(out + "/r7_dimmed.png")
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

@@ -73,4 +73,5 @@ func _ready():
 	AppState.set_setting(AppState.presenter_key(4, "on"), false)
 	AppState.set_setting("chat_right_header", "")
 	await _secs(0.3)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

@@ -67,7 +67,7 @@ func _ready() -> void:
 	_check(NetSession.LOCAL_ONLY_SOURCES.has("spout"), "guests don't get the host's Spout podiums (only on the host's PC)")
 	if not SpoutReceiver.is_available():
 		print("DONE fails=", _fails)
-		get_tree().quit(1)
+		AppState.request_quit(1)
 		return
 	var main: Node = load("res://core/main.tscn").instantiate()
 	add_child(main)
@@ -118,4 +118,4 @@ func _ready() -> void:
 	sender.queue_free()
 	await _secs(1.0)
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

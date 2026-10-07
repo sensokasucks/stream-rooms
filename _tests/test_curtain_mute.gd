@@ -26,4 +26,4 @@ func _ready():
 	AppState.set_setting("curtain_mute", false)
 	AppState.set_setting("curtain_sound", 0.04)
 	print("DONE no crash")
-	get_tree().quit()
+	AppState.request_quit()

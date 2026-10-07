@@ -58,4 +58,5 @@ func _ready():
 	AppState.set_setting(AppState.presenter_key(3, "on"), true)
 	AppState.set_setting("ndi_source", "")
 	NdiReceiver.mock_finder = null
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()

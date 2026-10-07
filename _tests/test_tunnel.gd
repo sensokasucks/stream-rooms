@@ -90,7 +90,7 @@ func _host() -> void:
 	for line in text.split("\n", false):
 		_check(line.begins_with("PASS "), "guest: " + line.substr(5))
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)
 
 
 func _guest() -> void:
@@ -108,4 +108,4 @@ func _guest() -> void:
 	f.store_string("\n".join(_lines) + "\n")
 	f.close()
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

@@ -97,4 +97,4 @@ func _finish() -> void:
 	for pid in _pids:
 		OS.kill(pid)
 	print("DONE fails=", _fails)
-	get_tree().quit(1 if _fails > 0 else 0)
+	AppState.request_quit(1 if _fails > 0 else 0)

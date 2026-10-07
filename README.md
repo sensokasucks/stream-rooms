@@ -175,6 +175,13 @@ Keeps each platform's chatters physically apart in the audience.
   NVIDIA GPU (Windows Settings → System → Display → Graphics → High performance). Use NVENC
   in OBS so the encoder doesn't load the CPU.
 
+## Closing the app
+
+Closing the window saves your settings, then shows a black screen for a second and a half before
+it shuts down. That's on purpose: the engine this app runs on (Redot 26.2) can crash while it
+throws away a room that was just on screen, so the room is hidden first. Switching rooms keeps the
+old room hidden for three seconds for the same reason; you won't see it.
+
 ## Control panel in its own window (F9)
 **Own window (F9)** at the bottom of the panel moves it into a separate window, so a Window /
 Game Capture of the room in OBS never shows it (put it on a second monitor). It opens where you

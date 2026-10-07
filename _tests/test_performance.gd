@@ -143,4 +143,5 @@ func _ready():
 	AppState.set_setting("audience_crowd_max", 0)
 	AppState.set_setting("audience_idle_min", 10.0)
 	AppState.set_setting("audience_crowd_idle_min", 10.0)
-	get_tree().quit()
+	print("DONE")
+	AppState.request_quit()
