@@ -1069,7 +1069,7 @@ func _on_local_chat(msg: Dictionary) -> void:
 	if _role != "guest" or not _aud_shared or bool(msg.get("system", false)) or bool(msg.get("history", false)):
 		return
 	var out := {}
-	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar"]:
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar", "reply_to", "reply_quote"]:
 		out[k] = String(msg.get(k, "")).left(500)
 	out["timestamp"] = float(msg.get("timestamp", Time.get_unix_time_from_system()))
 	out["emotes"] = msg.get("emotes", []) if msg.get("emotes") is Array else []
@@ -1088,7 +1088,7 @@ func _net_guest_chat(msg: Dictionary) -> void:
 	if not _sharing_audience() or not _peers.has(id):
 		return
 	var clean := {}
-	for k in ["name", "username", "platform", "user_id", "color", "text", "title"]:
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "reply_to", "reply_quote"]:
 		clean[k] = String(msg.get(k, "")).left(500)
 	var avatar := String(msg.get("avatar", ""))
 	clean["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""

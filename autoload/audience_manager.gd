@@ -432,6 +432,10 @@ func add_chat(msg: Dictionary) -> void:
 	var parts := message_parts(raw, msg.get("emotes", []) as Array)
 	if parts.is_empty():
 		return
+	var reply_to := String(msg.get("reply_to", "")).strip_edges()
+	if reply_to != "":
+		# first part: who this answers (the bubble shows "replying to Name"); never an emote
+		parts.push_front({"reply_to": reply_to.left(60), "quote": String(msg.get("reply_quote", "")).left(120)})
 	EventBus.audience_spoke.emit(int(m["slot"]), parts)
 
 
@@ -1176,7 +1180,8 @@ func mirror_update(room: String, slot: int, wm: Dictionary) -> void:
 	EventBus.audience_updated.emit(slot)
 
 
-## parts: Strings and emote Dictionaries {url, name} (only https pictures are kept).
+## parts: Strings and emote Dictionaries {url, name} (only https pictures are kept), and maybe a
+## first {reply_to, quote} saying who the message answers.
 func mirror_speak(room: String, slot: int, parts: Array) -> void:
 	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
 		return
@@ -1184,6 +1189,8 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 	for part: Variant in parts.slice(0, 80):
 		if part is String:
 			clean.append(String(part).left(MAX_TEXT))
+		elif part is Dictionary and (part as Dictionary).has("reply_to") and clean.is_empty():
+			clean.append({"reply_to": String(part["reply_to"]).left(60), "quote": String(part.get("quote", "")).left(120)})
 		elif part is Dictionary and String((part as Dictionary).get("url", "")).begins_with("https://"):
 			clean.append({"url": String(part["url"]).left(500), "name": String(part.get("name", "")).left(60)})
 	if not clean.is_empty():

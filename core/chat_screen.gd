@@ -326,7 +326,7 @@ func _on_chat(msg: Dictionary) -> void:
 	if avatar != "":
 		urls.append(avatar)
 	_add_card({"name": who, "hex": String(msg.get("color", "")), "parts": parts, "avatar": avatar, "urls": urls,
-		"platform": plat})
+		"platform": plat, "reply_to": String(msg.get("reply_to", "")), "reply_quote": String(msg.get("reply_quote", ""))})
 
 
 func _add_card(card: Dictionary) -> void:
@@ -391,6 +391,17 @@ func _fill(card: Dictionary) -> void:
 	rtl.add_text(String(card["name"]))
 	rtl.pop()
 	rtl.pop()
+	var reply_to := String(card.get("reply_to", ""))
+	if reply_to != "":
+		# a reply made with the platform's reply button: who it answers, and a bit of what they said
+		var quote := String(card.get("reply_quote", ""))
+		rtl.add_text("  ")
+		rtl.push_font_size(roundi(size * 0.8))
+		rtl.push_color(Color(TEXT_COLOR, 0.7))
+		rtl.add_text("↩ replying to " + reply_to + (": " + quote.left(60) + ("…" if quote.length() > 60 else "") if quote != "" else ""))
+		rtl.pop()
+		rtl.pop()
+		rtl.newline()
 	rtl.add_text("  ")
 	var h := roundi(size * 1.35)
 	card["animated"] = false

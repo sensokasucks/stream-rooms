@@ -860,7 +860,7 @@ func _on_spoke(slot: int, parts: Array) -> void:
 		if not bool(AppState.get_setting(AppState.presenter_key(n, "chat_bubbles"))):
 			return
 	for p: Variant in parts:          # start downloading emotes right away
-		if p is Dictionary:
+		if p is Dictionary and (p as Dictionary).has("url"):
 			EmoteCache.get_texture(String(p["url"]))
 	var q: Array = s["queue"]
 	q.append(parts)
@@ -1037,7 +1037,7 @@ func _render_bubble(i: int) -> void:
 	var textures: Dictionary = {}
 	var waiting: Array = []
 	for p: Variant in s["parts"]:
-		if p is Dictionary:
+		if p is Dictionary and (p as Dictionary).has("url"):
 			var url := String(p["url"])
 			var tex := EmoteCache.get_texture(url)
 			if tex:

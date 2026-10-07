@@ -259,6 +259,13 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		for e: Variant in d["emotes"]:
 			if e is Dictionary and (e as Dictionary).has("start") and (e as Dictionary).has("end"):
 				emotes.append(e)
+	# a reply made with the platform's reply button (Kick, Twitch): who it answers and a short quote
+	var reply_to := ""
+	var reply_quote := ""
+	if d.get("reply_to") is Dictionary:
+		var r: Dictionary = d["reply_to"]
+		reply_to = String(r.get("user", "")).strip_edges().left(60)
+		reply_quote = String(r.get("message", "")).strip_edges().left(120)
 	return {
 		"platform": String(d.get("platform", "")),
 		"user_id": String(user.get("id", "")) if user.get("id") != null else who.to_lower(),
@@ -268,6 +275,8 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		"text": text,
 		"emotes": emotes,     # Twitch ranges (native + BTTV/FFZ/7TV) from Stream Core
 		"avatar": String(avatar) if avatar is String else "",   # Kick / YouTube profile picture
+		"reply_to": reply_to,          # "" unless this answers another chatter
+		"reply_quote": reply_quote,
 		"timestamp": float(d.get("timestamp", Time.get_unix_time_from_system())),
 		"history": history,
 		"system": badges.has("system"),     # Core's own bot replies

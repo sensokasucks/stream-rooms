@@ -47,8 +47,15 @@ func _init() -> void:
 func set_content(speaker: String, parts: Array, color: Color, style: int, textures: Dictionary) -> Vector2i:
 	_color = color
 	_style = clampi(style, 0, 3)
+	# a first {reply_to, quote} part says who this answers (the platform's reply button)
+	var reply_to := ""
+	var reply_quote := ""
+	if not parts.is_empty() and parts[0] is Dictionary and (parts[0] as Dictionary).has("reply_to"):
+		reply_to = String(parts[0]["reply_to"])
+		reply_quote = String(parts[0].get("quote", ""))
+		parts = parts.slice(1)
 	var emote_only := parts.size() <= 6 and parts.all(func(p: Variant) -> bool:
-		return (p is Dictionary and textures.has(String(p["url"]))) or (p is String and String(p).strip_edges() == ""))
+		return (p is Dictionary and textures.has(String(p.get("url", "")))) or (p is String and String(p).strip_edges() == ""))
 	var h := EMOTE_ONLY_SIZE if emote_only else EMOTE_SIZE
 	_rtl.clear()
 	_rtl.push_font_size(NAME_SIZE)
@@ -56,9 +63,16 @@ func set_content(speaker: String, parts: Array, color: Color, style: int, textur
 	_rtl.add_text(speaker)
 	_rtl.pop()
 	_rtl.pop()
+	if reply_to != "":
+		_rtl.newline()
+		_rtl.push_font_size(NAME_SIZE - 4)
+		_rtl.push_color(TEXT_COLOR.lerp(color.darkened(0.2), 0.5))
+		_rtl.add_text("↩ replying to " + reply_to + (": " + reply_quote.left(40) + ("…" if reply_quote.length() > 40 else "") if reply_quote != "" else ""))
+		_rtl.pop()
+		_rtl.pop()
 	_rtl.newline()
 	for p: Variant in parts:
-		if p is Dictionary:
+		if p is Dictionary and (p as Dictionary).has("url"):
 			var tex: Texture2D = textures.get(String(p["url"]))
 			if tex:
 				var w := int(round(float(h) * tex.get_width() / maxf(tex.get_height(), 1.0)))

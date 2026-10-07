@@ -371,7 +371,9 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   - *Platform*: one colour per platform (Kick green, Twitch purple, YouTube red, other grey by
     default; change them with the four colour pickers below it).
 - **Speech bubbles:** their messages pop up in a speech bubble above their head, with their name
-  on top. Each person gets one of four bubble shapes. When bubbles would overlap on screen, the
+  on top. Each person gets one of four bubble shapes. A message sent with Kick's or Twitch's
+  reply button shows a small "↩ replying to Name: what they said" line under the name (the chat
+  windows show the same line). YouTube live chat has no reply button. When bubbles would overlap on screen, the
   newest wins: older ones slide up out of its way, and one that would have to move more than a
   couple of bubble heights fades out early instead.
 - **Seat spacing** (Audience tab): how much room there is between seated chatters along a row,
