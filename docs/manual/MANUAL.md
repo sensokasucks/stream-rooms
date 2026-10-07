@@ -142,11 +142,14 @@ A few things work everywhere in the panel:
 - **Click a number** next to a slider (for example *75%*), type a value and press Enter for an exact setting.
 - **Own window (F9)** at the bottom moves the panel into a separate window. Put it on your second monitor; then a window capture in OBS never shows it. It remembers where you left it.
 - **Panel size** (bottom) makes everything 75% to 200% as big. Ctrl+= and Ctrl+- do the same.
+- **Advanced ▸**: every tab shows the controls you use while streaming. The set-up-once settings sit under an **Advanced ▸** button, closed until you click it (it turns into **Advanced ▾**). What you open stays open next time. Nothing was taken away; it just folds out of the way.
 - Settings save by themselves.
 
 ## 6. Source: what the screen shows
 
-![Source tab](images/sr-tab-source.png)
+The Source tab shows one source at a time. **Big screen shows** picks **Browser tab (sender page)**, **NDI (OBS / NDI Tools)**, **Spout (programs on this PC)**, **File or URL** or **Someone's avatar (Streaming together)**, and only that source's controls appear below it. It follows whatever starts playing and remembers your last pick. Each source's help text and its "by itself" ticks are under its **Advanced ▸**.
+
+![Source tab, showing the browser tab source](images/sr-tab-source.png)
 
 ### A browser tab (recommended)
 
@@ -164,17 +167,23 @@ The sender page also has:
 - **Presenter feeds**: one row per podium for cameras, tabs and web pages (see [Presenters](#13-presenters-name-tags-and-podium-pictures)).
 - **Streaming together** status: when you host, it says your guests get your shared tab too.
 
-**Big screen shows** (Source tab, the host in a Together session) puts someone's avatar on the big screen instead, on every PC. See [Avatars](#avatars-on-podiums-and-the-big-screen).
+In a Streaming together session the host can put someone's avatar on the big screen instead: see [Avatars](#avatars-on-podiums-and-the-big-screen).
 
 **No double sound.** The sender page asks the browser to silence the shared tab and sends its sound to the game instead. If the browser can't, both the sender page and the Source tab warn you; then mute the tab yourself.
 
 ### A video file or YouTube link
 
-Type a file path or a web link under **File or URL** and click **Play**, or click **Browse...**. Links and non-`.ogv` files are converted first with yt-dlp and ffmpeg (the `tools` folder), at the height picked next to **Loop** (720p by default). **Pause / resume**, **Stop** and **Loop** control playback.
+![Source tab, File or URL](images/sr-tab-source-file.png)
+
+Pick **File or URL** in **Big screen shows**. Type a file path or a web link and click **Play**, or click **Browse...**. Links and non-`.ogv` files are converted first with yt-dlp and ffmpeg (the `tools` folder), at the height picked next to **Loop** (720p by default). **Pause / resume**, **Stop** and **Loop** control playback.
 
 ### NDI (OBS / NDI Tools)
 
-Lighter than the sender page: OBS does the encoding. Install **DistroAV** in OBS and turn on its NDI output (or add an NDI Filter to one source). Then pick the source under **NDI** and click **Show**. **Stop** lets go.
+Lighter than the sender page: OBS does the encoding. Install **DistroAV** in OBS and turn on its NDI output (or add an NDI Filter to one source). Then pick **NDI (OBS / NDI Tools)** in **Big screen shows**, choose the source and click **Show**. **Stop** lets go.
+
+![NDI with its Advanced settings open](images/sr-tab-source-ndi-adv.png)
+
+Under **Advanced ▸**:
 
 - **Sound buffer** (default 500 ms) rides out hiccups but puts the sound that far behind. Lower it if lip-sync matters more.
 - **Reconnect to the last source by itself** brings it back when OBS starts later.
@@ -182,7 +191,7 @@ Lighter than the sender page: OBS does the encoding. Install **DistroAV** in OBS
 
 ### Spout (programs on this PC)
 
-Shows another program's picture straight from the graphics card, with no delay or blur, and with transparency: VTube Studio, OBS with the Spout2 plugin, TouchDesigner and some games. Pick the sender under **Spout**, click **Show**. Spout carries no sound. **Show the last sender again by itself** brings it back when the program restarts.
+Shows another program's picture straight from the graphics card, with no delay or blur, and with transparency: VTube Studio, OBS with the Spout2 plugin, TouchDesigner and some games. Pick **Spout (programs on this PC)** in **Big screen shows**, choose the sender and click **Show**. Spout carries no sound. **Show the last sender again by itself** (under **Advanced ▸**) brings it back when the program restarts.
 
 ### Lip-sync
 
@@ -192,10 +201,19 @@ The picture takes a longer path than the sound, so the sound is held back 150 ms
 
 ![Room tab](images/sr-tab-room.png)
 
+On top, the things you use while streaming:
+
 - **Room**: pick the room. **House lights** dims the room's lamps and chandeliers by hand.
-- **Room-specific controls** appear here for some rooms: **Light rays** (Lecture Halls), **Rain** and **Hologram** (Neon City), **Film look** (Old Classroom).
+- **Stage curtain**: **Close**, **Open**, **Reveal**, **Be right back** and the **Sign** text (see below).
 - **Cameras**: one button per camera spot, the same as keys 1-9 and 0.
-- **Field of view** (25-110°, default 65). **See into the room from outside**: if you fly the camera out through a wall, the wall is cut away instead of everything going black.
+- **Field of view** (25-110°, default 65).
+
+Under **Advanced ▸**: the curtain options, the room's own looks, **See into the room from outside**, and the whole **Performance (this PC)** block.
+
+![Room tab with Advanced open](images/sr-tab-room-adv.png)
+
+- **Room looks** appear for some rooms: **Light rays** (Lecture Halls), **Rain** and **Hologram** (Neon City), **Film look** (Old Classroom).
+- **See into the room from outside**: if you fly the camera out through a wall, the wall is cut away instead of everything going black.
 
 ### Stage curtain
 
@@ -204,15 +222,15 @@ A red velvet curtain hangs in front of every main screen.
 - **Close** (or **B**) hides your screen: the picture, its light on the room and (with **Mute stream sound while closed**) the sound. Focus view shows the curtain too. **Open** opens it.
 - **Reveal** (or **Shift+B**): lights down, a spotlight, a drum roll, and the curtain sweeps open.
 - **Sign** puts text on a board on the closed curtain. **Be right back** fills in the sign and closes it.
-- **Start closed** starts the app behind the curtain, ready for a reveal when you go live.
-- **Curtain colour**, **Curtain speed**, **Curtain sounds**, **Reveal dims the lights**, and **Curtain in rooms** (off = no curtain at all).
+- **Start closed** (under Advanced) starts the app behind the curtain, ready for a reveal when you go live.
+- Under **Advanced ▸**: **Curtain in rooms** (off = no curtain at all), **Start closed**, **Mute stream sound while closed**, **Reveal dims the lights**, **Curtain colour**, **Curtain speed** and **Curtain sounds**.
 - Mods can run it from chat with `!curtain open`, `!curtain close` or `!curtain reveal` (chat games on), and you can run it from Stream Core's **Live controls** page.
 
 ![The curtain closed with a "Be right back" sign](images/sr-curtain-closed.png)
 
 ### Performance (this PC)
 
-At the bottom of the Room tab. These are remembered on this PC, not per room.
+Under the Room tab's **Advanced ▸**. These are remembered on this PC, not per room.
 
 - **Graphics quality**: **High** (what the rooms are built with), **Medium** (no bounce light, lighter fog and shadows), **Low** (also no fog, ambient occlusion or reflections, and draws the 3D at 75% scaled up with FSR). Changing any of the switches below it makes it **Custom**.
 - **Frame rate cap**: 30, 60 (default) or Unlimited. Set it to your stream's frame rate; a 144 Hz screen otherwise makes the graphics card draw far more frames than the stream needs.
@@ -233,7 +251,7 @@ The **Sound** tab: **Video volume**, **Room ambience**, **Room acoustics** (the 
 
 ## 9. Chat windows
 
-![Chat tab (shown connected to a test copy of Stream Core; your address is normally ws://127.0.0.1:3850/ws)](images/sr-tab-chat.png)
+![Chat tab: one line per chat window](images/sr-tab-chat.png)
 
 At the top: **Connect** (to Stream Core), the **Core address**, **Retry now** and **Test chat** (made-up chatters, to try things without going live).
 
@@ -243,14 +261,16 @@ Twitch asks for its chat to be kept apart from other platforms' chat, so every c
 - **Under the screen (C)**: the chat screen (Lecture Hall (Panel)).
 - **Above the screen (R)**: the reply screen for Stream Core's answers (Lecture Hall (Panel)).
 
-For each window:
+Each window is one line in the Chat tab: its **Show** tick, its name, the platform ticks (**Kick**, **Twitch**, **YouTube**, **Other**), a small ⚠ when its text would be too small to read on stream, and **Advanced ▸** for the rest.
 
-- **Show** turns it on. **▾ settings** folds its settings away.
-- **Chat from**: tick one platform for its own window, or several to mix. A warning shows when Twitch is mixed with others.
-- **Stream Core replies**: *Off*, *Always*, or *When there's no reply screen*. **Replies to**: *Every platform's chatters* or *Only this window's platforms*.
-- **Header**: a title line; leave it empty to name it after what it shows ("Twitch chat").
-- **Text size**, **Background**, **Text outline**, and for side windows **Width**, **Height**, **Gap to screen** and **Up / down**. The chat screen also has **Columns**.
-- A yellow ⚠ warns when the text would be too small to read on a 1080p stream from the camera in use, and suggests a size.
+- **The platform ticks**: tick one platform to give it a window of its own, or several to mix them. None ticked = no chat in that window. A warning shows (under Advanced) when Twitch is mixed with others.
+- **Advanced ▸** opens the rest of that window's settings (remembered):
+  - **Stream Core replies**: *Off*, *Always*, or *When there's no reply screen*. **Replies to**: *Every platform's chatters* or *Only this window's platforms*.
+  - **Header**: a title line; leave it empty to name it after what it shows ("Twitch chat").
+  - **Text size**, with the readability warning and a **Make readable** button that sets the size it suggests for a 1080p stream from the camera in use.
+  - **Background**, **Text outline**, and **Columns** (chat screen), or **Width**, **Height**, **Gap to screen** and **Up / down** (side windows).
+
+![Chat tab with every window's Advanced open](images/sr-tab-chat-adv.png)
 
 **Chat games boards**: **Boards in the corner** (auto / always / never) and **Board size**. Polls and other boards go on the reply screen when the room has one, otherwise in the top-right corner.
 
@@ -263,12 +283,13 @@ When chat comes in from Stream Core, everyone who chats gets a seat: a head-and-
 - **Show audience**, and how many seats are taken. **Test chat** fills seats with made-up chatters; **Clear** empties them.
 - **New chatters sit**: *Anywhere (random)*, *Front row first, from the middle*, or *Front row first, random seat in the row*.
 - **Idle timeout**: minutes without chatting before someone leaves. When every seat is taken, the quietest person makes room.
+- **Seat spacing**: how much room there is between seated chatters along a row, 1 m by default. Seats closer than that to a taken one stay empty, so nobody sits shoulder to shoulder. That means fewer seats than places: the Lecture Hall's front pews seat every other place (38 instead of 79), and the crowd tiers thin out the same way. 0.5 m uses every seat. The room reloads when you change it, and the "*x* / *N* seats taken" line shows the new number.
 - **Bubble time**, **Bubble size**, **Name tags**, **Show empty seats**, **Hide !commands in bubbles**, **Chatter pictures**, **Regulars' titles on name tags**.
 - **Ignore names**: bots that never get a seat. **Hide pictures of**: names whose picture is never shown.
 - **Colour chatters by**: their chat colour, their name, or their platform, with a colour picker per platform. **Colour-blind safe colours** / **Brand colours** switch the platform colours.
 - **Crowd (Lecture Hall tiers, balcony, gallery)**: **Filler crowd** and **Crowd fullness**, **Crowd timeout**, **Most chatters in crowd** (0 = no limit; 100-150 on a laptop), **Crowd chatters move down** into free main seats, and **Filler people in empty main seats**.
 
-Silhouettes right in front of the camera fade out so your view stays clear, and bubbles grow with distance so you can read them from the balcony.
+Silhouettes right in front of the camera fade out so your view stays clear, and bubbles grow with distance so you can read them from the balcony. When bubbles would overlap on screen, the newest wins: older ones slide up out of its way, and one that would have to move more than a couple of bubble heights fades out early instead. Name tags fade out on seats far from the camera, so a wide shot isn't covered in names.
 
 ## 11. Seating by platform
 
@@ -309,7 +330,7 @@ Rooms with podiums (Lecture Hall (Panel)) can show up to four presenters: guests
 
 ![The four podiums with name tags and podium pictures](images/sr-podiums.png)
 
-![Presenters tab](images/sr-tab-presenters.png)
+![Presenters tab, with the podium picture's Advanced open](images/sr-tab-presenters.png)
 
 - **On set**: which podiums are used, numbered 1-4 from left to right as the audience sees them. **Edit presenter** picks which one the settings below are for.
 - **Show**: *Silhouette*, *Green screen*, *Camera*, *Tab / window*, *Web page (transparent)*, *NDI source*, *Spout (this PC)* or *Someone's avatar (Together)* (with **Whose avatar**; see [Streaming together](#avatars-on-podiums-and-the-big-screen)). The tab only shows the rows that matter for the choice.
@@ -318,7 +339,7 @@ Rooms with podiums (Lecture Hall (Panel)) can show up to four presenters: guests
 - **Chroma key** for camera and tab pictures: key colour, **Key similarity**, **Key smoothness**, **Spill removal**. Turn it off for NDI and Spout pictures that already have transparency.
 - **Zoom** and **Move up/down** frame the picture.
 - **Name tag**: a name above the picture, for example their channel name.
-- **Podium picture**: a logo, avatar or badge on the front of the podium. **Browse...** picks a PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB; **Clear** removes it. **Picture size**, **Picture self-lit**, **Move left/right** and **Move up/down** place it. It sticks to the podium's real front, even a slanted one.
+- **Podium picture**: a logo, avatar or badge on the front of the podium. **Browse...** picks a PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB; **Clear** removes it. Once a picture is chosen, its **Advanced ▸** holds **Picture size**, **Picture self-lit** and the two **Move** sliders. It sticks to the podium's real front, even a slanted one.
 - **Chat name**: their chat name(s), comma separated (`kick:name` only matches on Kick). That chatter sits on the podium instead of in the audience; their throws come from the podium, and their messages pop up over it. **Chat-style silhouette** gives a silhouette their chat colour, picture and name; **Chat bubbles** shows their messages.
 
 Camera, tab and web-page pictures come through the **sender page**:
@@ -397,7 +418,9 @@ Each person picks **My avatar** in their own Together tab: **Off**, **Camera** (
 The host decides where avatars show, and every PC follows:
 
 - **On a podium**: Presenters tab, set a podium's **Show** to **Someone's avatar (Together)** and pick the person under **Whose avatar** (everyone in the session, the host included). The podium's chroma key and other picture settings work as usual.
-- **On the big screen**: Source tab, **Big screen shows**: pick a person and their avatar takes the big screen on every PC. It travels at the **Avatars** quality, so pick 720p there for this. **(nobody)** goes back to the host's shared tab.
+- **On the big screen**: Source tab, set **Big screen shows** to **Someone's avatar (Streaming together)** and pick the person under **Whose avatar**. Their avatar takes the big screen on every PC. It travels at the **Avatars** quality, so pick 720p there for this. **(nobody)**, or another source, goes back to the host's own.
+
+![Source tab: someone's avatar on the big screen](images/sr-tab-source-peer.png)
 
 ![Presenters tab: podium 2 shows Mia's avatar](images/sr-presenters-avatar.png)
 
@@ -407,7 +430,9 @@ Your own avatar shows on your PC straight from your sender page (nothing travels
 
 ### Quality
 
-The host picks the quality for everyone (everything is sent once per viewer, so lower it on a slow upload):
+Under the Together tab's **Advanced ▸**. The host picks the quality for everyone (everything is sent once per viewer, so lower it on a slow upload):
+
+![The Together tab's Quality block](images/sr-tab-together-quality.png)
 
 | Setting | Choices | Rough upload per viewer |
 |---|---|---|
