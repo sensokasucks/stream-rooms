@@ -8,6 +8,18 @@ Needs Redot 4.3+ (Forward+). Open `project.godot` in Redot, let it import, and p
 
 ---
 
+## The control panel: Advanced ▸
+Every tab shows the controls you touch while streaming; the set-up-once settings sit under an
+**Advanced ▸** button, closed until you click it (what you open stays open next time). Nothing
+was removed, it just folds away: the Room tab's curtain options, the room's own looks (windows,
+light rays) and the whole **Performance** block; each chat window's replies, header, text size,
+looks and position; a podium picture's size, lighting and position; the Together tab's
+**Quality** block; and on the Source tab each source's help text and its "by itself" ticks.
+
+The **Source** tab shows one source at a time: **Big screen shows** picks **Browser tab**,
+**NDI**, **Spout**, **File or URL** or **Someone's avatar (Streaming together)**, and only that
+source's controls appear. It follows whatever starts playing, and remembers your last pick.
+
 ## Showing a browser tab (recommended)
 1. Run the game.
 2. In the panel's **Source** tab, click **Open sender page**. It opens `http://127.0.0.1:8765/`.
@@ -78,23 +90,27 @@ window picks its own sources. There are four windows:
 - **Under the screen** (chat screen) and **Above the screen** (reply screen), in rooms that
   have them.
 
-For each window:
+Each window is one line in the Chat tab: its **Show** tick, its name, the platform ticks, a
+small ⚠ when its text would be too small to read on stream, and **Advanced ▸** for the rest.
 - **Show** turns it on or off.
-- **Chat from:** tick one platform to give it a window of its own, or several to mix them.
-  None ticked = no chat in that window. A warning shows when Twitch is mixed with others.
+- The platform ticks (Kick, Twitch, YouTube, Other): tick one to give it a window of its own, or
+  several to mix them. None ticked = no chat in that window. A warning shows (under Advanced)
+  when Twitch is mixed with others.
 - **Stream Core replies:** *Off*, *Always*, or *When there's no reply screen* (only in rooms
   without one, or with it switched off). Chat games boards come along with replies.
 - **Replies to:** *Every platform's chatters*, or *Only this window's platforms* (so Twitch
   answers stay in the Twitch window). The side windows start on *Only this window's
   platforms*, the panels under and above the screen on *Every platform's chatters*. A window
   with no chat ticked always takes every reply.
-- **▾ settings** next to a window's name folds its settings away (remembered), so the tab
-  stays short when you only tweak one window.
+- **Advanced ▸** opens the rest of the window's settings (remembered), so the tab stays one
+  line per window until you tweak one. The readability warning sits in there too, with a
+  **Make readable** button that sets the text size it suggests.
 - **Header:** a header line across the top of the window. Leave the text empty to name it
   after what it shows ("Twitch chat", "Kick · YouTube chat", "Stream Core replies"); a
   one-platform window's header takes that platform's colour. On by default for the side
   windows.
-- Text size, background and columns.
+- Text size, background, text outline and columns (and, for the side windows, width, height,
+  gap to the screen and up / down).
 
 The side windows always stand in front of the stage curtain (0.4 m in front of it). Rooms can
 nudge them further with `side_chat_extra_gap`, `side_chat_height_scale` and
@@ -152,7 +168,7 @@ Keeps each platform's chatters physically apart in the audience.
   shake off.
 
 ## Performance and laptops (Room tab)
-**Performance (this PC)** at the bottom of the Room tab. Remembered on this PC, not per room.
+**Performance (this PC)** under the Room tab's **Advanced ▸**. Remembered on this PC, not per room.
 - **Graphics quality:** one switch for the expensive effects, applied on top of each room's
   look and right away (no restart).
   - **High** is what the rooms are built with: bounce light (SDFGI), volumetric fog, ambient
@@ -287,6 +303,8 @@ keeps its shape. **Picture size** scales it, **Picture self-lit** shows it in it
 whatever the room's light, and **Move left/right** / **Move up/down** slide it along the front.
 When streaming together, guests get a copy of the picture (the file itself travels, so it works
 even though it only exists on your PC).
+Once a picture is chosen, its **Advanced ▸** holds **Picture size**, **Picture self-lit** and the two
+**Move** sliders.
 
 ## NDI (OBS / NDI Tools)
 The main screen and the presenters can show **NDI** sources. That's lighter than the browser
@@ -353,7 +371,14 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   - *Platform*: one colour per platform (Kick green, Twitch purple, YouTube red, other grey by
     default; change them with the four colour pickers below it).
 - **Speech bubbles:** their messages pop up in a speech bubble above their head, with their name
-  on top. Each person gets one of four bubble shapes.
+  on top. Each person gets one of four bubble shapes. When bubbles would overlap on screen, the
+  newest wins: older ones slide up out of its way, and one that would have to move more than a
+  couple of bubble heights fades out early instead.
+- **Seat spacing** (Audience tab): how much room there is between seated chatters along a row,
+  1 m by default. Seats closer than that to a taken one stay empty, so nobody sits shoulder to
+  shoulder; the room has fewer seats than it has places (the Lecture Hall's front pews seat every
+  other place, 38 instead of 79). 0.5 m uses every seat. The room reloads when you change it.
+- **Name tags** fade out on seats far from the camera, so a wide shot isn't covered in names.
 - **Emotes:** chat emotes show inline in the bubbles, and emote-only messages show them bigger.
   That covers Twitch emotes plus BetterTTV, FrankerFaceZ and 7TV emotes (Stream Core sends them
   with each message) and Kick emotes.
@@ -659,7 +684,7 @@ who isn't in the session right now leaves their podium waiting until they join. 
 avatars can't travel this way (they live in the game, not the browser); for those, send them to OBS
 and from there into a web page, for example a VDO.Ninja link.
 
-**Quality** (Together tab, host decides for everyone; everything is sent once per viewer, so lower
+**Quality** (Together tab under **Advanced ▸**, host decides for everyone; everything is sent once per viewer, so lower
 it on a slow upload): **Big screen to guests** 480p / 540p / 720p / 1080p, **Big screen frame rate**
 and **Big screen bitrate** for the shared tab; **Avatars** 240p / 360p / 480p / 720p, **Avatar frame
 rate** and **Avatar bitrate**. Rough costs per viewer: a 720p tab 3 to 6 Mbps, a 540p tab about 2;

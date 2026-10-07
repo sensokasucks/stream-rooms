@@ -65,14 +65,16 @@ func _ready() -> void:
 	var main: Node = await _start(false)
 	var panel: Node = main.get_node("ControlPanel")
 	var tabs: TabContainer = panel._tabs
-	tabs.current_tab = 1          # Room tab: tick boxes, camera buttons, "?" buttons
+	tabs.current_tab = 4          # Chat tab: a tick box that isn't under an Advanced fold
 	await _secs(0.3)
-	var see: CheckBox = panel._checks["camera_see_through"]
-	var before := bool(AppState.get_setting("camera_see_through"))
+	var see: CheckBox = panel._checks["chat_screen_pictures"]
+	var before := bool(AppState.get_setting("chat_screen_pictures"))
 	await _click(see)
-	_check(bool(AppState.get_setting("camera_see_through")) != before, "clicking a tick box changes its setting")
+	_check(bool(AppState.get_setting("chat_screen_pictures")) != before, "clicking a tick box changes its setting")
 	await _click(see)
-	_check(bool(AppState.get_setting("camera_see_through")) == before, "clicking it again changes it back")
+	_check(bool(AppState.get_setting("chat_screen_pictures")) == before, "clicking it again changes it back")
+	tabs.current_tab = 1          # Room tab: camera buttons, "?" buttons
+	await _secs(0.3)
 
 	var cam_btn: Button = null
 	for c in (panel._camera_box as Node).get_children():

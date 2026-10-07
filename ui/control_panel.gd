@@ -75,6 +75,10 @@ var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
 var _avatar_camera: OptionButton        # Together tab: the camera for my avatar
 var _avatar_rows: Dictionary = {}       # Together tab: "camera" / "url" rows, shown by My avatar's source
+var _size_marks: Dictionary = {}        # chat window key -> small ⚠ Label in the window's summary row
+var _size_need: Dictionary = {}         # chat window key -> text size (as the setting) that would be readable
+var _source_pick: OptionButton          # Source tab: which source's controls show
+var _source_sections: Dictionary = {}   # source mode -> its VBox on the Source tab
 
 
 func _ready() -> void:
@@ -382,6 +386,46 @@ func _build() -> void:
 
 func _build_source_tab() -> Control:
 	var v := _tab("Source")
+	# one source at a time: pick what the big screen shows, see only that source's controls
+	var pick_row := HBoxContainer.new()
+	v.add_child(pick_row)
+	var pl := _heading("Big screen shows")
+	pl.custom_minimum_size = Vector2(120, 0)
+	pick_row.add_child(pl)
+	_source_pick = OptionButton.new()
+	_source_pick.focus_mode = Control.FOCUS_ALL
+	_source_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a Streaming together session. It follows whatever starts playing."
+	for it: Array in [["capture", "Browser tab (sender page)"], ["ndi", "NDI (OBS / NDI Tools)"], ["spout", "Spout (programs on this PC)"],
+			["file", "File or URL"], ["peer", "Someone's avatar (Streaming together)"]]:
+		_source_pick.add_item(String(it[1]))
+		_source_pick.set_item_metadata(_source_pick.item_count - 1, it[0])
+	_source_pick.item_selected.connect(func(i: int) -> void:
+		AppState.set_setting("source_tab_pick", String(_source_pick.get_item_metadata(i)))
+		_show_source_section(String(_source_pick.get_item_metadata(i))))
+	pick_row.add_child(_source_pick)
+	var cap := VBoxContainer.new()
+	cap.add_theme_constant_override("separation", 6)
+	v.add_child(cap)
+	_source_sections["capture"] = cap
+	var ndi_box := VBoxContainer.new()
+	ndi_box.add_theme_constant_override("separation", 6)
+	v.add_child(ndi_box)
+	_source_sections["ndi"] = ndi_box
+	var spout_box := VBoxContainer.new()
+	spout_box.add_theme_constant_override("separation", 6)
+	v.add_child(spout_box)
+	_source_sections["spout"] = spout_box
+	var file_box := VBoxContainer.new()
+	file_box.add_theme_constant_override("separation", 6)
+	v.add_child(file_box)
+	_source_sections["file"] = file_box
+	var peer_box := VBoxContainer.new()
+	peer_box.add_theme_constant_override("separation", 6)
+	v.add_child(peer_box)
+	_source_sections["peer"] = peer_box
+
+	v = cap
 	v.add_child(_heading("Browser tab (live)"))
 	var row := HBoxContainer.new()
 	v.add_child(row)
@@ -396,12 +440,15 @@ func _build_source_tab() -> Control:
 	how.text = "Open the sender page in Brave, click Share, pick the YouTube tab and keep \"Share tab audio\" on."
 	how.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	how.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	v.add_child(how)
+	_fold(v, "source_capture").add_child(how)
+
+	v = peer_box
 	v.add_child(_heading("Someone's avatar (Streaming together)"))
-	var sp := _peer_menu("screen_peer", "Big screen shows")
+	var sp := _peer_menu("screen_peer", "Whose avatar")
 	(sp.get_child(1) as Control).tooltip_text = "In a Streaming together session: put a person's avatar (their My avatar from the Together tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
 	v.add_child(sp)
 
+	v = ndi_box
 	v.add_child(_heading("NDI (OBS / NDI Tools)"))
 	var nr := HBoxContainer.new()
 	v.add_child(nr)
@@ -417,14 +464,16 @@ func _build_source_tab() -> Control:
 	_ndi_label = Label.new()
 	_ndi_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ndi_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	v.add_child(_ndi_label)
-	v.add_child(_check("ndi_auto", "Reconnect to the last source by itself"))
+	var ndi_adv := _fold(v, "source_ndi")
+	ndi_adv.add_child(_ndi_label)
+	ndi_adv.add_child(_check("ndi_auto", "Reconnect to the last source by itself"))
 	var nb := _slider("ndi_audio_buffer_ms", "Sound buffer", 50.0, 1500.0, 10.0, "%d ms")
 	nb.tooltip_text = "How much NDI sound is queued before it plays. More rides out hiccups on the network / OBS side,\nbut the sound runs that much behind the picture. Needs the patched NDI plugin."
-	v.add_child(nb)
+	ndi_adv.add_child(nb)
 	_fill_ndi_menu(_ndi_menu, String(AppState.get_setting("ndi_source")), "(pick a source)")
 	_refresh_ndi_label()
 
+	v = spout_box
 	v.add_child(_heading("Spout (programs on this PC)"))
 	var sr := HBoxContainer.new()
 	v.add_child(sr)
@@ -445,13 +494,15 @@ func _build_source_tab() -> Control:
 	_spout_label = Label.new()
 	_spout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spout_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	v.add_child(_spout_label)
+	var spout_adv := _fold(v, "source_spout")
+	spout_adv.add_child(_spout_label)
 	var sauto := _check("spout_auto", "Show the last sender again by itself")
 	sauto.tooltip_text = "When the last Spout sender you showed starts again (and nothing else is on the screen), show it without clicking."
-	v.add_child(sauto)
+	spout_adv.add_child(sauto)
 	_fill_name_menu(_spout_menu, _spout_names, String(AppState.get_setting("spout_source")), "(pick a sender)")
 	_refresh_spout_label()
 
+	v = file_box
 	v.add_child(_heading("File or URL"))
 	var r1 := HBoxContainer.new()
 	v.add_child(r1)
@@ -476,7 +527,28 @@ func _build_source_tab() -> Control:
 	q.tooltip_text = "Resolution for downloads/conversion. Lower converts faster."
 	q.item_selected.connect(func(i: int) -> void: AppState.set_setting("max_height", q.get_item_id(i)))
 	r2.add_child(q)
-	return v
+	# start on what plays now, else the last pick, else the browser tab
+	var pick := String(AppState.get_setting("source_tab_pick"))
+	var playing := AppState.get_source_mode()
+	if _source_sections.has(playing):
+		pick = playing
+	elif not _source_sections.has(pick):
+		pick = "capture"
+	_show_source_section(pick)
+	EventBus.source_changed.connect(func(mode: String) -> void:
+		if _source_sections.has(mode):
+			_show_source_section(mode))
+	return _source_sections["capture"].get_parent() as Control
+
+
+## Source tab: show one source's controls, and point the picker at it.
+func _show_source_section(mode: String) -> void:
+	for m: String in _source_sections:
+		(_source_sections[m] as Control).visible = m == mode
+	for i in _source_pick.item_count:
+		if String(_source_pick.get_item_metadata(i)) == mode:
+			_source_pick.select(i)
+	_fit_height.call_deferred()
 
 
 func _build_room_tab() -> Control:
@@ -491,15 +563,19 @@ func _build_room_tab() -> Control:
 	v.add_child(_room_select)
 	v.add_child(_slider("house_lights", "House lights", 0.0, 1.0, 0.01, "%d%%", 100.0))
 	_build_curtain_controls(v)
-	_room_box = VBoxContainer.new()
-	_room_box.add_theme_constant_override("separation", 6)
-	v.add_child(_room_box)
 	v.add_child(_heading("Cameras (keys 1-9, 0 = 10th)"))
 	_camera_box = HFlowContainer.new()
 	v.add_child(_camera_box)
 	v.add_child(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"))
-	v.add_child(_check("camera_see_through", "See into the room from outside (instead of black)"))
-	_build_performance_controls(v)
+	# set-up-once settings: curtain options, this room's own looks, the camera's see-through, performance
+	var adv := _fold(v, "room")
+	_build_curtain_options(adv)
+	_room_box = VBoxContainer.new()
+	_room_box.add_theme_constant_override("separation", 6)
+	adv.add_child(_room_box)
+	adv.add_child(_heading("Camera"))
+	adv.add_child(_check("camera_see_through", "See into the room from outside (instead of black)"))
+	_build_performance_controls(adv)
 	return v
 
 
@@ -559,6 +635,11 @@ func _build_curtain_controls(v: VBoxContainer) -> void:
 	row.add_child(_curtain_label)
 	_refresh_curtain_label()
 	v.add_child(_text_setting("curtain_sign", "Sign", "shown on the closed curtain (blank = none)"))
+
+
+## The curtain's set-up-once options (Room tab > Advanced).
+func _build_curtain_options(v: VBoxContainer) -> void:
+	v.add_child(_heading("Curtain options"))
 	var r2 := HFlowContainer.new()
 	v.add_child(r2)
 	r2.add_child(_check("curtain_enabled", "Curtain in rooms"))
@@ -650,7 +731,7 @@ func _build_chat_tab() -> Control:
 	tr.add_child(tl)
 
 	v.add_child(_heading("Chat windows"))
-	v.add_child(_hint("Pick what each window shows: one platform per window keeps chats apart (Twitch asks for its chat to be kept separate), or tick several to mix them. \"Stream Core replies\" are Core's answers to chat commands plus chat games boards; \"When there's no reply screen\" shows them only in rooms without one (or with it switched off)."))
+	v.add_child(_hint("One line per window: tick Show, then tick the platforms it shows. One platform per window keeps chats apart (Twitch asks for its chat to be kept separate); several tick mixes them. Advanced ▸ has replies, header, text size, looks and position."))
 	var shared := HFlowContainer.new()
 	v.add_child(shared)
 	shared.add_child(_check("chat_screen_pictures", "Chatter pictures"))
@@ -689,39 +770,30 @@ func _build_chat_tab() -> Control:
 ## One chat window's settings: show it, its platforms, replies, looks (and, beside the
 ## screen, its size and position).
 func _chat_window(v: VBoxContainer, key: String, title: String, where: String, side: bool) -> void:
+	# the summary row: Show, the window's name, its platforms, a ⚠ when the text is too small, Advanced
 	var head := HBoxContainer.new()
 	v.add_child(head)
+	var show := _check(key, "")
+	show.tooltip_text = "Show this window. " + where
+	head.add_child(show)
 	var t := _heading(title)
 	t.add_theme_font_size_override("font_size", 14)
+	t.custom_minimum_size = Vector2(150, 0)
 	head.add_child(t)
-	var show := _check(key, "Show")
-	head.add_child(show)
-	# the rest folds away (the Chat tab is long with four windows): remembered per window
-	var body := VBoxContainer.new()
-	body.add_theme_constant_override("separation", 5)
-	var fold := Button.new()
-	fold.flat = true
-	fold.focus_mode = Control.FOCUS_ALL
-	fold.tooltip_text = "Show / hide this window's settings"
-	var folded := PackedStringArray(String(AppState.get_setting("panel_folded")).split(",", false)).has(key)
-	body.visible = not folded
-	fold.text = "▸ settings" if folded else "▾ settings"
-	fold.pressed.connect(func() -> void:
-		body.visible = not body.visible
-		fold.text = "▾ settings" if body.visible else "▸ settings"
-		var list := PackedStringArray(String(AppState.get_setting("panel_folded")).split(",", false))
-		if body.visible:
-			var i := list.find(key)
-			if i >= 0:
-				list.remove_at(i)
-		elif not list.has(key):
-			list.append(key)
-		AppState.set_setting("panel_folded", ",".join(list)))
-	head.add_child(fold)
-	v.add_child(_hint(where))
-	v.add_child(body)
+	head.add_child(_platform_chips(key + "_chat"))
+	var mark := Label.new()
+	mark.text = "⚠"
+	mark.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
+	mark.visible = false
+	head.add_child(mark)
+	_size_marks[key] = mark
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(spacer)
+	var body := _fold(v, "chat_" + key, "Advanced", head)
 	v = body
-	v.add_child(_platform_row(key + "_chat", "Chat from"))
+	v.add_child(_hint(where))
+	v.add_child(_mix_warning(key + "_chat"))
 	v.add_child(_option(key + "_replies", "Stream Core replies", [["off", "Off"], ["on", "Always"], ["fallback", "When there's no reply screen"]]))
 	if AppState.DEFAULTS.has(key + "_replies_for"):
 		var rf := _option(key + "_replies_for", "Replies to", [["all", "Every platform's chatters"], ["chat", "Only this window's platforms"]])
@@ -734,11 +806,21 @@ func _chat_window(v: VBoxContainer, key: String, title: String, where: String, s
 		hh.add_child(hc)
 		v.add_child(hh)
 	v.add_child(_slider(key + "_text", "Text size", 0.5, 3.0, 0.05, "%d%%", 100.0))
+	var warn_row := HBoxContainer.new()
 	var warn := _hint("")
 	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
-	warn.visible = false
-	v.add_child(warn)
+	warn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	warn_row.add_child(warn)
+	var fix := _button("Make readable", func() -> void:
+		if _size_need.has(key):
+			AppState.set_setting(key + "_text", float(_size_need[key])))
+	fix.tooltip_text = "Set this window's Text size to the smallest that reads well on a 1080p stream from the camera in use."
+	warn_row.add_child(fix)
+	warn_row.visible = false
+	v.add_child(warn_row)
 	_size_warnings[key] = warn
+	warn.set_meta("row", warn_row)
+	warn.set_meta("fix", fix)
 	v.add_child(_slider(key + "_bg", "Background", 0.0, 1.0, 0.01, "%d%%", 100.0))
 	var ol := _slider(key + "_outline", "Text outline", 0.0, 1.0, 0.05, "%d%%", 100.0)
 	ol.tooltip_text = "A dark edge round every letter, so the text stays readable over the room when the background is see-through (low Background)."
@@ -761,6 +843,15 @@ func _platform_row(key: String, label: String) -> VBoxContainer:
 	l.text = label
 	l.custom_minimum_size = Vector2(120, 0)
 	h.add_child(l)
+	h.add_child(_platform_chips(key))
+	box.add_child(_mix_warning(key))
+	return box
+
+
+## The platform ticks on their own (a chat window's summary row).
+func _platform_chips(key: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.tooltip_text = "Which platforms' chat this window shows."
 	var boxes: Dictionary = {}
 	var have := String(AppState.get_setting(key)).split(",", false)
 	for g in AudienceManager.PLATFORMS:
@@ -778,12 +869,15 @@ func _platform_row(key: String, label: String) -> VBoxContainer:
 		h.add_child(c)
 		boxes[g] = c
 	_platform_boxes[key] = boxes
+	return h
+
+
+func _mix_warning(key: String) -> Label:
 	var warn := _hint("⚠ Twitch chat mixed with other platforms in this window.")
 	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
-	box.add_child(warn)
 	_mix_warnings[key] = warn
 	_refresh_mix_warning(key)
-	return box
+	return warn
 
 
 func _refresh_mix_warning(key: String) -> void:
@@ -811,6 +905,9 @@ func _build_audience_tab() -> Control:
 	var idle := _slider("audience_idle_min", "Idle timeout", 1.0, 60.0, 1.0, "%d min")
 	idle.tooltip_text = "Minutes without chatting before someone gives up a main seat."
 	v.add_child(idle)
+	var gap := _slider("audience_seat_gap", "Seat spacing", 0.5, 1.6, 0.05, "%.2f m")
+	gap.tooltip_text = "Room between seated chatters along a row. Seats closer than this to a taken one stay empty, so people don't sit shoulder to shoulder; the room has fewer seats then. 0.50 m uses every seat. The room reloads when you change it."
+	v.add_child(gap)
 	v.add_child(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"))
 	v.add_child(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0))
 	var r3 := HFlowContainer.new()
@@ -1195,9 +1292,11 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	var py := _slider(k.call("picture_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f m")
 	py.tooltip_text = "Slide the podium picture up (+) or down (-)."
 	pic_rows.append(py)
+	var pic_adv := _fold(d, "presenter_%d_picture" % n)
 	for pr in pic_rows:
-		d.add_child(pr)
+		pic_adv.add_child(pr)
 	rows["picture_rows"] = pic_rows
+	rows["picture_fold"] = [pic_adv.get_meta("fold_head"), pic_adv]
 	var chat := _text_setting(k.call("chat"), "Chat name", "their chat name(s), e.g. sensoka, kick:sensoka")
 	chat.tooltip_text = "Link this presenter to their chat name. They sit on this podium instead of taking an audience seat, and their chat commands (throws, signs, !highfive ...) come from here. Several names: comma separated. \"kick:name\" only matches on that platform."
 	d.add_child(chat)
@@ -1209,6 +1308,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	bub.tooltip_text = "Their chat messages pop up as speech bubbles over the podium."
 	cr.add_child(bub)
 	d.add_child(cr)
+	_refresh_presenter_rows(n)        # (now that every row, the picture fold included, exists)
 	return d
 
 
@@ -1376,6 +1476,8 @@ func _build_together_tab() -> Control:
 	v.add_child(av_url)
 	_avatar_rows["url"] = av_url
 	_refresh_avatar_rows()
+	var quality := _fold(v, "together_quality")
+	v = quality
 	v.add_child(_heading("Quality"))
 	v.add_child(_hint("Quality of what travels between the PCs (the host decides for everyone). Lower it on a slow upload: everything is sent once per viewer."))
 	var sh := _option("together_screen_height", "Big screen to guests", [[480, "480p"], [540, "540p"], [720, "720p"], [1080, "1080p"]])
@@ -1396,6 +1498,7 @@ func _build_together_tab() -> Control:
 	var ak := _slider("together_avatar_kbps", "Avatar bitrate", 100.0, 3000.0, 50.0, "%d kbps")
 	ak.tooltip_text = "Upload spent on your avatar per viewer. 500 to 1000 is normal for 480p; 200 to 400 for 240p."
 	v.add_child(ak)
+	v = quality.get_parent() as VBoxContainer
 
 	v.add_child(_heading("In the session"))
 	_net_peers = VBoxContainer.new()
@@ -1913,8 +2016,15 @@ func _refresh_presenter_rows(n: int) -> void:
 	(rows["peer"] as Control).visible = src == "peer"
 	(rows["ndi"] as Control).visible = src == "ndi"
 	(rows["spout"] as Control).visible = src == "spout"
+	var has_pic := String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges() != ""
 	for pr in rows.get("picture_rows", []):
-		(pr as Control).visible = String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges() != ""
+		(pr as Control).visible = has_pic
+	if rows.has("picture_fold"):        # (not yet while the detail is being built)
+		(rows["picture_fold"][0] as Control).visible = has_pic
+		if not has_pic:
+			(rows["picture_fold"][1] as Control).visible = false
+		elif PackedStringArray(String(AppState.get_setting("panel_advanced")).split(",", false)).has("presenter_%d_picture" % n):
+			(rows["picture_fold"][1] as Control).visible = true
 	(rows["url"] as Control).visible = src == "web"
 	var picture := src in ["camera", "tab", "web", "ndi", "spout", "peer"]
 	var keyed := picture and bool(AppState.get_setting(AppState.presenter_key(n, "key")))
@@ -1940,6 +2050,43 @@ func _tab(title: String) -> VBoxContainer:
 	v.name = title
 	v.add_theme_constant_override("separation", 6)
 	return v
+
+
+## "Advanced ▸": a fold for the settings that aren't touched every stream (the owner's rule: no
+## control goes away, it goes under one of these). Closed by default; the open ones are remembered
+## in panel_advanced by id. The button sits in `head` when given (a summary row), else on its own row.
+## The returned box is the fold's body; its head row is in the meta "fold_head".
+func _fold(v: VBoxContainer, id: String, label: String = "Advanced", head: Container = null) -> VBoxContainer:
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 5)
+	var btn := Button.new()
+	btn.flat = true
+	btn.focus_mode = Control.FOCUS_ALL
+	btn.tooltip_text = "Show or hide the %s settings here. They stay as they are either way." % label.to_lower()
+	btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+	var open := PackedStringArray(String(AppState.get_setting("panel_advanced")).split(",", false)).has(id)
+	body.visible = open
+	btn.text = (label + " ▾") if open else (label + " ▸")
+	btn.pressed.connect(func() -> void:
+		body.visible = not body.visible
+		btn.text = (label + " ▾") if body.visible else (label + " ▸")
+		var list := PackedStringArray(String(AppState.get_setting("panel_advanced")).split(",", false))
+		var i := list.find(id)
+		if body.visible and i < 0:
+			list.append(id)
+		elif not body.visible and i >= 0:
+			list.remove_at(i)
+		AppState.set_setting("panel_advanced", ",".join(list))
+		_fit_height.call_deferred())
+	var row: Container = head
+	if row == null:
+		row = HBoxContainer.new()
+		v.add_child(row)
+	row.add_child(btn)
+	v.add_child(body)
+	body.set_meta("fold_head", row)
+	body.set_meta("fold_button", btn)
+	return body
 
 
 func _hint(text: String) -> Label:
@@ -2177,8 +2324,15 @@ func _check_text_sizes() -> void:
 		var lbl := _size_warnings[key] as Label
 		var px := float(seen.get(key, -1.0))
 		lbl.visible = px > 0.0 and px < MIN_STREAM_TEXT_PX
+		(lbl.get_meta("row") as Control).visible = lbl.visible
+		if _size_marks.has(key):
+			(_size_marks[key] as Label).visible = lbl.visible
 		if lbl.visible:
 			var ok_size := float(AppState.get_setting(key + "_text")) * MIN_STREAM_TEXT_PX / px
 			var need := ceili(ok_size * 20.0) * 5
+			_size_need[key] = float(need) / 100.0
+			(lbl.get_meta("fix") as Control).visible = need <= 300
 			lbl.text = ("⚠ From this camera the text is only about %d px tall on a 1080p stream (hard to read). " % roundi(px)) + \
 				("Try Text size %d%% or more, or a closer camera." % need if need <= 300 else "Use a closer camera (even 300% text won't be enough from here).")
+			if _size_marks.has(key):
+				(_size_marks[key] as Label).tooltip_text = lbl.text

@@ -26,6 +26,7 @@ var _faded_out: bool = false
 var _default_env: Environment
 var _room_env: Environment         # the room's own Environment (before graphics quality)
 var _gfx_syncing: bool = false
+var _reload_wait: float = -1.0     # seconds until the room reloads for a new seat spacing (-1 = no)
 
 
 func _ready() -> void:
@@ -39,7 +40,13 @@ func _ready() -> void:
 	GraphicsQuality.apply_viewport(get_viewport())
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if _reload_wait >= 0.0:
+		_reload_wait -= delta
+		if _reload_wait < 0.0 and _loading_id == "":
+			var again := _room_id
+			_room_id = ""           # (load_room skips the room that's already up)
+			load_room(again)
 	if _loading_id == "" or not _faded_out:
 		return
 	var info := RoomCatalog.get_info(_loading_id)
@@ -85,6 +92,10 @@ func get_room_environment() -> Environment:
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "fps_cap" or key == "vsync":
 		GraphicsQuality.apply_fps()
+		return
+	if key == "audience_seat_gap" and _room_id != "" and _loading_id == "":
+		_reload_wait = 0.8        # (once the slider stops moving)
+		set_process(true)
 		return
 	if key != "graphics_quality" and not GraphicsQuality.KEYS.has(key):
 		return

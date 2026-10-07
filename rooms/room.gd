@@ -227,6 +227,8 @@ func get_audience_seats() -> Array[Transform3D]:
 			seats.append_array((n as AudienceRow).get_seat_transforms())
 	var cams := get_camera_markers()
 	var out: Array[Transform3D] = []
+	var kept: Array[Vector3] = []
+	var gap := seat_gap()
 	for t in seats:
 		var clear := true
 		for c in cams:
@@ -234,9 +236,26 @@ func get_audience_seats() -> Array[Transform3D]:
 			if Vector2(d.x, d.z).length() < audience_camera_clearance and absf(d.y) < 1.8:
 				clear = false
 				break
-		if clear:
+		if clear and _spaced(t.origin, kept, gap):
 			out.append(t)
+			kept.append(t.origin)
 	return out
+
+
+## Metres between neighbours along a row (Audience tab > Seat spacing). Seats closer than this
+## to one already kept are skipped, so chatters don't sit shoulder to shoulder; rows are further
+## apart than this, so they all stay. Cuts a room's capacity, which the owner accepted.
+func seat_gap() -> float:
+	return clampf(float(AppState.get_setting("audience_seat_gap")), 0.0, 3.0)
+
+
+func _spaced(p: Vector3, kept: Array[Vector3], gap: float) -> bool:
+	if gap <= 0.0:
+		return true
+	for k in kept:
+		if absf(k.y - p.y) < 0.5 and Vector2(k.x - p.x, k.z - p.z).length() < gap - 0.01:
+			return false
+	return true
 
 
 ## Crowd seat transforms (global), minus seats where a camera sits. Empty if the room has none.
@@ -259,6 +278,8 @@ func get_crowd_seat_info() -> Array[Dictionary]:
 		return out
 	var cams := get_camera_markers()
 	var levels := {"orch": 1, "bal": 2, "gal": 3}
+	var kept: Array[Vector3] = []
+	var gap := seat_gap()
 	for e: Variant in data["seats"]:
 		if not e is Dictionary or not (e as Dictionary).get("p") is Array:
 			continue
@@ -270,8 +291,9 @@ func get_crowd_seat_info() -> Array[Dictionary]:
 			if Vector2(d.x, d.z).length() < audience_camera_clearance and absf(d.y) < 1.8:
 				clear = false
 				break
-		if not clear:
+		if not clear or not _spaced(at, kept, gap):
 			continue
+		kept.append(at)
 		var facing := Vector3.ZERO
 		if (e as Dictionary).get("n") is Array and (e["n"] as Array).size() >= 2:
 			facing = (global_basis * Vector3(float(e["n"][0]), 0.0, float(e["n"][1]))).normalized()

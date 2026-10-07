@@ -27,6 +27,13 @@ const HEAD_RADIUS: float = 56.0
 const AVATAR_PX: int = 128
 ## How often bubbles check whether the camera can see them (seconds).
 const BUBBLE_CHECK: float = 0.2
+## Newer bubbles win: an older bubble whose picture overlaps a newer one on screen is pushed up,
+## and one that would have to move more than this many of its own heights fades out early.
+const NUDGE_GAP_PX: float = 6.0
+const NUDGE_MAX_HEIGHTS: float = 2.5
+## Name tags fade out between these camera distances (metres), so wide shots don't fill with tags.
+@export var tag_fade_start: float = 16.0
+@export var tag_fade_end: float = 28.0
 
 ## Height of the silhouette (head-and-shoulders bust), metres.
 @export var bust_height: float = 0.78
@@ -167,6 +174,8 @@ func _process(delta: float) -> void:
 			if float(s["anim_clock"]) <= 0.0:
 				s["anim_clock"] = 1.0 / maxf(far_bubble_fps, 1.0)
 				(s["viewport"] as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
+	if check and _bubbling.size() > 1:
+		_nudge_bubbles(cam)
 
 
 ## Fades a silhouette next to the camera and sizes its name tag and bubble for the distance.
@@ -181,7 +190,10 @@ func _update_view(i: int, cam_pos: Vector3, names_on: bool) -> void:
 	_paint(i)
 	var grow := clampf(d / readable_distance, 1.0, max_distance_scale)
 	var label: Label3D = s["label"]
-	label.visible = names_on and bool(s["seated"]) and bool(s["show"]) and not bool(s["active"]) and near > 0.5
+	var far_fade := 1.0 - smoothstep(tag_fade_start, tag_fade_end, d)
+	label.visible = names_on and bool(s["seated"]) and bool(s["show"]) and not bool(s["active"]) and near > 0.5 and far_fade > 0.03
+	label.modulate.a = far_fade
+	label.outline_modulate.a = far_fade
 	label.scale = Vector3.ONE * grow
 	(s["holder"] as Node3D).scale = Vector3.ONE * grow
 
@@ -899,12 +911,80 @@ func _show_bubble(i: int) -> void:
 		_make_bubble(i)
 	_render_bubble(i)
 	var spr: Sprite3D = s["bubble_sprite"]
-	spr.position.y = 0.1 * float(s["scale"]) if i % 2 == 1 else 0.0     # stagger neighbours a little
+	s["base_y"] = 0.1 * float(s["scale"]) if i % 2 == 1 else 0.0     # stagger neighbours a little
+	s["nudge"] = 0.0
+	s["born"] = Time.get_ticks_msec()
+	spr.position.y = float(s["base_y"])
 	spr.modulate = Color(1, 1, 1, 0)
 	spr.scale = Vector3.ONE * 0.8
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(spr, "modulate:a", 1.0, 0.15)
 	tw.tween_property(spr, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var cam := get_viewport().get_camera_3d()
+	if cam and _bubbling.size() > 1:
+		_nudge_bubbles(cam)
+
+
+## The bubble's picture on screen: {rect: Rect2 (pixels), wpp: metres per pixel}, or {} when it's
+## behind the camera. Measured from the base position (no nudge), so pushes don't add up.
+func _bubble_rect(i: int, cam: Camera3D) -> Dictionary:
+	var s: Dictionary = _seats[i]
+	var spr: Sprite3D = s["bubble_sprite"]
+	var vp: SubViewport = s["viewport"]
+	if spr == null or vp == null or not bool(s["vis"]):
+		return {}
+	var holder: Node3D = s["holder"]
+	var k := holder.global_transform.basis.get_scale().y
+	var size := Vector2(vp.size) * spr.pixel_size * k
+	var centre := holder.to_global(Vector3(spr.position.x, float(s["base_y"]), spr.position.z)) \
+		+ cam.global_basis.x * spr.offset.x * spr.pixel_size * k + cam.global_basis.y * spr.offset.y * spr.pixel_size * k
+	if cam.is_position_behind(centre):
+		return {}
+	var c := cam.unproject_position(centre)
+	var hw := absf((cam.unproject_position(centre + cam.global_basis.x * size.x * 0.5) - c).x)
+	var hh := absf((cam.unproject_position(centre + cam.global_basis.y * size.y * 0.5) - c).y)
+	if hh < 1.0:
+		return {}
+	return {"rect": Rect2(c - Vector2(hw, hh), Vector2(hw, hh) * 2.0), "wpp": size.y * 0.5 / hh, "h": size.y}
+
+
+## Newest first: each older bubble moves up until it clears every newer (or already placed) one,
+## eased; one that would have to move more than NUDGE_MAX_HEIGHTS of its height fades out early.
+func _nudge_bubbles(cam: Camera3D) -> void:
+	var order: Array = _bubbling.duplicate()
+	order.sort_custom(func(a: int, b: int) -> bool: return int(_seats[a].get("born", 0)) > int(_seats[b].get("born", 0)))
+	var placed: Array[Rect2] = []
+	var ending: Array[int] = []
+	for i: int in order:
+		var info := _bubble_rect(i, cam)
+		if info.is_empty():
+			continue
+		var rect: Rect2 = info["rect"]
+		var push := 0.0
+		for _pass in 4:
+			var moved := Rect2(rect.position - Vector2(0.0, push), rect.size)
+			var more := 0.0
+			for r in placed:
+				if moved.intersects(r):
+					more = maxf(more, moved.end.y - r.position.y + NUDGE_GAP_PX)
+			if more <= 0.0:
+				break
+			push += more
+		var s: Dictionary = _seats[i]
+		var world := push * float(info["wpp"])
+		if world > float(info["h"]) * NUDGE_MAX_HEIGHTS:
+			ending.append(i)
+			continue
+		placed.append(Rect2(rect.position - Vector2(0.0, push), rect.size))
+		if absf(world - float(s.get("nudge", 0.0))) > 0.002:
+			s["nudge"] = world
+			var spr: Sprite3D = s["bubble_sprite"]
+			var holder: Node3D = s["holder"]
+			var local_y := float(s["base_y"]) + world / maxf(holder.scale.y, 0.001)
+			var tw := create_tween()
+			tw.tween_property(spr, "position:y", local_y, 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	for i in ending:
+		_end_bubble(i, true)
 
 
 ## Can the camera see this seat's bubble? Off-screen, or hidden behind the room (the balcony,

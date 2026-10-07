@@ -38,6 +38,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_enabled": true,    # show the audience in rooms that have seats
 	"audience_idle_min": 10.0,   # minutes without chatting before someone leaves their seat
 	"audience_bubble_s": 8.0,    # seconds a speech bubble stays up
+	"audience_seat_gap": 1.0,    # metres between seated chatters along a row (seats closer than this are skipped; 0.5 = every seat)
 	"audience_bubble_size": 1.0, # speech bubble size multiplier
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_show_empty": true, # dim placeholders on empty seats
@@ -125,7 +126,9 @@ const BASE_DEFAULTS: Dictionary = {
 	"fps_cap": 60,               # frames per second cap: 30 | 60 | 0 (unlimited)
 	"vsync": true,               # wait for the display refresh (no tearing)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
-	"panel_folded": "",          # Chat tab window sections folded away (CSV of window keys)
+	"panel_folded": "",          # (old) Chat tab window sections folded away (CSV of window keys)
+	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
+	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
 	"chat_left_header_on": true,
 	"chat_left_header": "",
 	"chat_right_header_on": true,
