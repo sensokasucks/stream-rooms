@@ -272,6 +272,10 @@ Each window is one line in the Chat tab: its **Show** tick, its name, the platfo
 
 ![Chat tab with every window's Advanced open](images/sr-tab-chat-adv.png)
 
+**Replies.** A message sent with Kick's or Twitch's reply button shows a small "↩ replying to *Name*: what they said" line under the chatter's name, in the chat windows and in their speech bubble. YouTube live chat has no reply button, so its messages never have one. In a Streaming together session with one shared audience, guests see the reply lines too.
+
+![A reply in a speech bubble (left) and in the right-hand chat window](images/sr-chat-reply.png)
+
 **Chat games boards**: **Boards in the corner** (auto / always / never) and **Board size**. Polls and other boards go on the reply screen when the room has one, otherwise in the top-right corner.
 
 ## 10. The audience
@@ -289,7 +293,7 @@ When chat comes in from Stream Core, everyone who chats gets a seat: a head-and-
 - **Colour chatters by**: their chat colour, their name, or their platform, with a colour picker per platform. **Colour-blind safe colours** / **Brand colours** switch the platform colours.
 - **Crowd (Lecture Hall tiers, balcony, gallery)**: **Filler crowd** and **Crowd fullness**, **Crowd timeout**, **Most chatters in crowd** (0 = no limit; 100-150 on a laptop), **Crowd chatters move down** into free main seats, and **Filler people in empty main seats**.
 
-Silhouettes right in front of the camera fade out so your view stays clear, and bubbles grow with distance so you can read them from the balcony. When bubbles would overlap on screen, the newest wins: older ones slide up out of its way, and one that would have to move more than a couple of bubble heights fades out early instead. Name tags fade out on seats far from the camera, so a wide shot isn't covered in names.
+Silhouettes right in front of the camera fade out so your view stays clear, and bubbles grow with distance so you can read them from the balcony. When bubbles would overlap on screen, the newest wins: older ones slide up out of its way, and one that would have to move more than a couple of bubble heights fades out early instead. Name tags fade out on seats far from the camera, so a wide shot isn't covered in names. A reply (Kick's or Twitch's reply button) gets a small "↩ replying to *Name*" line under the name in its bubble.
 
 ## 11. Seating by platform
 
@@ -580,6 +584,8 @@ Boards (polls, predictions, the hype meter, heist crews, trivia) show on Stream 
 ![Sources & overlays](images/sc-sources.png)
 
 ![The combined chat overlay](images/sc-overlay-chat.png)
+
+On the chat overlay, a message sent with Kick's or Twitch's reply button shows "↩ Replying to *Name*: what they said" above it. On Twitch, the "@Name" at the start of such a reply is left out, because the reply line already says who it's for. YouTube live chat has no reply button.
 
 ---
 
