@@ -385,7 +385,7 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	board.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sign_root.add_child(board)
 	var l := Label3D.new()
-	l.text = text
+	l.text = SafeText.clean(text)
 	l.font = SpeechBubble.shared_font()
 	l.font_size = 52
 	l.outline_size = 0
@@ -516,7 +516,7 @@ func shout(slot: int, text: String, color: Color, seconds: float) -> void:
 	if is_instance_valid(old):
 		(old as Node).queue_free()
 	var l := Label3D.new()
-	l.text = text
+	l.text = SafeText.clean(text)
 	l.font = SpeechBubble.shared_font()
 	l.font_size = 72
 	l.pixel_size = 0.004 * float(s["scale"])

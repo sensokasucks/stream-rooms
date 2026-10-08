@@ -192,7 +192,7 @@ func _line(l: Dictionary, kind: String, index: int) -> Control:
 
 func _label(text: String, size: int, color: Color) -> Label:
 	var l := Label.new()
-	l.text = text
+	l.text = SafeText.clean(text)
 	l.add_theme_font_override("font", SpeechBubble.shared_font())
 	l.add_theme_font_size_override("font_size", size)
 	l.add_theme_color_override("font_color", color)

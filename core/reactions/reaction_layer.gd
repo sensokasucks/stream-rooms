@@ -423,7 +423,7 @@ func _size() -> float:
 
 func _object(text: String, scale_by: float = 1.0) -> Label3D:
 	var l := Label3D.new()
-	l.text = text.strip_edges().left(12) if text.strip_edges() != "" else "🍅"
+	l.text = SafeText.clean(text.strip_edges().left(12)) if text.strip_edges() != "" else "🍅"
 	l.font = SpeechBubble.shared_font()
 	l.font_size = 96
 	l.outline_size = 0

@@ -60,14 +60,14 @@ func set_content(speaker: String, parts: Array, color: Color, style: int, textur
 	_rtl.clear()
 	_rtl.push_font_size(NAME_SIZE)
 	_rtl.push_color(color.darkened(0.45))
-	_rtl.add_text(speaker)
+	_rtl.add_text(SafeText.clean(speaker))
 	_rtl.pop()
 	_rtl.pop()
 	if reply_to != "":
 		_rtl.newline()
 		_rtl.push_font_size(NAME_SIZE - 4)
 		_rtl.push_color(TEXT_COLOR.lerp(color.darkened(0.2), 0.5))
-		_rtl.add_text("↩ replying to " + reply_to + (": " + reply_quote.left(40) + ("…" if reply_quote.length() > 40 else "") if reply_quote != "" else ""))
+		_rtl.add_text(SafeText.clean("↩ replying to " + reply_to + (": " + reply_quote.left(40) + ("…" if reply_quote.length() > 40 else "") if reply_quote != "" else "")))
 		_rtl.pop()
 		_rtl.pop()
 	_rtl.newline()
@@ -78,9 +78,9 @@ func set_content(speaker: String, parts: Array, color: Color, style: int, textur
 				var w := int(round(float(h) * tex.get_width() / maxf(tex.get_height(), 1.0)))
 				_rtl.add_image(tex, w, h, Color.WHITE, INLINE_ALIGNMENT_CENTER, Rect2(), null, false, String(p["name"]))
 			else:
-				_rtl.add_text(String(p["name"]))
+				_rtl.add_text(SafeText.clean(String(p["name"])))
 		else:
-			_rtl.add_text(String(p))
+			_rtl.add_text(SafeText.clean(String(p)))
 	# measure: lay out at full width, then shrink to what the text actually uses
 	_rtl.size = Vector2(MAX_TEXT_WIDTH, 0)
 	_rtl.custom_minimum_size = Vector2(MAX_TEXT_WIDTH, 0)

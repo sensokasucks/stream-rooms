@@ -200,7 +200,7 @@ func _decode(body: PackedByteArray) -> Texture2D:
 	if body[0] == 0x89 and body[1] == 0x50:                      # PNG
 		err = img.load_png_from_buffer(body)
 	elif body[0] == 0xFF and body[1] == 0xD8:                    # JPEG
-		err = img.load_jpg_from_buffer(body)
+		err = img.load_jpg_from_buffer(_tidy_jpeg(body))
 	elif body.slice(0, 4).get_string_from_ascii() == "RIFF" and body.slice(8, 12).get_string_from_ascii() == "WEBP":
 		err = img.load_webp_from_buffer(body)
 	if err != OK or img.is_empty():
@@ -209,6 +209,39 @@ func _decode(body: PackedByteArray) -> Texture2D:
 		img.convert(Image.FORMAT_RGBA8)     # (RGB8 isn't supported on every graphics card: avoids a warning per picture)
 	img.generate_mipmaps()
 	return ImageTexture.create_from_image(img)
+
+
+## Redot's JPEG loader turns down a picture over small flaws that libjpeg only warns about (some
+## Twitch profile pictures have them). Fixes the two common ones: stray bytes between the header
+## blocks, and a missing end marker. Returns the bytes unchanged when there's nothing to fix.
+static func _tidy_jpeg(body: PackedByteArray) -> PackedByteArray:
+	var out := PackedByteArray([0xFF, 0xD8])
+	var stray := false
+	var whole := false
+	var i := 2
+	var n := body.size()
+	while i + 3 < n:
+		if body[i] != 0xFF:            # not a block start: stray byte
+			stray = true
+			i += 1
+			continue
+		var marker := body[i + 1]
+		if marker == 0xFF:             # fill byte
+			i += 1
+			continue
+		if marker == 0xDA:             # start of the picture data: the rest is kept as it is
+			out.append_array(body.slice(i))
+			whole = true
+			break
+		var block := 2 + ((body[i + 2] << 8) | body[i + 3])
+		out.append_array(body.slice(i, i + block))
+		i += block
+	if not (stray and whole):
+		out = body
+	if out[out.size() - 2] != 0xFF or out[out.size() - 1] != 0xD9:
+		out = out.duplicate()        # (packed arrays are shared: don't change the caller's)
+		out.append_array(PackedByteArray([0xFF, 0xD9]))
+	return out
 
 
 func _disk_path(url: String) -> String:
