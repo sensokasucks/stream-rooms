@@ -144,6 +144,21 @@ const BASE_DEFAULTS: Dictionary = {
 	"reaction_camera_shake": true,  # let camera_shake reactions move the camera
 	"board_hud": "auto",         # chat games boards (polls, predictions ...) in a corner: auto (rooms without a reply screen) | on | off
 	"board_hud_scale": 1.0,      # size of the corner boards
+	# Chat box on the picture (ChatHud), in a corner like the boards. Its other options work like a
+	# chat window's (ChatScreen, window key "chat_hud").
+	"chat_hud": "off",           # auto (only while no chat window in the room shows chat) | on | off
+	"chat_hud_chat": "kick,twitch,youtube,other",
+	"chat_hud_replies": "off",
+	"chat_hud_replies_for": "chat",
+	"chat_hud_corner": "bottom_left",  # top_left | top_right | bottom_left | bottom_right
+	"chat_hud_width": 0.26,      # share of the picture's width
+	"chat_hud_height": 0.45,     # share of the picture's height
+	"chat_hud_text": 0.75,
+	"chat_hud_bg": 0.6,
+	"chat_hud_outline": 0.3,
+	"chat_hud_columns": 1.0,
+	"chat_hud_header_on": false,
+	"chat_hud_header": "",
 	"audience_titles": true,     # regulars' titles (Stream Core streaks) on name tags
 	# Stage curtain in front of the main screen (B closes / opens, Shift+B = reveal)
 	"curtain_enabled": true,     # hang the curtain in rooms with a main screen

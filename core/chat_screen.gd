@@ -4,6 +4,8 @@ extends Node3D
 ##   chat_screen   under the main screen (rooms with a CHAT_Screen marker)
 ##   reply_screen  above the main screen (rooms with a REPLY_Screen marker)
 ##   chat_left / chat_right   tall windows beside the main screen (SideChats, every room)
+##   chat_hud      the chat box on the picture (ChatHud): a "flat" window, no 3D panel; the
+##                 HUD shows its picture and decides when it's up
 ## What a window shows is up to the user:
 ##   <window>_chat      the platforms whose chat it shows ("kick,twitch,youtube,other"; "" = no
 ##                      chat). One platform per window keeps chats apart (Twitch's rules ask for
@@ -56,16 +58,65 @@ var _reply_mode: String = "off"
 var _showing_replies: bool = false
 var _expire_in: float = 0.5
 var _board_clock: float = 1.0
+var _flat: bool = false        # drawn for ChatHud (2D) instead of a panel in the room
+var _flat_on: bool = false     # (flat) the HUD wants it up
+var _shown: bool = true        # (flat) has something to show (a replies-only window hides while empty)
 
 const REPLY_COLOR: Color = Color(0.33, 0.99, 0.09)
 ## Card backgrounds for messages that stand out: Super Chat / Bits gold, Twitch highlight purple.
 const TINT_COLORS: Dictionary = {"paid": Color(0.55, 0.42, 0.06, 0.75), "highlighted": Color(0.46, 0.37, 0.74, 0.75)}
 
 
-## size_m: metres; window: the settings key (see the top of this file).
-func setup(size_m: Vector2, window: String = "chat_screen") -> void:
+## size_m: metres; window: the settings key (see the top of this file); flat: no panel in the
+## room, ChatHud shows get_texture() instead.
+func setup(size_m: Vector2, window: String = "chat_screen", flat: bool = false) -> void:
 	_size = size_m
 	_key = window
+	_flat = flat
+
+
+## (flat) The window's picture, for ChatHud.
+func get_texture() -> Texture2D:
+	return _vp.get_texture()
+
+
+## (flat) The picture's size in pixels.
+func get_pixel_size() -> Vector2i:
+	return _vp.size
+
+
+## (flat) Resize the picture (ChatHud's size settings).
+func set_pixel_size(px: Vector2i) -> void:
+	if _vp.size == px:
+		return
+	_vp.size = px
+	_bg.size = Vector2(px)
+	_status.size = Vector2(px)
+	_dirty = true
+
+
+## (flat) ChatHud turns it on and off.
+func set_flat_on(on: bool) -> void:
+	if _flat_on == on:
+		return
+	_flat_on = on
+	_refresh_visibility()
+
+
+## Up and with something to show (the HUD hides its box otherwise).
+func is_shown() -> bool:
+	if _flat:
+		return visible and _shown
+	return is_visible_in_tree() and _quad.visible
+
+
+## Shows chat (not only replies) somewhere on the picture: a panel in the room, or the HUD box.
+func shows_chat() -> bool:
+	return not _platforms.is_empty() and is_shown()
+
+
+func is_flat() -> bool:
+	return _flat
 
 
 func get_window_key() -> String:
@@ -80,6 +131,8 @@ func is_showing_replies() -> bool:
 func _ready() -> void:
 	add_to_group("chat_windows")
 	var px := Vector2i(roundi(_size.x * PX_PER_M), roundi(_size.y * PX_PER_M))
+	if _flat:
+		px = Vector2i(_size)       # (flat: the size is in pixels already)
 	if px.x > MAX_PX:
 		px = Vector2i(MAX_PX, roundi(float(MAX_PX) * _size.y / _size.x))
 	_vp = SubViewport.new()
@@ -117,14 +170,15 @@ func _ready() -> void:
 	_mat.albedo_color = Color(0.9, 0.9, 0.9)
 	_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR
 	_mat.albedo_texture = _vp.get_texture()
-	_quad = MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = _size
-	_quad.mesh = q
-	_quad.position = Vector3(0, -_size.y * 0.5, 0)
-	_quad.material_override = _mat
-	_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_quad)
+	if not _flat:
+		_quad = MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = _size
+		_quad.mesh = q
+		_quad.position = Vector3(0, -_size.y * 0.5, 0)
+		_quad.material_override = _mat
+		_quad.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_quad)
 
 	EventBus.core_reply_received.connect(_on_reply)
 	EventBus.board_changed.connect(_on_board)
@@ -491,9 +545,9 @@ func _layout() -> void:
 	if _platforms.is_empty():
 		# replies only, nothing to show: no panel at all (it only appears while there's a reply)
 		_status.visible = false
-		_quad.visible = not _cards.is_empty()
+		_set_shown(not _cards.is_empty())
 		return
-	_quad.visible = true      # (it may have been a replies-only window, hidden while empty)
+	_set_shown(true)      # (it may have been a replies-only window, hidden while empty)
 	_status.visible = _cards.is_empty()
 	if _status.visible:
 		if not bool(AppState.get_setting("chat_enabled")):
@@ -502,6 +556,13 @@ func _layout() -> void:
 			_status.text = "Waiting for Stream Core…"
 		else:
 			_status.text = "Waiting for chat…"
+
+
+func _set_shown(on: bool) -> void:
+	if _flat:
+		_shown = on
+	else:
+		_quad.visible = on
 
 
 func _fits(heights: Array[float], start: int, cols: int, col_h: float) -> bool:
@@ -525,7 +586,7 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key in [_key + "_chat", _key + "_replies", _key + "_replies_for", "reply_screen"]:
 		_read_sources()
 		_refresh_visibility()
-	elif key == _key:
+	elif key == _key and not _flat:
 		_refresh_visibility()
 	elif key == _key + "_bg":
 		_apply_style()
@@ -576,7 +637,7 @@ func _apply_style() -> void:
 
 
 func _refresh_visibility() -> void:
-	visible = bool(AppState.get_setting(_key))
+	visible = _flat_on if _flat else bool(AppState.get_setting(_key))
 	# the corner boards (BoardHud, "auto") stay away while a window shows the boards
 	if visible and _showing_replies:
 		add_to_group("reply_screen")
@@ -643,7 +704,7 @@ func _apply_outline(c: Control) -> void:
 ## About how tall a line of chat text is on a 1080p stream from the current camera (pixels), or
 ## -1 when the window is off screen / hidden. The Chat tab warns when it's too small to read.
 func estimate_text_px(out_height: float = 1080.0) -> float:
-	if not is_visible_in_tree() or not _quad.visible:
+	if _flat or not is_visible_in_tree() or not _quad.visible:
 		return -1.0
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
