@@ -124,7 +124,9 @@ func send_test_chat(count: int = 6) -> void:
 func _open() -> void:
 	var url := String(AppState.get_setting("chat_core_url")).strip_edges()
 	_ws = WebSocketPeer.new()
-	_ws.inbound_buffer_size = 4 * 1024 * 1024    # Core also sends big stats snapshots
+	# Core also sends big snapshots on connect; a too-small buffer makes the peer drop the
+	# connection (an older Core sent its 2 MB credits roster on every new chatter)
+	_ws.inbound_buffer_size = 16 * 1024 * 1024
 	_ping_in = PING_INTERVAL
 	var err := _ws.connect_to_url(url)
 	if err != OK:
