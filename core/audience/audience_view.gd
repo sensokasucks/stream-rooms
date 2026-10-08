@@ -1157,11 +1157,13 @@ func _end_bubble(i: int, fade: bool = true) -> void:
 		s["viewport"] = null
 		s["bubble"] = null
 		if fade:
-			var tw := create_tween()
+			# the fade belongs to the bubble: when the chatter leaves a crowd seat mid-fade, the seat
+			# frees both nodes and the fade goes with them. (A tween on the view outlived them and
+			# called queue_free on freed nodes, which crashes exported builds.)
+			var tw := spr.create_tween()
 			tw.tween_property(spr, "modulate:a", 0.0, 0.3)
-			tw.tween_callback(func() -> void:
-				spr.queue_free()
-				vp.queue_free())
+			tw.tween_callback(vp.queue_free)
+			tw.tween_callback(spr.queue_free)
 		else:
 			spr.queue_free()
 			vp.queue_free()
