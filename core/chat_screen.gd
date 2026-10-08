@@ -267,7 +267,7 @@ func _fill_board(card: Dictionary) -> void:
 	rtl.add_theme_font_size_override("normal_font_size", size)
 	rtl.add_theme_font_size_override("bold_font_size", size)
 	rtl.push_bold()
-	rtl.add_text(String(b.get("title", "")))
+	rtl.add_text(SafeText.clean(String(b.get("title", ""))))
 	rtl.pop()
 	if b.get("ends_at") != null and String(b.get("state", "")) == "open":
 		var left := maxi(0, ceili(float(b["ends_at"]) - Time.get_unix_time_from_system()))
@@ -283,14 +283,14 @@ func _fill_board(card: Dictionary) -> void:
 		var win := bool(line.get("win", false))
 		if win:
 			rtl.push_color(REPLY_COLOR)
-		rtl.add_text(String(line.get("label", "")))
+		rtl.add_text(SafeText.clean(String(line.get("label", ""))))
 		if String(b.get("kind", "")) != "question":
 			var filled := clampi(roundi(clampf(float(line.get("pct", 0.0)), 0.0, 1.0) * cells), 0, cells)
 			rtl.add_text("  " + "▰".repeat(filled) + "▱".repeat(cells - filled) + "  ")
 		else:
 			rtl.add_text("  ")
 		rtl.push_color(Color(1, 1, 1, 0.7))
-		rtl.add_text(String(line.get("note", "")) if line.get("note") != null else str(line.get("value", "")))
+		rtl.add_text(SafeText.clean(String(line.get("note", "")) if line.get("note") != null else str(line.get("value", ""))))
 		rtl.pop()
 		if win:
 			rtl.pop()
@@ -298,7 +298,7 @@ func _fill_board(card: Dictionary) -> void:
 	if footer != "":
 		rtl.newline()
 		rtl.push_color(REPLY_COLOR if closed else Color(1, 1, 1, 0.6))
-		rtl.add_text(footer)
+		rtl.add_text(SafeText.clean(footer))
 		rtl.pop()
 
 
@@ -388,7 +388,7 @@ func _fill(card: Dictionary) -> void:
 			rtl.add_text(" ")
 	rtl.push_bold()
 	rtl.push_color(color)
-	rtl.add_text(String(card["name"]))
+	rtl.add_text(SafeText.clean(String(card["name"])))
 	rtl.pop()
 	rtl.pop()
 	var reply_to := String(card.get("reply_to", ""))
@@ -398,7 +398,7 @@ func _fill(card: Dictionary) -> void:
 		rtl.add_text("  ")
 		rtl.push_font_size(roundi(size * 0.8))
 		rtl.push_color(Color(TEXT_COLOR, 0.7))
-		rtl.add_text("↩ replying to " + reply_to + (": " + quote.left(60) + ("…" if quote.length() > 60 else "") if quote != "" else ""))
+		rtl.add_text(SafeText.clean("↩ replying to " + reply_to + (": " + quote.left(60) + ("…" if quote.length() > 60 else "") if quote != "" else "")))
 		rtl.pop()
 		rtl.pop()
 		rtl.newline()
@@ -413,9 +413,9 @@ func _fill(card: Dictionary) -> void:
 				var w := roundi(float(h) * tex.get_width() / maxf(tex.get_height(), 1.0))
 				rtl.add_image(tex, w, h, Color.WHITE, INLINE_ALIGNMENT_CENTER, Rect2(), null, false, String(p["name"]))
 			else:
-				rtl.add_text(String(p["name"]))
+				rtl.add_text(SafeText.clean(String(p["name"])))
 		else:
-			rtl.add_text(String(p))
+			rtl.add_text(SafeText.clean(String(p)))
 
 
 func _on_emote_ready(url: String) -> void:
