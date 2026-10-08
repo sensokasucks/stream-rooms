@@ -53,7 +53,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"seating_by_platform": false,  # use the seating plan
 	"seating_plan": "",          # JSON {section id: "kick,twitch,youtube,other"}; a missing / blank section = anyone
 	"seating_strict": true,      # a chatter whose sections are full waits (or takes an idle chatter's seat there) instead of sitting elsewhere
-	"audience_avatars": true,    # chatters' profile pictures as the silhouette's head (Kick + YouTube)
+	"audience_avatars": true,    # chatters' profile pictures as the silhouette's head (Kick, Twitch, YouTube; Stream Core saves them)
 	"audience_hide_avatars": "", # names whose picture is never shown (comma separated)
 	"audience_seating": "random",  # new chatters sit: random | front (front row, centre out) | front_random (front row first, random seat in it)
 	"audience_crowd": true,      # rooms with a big crowd (lecture hall tiers, balcony, gallery): show the filler crowd
