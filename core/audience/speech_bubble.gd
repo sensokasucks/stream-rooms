@@ -1,7 +1,8 @@
 class_name SpeechBubble
 extends Control
 ## A comic speech bubble drawn in 2D (rendered into a SubViewport by AudienceView).
-## White fill, outline in the speaker's colour, their name on top, tail at the lower left.
+## White fill (or dark, "audience_bubble_theme"), outline in the speaker's colour, their name on
+## top, tail at the lower left. A Super Chat / Bits message is gold, a Twitch highlighted one purple.
 ## Shapes (style): 0 rounded box, 1 oval, 2 slanted box, 3 pinched box.
 ## The text is a RichTextLabel so chat emotes sit inline and wrap with the words;
 ## emoji use the system's colour emoji font.
@@ -15,14 +16,24 @@ const TEXT_SIZE: int = 30
 ## Emote height inline with text, and when the message is only emotes.
 const EMOTE_SIZE: int = 38
 const EMOTE_ONLY_SIZE: int = 72
+## Twitch "Gigantify an Emote": the message's last emote.
+const EMOTE_GIANT_SIZE: int = 112
 const FILL: Color = Color(1, 1, 1, 0.97)
 const TEXT_COLOR: Color = Color(0.08, 0.08, 0.1)
+const DARK_FILL: Color = Color(0.1, 0.1, 0.12, 0.95)
+const DARK_TEXT: Color = Color(0.93, 0.93, 0.95)
+## Fills for messages that stand out, [light theme, dark theme].
+const TINT_FILLS: Dictionary = {
+	"paid": [Color(1.0, 0.93, 0.68, 0.97), Color(0.42, 0.32, 0.05, 0.96)],
+	"highlighted": [Color(0.86, 0.8, 1.0, 0.97), Color(0.4, 0.31, 0.68, 0.96)],
+}
 const EMOJI_FONTS: PackedStringArray = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla"]
 
 static var _font: Font
 
 var _color: Color = Color.WHITE
 var _style: int = 0
+var _fill: Color = FILL
 var _body: Rect2 = Rect2()
 var _tail_tip: Vector2 = Vector2.ZERO
 var _rtl: RichTextLabel
@@ -47,36 +58,54 @@ func _init() -> void:
 func set_content(speaker: String, parts: Array, color: Color, style: int, textures: Dictionary) -> Vector2i:
 	_color = color
 	_style = clampi(style, 0, 3)
-	# a first {reply_to, quote} part says who this answers (the platform's reply button)
+	# leading marker parts: {tint} how it stands out, {reply_to, quote} who it answers
 	var reply_to := ""
 	var reply_quote := ""
-	if not parts.is_empty() and parts[0] is Dictionary and (parts[0] as Dictionary).has("reply_to"):
-		reply_to = String(parts[0]["reply_to"])
-		reply_quote = String(parts[0].get("quote", ""))
+	var tint := ""
+	while not parts.is_empty() and parts[0] is Dictionary and not (parts[0] as Dictionary).has("url"):
+		var mark: Dictionary = parts[0]
+		if mark.has("reply_to"):
+			reply_to = String(mark["reply_to"])
+			reply_quote = String(mark.get("quote", ""))
+		tint = String(mark.get("tint", tint))
 		parts = parts.slice(1)
+	var dark := String(AppState.get_setting("audience_bubble_theme")) == "dark"
+	var text_color := DARK_TEXT if dark else TEXT_COLOR
+	_fill = (DARK_FILL if dark else FILL).lerp(color, 0.07)
+	if TINT_FILLS.has(tint):
+		_fill = (TINT_FILLS[tint] as Array)[1 if dark else 0]
+	_rtl.add_theme_color_override("default_color", text_color)
 	var emote_only := parts.size() <= 6 and parts.all(func(p: Variant) -> bool:
 		return (p is Dictionary and textures.has(String(p.get("url", "")))) or (p is String and String(p).strip_edges() == ""))
 	var h := EMOTE_ONLY_SIZE if emote_only else EMOTE_SIZE
+	var giant := -1           # Gigantify an Emote: the last emote is drawn big
+	if tint == "gigantified":
+		for k in range(parts.size() - 1, -1, -1):
+			if parts[k] is Dictionary and textures.has(String((parts[k] as Dictionary).get("url", ""))):
+				giant = k
+				break
 	_rtl.clear()
 	_rtl.push_font_size(NAME_SIZE)
-	_rtl.push_color(color.darkened(0.45))
+	_rtl.push_color(color.lightened(0.4) if dark else color.darkened(0.45))
 	_rtl.add_text(SafeText.clean(speaker))
 	_rtl.pop()
 	_rtl.pop()
 	if reply_to != "":
 		_rtl.newline()
 		_rtl.push_font_size(NAME_SIZE - 4)
-		_rtl.push_color(TEXT_COLOR.lerp(color.darkened(0.2), 0.5))
+		_rtl.push_color(text_color.lerp(color.lightened(0.2) if dark else color.darkened(0.2), 0.5))
 		_rtl.add_text(SafeText.clean("↩ replying to " + reply_to + (": " + reply_quote.left(40) + ("…" if reply_quote.length() > 40 else "") if reply_quote != "" else "")))
 		_rtl.pop()
 		_rtl.pop()
 	_rtl.newline()
-	for p: Variant in parts:
+	for k in parts.size():
+		var p: Variant = parts[k]
 		if p is Dictionary and (p as Dictionary).has("url"):
 			var tex: Texture2D = textures.get(String(p["url"]))
 			if tex:
-				var w := int(round(float(h) * tex.get_width() / maxf(tex.get_height(), 1.0)))
-				_rtl.add_image(tex, w, h, Color.WHITE, INLINE_ALIGNMENT_CENTER, Rect2(), null, false, String(p["name"]))
+				var eh := EMOTE_GIANT_SIZE if k == giant else h
+				var w := int(round(float(eh) * tex.get_width() / maxf(tex.get_height(), 1.0)))
+				_rtl.add_image(tex, w, eh, Color.WHITE, INLINE_ALIGNMENT_CENTER, Rect2(), null, false, String(p["name"]))
 			else:
 				_rtl.add_text(SafeText.clean(String(p["name"])))
 		else:
@@ -121,9 +150,8 @@ func _draw() -> void:
 	draw_polyline(closed, _color, OUTLINE * 2.0, true)
 	var tail_outline := PackedVector2Array([tail[0] + Vector2(-2, 6), tail[2], tail[1] + Vector2(2, 6)])
 	draw_polyline(tail_outline, _color, OUTLINE * 2.0, true)
-	var fill := FILL.lerp(_color, 0.07)
-	draw_colored_polygon(body, fill)
-	draw_colored_polygon(tail, fill)
+	draw_colored_polygon(body, _fill)
+	draw_colored_polygon(tail, _fill)
 
 
 ## The bubble font (theme font + colour emoji fallback). Also used by the reaction effects.

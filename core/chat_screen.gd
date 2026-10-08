@@ -58,6 +58,8 @@ var _expire_in: float = 0.5
 var _board_clock: float = 1.0
 
 const REPLY_COLOR: Color = Color(0.33, 0.99, 0.09)
+## Card backgrounds for messages that stand out: Super Chat / Bits gold, Twitch highlight purple.
+const TINT_COLORS: Dictionary = {"paid": Color(0.55, 0.42, 0.06, 0.75), "highlighted": Color(0.46, 0.37, 0.74, 0.75)}
 
 
 ## size_m: metres; window: the settings key (see the top of this file).
@@ -326,11 +328,16 @@ func _on_chat(msg: Dictionary) -> void:
 	if avatar != "":
 		urls.append(avatar)
 	_add_card({"name": who, "hex": String(msg.get("color", "")), "parts": parts, "avatar": avatar, "urls": urls,
-		"platform": plat, "reply_to": String(msg.get("reply_to", "")), "reply_quote": String(msg.get("reply_quote", ""))})
+		"platform": plat, "reply_to": String(msg.get("reply_to", "")), "reply_quote": String(msg.get("reply_quote", "")),
+		"tint": String(msg.get("tint", "")) if bool(AppState.get_setting("audience_bubble_tints")) else ""})
 
 
 func _add_card(card: Dictionary) -> void:
 	var node := Control.new()
+	var tint_bg := ColorRect.new()      # Super Chat / Twitch highlight: a coloured box behind the card
+	tint_bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tint_bg.visible = false
+	node.add_child(tint_bg)
 	var bar := ColorRect.new()
 	node.add_child(bar)
 	var rtl := RichTextLabel.new()
@@ -349,6 +356,7 @@ func _add_card(card: Dictionary) -> void:
 	card["node"] = node
 	card["rtl"] = rtl
 	card["bar"] = bar
+	card["tint_bg"] = tint_bg
 	_cards.append(card)
 	_fill(card)
 	if _showing_replies:
@@ -376,6 +384,13 @@ func _fill(card: Dictionary) -> void:
 	var size := _text_size()
 	var color := REPLY_COLOR if bool(card.get("reply", false)) else AudienceManager.color_for(String(card["name"]), String(card["hex"]), String(card.get("platform", "")))
 	(card["bar"] as ColorRect).color = color
+	var tint := String(card.get("tint", ""))
+	var tint_bg: ColorRect = card.get("tint_bg")
+	if tint_bg:
+		tint_bg.visible = TINT_COLORS.has(tint)
+		if tint_bg.visible:
+			tint_bg.color = TINT_COLORS[tint]
+			(card["bar"] as ColorRect).color = (TINT_COLORS[tint] as Color).lightened(0.4)
 	rtl.clear()
 	rtl.add_theme_font_size_override("normal_font_size", size)
 	rtl.add_theme_font_size_override("bold_font_size", size)
@@ -468,6 +483,10 @@ func _layout() -> void:
 		var bar: ColorRect = _cards[i]["bar"]
 		bar.position = Vector2(0, 2)
 		bar.size = Vector2(BAR_W, maxf(h - 4.0, 4.0))
+		var tint_bg: ColorRect = _cards[i].get("tint_bg")
+		if tint_bg:
+			tint_bg.position = Vector2(0, -3)
+			tint_bg.size = Vector2(col_w, h + 6.0)
 		y += h + LINE_GAP
 	if _platforms.is_empty():
 		# replies only, nothing to show: no panel at all (it only appears while there's a reply)

@@ -27,6 +27,8 @@ extends Node
 ## roster (mirror_*), so every PC shows the same people in the same seats.
 
 const BUBBLE_STYLES: int = 4
+## Bubble colour styles a message can carry ({tint} part): Super Chat / Bits, Twitch highlights.
+const TINTS: PackedStringArray = ["paid", "highlighted", "gigantified"]
 const KIND_SEAT: int = 0
 const KIND_CROWD: int = 1
 const KIND_PRESENTER: int = 2
@@ -441,6 +443,10 @@ func add_chat(msg: Dictionary) -> void:
 	if reply_to != "":
 		# first part: who this answers (the bubble shows "replying to Name"); never an emote
 		parts.push_front({"reply_to": reply_to.left(60), "quote": String(msg.get("reply_quote", "")).left(120)})
+	var tint := String(msg.get("tint", ""))
+	if tint in TINTS and bool(AppState.get_setting("audience_bubble_tints")):
+		# first part: how the bubble stands out (Super Chat, Twitch highlight); never an emote
+		parts.push_front({"tint": tint})
 	EventBus.audience_spoke.emit(int(m["slot"]), parts)
 
 
@@ -1220,8 +1226,8 @@ func mirror_update(room: String, slot: int, wm: Dictionary) -> void:
 	EventBus.audience_updated.emit(slot)
 
 
-## parts: Strings and emote Dictionaries {url, name, maybe still} (only https pictures are kept), and maybe a
-## first {reply_to, quote} saying who the message answers.
+## parts: Strings and emote Dictionaries {url, name, maybe still} (only https pictures are kept), and
+## maybe leading {tint} (how the bubble stands out) and {reply_to, quote} (who the message answers).
 func mirror_speak(room: String, slot: int, parts: Array) -> void:
 	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
 		return
@@ -1229,8 +1235,10 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 	for part: Variant in parts.slice(0, 80):
 		if part is String:
 			clean.append(String(part).left(MAX_TEXT))
-		elif part is Dictionary and (part as Dictionary).has("reply_to") and clean.is_empty():
+		elif part is Dictionary and (part as Dictionary).has("reply_to") and _only_markers(clean):
 			clean.append({"reply_to": String(part["reply_to"]).left(60), "quote": String(part.get("quote", "")).left(120)})
+		elif part is Dictionary and String((part as Dictionary).get("tint", "")) in TINTS and clean.is_empty():
+			clean.append({"tint": String(part["tint"])})
 		elif part is Dictionary and String((part as Dictionary).get("url", "")).begins_with("https://"):
 			var url := String(part["url"]).left(500)
 			var item := {"url": url, "name": String(part.get("name", "")).left(60)}
@@ -1241,6 +1249,11 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 			clean.append(item)
 	if not clean.is_empty():
 		EventBus.audience_spoke.emit(slot, clean)
+
+
+## True while a parts list holds only leading markers ({tint}) so far.
+func _only_markers(parts: Array) -> bool:
+	return parts.all(func(p: Variant) -> bool: return p is Dictionary and (p as Dictionary).has("tint"))
 
 
 ## The picture link a guest's PC can download: the platform's https link, not Stream Core's local copy.

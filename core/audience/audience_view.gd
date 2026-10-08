@@ -1200,6 +1200,10 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 	elif key == "audience_titles":
 		for i in _rich:
 			_on_updated(i)
+	elif key == "audience_bubble_theme":
+		for i in _rich:            # bubbles showing now take the new colours at once
+			if _seats[i]["bubble"] != null and bool(_seats[i]["active"]):
+				_render_bubble(i)
 	elif key.begins_with("presenter_"):
 		for n: int in _presenter_slots.keys():
 			if key.begins_with("presenter_%d_" % n):

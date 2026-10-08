@@ -1069,7 +1069,7 @@ func _on_local_chat(msg: Dictionary) -> void:
 	if _role != "guest" or not _aud_shared or bool(msg.get("system", false)) or bool(msg.get("history", false)):
 		return
 	var out := {}
-	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar", "reply_to", "reply_quote"]:
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar", "reply_to", "reply_quote", "tint"]:
 		out[k] = String(msg.get(k, "")).left(500)
 	# the platform's link: Stream Core's own copy (http://127.0.0.1...) only exists on this PC
 	out["avatar"] = _web_avatar(msg)
@@ -1097,7 +1097,7 @@ func _net_guest_chat(msg: Dictionary) -> void:
 	if not _sharing_audience() or not _peers.has(id):
 		return
 	var clean := {}
-	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "reply_to", "reply_quote"]:
+	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "reply_to", "reply_quote", "tint"]:
 		clean[k] = String(msg.get(k, "")).left(500)
 	var avatar := String(msg.get("avatar", ""))
 	clean["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""

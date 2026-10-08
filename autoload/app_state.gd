@@ -40,6 +40,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_bubble_s": 8.0,    # seconds a speech bubble stays up
 	"audience_seat_gap": 1.0,    # metres between seated chatters along a row (seats closer than this are skipped; 0.5 = every seat)
 	"audience_bubble_size": 1.0, # speech bubble size multiplier
+	"audience_bubble_theme": "light",  # speech bubble colours: light (white) or dark
+	"audience_bubble_tints": true,     # Super Chats / Bits and Twitch highlighted messages get a coloured bubble and chat card
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
