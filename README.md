@@ -376,6 +376,13 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   windows show the same line). YouTube live chat has no reply button. When bubbles would overlap on screen, the
   newest wins: older ones slide up out of its way, and one that would have to move more than a
   couple of bubble heights fades out early instead.
+- **Bubble colours** (Audience tab): *Light* (white bubbles with dark text, the default) or
+  *Dark* (dark bubbles with light text). The outline keeps each chatter's colour either way.
+- **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
+  Bits get a gold bubble and a gold box on the chat windows; Twitch messages highlighted with
+  channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an
+  Emote" message shows its last emote big. Needs the matching Stream Core update.
+  **Test chat** sends one of these now and then so you can see them.
 - **Seat spacing** (Audience tab): how much room there is between seated chatters along a row,
   1 m by default. Seats closer than that to a taken one stay empty, so nobody sits shoulder to
   shoulder; the room has fewer seats than it has places (the Lecture Hall's front pews seat every
@@ -440,7 +447,7 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   redraw about 12 times a second instead of every frame. The per-seat work only runs while the
   camera moves.
 - **Settings:** all in the **Audience** tab.
-  - bubble time and bubble size
+  - bubble time, bubble size and bubble colours
   - name tags, dim placeholders on empty seats, hiding `!commands`
   - use chat colours
   - an ignore list for bots

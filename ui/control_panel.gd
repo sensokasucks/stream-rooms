@@ -910,6 +910,15 @@ func _build_audience_tab() -> Control:
 	v.add_child(gap)
 	v.add_child(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"))
 	v.add_child(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0))
+	var bubble_colours := _option("audience_bubble_theme", "Bubble colours", [
+		["light", "Light (white bubbles, dark text)"],
+		["dark", "Dark (dark bubbles, light text)"],
+	])
+	bubble_colours.tooltip_text = "The colour of the audience's speech bubbles. The outline keeps each chatter's colour either way."
+	v.add_child(bubble_colours)
+	var tints := _check("audience_bubble_tints", "Colour paid and highlighted messages")
+	tints.tooltip_text = "Super Chats, Kicks and Bits get a gold bubble and chat-window card; Twitch messages highlighted with channel points get a purple one; a gigantified emote is drawn big. Off: they look like any other message."
+	v.add_child(tints)
 	var r3 := HFlowContainer.new()
 	v.add_child(r3)
 	r3.add_child(_check("audience_names", "Name tags"))

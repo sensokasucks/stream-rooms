@@ -9,6 +9,8 @@ extends Node
 const PING_INTERVAL: float = 20.0
 const BACKOFF_MIN: float = 2.0
 const BACKOFF_MAX: float = 20.0
+## Message styles the app draws (see _tint). Twitch's "animated" Message Effects look ordinary here.
+const TINTS: PackedStringArray = ["highlighted", "gigantified"]
 
 const TEST_NAMES: PackedStringArray = ["PixelPanda", "moss_wizard", "Sgt_Crumpet", "neonNomad", "LadyLumen",
 	"tater_tot_42", "QuietFox", "BrickTamland", "Zephyrine", "captain_kettle", "OrbitOtter", "MangoTango"]
@@ -111,12 +113,14 @@ func send_test_chat(count: int = 6) -> void:
 			for r: Array in pick[1]:
 				emotes.append({"provider": "twitch", "id": r[0], "start": r[1], "end": r[2],
 					"url": "", "static_url": "https://static-cdn.jtvnw.net/emoticons/v2/%s/static/dark/2.0" % r[0]})
+		# now and then a highlighted or paid one, so the bubble colours can be tried out
+		var tint: String = ["highlighted", "paid"][_rng.randi_range(0, 1)] if _rng.randf() < 0.15 else ""
 		var delay := 0.35 * i + _rng.randf() * 0.3
 		get_tree().create_timer(delay).timeout.connect(func() -> void:
 			EventBus.chat_message_received.emit({
 				# each test name is on one platform, so seating / chat windows by platform can be tried out
 				"platform": ["kick", "twitch", "youtube"][absi(hash(who)) % 3], "user_id": who.to_lower(), "name": who, "color": "",
-				"text": line, "emotes": emotes, "timestamp": Time.get_unix_time_from_system(),
+				"text": line, "emotes": emotes, "timestamp": Time.get_unix_time_from_system(), "tint": tint,
 				"history": false, "system": false, "is_mod": false, "is_vip": false, "is_subscriber": false,
 			}))
 
@@ -291,6 +295,7 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		"avatar": avatar_local if avatar_local != "" else avatar_web,   # chatter's profile picture
 		"avatar_web": avatar_web,      # the platform's own https link (sent to guests)
 		"reply_to": reply_to,          # "" unless this answers another chatter
+		"tint": _tint(d),              # "paid" / "highlighted" / "gigantified" / "" (see _tint)
 		"reply_quote": reply_quote,
 		"timestamp": float(d.get("timestamp", Time.get_unix_time_from_system())),
 		"history": history,
@@ -300,6 +305,15 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		"is_subscriber": bool(user.get("is_subscriber", false)),
 		"title": String(user.get("title", "")) if user.get("title") is String else "",   # regular's title (chat games)
 	}
+
+
+## How a message stands out: "paid" (Super Chat, Kicks, Bits), or a Twitch channel-point
+## style from Core's highlight field ("highlighted", "gigantified"). "" for ordinary chat.
+func _tint(d: Dictionary) -> String:
+	if bool(d.get("is_paid", false)):
+		return "paid"
+	var h := _str(d.get("highlight"))
+	return h if h in TINTS else ""
 
 
 ## Core sends nulls for missing values.
