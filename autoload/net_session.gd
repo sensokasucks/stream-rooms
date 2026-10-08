@@ -1071,6 +1071,8 @@ func _on_local_chat(msg: Dictionary) -> void:
 	var out := {}
 	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar", "reply_to", "reply_quote"]:
 		out[k] = String(msg.get(k, "")).left(500)
+	# the platform's link: Stream Core's own copy (http://127.0.0.1...) only exists on this PC
+	out["avatar"] = _web_avatar(msg)
 	out["timestamp"] = float(msg.get("timestamp", Time.get_unix_time_from_system()))
 	out["emotes"] = msg.get("emotes", []) if msg.get("emotes") is Array else []
 	_net_guest_chat.rpc_id(1, out)
@@ -1079,7 +1081,14 @@ func _on_local_chat(msg: Dictionary) -> void:
 func _on_local_user(info: Dictionary) -> void:
 	if _role == "guest" and _aud_shared:
 		_net_guest_user.rpc_id(1, {"platform": String(info.get("platform", "")), "user_id": String(info.get("user_id", "")),
-			"avatar": String(info.get("avatar", ""))})
+			"avatar": _web_avatar(info), "hidden": bool(info.get("hidden", false))})
+
+
+func _web_avatar(info: Dictionary) -> String:
+	var web := String(info.get("avatar_web", ""))
+	if web == "":
+		web = String(info.get("avatar", ""))
+	return web.left(500) if web.begins_with("https://") else ""
 
 
 @rpc("any_peer", "call_remote", "reliable")
@@ -1117,9 +1126,10 @@ func _net_guest_user(info: Dictionary) -> void:
 	if not _sharing_audience() or not _peers.has(id):
 		return
 	var avatar := String(info.get("avatar", ""))
-	if avatar.begins_with("https://"):
+	var hidden := bool(info.get("hidden", false))
+	if hidden or avatar.begins_with("https://"):
 		AudienceManager.update_user({"platform": String(info.get("platform", "")), "user_id": String(info.get("user_id", "")),
-			"avatar": avatar.left(500)})
+			"avatar": "" if hidden else avatar.left(500), "hidden": hidden})
 
 
 @rpc("authority", "call_remote", "reliable")

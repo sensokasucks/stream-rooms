@@ -53,6 +53,7 @@ func _process(delta: float) -> void:
 		if not _connected:
 			_backoff = BACKOFF_MIN
 			_set_status(true, "")
+			_send_hidden_avatars()
 		_ping_in -= delta
 		if _ping_in <= 0.0:
 			_ping_in = PING_INTERVAL
@@ -124,7 +125,9 @@ func send_test_chat(count: int = 6) -> void:
 func _open() -> void:
 	var url := String(AppState.get_setting("chat_core_url")).strip_edges()
 	_ws = WebSocketPeer.new()
-	_ws.inbound_buffer_size = 4 * 1024 * 1024    # Core also sends big stats snapshots
+	# Core also sends big snapshots on connect; a too-small buffer makes the peer drop the
+	# connection (an older Core sent its 2 MB credits roster on every new chatter)
+	_ws.inbound_buffer_size = 16 * 1024 * 1024
 	_ping_in = PING_INTERVAL
 	var err := _ws.connect_to_url(url)
 	if err != OK:
@@ -208,12 +211,20 @@ func _handle(text: String) -> void:
 						AppState.toggle_curtain()
 		"user_update":
 			var d: Variant = (msg as Dictionary).get("data")
-			if d is Dictionary and String((d as Dictionary).get("profile_image_url", "")) != "":
-				EventBus.chat_user_updated.emit({
-					"platform": String(d.get("platform", "")),
-					"user_id": String(d.get("id", "")),
-					"avatar": String(d.get("profile_image_url", "")),
-				})
+			if d is Dictionary:
+				var u := d as Dictionary
+				var hidden := bool(u.get("hidden", false))
+				var web := _str(u.get("profile_image_url"))
+				var local := _core_file_url(_str(u.get("avatar_local")))
+				# a picture found late, Core's saved copy being ready, or a name put on the hide list
+				if hidden or web != "" or local != "":
+					EventBus.chat_user_updated.emit({
+						"platform": String(u.get("platform", "")),
+						"user_id": String(u.get("id", "")),
+						"avatar": local if local != "" else web,
+						"avatar_web": web,
+						"hidden": hidden,
+					})
 
 
 func _emit(data: Variant, history: bool) -> void:
@@ -253,7 +264,10 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		return {}
 	var badges: Array = user.get("badges", []) if user.get("badges") is Array else []
 	var color: Variant = user.get("color")
-	var avatar: Variant = user.get("profile_image_url")
+	# Stream Core keeps its own copy of each picture (avatar_local, served on its port);
+	# the platform's https link stays for multiplayer guests on other PCs
+	var avatar_web := _str(user.get("profile_image_url"))
+	var avatar_local := _core_file_url(_str(user.get("avatar_local")))
 	var emotes: Array = []
 	if d.get("emotes") is Array:
 		for e: Variant in d["emotes"]:
@@ -274,7 +288,8 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 		"color": String(color) if color is String else "",
 		"text": text,
 		"emotes": emotes,     # Twitch ranges (native + BTTV/FFZ/7TV) from Stream Core
-		"avatar": String(avatar) if avatar is String else "",   # Kick / YouTube profile picture
+		"avatar": avatar_local if avatar_local != "" else avatar_web,   # chatter's profile picture
+		"avatar_web": avatar_web,      # the platform's own https link (sent to guests)
 		"reply_to": reply_to,          # "" unless this answers another chatter
 		"reply_quote": reply_quote,
 		"timestamp": float(d.get("timestamp", Time.get_unix_time_from_system())),
@@ -287,8 +302,38 @@ func _normalize(d: Dictionary, history: bool) -> Dictionary:
 	}
 
 
+## Core sends nulls for missing values.
+func _str(v: Variant) -> String:
+	return String(v) if v is String else ""
+
+
+## Core's "/avatars/..." path -> a full http address on the Core this app talks to.
+func _core_file_url(path: String) -> String:
+	if path == "" or not path.begins_with("/"):
+		return path
+	var base := String(AppState.get_setting("chat_core_url")).strip_edges()
+	base = base.replace("wss://", "https://").replace("ws://", "http://")
+	var slash := base.find("/", base.find("//") + 2)
+	if slash > 0:
+		base = base.left(slash)
+	return base + path
+
+
+## Stream Rooms' "Hide pictures of" names go to Stream Core, which hides them on its
+## overlays too. Core only adds names; removing one is done in Core's dashboard.
+func _send_hidden_avatars() -> void:
+	var names: Array = []
+	for n: String in String(AppState.get_setting("audience_hide_avatars")).split(",", false):
+		if n.strip_edges() != "":
+			names.append(n.strip_edges())
+	if not names.is_empty():
+		send_message({"type": "avatars_hide_import", "data": {"names": names}})
+
+
 func _on_setting_changed(key: String, _value: Variant) -> void:
-	if key == "chat_core_url":
+	if key == "audience_hide_avatars":
+		_send_hidden_avatars()
+	elif key == "chat_core_url":
 		reconnect()
 	elif key == "chat_enabled":
 		if bool(AppState.get_setting("chat_enabled")):

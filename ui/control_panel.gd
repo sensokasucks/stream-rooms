@@ -915,10 +915,14 @@ func _build_audience_tab() -> Control:
 	r3.add_child(_check("audience_names", "Name tags"))
 	r3.add_child(_check("audience_show_empty", "Show empty seats"))
 	r3.add_child(_check("audience_hide_commands", "Hide !commands in bubbles"))
-	r3.add_child(_check("audience_avatars", "Chatter pictures"))
+	var pics := _check("audience_avatars", "Chatter pictures")
+	pics.tooltip_text = "Chatters' profile pictures (Kick, Twitch, YouTube) as their heads and in the chat windows. Stream Core finds and saves the pictures; for Twitch it needs Connect Twitch in Core's dashboard."
+	r3.add_child(pics)
 	v.add_child(_check("audience_titles", "Regulars' titles on name tags"))
 	v.add_child(_text_setting("audience_ignore", "Ignore names", "bots, comma separated"))
-	v.add_child(_text_setting("audience_hide_avatars", "Hide pictures of", "names, comma separated"))
+	var hide_row := _text_setting("audience_hide_avatars", "Hide pictures of", "names, comma separated")
+	(hide_row.get_child(1) as Control).tooltip_text = "People whose picture is never shown. The names are also added to Stream Core's list (Chatter profile pictures card), so Core's chat overlay hides them too. To show someone again, take them off here and in Core's dashboard."
+	v.add_child(hide_row)
 
 	v.add_child(_heading("Colours"))
 	var cb := _option("audience_color_by", "Colour chatters by", [
