@@ -184,6 +184,7 @@ func _ready() -> void:
 	EventBus.board_changed.connect(_on_board)
 	EventBus.board_cleared.connect(_on_board_cleared)
 	EventBus.chat_message_received.connect(_on_chat)
+	EventBus.chat_user_hidden.connect(_on_user_hidden)
 	EventBus.chat_status_changed.connect(_on_status)
 	EventBus.emote_ready.connect(_on_emote_ready)
 	EventBus.setting_changed.connect(_on_setting_changed)
@@ -197,6 +198,7 @@ func _exit_tree() -> void:
 	EventBus.board_changed.disconnect(_on_board)
 	EventBus.board_cleared.disconnect(_on_board_cleared)
 	EventBus.chat_message_received.disconnect(_on_chat)
+	EventBus.chat_user_hidden.disconnect(_on_user_hidden)
 	EventBus.chat_status_changed.disconnect(_on_status)
 	EventBus.emote_ready.disconnect(_on_emote_ready)
 	EventBus.setting_changed.disconnect(_on_setting_changed)
@@ -382,8 +384,22 @@ func _on_chat(msg: Dictionary) -> void:
 	if avatar != "":
 		urls.append(avatar)
 	_add_card({"name": who, "hex": String(msg.get("color", "")), "parts": parts, "avatar": avatar, "urls": urls,
-		"platform": plat, "reply_to": String(msg.get("reply_to", "")), "reply_quote": String(msg.get("reply_quote", "")),
+		"platform": plat, "user_key": "%s:%s" % [String(msg.get("platform", "")), String(msg.get("user_id", ""))],
+		"login": String(msg.get("username", "")), "reply_to": String(msg.get("reply_to", "")), "reply_quote": String(msg.get("reply_quote", "")),
 		"tint": String(msg.get("tint", "")) if bool(AppState.get_setting("audience_bubble_tints")) else ""})
+
+
+## Stream Core red-flagged a chatter: their lines leave this window.
+func _on_user_hidden(info: Dictionary) -> void:
+	var keep: Array[Dictionary] = []
+	for c in _cards:
+		if c.has("user_key") and AudienceManager.matches_hidden(info, String(c["user_key"]), String(c.get("name", "")), String(c.get("login", ""))):
+			(c["node"] as Control).queue_free()
+		else:
+			keep.append(c)
+	if keep.size() != _cards.size():
+		_cards = keep
+		_dirty = true
 
 
 func _add_card(card: Dictionary) -> void:

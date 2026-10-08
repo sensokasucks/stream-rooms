@@ -77,6 +77,7 @@ func _ready() -> void:
 	_parse_plan()
 	EventBus.chat_message_received.connect(_on_chat)
 	EventBus.chat_user_updated.connect(_on_user_updated)
+	EventBus.chat_user_hidden.connect(_on_user_hidden)
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
@@ -984,6 +985,44 @@ func update_user(info: Dictionary) -> void:
 			m["avatar_web"] = web
 	if int(m["slot"]) >= 0:
 		EventBus.audience_updated.emit(int(m["slot"]))
+
+
+func _on_user_hidden(info: Dictionary) -> void:
+	if not _mirror:
+		hide_user(info)
+
+
+## Stream Core red-flagged a chatter: they leave their seat and are forgotten. Returns how many
+## members went (a name flagged on every platform can match one per platform).
+func hide_user(info: Dictionary) -> int:
+	var gone := 0
+	for k: String in _members.keys():
+		var m: Dictionary = _members[k]
+		if not matches_hidden(info, k, String(m.get("name", "")), String(m.get("username", ""))):
+			continue
+		if int(m["slot"]) >= 0:
+			_unseat(int(m["slot"]), true)
+		else:
+			_members.erase(k)
+		gone += 1
+	if gone > 0:
+		_fill_from_crowd()
+		_emit_count()
+	return gone
+
+
+## Does a chat_user_hidden info ({platform, user_id, names}) mean this chatter?
+## key is "platform:user_id" (members, chat window cards).
+static func matches_hidden(info: Dictionary, key: String, who: String, login: String) -> bool:
+	var plat := String(info.get("platform", ""))
+	var key_plat := key.get_slice(":", 0)
+	if plat != "" and key_plat != plat:
+		return false
+	var uid := String(info.get("user_id", ""))
+	if uid != "" and key == "%s:%s" % [key_plat, uid]:
+		return true
+	var names: PackedStringArray = info.get("names", PackedStringArray())
+	return (who != "" and names.has(who.to_lower())) or (login != "" and names.has(login.to_lower()))
 
 
 func _refresh_all_seats() -> void:

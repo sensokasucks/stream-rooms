@@ -213,6 +213,20 @@ func _handle(text: String) -> void:
 						AppState.reveal_curtain()
 					"toggle":
 						AppState.toggle_curtain()
+		"chat_user_hidden":
+			# Stream Core red-flagged someone (Chat history > Red flags on its dashboard)
+			var h: Variant = (msg as Dictionary).get("data")
+			if h is Dictionary:
+				var names := PackedStringArray()
+				for k: String in ["username", "display_name"]:
+					var n := _str((h as Dictionary).get(k)).strip_edges().to_lower()
+					if n != "" and not names.has(n):
+						names.append(n)
+				EventBus.chat_user_hidden.emit({
+					"platform": _str((h as Dictionary).get("platform")),
+					"user_id": _str((h as Dictionary).get("id")),
+					"names": names,
+				})
 		"user_update":
 			var d: Variant = (msg as Dictionary).get("data")
 			if d is Dictionary:
