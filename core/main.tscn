@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3 uid="uid://danjh3b2o087s"]
+[gd_scene load_steps=14 format=3 uid="uid://danjh3b2o087s"]
 
 [ext_resource type="Script" uid="uid://7dxn8iaoocq8" path="res://core/main.gd" id="1_main"]
 [ext_resource type="Script" uid="uid://k50alayfol4l" path="res://core/room_host.gd" id="2_host"]
@@ -11,6 +11,7 @@
 [ext_resource type="Script" uid="uid://cbpxrjodoavq5" path="res://ui/overlay.gd" id="9_overlay"]
 [ext_resource type="Script" uid="uid://ceqgwkklqujsb" path="res://ui/control_panel.gd" id="10_panel"]
 [ext_resource type="Script" uid="uid://cq2smhrrb8hdm" path="res://ui/board_hud.gd" id="11_boards"]
+[ext_resource type="Script" path="res://ui/chat_hud.gd" id="12_chathud"]
 
 [sub_resource type="Environment" id="Environment_default"]
 background_mode = 1
@@ -73,6 +74,9 @@ script = ExtResource("9_overlay")
 
 [node name="BoardHud" type="CanvasLayer" parent="."]
 script = ExtResource("11_boards")
+
+[node name="ChatHud" type="CanvasLayer" parent="."]
+script = ExtResource("12_chathud")
 
 [node name="ControlPanel" type="CanvasLayer" parent="."]
 layer = 7

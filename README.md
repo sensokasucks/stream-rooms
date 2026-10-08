@@ -112,6 +112,21 @@ small ⚠ when its text would be too small to read on stream, and **Advanced ▸
 - Text size, background, text outline and columns (and, for the side windows, width, height,
   gap to the screen and up / down).
 
+### Chat box on the picture (Chat tab)
+A chat box in a corner of the picture itself, like the chat games boards: it isn't part of the
+room, so it shows from every camera, in focus view and in clean feed (it's part of the show).
+- **Chat box:** *Auto (when no chat window shows chat)* puts it up only while no window in the
+  room shows chat (for example in a room without a screen, or with the side windows off).
+  *Always* keeps it up; *Never* (the default) turns it off.
+- **Shows:** the platform ticks, the same as a chat window's.
+- **Advanced ▸:** **Corner** (bottom left by default; *Top right* shares the corner with the
+  boards), **Box width** and **Box height** (shares of the picture), and the chat windows'
+  own options: **Stream Core replies** (chat games boards come with them, and the corner boards
+  step aside while the box shows them), **Replies to**, **Header**, **Text size**,
+  **Background**, **Text outline** and **Columns**.
+
+Code: `ui/chat_hud.gd` (a "flat" `core/chat_screen.gd`). Test: `_tests/test_chat_hud.tscn`.
+
 The side windows always stand in front of the stage curtain (0.4 m in front of it). Rooms can
 nudge them further with `side_chat_extra_gap`, `side_chat_height_scale` and
 `side_chat_forward` on the room's root node (the Lecture Hall brings them 1.2 m forward and

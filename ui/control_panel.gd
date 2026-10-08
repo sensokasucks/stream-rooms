@@ -764,6 +764,35 @@ func _build_chat_tab() -> Control:
 	hud.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	r6.add_child(hud)
 	v.add_child(_slider("board_hud_scale", "Board size", 0.5, 2.5, 0.05, "%d%%", 100.0))
+
+	v.add_child(_heading("Chat box on the picture"))
+	var ch := _option("chat_hud", "Chat box", [["auto", "Auto (when no chat window shows chat)"], ["on", "Always"], ["off", "Never"]])
+	(ch.get_child(1) as Control).tooltip_text = "A chat box in a corner of the picture, like the chat games boards. Auto shows it only in rooms where no chat window shows chat."
+	(ch.get_child(1) as Control).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_child(ch)
+	var hud_row := HBoxContainer.new()
+	v.add_child(hud_row)
+	var hl := Label.new()
+	hl.text = "Shows"
+	hl.custom_minimum_size = Vector2(120, 0)
+	hud_row.add_child(hl)
+	var hud_chips := _platform_chips("chat_hud_chat")
+	hud_chips.tooltip_text = "Which platforms' chat the chat box shows."
+	hud_row.add_child(hud_chips)
+	var hud_spacer := Control.new()
+	hud_spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hud_row.add_child(hud_spacer)
+	var hud_adv := _fold(v, "chat_hud", "Advanced", hud_row)
+	var corner := _option("chat_hud_corner", "Corner", [["bottom_left", "Bottom left"], ["bottom_right", "Bottom right"], ["top_left", "Top left"], ["top_right", "Top right (shares it with the boards)"]])
+	(corner.get_child(1) as Control).tooltip_text = "Which corner of the picture the chat box sits in."
+	hud_adv.add_child(corner)
+	var hw := _slider("chat_hud_width", "Box width", 0.1, 0.9, 0.01, "%d%%", 100.0)
+	hw.tooltip_text = "How wide the chat box is, as a share of the picture."
+	hud_adv.add_child(hw)
+	var hh := _slider("chat_hud_height", "Box height", 0.1, 0.95, 0.01, "%d%%", 100.0)
+	hh.tooltip_text = "How tall the chat box is, as a share of the picture."
+	hud_adv.add_child(hh)
+	_chat_window_options(hud_adv, "chat_hud", "A box on the picture (not in the room), so it shows from every camera.", false)
 	return v
 
 
@@ -790,8 +819,12 @@ func _chat_window(v: VBoxContainer, key: String, title: String, where: String, s
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	var body := _fold(v, "chat_" + key, "Advanced", head)
-	v = body
+	_chat_window_options(_fold(v, "chat_" + key, "Advanced", head), key, where, side)
+
+
+## A chat window's Advanced options: replies, header, text size, looks (and, beside the screen,
+## its size and position).
+func _chat_window_options(v: VBoxContainer, key: String, where: String, side: bool) -> void:
 	v.add_child(_hint(where))
 	v.add_child(_mix_warning(key + "_chat"))
 	v.add_child(_option(key + "_replies", "Stream Core replies", [["off", "Off"], ["on", "Always"], ["fallback", "When there's no reply screen"]]))
