@@ -390,13 +390,18 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     Animated WebP can't be decoded yet: those show a still frame when the site provides one,
     otherwise their name as text (the Redot output then says "Emote image not supported").
   - Normal emoji use your system's colour emoji font (Segoe UI Emoji on Windows).
-- **Chatter pictures:** Kick and YouTube chatters' profile pictures fill the silhouette's head,
-  cropped round inside their colour ring.
-  - YouTube pictures come with each message. For Kick, Stream Core looks each new chatter up
-    once, so their picture appears a moment after their first message.
-  - Twitch pictures aren't supported yet.
+- **Chatter pictures:** Kick, Twitch and YouTube chatters' profile pictures fill the silhouette's
+  head, cropped round inside their colour ring.
+  - Stream Core finds the pictures and saves a copy of each one, and Stream Rooms loads them
+    from Core. YouTube pictures come with each message. For Kick and Twitch, Core looks each new
+    chatter up once, so their picture appears a moment after their first message. Twitch needs
+    **Connect Twitch** in Core's dashboard.
   - Turn pictures off with **Chatter pictures**, or hide one person's picture with
-    **Hide pictures of** (Audience tab).
+    **Hide pictures of** (Audience tab). Those names are also added to Core's list (the
+    **Chatter profile pictures** card in Core's dashboard), so Core's chat overlay hides them
+    too. To show someone again, remove the name in both places.
+  - When streaming together, guests' PCs get the platform's own picture link, since Core's copy
+    only exists on your PC.
 - **Where they sit:** **New chatters sit** in the Audience tab picks the seat:
   - *Anywhere (random)*: any free seat.
   - *Front row first, from the middle*: the row nearest the screen fills first, middle seats

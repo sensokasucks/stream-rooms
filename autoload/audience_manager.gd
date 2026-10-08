@@ -401,6 +401,11 @@ func add_chat(msg: Dictionary) -> void:
 		if int(m["slot"]) >= 0:
 			EventBus.audience_updated.emit(int(m["slot"]))
 	var avatar := String(msg.get("avatar", ""))
+	var web := String(msg.get("avatar_web", ""))
+	if web == "" and avatar.begins_with("https://"):
+		web = avatar
+	if web != "":
+		m["avatar_web"] = web     # the platform's link, for guests (Core's own copy only works on this PC)
 	if avatar != "" and avatar != String(m.get("avatar", "")):
 		m["avatar"] = avatar
 		if int(m["slot"]) >= 0:
@@ -939,7 +944,17 @@ func update_user(info: Dictionary) -> void:
 	if not _members.has(key):
 		return
 	var m: Dictionary = _members[key]
-	m["avatar"] = String(info.get("avatar", ""))
+	if bool(info.get("hidden", false)):
+		# put on Stream Core's hide list
+		m["avatar"] = ""
+		m["avatar_web"] = ""
+	else:
+		m["avatar"] = String(info.get("avatar", ""))
+		var web := String(info.get("avatar_web", ""))
+		if web == "" and String(m["avatar"]).begins_with("https://"):
+			web = String(m["avatar"])
+		if web != "":
+			m["avatar_web"] = web
 	if int(m["slot"]) >= 0:
 		EventBus.audience_updated.emit(int(m["slot"]))
 
@@ -1131,7 +1146,7 @@ func wire_member(slot: int) -> Dictionary:
 	var m: Dictionary = _members[_slots[slot]]
 	return {"key": String(m["key"]), "name": String(m["name"]), "username": String(m.get("username", "")),
 		"platform": String(m.get("platform", "other")), "hex": String(m.get("hex", "")), "style": int(m["style"]),
-		"color": m["color"], "avatar": String(m.get("avatar", "")), "title": String(m.get("title", ""))}
+		"color": m["color"], "avatar": _web_avatar(m), "title": String(m.get("title", ""))}
 
 
 ## Mirror: the host's whole roster for a room (it waits if this PC hasn't loaded that room yet).
@@ -1199,6 +1214,15 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 			clean.append({"url": String(part["url"]).left(500), "name": String(part.get("name", "")).left(60)})
 	if not clean.is_empty():
 		EventBus.audience_spoke.emit(slot, clean)
+
+
+## The picture link a guest's PC can download: the platform's https link, not Stream Core's local copy.
+func _web_avatar(m: Dictionary) -> String:
+	var web := String(m.get("avatar_web", ""))
+	if web != "":
+		return web
+	var avatar := String(m.get("avatar", ""))
+	return avatar if avatar.begins_with("https://") else ""
 
 
 func _apply_wire(m: Dictionary, wm: Dictionary) -> void:
