@@ -7,6 +7,7 @@ extends Node
 ## are decoded by GifDecoder on a worker thread and become an AnimatedTexture.
 ## Animated WebP can't be decoded, so those stay as their text name.
 ##   is_animated(tex): viewports showing it must redraw every frame to play it.
+##   set_fallback(url, still): if url can't be shown (e.g. animated WebP), load still in its place.
 
 const CACHE_DIR: String = "user://emote_cache/"
 const MAX_PARALLEL: int = 4
@@ -18,6 +19,8 @@ var _queue: Array[String] = []
 var _active: Dictionary = {}       # url -> HTTPRequest
 var _circles: Dictionary = {}      # url -> round Texture2D (profile pictures)
 var _decoding: Dictionary = {}     # url -> {id, out: Array, body, save} while a GIF decodes on a worker thread
+var _fallback: Dictionary = {}     # url -> still picture to load instead when url can't be shown
+var _fetch: Dictionary = {}        # url -> the address downloaded for it (its fallback, after url failed)
 
 
 func _ready() -> void:
@@ -88,6 +91,12 @@ func get_circle_texture(url: String, size: int = 128) -> Texture2D:
 	return disc
 
 
+## Still picture to show under url's name if url doesn't load or can't be decoded.
+func set_fallback(url: String, still: String) -> void:
+	if url != "" and still != "" and still != url and not _fallback.has(url):
+		_fallback[url] = still
+
+
 func is_failed(url: String) -> bool:
 	return _failed.has(url)
 
@@ -102,7 +111,7 @@ func _pump() -> void:
 		add_child(req)
 		_active[url] = req
 		req.request_completed.connect(_on_done.bind(url, req))
-		if req.request(url) != OK:
+		if req.request(String(_fetch.get(url, url))) != OK:
 			_finish(url, req, PackedByteArray())
 
 
@@ -126,11 +135,20 @@ func _finish(url: String, req: HTTPRequest, body: PackedByteArray) -> void:
 		if f:
 			f.store_buffer(body)
 		EventBus.emote_ready.emit(url)
-	else:
+	elif not _try_fallback(url):
 		_failed[url] = true
 		if body.size() > 0:
 			push_warning("Emote image not supported (%s): %s" % [_kind(body), url])
 	_pump()
+
+
+## url didn't work: download its still picture under url's name. False when there's none left to try.
+func _try_fallback(url: String) -> bool:
+	if not _fallback.has(url) or _fetch.has(url):
+		return false
+	_fetch[url] = _fallback[url]
+	_queue.append(url)
+	return true
 
 
 ## GIF -> frames on a worker thread; _process collects the result and makes the texture.
@@ -162,6 +180,9 @@ func _exit_tree() -> void:
 func _gif_done(url: String, result: Dictionary, body: PackedByteArray, save: bool) -> void:
 	var frames: Array = result.get("frames", [])
 	if frames.is_empty():
+		if _try_fallback(url):
+			_pump()
+			return
 		_failed[url] = true
 		push_warning("Couldn't decode GIF emote: %s" % url)
 		return

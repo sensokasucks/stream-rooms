@@ -385,10 +385,11 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   That covers Twitch emotes plus BetterTTV, FrankerFaceZ and 7TV emotes (Stream Core sends them
   with each message) and Kick emotes.
   - Images download once and are kept in `user://emote_cache/` (`autoload/emote_cache.gd`).
-  - Animated GIF emotes (Kick, BetterTTV, ...) play in the bubbles and on the chat screen. The
-    engine can't read GIFs, so `core/gif_decoder.gd` decodes them on a worker thread.
-    Animated WebP can't be decoded yet: those show a still frame when the site provides one,
-    otherwise their name as text (the Redot output then says "Emote image not supported").
+  - Animated emotes (Twitch, Kick, BetterTTV, 7TV) play in the bubbles and on the chat screen.
+    The engine can't read GIFs, so `core/gif_decoder.gd` decodes them on a worker thread.
+    Animated WebP can't be decoded yet (FrankerFaceZ's animated emotes): those show a still frame
+    when the site provides one, otherwise their name as text (the Redot output then says "Emote
+    image not supported"). If an animated emote doesn't load, its still picture is used instead.
   - Normal emoji use your system's colour emoji font (Segoe UI Emoji on Windows).
 - **Chatter pictures:** Kick, Twitch and YouTube chatters' profile pictures fill the silhouette's
   head, cropped round inside their colour ring.
