@@ -86,6 +86,9 @@ signal chat_status_changed(info: Dictionary)
 signal chat_message_received(msg: Dictionary)
 ## Late info about a chatter from Stream Core: {"platform", "user_id", "avatar"}
 signal chat_user_updated(info: Dictionary)
+## Stream Core red-flagged a chatter: {"platform" ("" = every platform), "user_id", "names"
+## (lower-case login + display name)}. Their seat and chat lines go; Core sends no more of their chat.
+signal chat_user_hidden(info: Dictionary)
 ## Stream Core answered a chat command (its API-free reply path: {message, platform,
 ## reply_to_user, source, timestamp, history}). Shown on the reply screen.
 signal core_reply_received(reply: Dictionary)

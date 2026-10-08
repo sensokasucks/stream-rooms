@@ -425,6 +425,10 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     too. To show someone again, remove the name in both places.
   - When streaming together, guests' PCs get the platform's own picture link, since Core's copy
     only exists on your PC.
+- **Red-flagged chatters:** Stream Core's dashboard (**Chat history** page, **🚩 Red flags**) has a
+  list of phrases. Whoever says one is red-flagged: they leave their seat, their lines leave the
+  chat windows, and Core sends nothing more from them (no chat, reactions or commands). Nothing to
+  set up in Stream Rooms. **Unflag** them in Core's dashboard to let their new chat through again.
 - **Where they sit:** **New chatters sit** in the Audience tab picks the seat:
   - *Anywhere (random)*: any free seat.
   - *Front row first, from the middle*: the row nearest the screen fills first, middle seats
