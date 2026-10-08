@@ -625,7 +625,25 @@ func _crowd_idle_seconds() -> float:
 	return maxf(float(AppState.get_setting("audience_crowd_idle_min")), 0.05) * 60.0
 
 
-## The message as a list of text pieces and emotes ({"url", "name"}), in order.
+## The picture to show for one emote range from Stream Core. The animated one when the engine can
+## play it (GIF), else the still one:
+##   - Twitch: "url" is the "default" format, a GIF for animated emotes and a PNG for the rest.
+##   - 7TV: "url" is an animated WebP the engine can't read; 7TV has the same emote as a GIF.
+##   - BetterTTV: "url" is a GIF and "static_url" is empty for animated emotes.
+##   - FrankerFaceZ: the animated one is WebP only, so the still one.
+## EmoteCache falls back to "static_url" when the animated one doesn't load.
+static func emote_url(e: Dictionary) -> String:
+	var url := String(e.get("url", ""))
+	var still := String(e.get("static_url", ""))
+	var provider := String(e.get("provider", ""))
+	if provider == "twitch" and url != "":
+		return url
+	if provider == "7tv" and bool(e.get("animated", false)) and url.ends_with("/2x.webp"):
+		return url.trim_suffix(".webp") + ".gif"
+	return still if still != "" else url
+
+
+## The message as a list of text pieces and emotes ({"url", "name", maybe "still"}), in order.
 ##   - Twitch: Stream Core sends emote ranges (native + BTTV/FFZ/7TV), inclusive code points.
 ##   - Kick: emotes are inline tokens "[emote:123:name]".
 ## Spaces are tidied and the whole thing is capped at max_text (an emote counts EMOTE_WEIGHT).
@@ -640,14 +658,17 @@ func message_parts(text: String, ranges: Array, max_text: int = MAX_TEXT) -> Arr
 		var t := int(e.get("end", -1))
 		if s < pos or t < s or t >= text.length():
 			continue
-		var url := String(e.get("static_url", ""))
-		if url == "":
-			url = String(e.get("url", ""))
+		var url := emote_url(e)
 		if url == "":
 			continue
 		if s > pos:
 			raw.append(text.substr(pos, s - pos))
-		raw.append({"url": url, "name": text.substr(s, t - s + 1)})
+		var still := String(e.get("static_url", ""))
+		EmoteCache.set_fallback(url, still)
+		var part := {"url": url, "name": text.substr(s, t - s + 1)}
+		if still.begins_with("https://") and still != url:
+			part["still"] = still      # (passed on to guests, who need the same fallback)
+		raw.append(part)
 		pos = t + 1
 	if pos < text.length():
 		raw.append(text.substr(pos))
@@ -1199,7 +1220,7 @@ func mirror_update(room: String, slot: int, wm: Dictionary) -> void:
 	EventBus.audience_updated.emit(slot)
 
 
-## parts: Strings and emote Dictionaries {url, name} (only https pictures are kept), and maybe a
+## parts: Strings and emote Dictionaries {url, name, maybe still} (only https pictures are kept), and maybe a
 ## first {reply_to, quote} saying who the message answers.
 func mirror_speak(room: String, slot: int, parts: Array) -> void:
 	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
@@ -1211,7 +1232,13 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 		elif part is Dictionary and (part as Dictionary).has("reply_to") and clean.is_empty():
 			clean.append({"reply_to": String(part["reply_to"]).left(60), "quote": String(part.get("quote", "")).left(120)})
 		elif part is Dictionary and String((part as Dictionary).get("url", "")).begins_with("https://"):
-			clean.append({"url": String(part["url"]).left(500), "name": String(part.get("name", "")).left(60)})
+			var url := String(part["url"]).left(500)
+			var item := {"url": url, "name": String(part.get("name", "")).left(60)}
+			var still := String(part.get("still", "")).left(500)
+			if still.begins_with("https://"):
+				EmoteCache.set_fallback(url, still)
+				item["still"] = still
+			clean.append(item)
 	if not clean.is_empty():
 		EventBus.audience_spoke.emit(slot, clean)
 
