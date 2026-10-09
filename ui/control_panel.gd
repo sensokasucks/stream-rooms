@@ -60,6 +60,7 @@ var _texts: Dictionary = {}               # setting key -> LineEdit (text settin
 var _syncing: bool = false                # a control is being set to match a setting (don't write it back)
 var _curtain_buttons: Array[Button] = []
 var _net_status: Label
+var _net_pw_hint: Label          # Together: "this password is short"
 var _net_peers: VBoxContainer
 var _net_host_btn: Button
 var _net_join_btn: Button
@@ -1436,8 +1437,12 @@ func _build_together_tab() -> Control:
 	var pw_row := _text_setting("together_password", "Password", "everyone types the same one")
 	var pw := pw_row.get_child(1) as LineEdit
 	pw.secret = true
-	pw.tooltip_text = "The session password. The host picks it (at least 4 characters) and tells the guests. It stays on this PC; only a scrambled check of it is sent."
+	pw.tooltip_text = "The session password. The host picks it (at least %d characters) and tells the guests. It stays on this PC; only a scrambled check of it is sent." % NetSession.MIN_PASSWORD
 	v.add_child(pw_row)
+	_net_pw_hint = _hint("")
+	_net_pw_hint.add_theme_color_override("font_color", Color(1.0, 0.75, 0.35))
+	v.add_child(_net_pw_hint)
+	_update_pw_hint()
 
 	v.add_child(_heading("Host"))
 	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["tunnel", "Cloudflare tunnel (hide my address)"],
@@ -2004,7 +2009,18 @@ func _on_ducking(ducking: bool) -> void:
 	_duck_label.text = "ducking" if ducking else ""
 
 
+## Together tab: a note while the password is too short to host with.
+func _update_pw_hint() -> void:
+	if _net_pw_hint == null:
+		return
+	var pw := String(AppState.get_setting("together_password")).strip_edges()
+	_net_pw_hint.visible = pw != "" and NetSession.password_too_short()
+	_net_pw_hint.text = "This password is short. To host, pick one with at least %d characters (guests just type the same one)." % NetSession.MIN_PASSWORD
+
+
 func _on_setting_changed(key: String, value: Variant) -> void:
+	if key == "together_password":
+		_update_pw_hint()
 	if key == "panel_scale":
 		_scale_pending = 0.3      # applied once the slider stops moving (it moves under the mouse otherwise)
 	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_ndi")):

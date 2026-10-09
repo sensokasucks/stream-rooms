@@ -214,7 +214,7 @@ static func _kind(body: PackedByteArray) -> String:
 
 
 func _decode(body: PackedByteArray) -> Texture2D:
-	if body.size() < 12:
+	if body.size() < 12 or PictureFile.too_big(body):     # (a small file can claim a huge size)
 		return null
 	var img := Image.new()
 	var err := ERR_FILE_UNRECOGNIZED
