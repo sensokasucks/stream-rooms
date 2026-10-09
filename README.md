@@ -617,7 +617,9 @@ Then:
 3. Each guest pastes it into **Host address** and clicks **Join**.
 
 4. **Both of you confirm.** Once the password checks out, a popup opens on the host's screen:
-   "*Name* wants to join your session. Let them in?" with **Let them in** and **Decline**. At the
+   "Someone calling themselves *Name* wants to join your session. Let them in?" with **Let them in**
+   and **Decline**. The name is whatever they typed, so if you're not sure it's your friend, ask
+   them (on Discord, say) before letting them in. At the
    same time the guest gets "You're connected to *Host name*. Is that who you meant to join?" with
    **Yes, join** and **No, leave**. Nothing is shared and nothing syncs until both have said yes;
    until then the guest only sits in a waiting line (the status line says who is waiting). A

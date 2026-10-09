@@ -1596,7 +1596,9 @@ func _on_net_confirm_needed(side: String, peer_id: int, who: String) -> void:
 	d.min_size = Vector2i(420, 0)
 	if side == "host":
 		d.title = "Someone wants to join"
-		d.dialog_text = "%s wants to join your session.\nLet them in? Nothing is shared until you do." % who
+		# (the name is whatever the joiner typed, and they got the password right: say so, so the
+		# host checks with the friend they expect before letting "them" in)
+		d.dialog_text = "Someone calling themselves \"%s\" wants to join your session.\nThey know the password, but anyone can type any name: if you're not sure it's them, ask them first (for example on Discord).\nLet them in? Nothing is shared until you do." % who
 		d.ok_button_text = "Let them in"
 		d.cancel_button_text = "Decline"
 		d.confirmed.connect(func() -> void:
