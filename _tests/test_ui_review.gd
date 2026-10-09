@@ -94,7 +94,7 @@ func _ready() -> void:
 	await _secs(0.2)
 	_check((panel._source_sections["spout"] as Control).visible and not (panel._source_sections["capture"] as Control).visible,
 		"picking Spout shows the Spout controls only")
-	_check(not panel._spout_label.is_visible_in_tree(), "the Spout help text is under Advanced")
+	_check(panel._spout_label.is_visible_in_tree(), "the Spout status line shows without opening Advanced (review batch 3)")
 	panel._show_source_section("capture")
 
 	# ── Chat tab: summary rows ──
