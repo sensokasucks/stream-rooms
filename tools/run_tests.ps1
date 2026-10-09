@@ -12,7 +12,7 @@
 #   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions
 # Screenshots and logs go to -Out (default C:\temp\sr_tests), outside the project folder.
 param(
-	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks", "test_spout", "test_watch_together", "test_mic_safety", "test_shared_audience", "test_presenter_extras", "test_room_swaps", "test_ui_review", "test_chat_replies", "test_core_pictures", "test_odd_text", "test_emote_urls", "test_bubble_colors", "test_chat_hud", "test_red_flags", "test_bubble_leave"),
+	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks", "test_spout", "test_watch_together", "test_mic_safety", "test_shared_audience", "test_presenter_extras", "test_room_swaps", "test_ui_review", "test_chat_replies", "test_core_pictures", "test_odd_text", "test_emote_urls", "test_bubble_colors", "test_chat_hud", "test_red_flags", "test_bubble_leave", "test_capture_key", "test_together_limits", "test_video_quit"),
 	[string]$Out = "C:\temp\sr_tests",
 	[string]$Redot = "G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe",
 	[int]$TimeLimit = 400,
@@ -48,6 +48,7 @@ foreach ($t in $Tests) {
 	$dir = Join-Path $Out $t
 	New-Item -ItemType Directory -Force $dir | Out-Null
 	# fresh defaults, except: never talk to the real Stream Core (it may be running for a stream)
+	Remove-Item "$profileCfg.bak", "$profileCfg.tmp" -Force -ErrorAction SilentlyContinue
 	Set-Content -Path $profileCfg -Encoding ascii -Value "[settings]`r`n`r`nchat_enabled=false`r`nchat_core_url=`"ws://127.0.0.1:9/ws`"`r`n"
 	$log = Join-Path $Out "$t.log"
 	$ended = Invoke-Redot @("--path", "`"$project`"", "_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test") $log $TimeLimit
@@ -61,7 +62,7 @@ foreach ($t in $Tests) {
 		"Script errors" = @($text | Where-Object { $_ -like "*SCRIPT ERROR*" }).Count
 	}
 }
-if (Test-Path $profileCfg) { Remove-Item $profileCfg -Force }
+Remove-Item $profileCfg, "$profileCfg.bak", "$profileCfg.tmp" -Force -ErrorAction SilentlyContinue
 
 $rows | Format-Table -AutoSize
 Write-Host "Logs and screenshots: $Out"

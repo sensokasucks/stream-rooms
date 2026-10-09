@@ -40,12 +40,24 @@ game's Source tab both warn you if the browser couldn't silence it. If that happ
 **Lip-sync:** the picture travels a longer path than the sound, so audio is delayed by 150 ms by
 default. Adjust **Audio delay** or **Video delay** in the *Sound* tab.
 
+**Only your sender page can use it:** each time the game starts it makes a new secret key and
+writes it into the sender page. The game only takes pictures and sound from a page that has that
+key, so another website open in your browser can't put its own picture on your big screen or
+read your Together live-feed key. Nothing changes for you: open the page with **Open sender page**
+(or your bookmark) as before. A sender page left open while you restart the game picks up the new
+key by itself and reconnects. The page only opens as `127.0.0.1` or `localhost`.
+
 **Webcam:** click **Start webcam** on the sender page. It shows on the room's picture frame
 (`WEBCAM_Frame`), or as a corner overlay if the room doesn't have one.
 
 ## Playing a file or URL (fallback)
 Type a path or a YouTube URL in the *Source* tab, or click **Browse...**. Non-`.ogv` files and URLs
 need `yt-dlp` and `ffmpeg`: right-click `tools/get_tools.ps1` > *Run with PowerShell*.
+
+Downloads are limited to 2 GB and 4 hours per video, so a link (yours, or a co-host's in a
+Together session) can't fill your disk. Closing the app while a video downloads or converts stops
+yt-dlp / ffmpeg straight away instead of waiting for them, and a stopped convert never leaves a
+broken video in the cache.
 
 ## Hotkeys
 | Key | Action |
@@ -212,6 +224,11 @@ Closing the window saves your settings, then shows a black screen for a second a
 it shuts down. That's on purpose: the engine this app runs on (Redot 26.2) can crash while it
 throws away a room that was just on screen, so the room is hidden first. Switching rooms keeps the
 old room hidden for three seconds for the same reason; you won't see it.
+The hidden old room stops reacting at once, so a reaction never plays twice during a room change.
+
+Settings are saved to a new file that then replaces the old one, and the save before is kept as
+`settings.cfg.bak`. If the app crashes in the middle of saving, the next start reads the backup
+instead of losing your settings.
 
 ## Control panel in its own window (F9)
 **Own window (F9)** at the bottom of the panel moves it into a separate window, so a Window /
@@ -595,7 +612,7 @@ Two ways, and nobody has to open ports on their router either way:
 
 Then:
 
-1. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 4 characters) and tells the guests.
+1. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 8 characters) and tells the guests. A shorter password you saved before this rule still works, but the Together tab asks you to pick a longer one.
 2. The host clicks **Host a session**, then **Copy address**, and sends the copied address to the guests (in a private message, not on stream).
 3. Each guest pastes it into **Host address** and clicks **Join**.
 
@@ -608,6 +625,13 @@ Then:
    The names are the **Your name** each person typed.
 
 **Leave / stop hosting** ends your part. A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
+
+**Limits that protect the host:** at most three guests (a fourth is told the session is full).
+After five wrong passwords from one place, joining from there pauses for a minute (through the
+Cloudflare tunnel everyone counts as one place, so a real guest may have to wait that minute too).
+A connection that doesn't answer the password check within 10 seconds is dropped, and only four
+can be at the password check at once. Pictures sent over the session (podium pictures, chatter
+pictures) larger than 4096 pixels either way are refused.
 
 **Nothing to leak on stream:** the host address is never shown on screen, only copied, and the
 **Host address** box shows dots, like the password. Messages on screen never contain an address
