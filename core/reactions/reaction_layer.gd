@@ -53,9 +53,16 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	EventBus.reaction_play.disconnect(_on_play)
-	EventBus.reaction_meter_changed.disconnect(_on_meter)
-	EventBus.setting_changed.disconnect(_on_setting_changed)
+	retire()
+
+
+## The room was swapped out (RoomHost keeps it hidden for a few seconds before freeing it):
+## stop playing reactions and stop being the room's reaction target list.
+func retire() -> void:
+	if EventBus.reaction_play.is_connected(_on_play):
+		EventBus.reaction_play.disconnect(_on_play)
+		EventBus.reaction_meter_changed.disconnect(_on_meter)
+		EventBus.setting_changed.disconnect(_on_setting_changed)
 	Reactions.clear_room(self)
 
 

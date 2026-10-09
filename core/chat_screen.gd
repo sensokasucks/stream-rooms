@@ -194,6 +194,15 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	retire()
+
+
+## The room was swapped out (hidden, freed a few seconds later): stop taking chat.
+func retire() -> void:
+	if not EventBus.chat_message_received.is_connected(_on_chat):
+		return
+	if is_in_group("chat_windows"):
+		remove_from_group("chat_windows")
 	EventBus.core_reply_received.disconnect(_on_reply)
 	EventBus.board_changed.disconnect(_on_board)
 	EventBus.board_cleared.disconnect(_on_board_cleared)

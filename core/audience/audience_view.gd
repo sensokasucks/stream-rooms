@@ -132,6 +132,14 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
+	retire()
+
+
+## The room was swapped out (hidden, freed a few seconds later): stop following the audience,
+## so the new room's chatters don't get seats and bubbles in this one too.
+func retire() -> void:
+	if not EventBus.audience_seated.is_connected(_on_seated):
+		return
 	EventBus.emote_ready.disconnect(_on_emote_ready)
 	EventBus.audience_updated.disconnect(_on_updated)
 	EventBus.audience_seated.disconnect(_on_seated)

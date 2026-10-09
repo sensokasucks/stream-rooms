@@ -56,6 +56,16 @@ func _ready() -> void:
 		var room := host.get_current_room()
 		_check(room != null and String(AppState.get_setting("room_id")) == ROOMS[next % ROOMS.size()],
 			"swap %d: the %s is the current room" % [swap + 1, ROOMS[next % ROOMS.size()]])
+		# the old room (still hidden in the tree for a few seconds) has stopped listening
+		var layers := 0
+		for c: Dictionary in EventBus.reaction_play.get_connections():
+			if (c["callable"] as Callable).get_object() is ReactionLayer:
+				layers += 1
+		var views := 0
+		for c: Dictionary in EventBus.audience_seated.get_connections():
+			if (c["callable"] as Callable).get_object() is AudienceView:
+				views += 1
+		_check(layers <= 1 and views <= 1, "swap %d: only the new room plays reactions and seats chatters (%d layers, %d views)" % [swap + 1, layers, views])
 		next += 1
 	await _secs(3.0)        # (the last old room is freed in here)
 	_check(get_tree().root.find_children("*", "Room", true, false).size() == 1, "only one room is left in the tree")
