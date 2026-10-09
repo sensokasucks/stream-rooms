@@ -21,7 +21,7 @@ extends Node
 ##   - guests don't relay to each other directly (the host forwards what they need),
 ##   - web addresses must be http(s); a guest never opens a file path sent over the network.
 
-const PROTOCOL: int = 1
+const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
 const AUTH_TIMEOUT: float = 10.0
