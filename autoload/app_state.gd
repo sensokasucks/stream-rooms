@@ -45,7 +45,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
-	"audience_platform_colors": true, # (old; see audience_color_by)
+	"audience_platform_colors": true, # (old, unused: only read once to carry an old save over to audience_color_by)
 	"audience_color_by": "chat", # silhouette / name colours: chat (the chatter's own chat colour) | name (picked from the name) | platform
 	"platform_color_kick": Color("53fc18"),
 	"platform_color_twitch": Color("9146ff"),
@@ -56,7 +56,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"seating_plan": "",          # JSON {section id: "kick,twitch,youtube,other"}; a missing / blank section = anyone
 	"seating_strict": true,      # a chatter whose sections are full waits (or takes an idle chatter's seat there) instead of sitting elsewhere
 	"audience_avatars": true,    # chatters' profile pictures as the silhouette's head (Kick, Twitch, YouTube; Stream Core saves them)
-	"audience_hide_avatars": "", # names whose picture is never shown (comma separated)
+	"audience_hide_avatars": "", # names whose picture is never shown (comma separated; display name or login; "kick:name" = that platform only)
 	"audience_seating": "random",  # new chatters sit: random | front (front row, centre out) | front_random (front row first, random seat in it)
 	"audience_crowd": true,      # rooms with a big crowd (lecture hall tiers, balcony, gallery): show the filler crowd
 	"audience_crowd_fill": 0.6,  # share of the crowd seats with a filler person (chatters take their places)
@@ -129,7 +129,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"vsync": true,               # wait for the display refresh (no tearing)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
-	"panel_folded": "",          # (old) Chat tab window sections folded away (CSV of window keys)
+	"panel_folded": "",          # (old, unused: nothing reads it since the Advanced folds; kept so old saves load quietly)
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
 	"chat_left_header_on": true,
