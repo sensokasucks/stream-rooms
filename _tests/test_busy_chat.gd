@@ -40,16 +40,16 @@ func _ready() -> void:
 	var f := FileAccess.open(EmoteCache._disk_path(url), FileAccess.WRITE)
 	f.store_buffer(src.save_png_to_buffer())
 	f.close()
-	var ready: Array[String] = []
-	EventBus.emote_ready.connect(func(u: String) -> void: ready.append(u))
+	var arrived: Array[String] = []
+	EventBus.emote_ready.connect(func(u: String) -> void: arrived.append(u))
 	var first := EmoteCache.get_circle_texture(url, 128)
 	_check(first == null, "the round picture isn't made on the spot (a worker thread makes it)")
 	for i in 100:
-		if ready.has(url):
+		if arrived.has(url):
 			break
 		await get_tree().process_frame
 	var disc := EmoteCache.get_circle_texture(url, 128)
-	_check(ready.has(url) and disc != null and disc.get_width() == 128, "it's ready a moment later, 128 px, and emote_ready says so")
+	_check(arrived.has(url) and disc != null and disc.get_width() == 128, "it's arrived a moment later, 128 px, and emote_ready says so")
 	if disc:
 		var img := disc.get_image()
 		_check(img.get_pixel(1, 1).a < 0.05 and img.get_pixel(64, 64).a > 0.95 and absf(img.get_pixel(64, 64).b - 1.0) < 0.05,
