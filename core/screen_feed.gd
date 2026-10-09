@@ -25,6 +25,8 @@ const NDI_AUDIO_TARGET_MIN: float = 0.05
 const NDI_AUDIO_TARGET_MAX: float = 1.5
 ## Sound left in the NDI frame-sync on purpose, because its queue depth is only approximate.
 const NDI_QUEUE_MARGIN_S: float = 0.02
+## (for VideoLoader.plain_error: the loader script has no class_name)
+const VIDEO_LOADER := preload("res://core/video_loader.gd")
 
 @export var capture_server: CaptureServer
 @export var video_loader: Node          # core/video_loader.gd
@@ -87,8 +89,11 @@ func _ready() -> void:
 	stream_audio_player.bus = AudioManager.VIDEO_BUS
 
 	video_loader.status.connect(func(m: String) -> void: EventBus.status_message.emit(m, false))
+	video_loader.stage.connect(func(s: String) -> void: EventBus.video_job_changed.emit(s, "", ""))
 	video_loader.failed.connect(_on_loader_failed)
-	video_loader.ready_to_play.connect(_play_file)
+	video_loader.ready_to_play.connect(func(path: String) -> void:
+		EventBus.video_job_changed.emit("ready", "Ready: %s" % path.get_file(), "")
+		_play_file(path))
 
 	capture_server.video_frame_ready.connect(_on_capture_frame)
 	capture_server.webcam_frame_ready.connect(_on_webcam_frame)
@@ -199,7 +204,10 @@ func _on_file_prepare_requested(input: String) -> void:
 
 
 func _on_loader_failed(message: String) -> void:
-	EventBus.status_message.emit(message, true)
+	var plain: String = VIDEO_LOADER.plain_error(message)
+	EventBus.status_message.emit(plain, true)
+	if not video_loader.busy:     # (busy: a second Play while one runs; the running one carries on)
+		EventBus.video_job_changed.emit("failed", plain, message if plain != message else "")
 	if _prepare_input != "":
 		var input := _prepare_input
 		_prepare_input = ""
@@ -475,6 +483,11 @@ func _on_sender_status(info: Dictionary) -> void:
 		_gen_playback = null
 		_capture_texture = null
 		_set_source("none")
+		# like NDI and Spout: say so, instead of the big screen just going blank
+		if not status["connected"]:
+			EventBus.status_message.emit("The browser tab stopped: the sender page closed or lost its connection.", true)
+		else:
+			EventBus.status_message.emit("The browser tab stopped sharing (Stop was pressed, or the shared tab closed).", true)
 
 
 # ── Reaction pause ───────────────────────────────────────────

@@ -11,6 +11,8 @@ extends Node
 ## ".part.ogv" file first, so a stopped one never leaves a broken video in the cache.
 
 signal status(message: String)
+## "downloading" or "converting": what the job is doing now (for the panel's status line).
+signal stage(name: String)
 signal ready_to_play(path: String)
 signal failed(message: String)
 
@@ -91,6 +93,10 @@ func _say(msg: String) -> void:
 	status.emit.call_deferred(msg)
 
 
+func _stage(name: String) -> void:
+	stage.emit.call_deferred(name)
+
+
 func _done(ok: bool, payload: String) -> void:
 	_finish.call_deferred(ok, payload)
 
@@ -106,6 +112,7 @@ func _job_local(path: String) -> void:
 	if ffmpeg == "":
 		_done(false, _missing_msg("ffmpeg"))
 		return
+	_stage("converting")
 	_say("Converting %s to .ogv (this can take a while for long videos)..." % path.get_file())
 	var err := _convert(ffmpeg, abs_src, out)
 	_done(err == "", out if err == "" else err)
@@ -126,6 +133,7 @@ func _job_url(url: String) -> void:
 		_done(false, _missing_msg("ffmpeg"))
 		return
 
+	_stage("downloading")
 	_say("Downloading video with yt-dlp...")
 	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [_cache_dir, key])
 	var fmt := "bv*[height<=%d]+ba/b[height<=%d]/b" % [max_height, max_height]
@@ -161,6 +169,7 @@ func _job_url(url: String) -> void:
 		_done(false, "yt-dlp failed (code %d):\n%s" % [code, _tail(ytlog)])
 		return
 
+	_stage("converting")
 	_say("Converting download to .ogv (this can take a while for long videos)...")
 	var err := _convert(ffmpeg, src, out)
 	DirAccess.remove_absolute(src) # keep only the converted copy
@@ -188,6 +197,30 @@ func _convert(ffmpeg: String, src: String, out: String) -> String:
 
 
 # ------------------------------------------------------------ helpers
+
+## A failure in plain words (the raw yt-dlp / ffmpeg log is kept for a Details fold).
+static func plain_error(raw: String) -> String:
+	var low := raw.to_lower()
+	if raw.begins_with("yt-dlp failed") or raw.begins_with("ffmpeg failed"):
+		if low.contains("private video"):
+			return "Couldn't download: that video is private."
+		if low.contains("confirm your age") or low.contains("age-restricted") or low.contains("age restricted"):
+			return "Couldn't download: that video is age-restricted (YouTube wants a sign-in)."
+		if low.contains("live event will begin") or low.contains("premieres in"):
+			return "Couldn't download: that stream or premiere hasn't started yet."
+		if low.contains("video unavailable") or low.contains("this video is not available"):
+			return "Couldn't download: YouTube says the video is unavailable (removed, or blocked where you are)."
+		if low.contains("http error 403") or low.contains("sign in to confirm") or low.contains("unsupported url") \
+				or low.contains("nsig extraction failed") or low.contains("unable to extract"):
+			return "Couldn't download: yt-dlp may be out of date. Run tools\\get_tools.ps1 to update it, then click Try again."
+		if low.contains("unable to download webpage") or low.contains("failed to resolve") or low.contains("getaddrinfo") \
+				or low.contains("timed out") or low.contains("connection"):
+			return "Couldn't download: the address couldn't be reached. Check the link and your internet connection."
+		if raw.begins_with("ffmpeg failed"):
+			return "Couldn't convert the video (ffmpeg gave an error). The details are under Details."
+		return "Couldn't download the video (yt-dlp gave an error). The details are under Details."
+	return raw.get_slice("\n", 0)
+
 
 ## Runs a tool (on the job thread) and waits for it, collecting what it prints (stdout and
 ## stderr) into output. Stops it when _cancel is set. Returns its exit code (-1 = stopped/failed).
