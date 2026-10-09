@@ -400,7 +400,9 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	l.double_sided = true
 	sign_root.add_child(l)
 	sign_root.scale = Vector3.ONE * 0.2
-	var tw := create_tween()
+	# the tween belongs to the sign, so it stops when the sign (or the whole seat) is freed:
+	# a tween on the view would outlive them and call queue_free on freed nodes (crashes exports)
+	var tw := sign_root.create_tween()
 	tw.tween_property(sign_root, "scale", Vector3.ONE, 0.3).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	# a little wave while it's up
 	var bobs := maxi(int(seconds / 1.2), 1)
@@ -456,14 +458,16 @@ func seat_prop(slot: int, prop: String, seconds: float) -> void:
 	icon.no_depth_test = true
 	icon.render_priority = 11
 	icon.pixel_size = 0.0035 * sc
-	var tw := create_tween()
+	# every tween here belongs to the node it moves, so a seat freed mid-prop (chatter moved
+	# down from the crowd, left, red-flagged) takes its tweens with it
+	holder.add_child(icon)
+	var tw := icon.create_tween()
 	match prop:
 		"sleep":
 			icon.text = "💤"
 			icon.position = Vector3(0.18 * sc, -0.05 * sc, 0)
-			holder.add_child(icon)
 			var base: Vector3 = s["base"]
-			var sink := create_tween()
+			var sink := root.create_tween()
 			sink.tween_property(root, "position", base + Vector3.DOWN * 0.08 * sc, 0.8).set_trans(Tween.TRANS_SINE)
 			sink.tween_interval(maxf(seconds - 1.6, 0.2))
 			sink.tween_property(root, "position", base, 0.8).set_trans(Tween.TRANS_SINE)
@@ -476,7 +480,6 @@ func seat_prop(slot: int, prop: String, seconds: float) -> void:
 			icon.text = "📱"
 			icon.pixel_size = 0.0028 * sc
 			icon.position = Vector3(0.0, -0.42 * sc, 0.12 * sc)
-			holder.add_child(icon)
 			var glow := OmniLight3D.new()
 			glow.light_color = Color(0.55, 0.75, 1.0)
 			glow.omni_range = 0.9 * sc
@@ -484,7 +487,7 @@ func seat_prop(slot: int, prop: String, seconds: float) -> void:
 			glow.shadow_enabled = false
 			glow.position = Vector3(0, -0.3 * sc, 0.3 * sc)
 			holder.add_child(glow)
-			var gl := create_tween()
+			var gl := glow.create_tween()
 			gl.tween_property(glow, "light_energy", 1.4, 0.3)
 			gl.tween_interval(maxf(seconds - 0.6, 0.2))
 			gl.tween_property(glow, "light_energy", 0.0, 0.3)
@@ -493,7 +496,6 @@ func seat_prop(slot: int, prop: String, seconds: float) -> void:
 		_:     # snack: popcorn bobbing up to the mouth
 			icon.text = "🍿"
 			icon.position = Vector3(0.14 * sc, -0.4 * sc, 0.1 * sc)
-			holder.add_child(icon)
 			var bites := maxi(int(seconds / 0.9), 1)
 			for i in bites:
 				tw.tween_property(icon, "position:y", -0.3 * sc, 0.25).set_trans(Tween.TRANS_SINE)
@@ -620,7 +622,7 @@ func _drop_rich(i: int) -> void:
 		return
 	_end_bubble(i, false)
 	(s["queue"] as Array).clear()
-	for key in ["motion", "shout_tween"]:
+	for key in ["motion", "shout_tween", "color_tween"]:
 		var tw: Variant = s.get(key)
 		if tw is Tween and (tw as Tween).is_valid():
 			(tw as Tween).kill()
@@ -918,7 +920,7 @@ func _show_bubble(i: int) -> void:
 	spr.position.y = float(s["base_y"])
 	spr.modulate = Color(1, 1, 1, 0)
 	spr.scale = Vector3.ONE * 0.8
-	var tw := create_tween().set_parallel(true)
+	var tw := spr.create_tween().set_parallel(true)     # dies with the bubble
 	tw.tween_property(spr, "modulate:a", 1.0, 0.15)
 	tw.tween_property(spr, "scale", Vector3.ONE, 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	var cam := get_viewport().get_camera_3d()
@@ -982,7 +984,7 @@ func _nudge_bubbles(cam: Camera3D) -> void:
 			var spr: Sprite3D = s["bubble_sprite"]
 			var holder: Node3D = s["holder"]
 			var local_y := float(s["base_y"]) + world / maxf(holder.scale.y, 0.001)
-			var tw := create_tween()
+			var tw := spr.create_tween()     # dies with the bubble
 			tw.tween_property(spr, "position:y", local_y, 0.18).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	for i in ending:
 		_end_bubble(i, true)
