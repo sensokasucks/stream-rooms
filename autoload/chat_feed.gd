@@ -6,6 +6,9 @@ extends Node
 ## It also carries the chat-reactions link: Core's "reaction" packets go out as
 ## EventBus.reaction_received, and Reactions talks back through send_message().
 
+## Chat messages handled per frame at most (and only for this long): the rest wait a frame.
+const MAX_PACKETS_PER_FRAME: int = 40
+const FRAME_BUDGET_USEC: int = 4000
 const PING_INTERVAL: float = 20.0
 const BACKOFF_MIN: float = 2.0
 const BACKOFF_MAX: float = 20.0
@@ -60,8 +63,14 @@ func _process(delta: float) -> void:
 		if _ping_in <= 0.0:
 			_ping_in = PING_INTERVAL
 			_ws.send_text("ping")
-		while _ws.get_available_packet_count() > 0:
+		# a backlog (after a hitch or a room load) is spread over the next frames: handling it
+		# all in one frame made the next hitch, and so on
+		var t0 := Time.get_ticks_usec()
+		var handled := 0
+		while _ws.get_available_packet_count() > 0 and handled < MAX_PACKETS_PER_FRAME \
+				and Time.get_ticks_usec() - t0 < FRAME_BUDGET_USEC:
 			var pkt := _ws.get_packet()
+			handled += 1
 			if _ws.was_string_packet():
 				_handle(pkt.get_string_from_utf8())
 	elif st == WebSocketPeer.STATE_CLOSED:
