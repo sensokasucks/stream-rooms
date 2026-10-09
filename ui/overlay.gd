@@ -2,6 +2,8 @@ extends CanvasLayer
 ## Always-on overlays: status toasts, the "reacting" badge, and the webcam
 ## corner picture (used when the room has no WEBCAM_Frame or the in-room frame
 ## is turned off). Clean feed hides toasts and the badge but keeps the webcam.
+## Status toasts only show when "messages_on_picture" is on: this is the window OBS captures, so
+## by default messages go to the control panel's message line instead (ControlPanel).
 
 @export var toast_time: float = 4.0
 @export var pip_width: float = 360.0
@@ -56,8 +58,9 @@ func _ready() -> void:
 	EventBus.clean_feed_changed.connect(func(_c: bool) -> void: _refresh())
 	EventBus.webcam_texture_changed.connect(_on_webcam)
 	EventBus.room_changed.connect(func(_id: String) -> void: _refresh())
-	EventBus.setting_changed.connect(func(k: String, _v: Variant) -> void:
-		if k == "webcam_in_room": _refresh())
+	EventBus.setting_changed.connect(func(k: String, v: Variant) -> void:
+		if k == "webcam_in_room": _refresh()
+		elif k == "messages_on_picture" and not bool(v): _toast.visible = false)
 
 
 func _process(delta: float) -> void:
@@ -72,7 +75,7 @@ func _on_status(text: String, is_error: bool) -> void:
 	_toast.text = text
 	_toast.add_theme_color_override("font_color", Color(1, 0.55, 0.5) if is_error else Color(0.92, 0.94, 1))
 	_toast_timer = toast_time * (1.5 if is_error else 1.0)
-	_toast.visible = not AppState.is_clean_feed()
+	_toast.visible = bool(AppState.get_setting("messages_on_picture")) and not AppState.is_clean_feed()
 
 
 func _on_webcam(tex: Texture2D) -> void:
