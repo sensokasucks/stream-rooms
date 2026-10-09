@@ -41,6 +41,13 @@ const KICK_EMOTE_URL: String = "https://files.kick.com/emotes/%s/fullsize"
 ## key "platform:user_id" -> {key, name, color: Color, style: int, slot: int, last: float}
 var _members: Dictionary = {}
 var _slots: Array[String] = []      # slot -> member key ("" = empty)
+## Kept up to date with _slots (through _set_slot), so busy chat doesn't scan every seat per
+## message: empty main seats, empty crowd seats, chatters in crowd seats, and each seat's "last
+## spoke" time (for picking whom to move out without a dictionary lookup per seat).
+var _empty_seats: int = 0
+var _empty_crowd: int = 0
+var _crowd_n: int = 0
+var _slot_last: PackedFloat64Array = []
 ## Seat layout from the room (set_seat_layout): row per slot (0 = front) and the
 ## "front" filling order (front row first, centre outwards). Empty = unknown (random).
 var _seat_row: PackedInt32Array = []
@@ -103,6 +110,7 @@ func set_capacity(count: int) -> void:
 		_members.clear()
 		_slots.resize(count)
 		_slots.fill("")
+		_recount()
 		if String(_pending_roster.get("room", "")) == _capacity_room:
 			mirror_roster(_capacity_room, _pending_roster["list"])
 		_pending_roster = {}
@@ -114,9 +122,10 @@ func set_capacity(count: int) -> void:
 		if _slots[i] != "":
 			_members[_slots[i]]["slot"] = -1
 	_slots.resize(count)
+	_recount()
 	for i in count:
 		if _slots[i] != "" and not _members.has(_slots[i]):
-			_slots[i] = ""
+			_set_slot(i, "")
 	# seat waiting members, most recently active first
 	var waiting: Array = _members.values().filter(func(m: Dictionary) -> bool: return int(m["slot"]) < 0)
 	waiting.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return float(a["last"]) > float(b["last"]))
@@ -151,8 +160,9 @@ func set_slot_kinds(kinds: PackedByteArray, presenter_slots: Dictionary) -> void
 		var m: Dictionary = _members[k]
 		var want := _presenter_spot_for(m)
 		if (want >= 0 and want != i) or (want < 0 and get_slot_kind(i) == KIND_PRESENTER):
-			_slots[i] = ""
+			_set_slot(i, "")
 			m["slot"] = -1
+	_recount()      # (the kinds changed)
 
 
 ## KIND_SEAT / KIND_CROWD / KIND_PRESENTER.
@@ -330,8 +340,8 @@ func swap_seats(a: int, b: int) -> bool:
 	if not slot_allows(a, _group_of(_members[_slots[b]])) or not slot_allows(b, _group_of(_members[_slots[a]])):
 		return false        # the seating plan keeps these two platforms apart
 	var ka := _slots[a]
-	_slots[a] = _slots[b]
-	_slots[b] = ka
+	_set_slot(a, _slots[b])
+	_set_slot(b, ka)
 	_members[_slots[a]]["slot"] = a
 	_members[_slots[b]]["slot"] = b
 	for s in [a, b]:
@@ -342,9 +352,9 @@ func swap_seats(a: int, b: int) -> bool:
 
 func _move(from: int, to: int) -> int:
 	var k := _slots[from]
-	_slots[from] = ""
+	_set_slot(from, "")
 	EventBus.audience_left.emit(from)
-	_slots[to] = k
+	_set_slot(to, k)
 	_members[k]["slot"] = to
 	EventBus.audience_seated.emit(to)
 	return to
@@ -358,7 +368,7 @@ func get_seated_count() -> int:
 func clear() -> void:
 	for i in _slots.size():
 		if _slots[i] != "":
-			_slots[i] = ""
+			_set_slot(i, "")
 			EventBus.audience_left.emit(i)
 	_members.clear()
 	_emit_count()
@@ -393,6 +403,8 @@ func add_chat(msg: Dictionary) -> void:
 		m["color"] = color_for(who, String(m["hex"]), String(m["platform"]))
 		_members[key] = m
 	m["last"] = maxf(float(m["last"]), minf(ts, now))
+	if int(m["slot"]) >= 0 and int(m["slot"]) < _slot_last.size():
+		_slot_last[int(m["slot"])] = float(m["last"])
 	m["name"] = who
 	var login := String(msg.get("username", "")).strip_edges()
 	if login != "":
@@ -451,9 +463,27 @@ func add_chat(msg: Dictionary) -> void:
 	EventBus.audience_spoke.emit(int(m["slot"]), parts)
 
 
+## The two patterns message_parts uses, compiled once (it runs for every message in every chat
+## window; compiling them per call was measurable in busy chat).
+static var _kick_re: RegEx
+static var _space_re: RegEx
+
+
+static func _kick_token_re() -> RegEx:
+	if _kick_re == null:
+		_kick_re = RegEx.create_from_string("\\[emote:(\\d+):([^\\]]+)\\]")
+	return _kick_re
+
+
+static func _spaces_re() -> RegEx:
+	if _space_re == null:
+		_space_re = RegEx.create_from_string("\\s+")
+	return _space_re
+
+
 func _seat(m: Dictionary, slot: int, notify_count: bool) -> void:
 	m["slot"] = slot
-	_slots[slot] = String(m["key"])
+	_set_slot(slot, String(m["key"]))
 	EventBus.audience_seated.emit(slot)
 	if notify_count:
 		_emit_count()
@@ -463,6 +493,8 @@ func _seat(m: Dictionary, slot: int, notify_count: bool) -> void:
 ## group: the chatter's platform group; with the seating plan on, only seats in sections that
 ## allow it (unless "seating_strict" is off and none is free: then any seat).
 func _free_slot(group: String = "") -> int:
+	if _empty_seats <= 0 and (_empty_crowd <= 0 or crowd_full()):
+		return -1        # (the usual case in busy chat: every seat taken, nothing to scan)
 	var spare: Array[int] = []
 	var kind := KIND_SEAT
 	for pass_n in 2:
@@ -505,14 +537,16 @@ func _free_slot(group: String = "") -> int:
 func _evict_most_idle(group: String = "") -> int:
 	var best := -1
 	var oldest := INF
+	# (slot_allows reads settings: only ask it when a plan or a streamer area can say no)
+	var picky := group != "" and (_plan_on() or group.begins_with("streamer"))
 	for pass_n in 2:
 		var loose := pass_n == 1
 		if loose and (best >= 0 or group == "" or not _plan_on() or bool(AppState.get_setting("seating_strict"))):
 			break
 		for i in _slots.size():
-			var k := _slots[i]
-			if k != "" and get_slot_kind(i) != KIND_PRESENTER and (loose or slot_allows(i, group)) and float(_members[k]["last"]) < oldest:
-				oldest = float(_members[k]["last"])
+			if _slots[i] != "" and _slot_last[i] < oldest and get_slot_kind(i) != KIND_PRESENTER \
+					and (loose or not picky or slot_allows(i, group)):
+				oldest = _slot_last[i]
 				best = i
 	if best >= 0:
 		_unseat(best, false)
@@ -523,7 +557,7 @@ func _unseat(slot: int, forget: bool) -> void:
 	var k := _slots[slot]
 	if k == "":
 		return
-	_slots[slot] = ""
+	_set_slot(slot, "")
 	if forget:
 		_members.erase(k)
 	else:
@@ -586,11 +620,44 @@ func _emit_count() -> void:
 
 ## Chatters sitting in crowd seats right now.
 func get_crowd_count() -> int:
-	var n := 0
+	return _crowd_n
+
+
+## Every write to _slots goes through here, so the counts above stay right.
+func _set_slot(i: int, key: String) -> void:
+	var was := _slots[i]
+	_slots[i] = key
+	if i < _slot_last.size():
+		_slot_last[i] = float((_members[key] as Dictionary).get("last", 0.0)) if key != "" and _members.has(key) else 0.0
+	if (was == "") == (key == ""):
+		return
+	var d := 1 if key != "" else -1      # one more taken, or one more free
+	match get_slot_kind(i):
+		KIND_SEAT:
+			_empty_seats -= d
+		KIND_CROWD:
+			_empty_crowd -= d
+			_crowd_n += d
+
+
+## Counts everything again (after the seats were resized or their kinds changed).
+func _recount() -> void:
+	_empty_seats = 0
+	_empty_crowd = 0
+	_crowd_n = 0
+	_slot_last.resize(_slots.size())
 	for i in _slots.size():
-		if _slots[i] != "" and get_slot_kind(i) == KIND_CROWD:
-			n += 1
-	return n
+		var k := _slots[i]
+		_slot_last[i] = float((_members[k] as Dictionary).get("last", 0.0)) if k != "" and _members.has(k) else 0.0
+		match get_slot_kind(i):
+			KIND_SEAT:
+				if k == "":
+					_empty_seats += 1
+			KIND_CROWD:
+				if k == "":
+					_empty_crowd += 1
+				else:
+					_crowd_n += 1
 
 
 ## "Most chatters in the crowd" ("audience_crowd_max", 0 = no limit). Each chatter in a crowd
@@ -680,7 +747,7 @@ func message_parts(text: String, ranges: Array, max_text: int = MAX_TEXT) -> Arr
 	if pos < text.length():
 		raw.append(text.substr(pos))
 	# Kick tokens inside the text pieces
-	var kick := RegEx.create_from_string("\\[emote:(\\d+):([^\\]]+)\\]")
+	var kick := _kick_token_re()
 	var parts: Array = []
 	for piece: Variant in raw:
 		if piece is Dictionary:
@@ -696,7 +763,7 @@ func message_parts(text: String, ranges: Array, max_text: int = MAX_TEXT) -> Arr
 		if at < s2.length():
 			parts.append(s2.substr(at))
 	# tidy whitespace and cap the length
-	var spaces := RegEx.create_from_string("\\s+")
+	var spaces := _spaces_re()
 	var out: Array = []
 	var budget := max_text
 	for p: Variant in parts:

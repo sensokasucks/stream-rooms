@@ -62,7 +62,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_crowd_fill": 0.6,  # share of the crowd seats with a filler person (chatters take their places)
 	"audience_crowd_idle_min": 10.0,   # minutes without chatting before a chatter leaves a crowd seat
 	"audience_crowd_move_down": true,  # chatters in the crowd move down into main seats as they free up
-	"audience_crowd_max": 0,     # most chatters in crowd seats at once (0 = no limit); the rest stay filler people
+	"audience_crowd_max": 300,   # most chatters in crowd seats at once (0 = no limit); the rest stay filler people. (300 since Oct 2026; a saved 0 stays)
 	"audience_fill_main": false, # empty main seats show filler people too (chatters still take them)
 	"chat_screen": false,        # chat panel under the main screen (rooms with a CHAT_Screen marker)
 	"chat_screen_text": 1.0,     # chat screen text size multiplier
