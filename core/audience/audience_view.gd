@@ -56,10 +56,16 @@ const NUDGE_MAX_HEIGHTS: float = 2.5
 ## Animated bubbles (GIF emotes) further than this from the camera redraw at far_bubble_fps.
 @export var far_bubble_distance: float = 14.0
 @export var far_bubble_fps: float = 12.0
+## Most speech bubbles up at once (busy chat): a new one ends the oldest. Each bubble is a small
+## render target of its own, so this bounds the graphics work however fast chat goes.
+@export var max_bubbles: int = 16
 
 var _seats: Array[Dictionary] = []
 var _rich: Array[int] = []          # seats with nodes: main seats, presenter spots, chatters in crowd seats
 var _bubbling: Array[int] = []      # seats with a message up (drawn, or waiting until the camera sees it)
+## Finished bubbles kept for reuse instead of a new viewport per message: [{vp, bubble, spr}],
+## out of the tree. Freed with the view.
+var _bubble_pool: Array[Dictionary] = []
 var _crowd: CrowdLayer
 var _presenter_slots: Dictionary = {}   # presenter n -> slot
 var _presenter_nodes: Dictionary = {}   # presenter n -> Presenter
@@ -133,6 +139,11 @@ func _ready() -> void:
 
 func _exit_tree() -> void:
 	retire()
+	for b: Dictionary in _bubble_pool:      # (out of the tree: freed by hand)
+		for key in ["vp", "spr"]:
+			if is_instance_valid(b[key]):
+				(b[key] as Node).queue_free()
+	_bubble_pool.clear()
 
 
 ## The room was swapped out (hidden, freed a few seconds later): stop following the audience,
@@ -897,6 +908,9 @@ func _next_bubble(i: int) -> void:
 	s["parts"] = parts
 	s["active"] = true
 	if not _bubbling.has(i):
+		# at the cap: the oldest bubble ends (fades) to make room
+		while _bubbling.size() >= maxi(max_bubbles, 1):
+			_end_bubble(_bubbling[0], true)
 		_bubbling.append(i)
 	var seconds := float(AppState.get_setting("audience_bubble_s"))
 	if not q.is_empty():
@@ -1130,10 +1144,24 @@ func _on_emote_ready(url: String) -> void:
 
 func _make_bubble(i: int) -> void:
 	var s: Dictionary = _seats[i]
+	while not _bubble_pool.is_empty():
+		var used: Dictionary = _bubble_pool.pop_back()
+		if not is_instance_valid(used["vp"]) or not is_instance_valid(used["spr"]):
+			continue
+		var uspr: Sprite3D = used["spr"]
+		s["root"].add_child(used["vp"])
+		s["holder"].add_child(uspr)
+		uspr.modulate = Color.WHITE
+		uspr.scale = Vector3.ONE
+		uspr.position = Vector3.ZERO
+		s["viewport"] = used["vp"]
+		s["bubble"] = used["bubble"]
+		s["bubble_sprite"] = uspr
+		return
 	var vp := SubViewport.new()
 	vp.transparent_bg = true
 	vp.disable_3d = true
-	vp.msaa_2d = Viewport.MSAA_4X
+	vp.msaa_2d = Viewport.MSAA_2X      # (4x on dozens of small render targets is a lot for a low-end card)
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var bubble := SpeechBubble.new()
 	vp.add_child(bubble)
@@ -1163,6 +1191,7 @@ func _end_bubble(i: int, fade: bool = true) -> void:
 	var spr: Sprite3D = s["bubble_sprite"]
 	if spr != null:
 		var vp: SubViewport = s["viewport"]
+		var bubble: Variant = s["bubble"]
 		s["bubble_sprite"] = null
 		s["viewport"] = null
 		s["bubble"] = null
@@ -1172,16 +1201,34 @@ func _end_bubble(i: int, fade: bool = true) -> void:
 			# called queue_free on freed nodes, which crashes exported builds.)
 			var tw := spr.create_tween()
 			tw.tween_property(spr, "modulate:a", 0.0, 0.3)
-			tw.tween_callback(vp.queue_free)
-			tw.tween_callback(spr.queue_free)
+			tw.tween_callback(_recycle_bubble.bind({"vp": vp, "bubble": bubble, "spr": spr}))
 		else:
-			spr.queue_free()
-			vp.queue_free()
+			_recycle_bubble({"vp": vp, "bubble": bubble, "spr": spr})
 	if not bool(s["rich"]):
 		return
 	var m := AudienceManager.get_seat_member(i)
 	if not m.is_empty():
 		_set_color(i, m["color"])
+
+
+## A finished bubble goes back to the pool (taken out of its seat), or is freed when the pool is full.
+func _recycle_bubble(b: Dictionary) -> void:
+	var vp: SubViewport = null
+	if is_instance_valid(b["vp"]):
+		vp = b["vp"]
+	var spr: Sprite3D = null
+	if is_instance_valid(b["spr"]):
+		spr = b["spr"]
+	if vp == null or spr == null or _bubble_pool.size() >= max_bubbles or not is_inside_tree():
+		if vp:
+			vp.queue_free()
+		if spr:
+			spr.queue_free()
+		return
+	vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+	vp.get_parent().remove_child(vp)
+	spr.get_parent().remove_child(spr)
+	_bubble_pool.append(b)
 
 
 func _clear_bubbles(i: int) -> void:
