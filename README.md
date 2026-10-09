@@ -435,12 +435,20 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   - *Name only*: always the colour from their name.
   - *Platform*: one colour per platform (Kick green, Twitch purple, YouTube red, other grey by
     default; change them with the four colour pickers below it).
+- **Busy chat:** chatter pictures are cut round on background threads (a few finished per frame)
+  instead of pixel by pixel on the main thread, and pictures and emotes in memory are kept to
+  about 256 MB: the ones not seen for longest are dropped (never one that's on screen) and load
+  again from the disk cache if needed. Chat that piles up during a hitch is worked through over
+  the next frames instead of all at once. In a Together session a guest sends its chat to the
+  host in small batches.
 - **Speech bubbles:** their messages pop up in a speech bubble above their head, with their name
   on top. Each person gets one of four bubble shapes. A message sent with Kick's or Twitch's
   reply button shows a small "↩ replying to Name: what they said" line under the name (the chat
   windows show the same line). YouTube live chat has no reply button. When bubbles would overlap on screen, the
   newest wins: older ones slide up out of its way, and one that would have to move more than a
-  couple of bubble heights fades out early instead.
+  couple of bubble heights fades out early instead. At most 16 bubbles are up at once: in busy
+  chat a new one ends the oldest, so the graphics card's work stays the same however fast chat
+  goes. Finished bubbles are reused rather than built again for every message.
 - **Bubble colours** (Audience tab): *Light* (white bubbles with dark text, the default) or
   *Dark* (dark bubbles with light text). The outline keeps each chatter's colour either way.
 - **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
@@ -506,7 +514,9 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     once. No seats go away: filler people fill the rest, so the room looks the same. Chatters
     are what cost CPU and GPU (picture, name tag, bubble each); filler people are free. When
     the cap is reached, a new chatter takes the seat of whoever has been quiet the longest.
-    On a laptop, 100-150 is a good start.
+    On a laptop, 100-150 is a good start. New installs start at 300; if you used the app before
+    this change your saved value stays (0 = no limit is what most older setups have, so lower
+    it if a busy chat makes the room stutter).
   - **Filler people in empty main seats** (off by default) fills the empty pit seats with
     filler people too, at the same share as the crowd; chatters take their places.
   - The filler crowd is one draw call (`core/audience/crowd_layer.gd` + `crowd.gdshader`); only
