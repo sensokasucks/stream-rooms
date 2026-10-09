@@ -15,6 +15,15 @@ extends Node
 ## Text packets: JSON {"type": "status", ...} from the sender.
 ## JPEG decoding + colour sampling run on worker threads; only the newest
 ## pending frame per channel is decoded, older ones are dropped.
+##
+## Locked to the sender page: any web page open in the browser could otherwise connect to the
+## stream port, put its own picture and sound on the big screen and read the live-feed key.
+##   - A random key is made each run and written into the sender page when it is served
+##     (ws://127.0.0.1:<ws_port>/?key=...). A socket without it is closed (code 4001).
+##   - The page is only served when the browser asked for 127.0.0.1 / localhost (blocks
+##     "DNS rebinding", where a web page renames itself to read the page and its key), and
+##     other sites can't frame it. Other origins can't read the page or /key (no CORS headers).
+##   - A sender page left open from the last run reads the new key from /key and reconnects.
 
 signal video_frame_ready(image: Image, colors: Array[Color])
 signal webcam_frame_ready(image: Image)
@@ -30,6 +39,15 @@ const MAX_PRESENTERS: int = 4
 ## Decode channel ids for presenter feeds (PRESENTER_CHANNEL + slot).
 const PRESENTER_CHANNEL: int = 100
 const WS_BUFFER_BYTES: int = 8 * 1024 * 1024
+## Close code for a socket with a wrong or missing key (the sender page then fetches /key).
+const CLOSE_BAD_KEY: int = 4001
+## How long a socket may take to open before it is dropped.
+const PENDING_TIMEOUT_MS: int = 5000
+## At most this many sockets waiting to open at once.
+const MAX_PENDING: int = 8
+
+## This run's key for the stream port (random each start of the app).
+static var run_key: String = ""
 
 @export_file("*.html") var sender_html_path: String = "res://web/sender.html"
 ## Treat the sender as gone if no packet arrives for this long.
@@ -38,7 +56,8 @@ const WS_BUFFER_BYTES: int = 8 * 1024 * 1024
 var _http: TCPServer = TCPServer.new()
 var _ws_listener: TCPServer = TCPServer.new()
 var _http_clients: Array[Dictionary] = []
-var _pending_ws: Array[WebSocketPeer] = []
+var _pending_ws: Array[Dictionary] = []    # {ws: WebSocketPeer, t: msec}
+var _closing_ws: Array[WebSocketPeer] = []   # refused sockets finishing their close handshake
 var _ws: WebSocketPeer
 var _http_port: int = 0
 var _ws_port: int = 0
@@ -58,6 +77,14 @@ var _fps_timer: float = 0.0
 
 
 # ── Public API ───────────────────────────────────────────────
+## This run's key, made on first use.
+static func get_run_key() -> String:
+	if run_key.is_empty():
+		var crypto := Crypto.new()
+		run_key = crypto.generate_random_bytes(18).hex_encode()
+	return run_key
+
+
 func start(http_port: int, ws_port: int) -> bool:
 	stop()
 	_http_port = http_port
@@ -79,6 +106,7 @@ func stop() -> void:
 		_ws.close()
 	_ws = null
 	_pending_ws.clear()
+	_closing_ws.clear()
 	_http_clients.clear()
 	_set_connected(false)
 
@@ -118,8 +146,9 @@ func _process(delta: float) -> void:
 
 func _exit_tree() -> void:
 	for ch in _task_ids.keys():
-		if _task_ids[ch] != -1:
-			WorkerThreadPool.wait_for_task_completion(_task_ids[ch])
+		if int(_task_ids[ch]) != -1:
+			WorkerThreadPool.wait_for_task_completion(int(_task_ids[ch]))
+			_task_ids[ch] = -1
 	stop()
 
 
@@ -145,6 +174,14 @@ func _poll_http() -> void:
 func _respond_http(peer: StreamPeerTCP, request: String) -> void:
 	var first_line := request.get_slice("\r\n", 0)
 	var path := first_line.get_slice(" ", 1)
+	if not _host_ok(request):
+		# a page that renamed itself to reach this port (DNS rebinding) gets nothing
+		_send_http(peer, "403 Forbidden", "text/plain", ("Open this page as http://127.0.0.1:%d/" % _http_port).to_utf8_buffer())
+		return
+	if first_line.begins_with("GET ") and path == "/key":
+		# a sender page left open from the last run asks for the new key; other origins can't read it
+		_send_http(peer, "200 OK", "text/plain; charset=utf-8", get_run_key().to_utf8_buffer())
+		return
 	if path == "/favicon.ico":
 		_send_http(peer, "204 No Content", "text/plain", PackedByteArray())
 		return
@@ -171,34 +208,77 @@ func _respond_http(peer: StreamPeerTCP, request: String) -> void:
 		_send_http(peer, "500 Internal Server Error", "text/plain",
 			("Missing %s. When exporting, add web/* to the export resource filters." % sender_html_path).to_utf8_buffer())
 		return
-	html = html.replace("{{WS_PORT}}", str(_ws_port))
+	html = html.replace("{{WS_PORT}}", str(_ws_port)).replace("{{WS_KEY}}", get_run_key())
 	_send_http(peer, "200 OK", "text/html; charset=utf-8", html.to_utf8_buffer())
 
 
 func _send_http(peer: StreamPeerTCP, status: String, ctype: String, body: PackedByteArray) -> void:
-	var head := "HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" % [status, ctype, body.size()]
+	# nosniff + no framing by other sites: another page can't load these as a script or inside a frame
+	var head := ("HTTP/1.1 %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\n"
+		+ "X-Content-Type-Options: nosniff\r\nX-Frame-Options: SAMEORIGIN\r\n"
+		+ "Content-Security-Policy: frame-ancestors 'self'\r\nConnection: close\r\n\r\n") % [status, ctype, body.size()]
 	peer.put_data(head.to_utf8_buffer())
 	peer.put_data(body)
+
+
+## True when the request's Host header names this PC by its loopback name (any port or none).
+func _host_ok(request: String) -> bool:
+	for line in request.split("\r\n"):
+		if line.to_lower().begins_with("host:"):
+			var host := line.substr(5).strip_edges().to_lower()
+			if host.begins_with("["):   # [::1]:8765
+				host = host.substr(0, host.find("]") + 1)
+			elif host.contains(":"):
+				host = host.get_slice(":", 0)
+			return host in ["127.0.0.1", "localhost", "[::1]"]
+	return false
+
+
+## True when a socket asked for ws://...?key=<this run's key>.
+static func key_ok(requested_url: String) -> bool:
+	var q := requested_url.get_slice("?", 1) if requested_url.contains("?") else ""
+	for part in q.split("&", false):
+		if part.begins_with("key=") and part.substr(4) == get_run_key():
+			return true
+	return false
 
 
 # ── WebSocket ────────────────────────────────────────────────
 func _poll_ws_accept() -> void:
 	while _ws_listener.is_listening() and _ws_listener.is_connection_available():
+		var conn := _ws_listener.take_connection()
+		if _pending_ws.size() >= MAX_PENDING:
+			conn.disconnect_from_host()    # something is opening sockets in a loop
+			continue
 		var ws := WebSocketPeer.new()
 		ws.inbound_buffer_size = WS_BUFFER_BYTES
 		ws.max_queued_packets = 1024
-		if ws.accept_stream(_ws_listener.take_connection()) == OK:
-			_pending_ws.append(ws)
-	for ws in _pending_ws.duplicate():
+		if ws.accept_stream(conn) == OK:
+			_pending_ws.append({"ws": ws, "t": Time.get_ticks_msec()})
+	for p in _pending_ws.duplicate():
+		var ws: WebSocketPeer = p["ws"]
 		ws.poll()
 		match ws.get_ready_state():
 			WebSocketPeer.STATE_OPEN:
-				_pending_ws.erase(ws)
+				_pending_ws.erase(p)
+				if not key_ok(ws.get_requested_url()):
+					# not our sender page: refuse it before it can replace the real one
+					ws.close(CLOSE_BAD_KEY, "Wrong key: reload the sender page")
+					_closing_ws.append(ws)
+					continue
 				if _ws:  # newest sender wins
 					_ws.close(1000, "Replaced by a new sender")
 				_ws = ws
 			WebSocketPeer.STATE_CLOSED:
-				_pending_ws.erase(ws)
+				_pending_ws.erase(p)
+			_:
+				if Time.get_ticks_msec() - int(p["t"]) > PENDING_TIMEOUT_MS:
+					ws.close()
+					_pending_ws.erase(p)
+	for ws in _closing_ws.duplicate():
+		ws.poll()
+		if ws.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+			_closing_ws.erase(ws)
 
 
 func _poll_ws() -> void:
@@ -261,7 +341,7 @@ func _queue_decode(channel: int, jpeg: PackedByteArray) -> void:
 	if begin:
 		_busy[channel] = true
 	_mutex.unlock()
-	if start:
+	if begin:
 		_start_task(channel)
 
 
@@ -270,7 +350,10 @@ func _start_task(channel: int) -> void:
 	var data: PackedByteArray = _pending[channel]
 	_pending[channel] = PackedByteArray()
 	_mutex.unlock()
-	_task_ids[channel] = WorkerThreadPool.add_task(_decode_task.bind(channel, data), false, "jpeg decode")
+	var id := WorkerThreadPool.add_task(_decode_task.bind(channel, data), false, "jpeg decode")
+	_mutex.lock()
+	_task_ids[channel] = id
+	_mutex.unlock()
 
 
 func _decode_task(channel: int, data: PackedByteArray) -> void:
@@ -289,9 +372,13 @@ func _decode_task(channel: int, data: PackedByteArray) -> void:
 
 
 func _on_decoded(channel: int, img: Image, colors: Array[Color]) -> void:
-	if _task_ids[channel] != -1:
-		WorkerThreadPool.wait_for_task_completion(_task_ids[channel])
-		_task_ids[channel] = -1
+	# only one decode per channel runs at a time (_busy), so the stored id is this task's own
+	_mutex.lock()
+	var id := int(_task_ids[channel])
+	_task_ids[channel] = -1
+	_mutex.unlock()
+	if id != -1:
+		WorkerThreadPool.wait_for_task_completion(id)
 	if img:
 		if channel == PKT_VIDEO:
 			video_frame_ready.emit(img, colors)
