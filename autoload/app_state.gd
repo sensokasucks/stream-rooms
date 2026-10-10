@@ -396,7 +396,6 @@ func set_playback_active(active: bool) -> void:
 	if active == _playback_active:
 		return
 	_playback_active = active
-	EventBus.playback_active_changed.emit(active)
 
 
 # ── Reaction features ────────────────────────────────────────
@@ -416,10 +415,6 @@ func set_react_paused(paused: bool) -> void:
 		return
 	_react_paused = paused
 	EventBus.react_pause_changed.emit(paused)
-
-
-func is_focus_view() -> bool:
-	return _focus_view
 
 
 func toggle_focus_view() -> void:

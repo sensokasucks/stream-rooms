@@ -34,10 +34,6 @@ func _ready() -> void:
 	EventBus.ndi_sources_changed.emit(_names, true)
 
 
-func get_source_names() -> PackedStringArray:
-	return _names
-
-
 ## True with the patched plugin (addons/godot-ndi/STREAM_ROOMS_PATCH.md): the game can pull the
 ## NDI sound itself at the sound card's pace instead of the plugin pushing it once per frame.
 static func supports_pull_audio() -> bool:

@@ -67,20 +67,12 @@ func setup(seats: Array[Transform3D], bust_height: float, bust_lift: float, silh
 	set_fill(float(AppState.get_setting("audience_crowd_fill")))
 
 
-func get_count() -> int:
-	return _count
-
-
 ## How full the filler crowd is (0..1). The same seats fill first every time.
 func set_fill(fill: float) -> void:
 	fill = clampf(fill, 0.0, 1.0)
 	for i in _count:
 		_filler[i] = 1 if _seat_rank(i) < fill else 0
 		_apply(i)
-
-
-func is_filler(i: int) -> bool:
-	return i >= 0 and i < _count and _filler[i] == 1 and _taken[i] == 0
 
 
 func get_filler_count() -> int:

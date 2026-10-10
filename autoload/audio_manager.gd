@@ -118,10 +118,6 @@ func apply_room(info: RoomInfo) -> void:
 		_ambience_player.play()
 
 
-func is_ducking() -> bool:
-	return _talking
-
-
 # ── Private ──────────────────────────────────────────────────
 ## Room reverb scaled by the "room_acoustics" setting:
 ## 0 = dry (no room sound), 1 = the room's own amount, 2 = exaggerated.

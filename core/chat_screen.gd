@@ -80,11 +80,6 @@ func get_texture() -> Texture2D:
 	return _vp.get_texture()
 
 
-## (flat) The picture's size in pixels.
-func get_pixel_size() -> Vector2i:
-	return _vp.size
-
-
 ## (flat) Resize the picture (ChatHud's size settings).
 func set_pixel_size(px: Vector2i) -> void:
 	if _vp.size == px:
@@ -748,10 +743,6 @@ func estimate_text_px(out_height: float = 1080.0) -> float:
 	if not on:
 		return -1.0
 	return a.distance_to(b) * out_height / maxf(vh, 1.0)
-
-
-func get_text_scale() -> float:
-	return float(AppState.get_setting(_key + "_text"))
 
 
 func _text_size() -> int:
