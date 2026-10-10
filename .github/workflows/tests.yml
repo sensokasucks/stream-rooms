@@ -1,0 +1,92 @@
+# GitHub's quick check for every pull request (and every push to main).
+# GitHub's machines have no graphics card, so this is a short check, not the full test set:
+#   1. tools/lint_warnings.py looks for the script warnings the editor only shows when a script is opened.
+#   2. The engine imports the project and every script must load (no parse errors).
+#   3. A few fast tests run with software drawing (tools/ci_tests.sh).
+# The full Forward+ set still runs on the PC with tools/run_tests.ps1.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A newer push to the same branch stops the older run, which saves minutes.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # The official Redot 26.2 Linux editor, pinned to one exact file.
+  REDOT_URL: https://github.com/Redot-Engine/redot-engine/releases/download/redot-26.2-stable/Redot_v26.2-stable_linux_x64.zip
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Script warning check
+        run: python3 tools/lint_warnings.py
+
+      # The engine download is kept between runs so it isn't fetched every time.
+      - name: Cache the engine
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/engine
+          key: engine-${{ env.REDOT_URL }}
+
+      - name: Download the engine
+        if: steps.engine-cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ~/engine && cd ~/engine
+          if ! curl -fsSL -o engine.zip "$REDOT_URL"; then
+            echo "Download failed. Files in the Redot 26.2 release:"
+            gh release view redot-26.2-stable -R Redot-Engine/redot-engine --json assets -q '.assets[].url' || true
+            exit 1
+          fi
+          unzip -q engine.zip && rm engine.zip
+          ls -la
+
+      - name: Tools for drawing without a graphics card
+        run: |
+          if ! command -v xvfb-run >/dev/null || ! ls /usr/lib/x86_64-linux-gnu/dri/swrast_dri.so >/dev/null 2>&1; then
+            sudo apt-get update -q && sudo apt-get install -yq xvfb libgl1-mesa-dri
+          fi
+
+      # Builds the editor's cache (.godot/) and loads every script. The two add-ons (NDI, Spout)
+      # report that they have no Linux library and the NDI one can crash at quit: both are expected,
+      # so this step reads the output instead of the exit code.
+      - name: Import the project and load every script
+        run: |
+          ENGINE=$(find ~/engine -type f -size +20M ! -name "*.zip" | head -n 1)   # the one big file in the zip
+          [ -n "$ENGINE" ] || { ls -laR ~/engine; echo "No engine file found."; exit 1; }
+          chmod +x "$ENGINE"
+          echo "ENGINE=$ENGINE" >> "$GITHUB_ENV"
+          timeout -k 10 300 "$ENGINE" --headless --path . --import > import.log 2>&1 || true
+          head -n 3 import.log
+          if grep -E "SCRIPT ERROR|Parse Error|Failed to load script" import.log; then
+            echo "A script failed to load (see the lines above)."; exit 1
+          fi
+          grep -q "first_scan_filesystem" import.log || { cat import.log; echo "The import did not run."; exit 1; }
+
+      - name: Fast tests
+        run: tools/ci_tests.sh "$ENGINE"
+
+      - name: Keep the test logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            import.log
+            /tmp/sr_tests/*.log
+          retention-days: 7

@@ -1024,3 +1024,6 @@ Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\S
 - `rooms/`: one folder per room
 
 The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppState's defaults (a copy started with `--mp-profile` shifts them, see Streaming together).
+
+## Checks on GitHub (for developers)
+Every pull request (and every push to main) runs a short check on GitHub: the script warning check (`tools/lint_warnings.py`), a project import that fails on any script that doesn't load, and a few fast tests without a graphics card (`tools/ci_tests.sh`). The full test set (Forward+, pictures, crashes) still runs on the PC with `tools\run_tests.ps1`.
