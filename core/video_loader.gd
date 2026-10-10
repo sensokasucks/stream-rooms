@@ -137,10 +137,11 @@ func _job_url(url: String) -> void:
 	_say("Downloading video with yt-dlp...")
 	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [_cache_dir, key])
 	var fmt := "bv*[height<=%d]+ba/b[height<=%d]/b" % [max_height, max_height]
+	# "<?" lets a plain file link through: yt-dlp can't tell its length, and "<" would skip it.
 	var args := PackedStringArray([
 		"--no-playlist", "--no-progress", "--no-warnings",
 		"-f", fmt, "--merge-output-format", "mkv",
-		"--max-filesize", MAX_DOWNLOAD, "--match-filter", "duration<%d" % MAX_DURATION_S,
+		"--max-filesize", MAX_DOWNLOAD, "--match-filter", "duration<?%d" % MAX_DURATION_S,
 		"-o", template,
 		"--print", "after_move:filepath", "--no-simulate",
 	])
