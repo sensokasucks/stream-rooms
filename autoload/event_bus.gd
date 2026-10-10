@@ -27,6 +27,9 @@ signal file_sync_requested(position: float, playing: bool)
 signal file_progress(position: float, playing: bool)
 signal file_stop_requested
 signal file_pause_toggle_requested
+## The video download / convert (File or URL): state "downloading" | "converting" | "ready" |
+## "failed"; message is plain words for the panel, details the tool's own log (failures only).
+signal video_job_changed(state: String, message: String, details: String)
 signal camera_preset_requested(index: int)
 
 # ── Reaction features ────────────────────────────────────────

@@ -19,6 +19,33 @@ looks and position; a podium picture's size, lighting and position; the Together
 The **Source** tab shows one source at a time: **Big screen shows** picks **Browser tab**,
 **NDI**, **Spout**, **File or URL** or **Someone's avatar (Streaming together)**, and only that
 source's controls appear. It follows whatever starts playing, and remembers your last pick.
+Picking one there only changes which controls you see, not the screen: press **Share**, **Show**
+or **Play** in that section. The line under it, **On the big screen now:**, always says what is
+really showing (for example *Browser tab, "YouTube - ..." (30 fps)*, *NDI, OBS (MAIN)* or
+*Nothing.*). The **NDI** and **Spout** sections show their status line (plugin missing, no
+sources found, what's showing) right under the picker, not inside **Advanced ▸**.
+
+## What's going on: status strip and messages
+**Status strip** (above the tabs, on every tab): three coloured dots.
+- **Core**: green when Stream Core is connected, red when it isn't (chat, bubbles and reactions
+  stop), grey when chat is off.
+- **Big screen**: green while something shows, amber when the screen is empty, red when the
+  browser tab stopped.
+- **Together**: hosting / joined (green), someone waiting or joining (amber), off (grey).
+
+Click a dot to jump to its tab (Chat, Source, Together).
+
+**Messages** go to the line at the bottom of the panel, not onto the room picture, so viewers
+never see things like "Address copied" or a download error. Errors are red. Click the line (or
+**Messages ▸**) to see the last 10 with their times. When Stream Core drops, or the browser tab
+stops sharing, a message says so (before, the screen just went blank).
+
+**Show messages on the picture** (under **Messages ▸**) also shows each message for a few seconds
+at the bottom of the room picture, as the app used to. It is **off by default**, because that is
+the window OBS captures. Clean feed (F10) hides them either way.
+
+Together's "wants to join" and "is this the right host?" popups open as their own small window,
+even while the panel sits inside the main window, so a guest's name never shows on stream.
 
 ## Showing a browser tab (recommended)
 1. Run the game.
@@ -53,6 +80,12 @@ key by itself and reconnects. The page only opens as `127.0.0.1` or `localhost`.
 ## Playing a file or URL (fallback)
 Type a path or a YouTube URL in the *Source* tab, or click **Browse...**. Non-`.ogv` files and URLs
 need `yt-dlp` and `ffmpeg`: right-click `tools/get_tools.ps1` > *Run with PowerShell*.
+
+While a video downloads or converts, a line under the File controls says so with a running clock
+("Downloading... 1:12", "Converting... 0:40"), then "Ready". If it fails, the line says why in
+plain words (for example "yt-dlp may be out of date: run tools\get_tools.ps1", a private or
+age-restricted video, no internet) with a **Try again** button; what yt-dlp / ffmpeg printed is
+under **Details ▸**.
 
 Downloads are limited to 2 GB and 4 hours per video, so a link (yours, or a co-host's in a
 Together session) can't fill your disk. Closing the app while a video downloads or converts stops
@@ -942,7 +975,7 @@ Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\S
   `graphics_quality.gd`), ScreenFeed (file and capture sources, A/V delay), CaptureServer (local HTTP + WebSocket), ScreenLights, WebcamDisplay,
   CameraRig, Hotkeys, VideoLoader
 - `core/interiors/`: the interior-window facade shader and its room atlas (8 room types)
-- `ui/`: control panel, focus view, overlays (toasts, badge, webcam corner)
+- `ui/`: control panel (with the status strip and message line), focus view, overlays (toasts when **Show messages on the picture** is on, badge, webcam corner)
 - `web/sender.html`: the browser sender page. **When exporting the game**, add `web/*` to
   *Export > Resources > Filters to export non-resource files*.
 - `rooms/`: one folder per room

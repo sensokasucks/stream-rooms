@@ -128,6 +128,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"fps_cap": 60,               # frames per second cap: 30 | 60 | 0 (unlimited)
 	"vsync": true,               # wait for the display refresh (no tearing)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
+	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
 	"panel_folded": "",          # (old) Chat tab window sections folded away (CSV of window keys)
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)

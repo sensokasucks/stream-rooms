@@ -80,6 +80,24 @@ var _size_marks: Dictionary = {}        # chat window key -> small ⚠ Label in 
 var _size_need: Dictionary = {}         # chat window key -> text size (as the setting) that would be readable
 var _source_pick: OptionButton          # Source tab: which source's controls show
 var _source_sections: Dictionary = {}   # source mode -> its VBox on the Source tab
+## "What's going on", on every tab: the status strip above the tabs and the message line below them.
+const MESSAGE_HISTORY: int = 10
+var _strip: Dictionary = {}             # "core" / "screen" / "together" -> Button in the status strip
+var _msg_btn: Button                    # footer: the latest message
+var _msg_fold: VBoxContainer            # footer: the last few messages, and the "on the picture" tick
+var _msg_list: VBoxContainer
+var _messages: Array[Dictionary] = []   # newest first: {time, text, error}
+var _core_was_connected: bool = false
+var _now_label: Label                   # Source tab: "On the big screen now: ..."
+var _capture_info: Dictionary = {}      # the sender page's last status
+var _video_status: Label                # File section: download / convert progress or the reason it failed
+var _video_retry: Button
+var _video_details: Label
+var _video_details_fold: VBoxContainer
+var _video_state: String = ""           # "", "downloading", "converting", "ready", "failed"
+var _video_started_ms: int = 0
+var _video_tick: float = 0.0
+var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
 
 
 func _ready() -> void:
@@ -103,7 +121,15 @@ func _ready() -> void:
 		_refresh_ndi_label()
 		_refresh_spout_label())
 	EventBus.spout_senders_changed.connect(_on_spout_senders)
+	EventBus.status_message.connect(_on_status_message)
+	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_now())
+	EventBus.video_job_changed.connect(_on_video_job)
+	EventBus.file_play_requested.connect(func(input: String) -> void:
+		if input.strip_edges() != "":
+			_last_video_input = input)
+	_core_was_connected = bool(ChatFeed.get_status().get("connected", false))
 	_on_chat_status(ChatFeed.get_status())
+	_refresh_now()
 	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _refresh_curtain_label())
 	EventBus.net_state_changed.connect(_on_net_state)
 	EventBus.net_confirm_needed.connect(_on_net_confirm_needed)
@@ -176,6 +202,11 @@ func _drop_mouse_focus(vp: Viewport) -> void:
 
 
 func _process(delta: float) -> void:
+	if _video_state == "downloading" or _video_state == "converting":
+		_video_tick -= delta
+		if _video_tick <= 0.0:
+			_video_tick = 1.0
+			_show_video_status()
 	_size_check -= delta
 	if _size_check <= 0.0:
 		_size_check = 1.0
@@ -326,6 +357,7 @@ func _build() -> void:
 	add_child(_panel)
 	var outer := VBoxContainer.new()
 	_panel.add_child(outer)
+	outer.add_child(_build_status_strip())
 	_tabs = TabContainer.new()
 	_tabs.custom_minimum_size = Vector2(panel_width - 20, 0)
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -360,6 +392,7 @@ func _build() -> void:
 	(size_row.get_child(0) as Label).custom_minimum_size = Vector2(80, 0)
 	size_row.tooltip_text = "Makes everything in this panel bigger or smaller (text, buttons, sliders). Ctrl+= / Ctrl+- also work."
 	bottom.add_child(size_row)
+	_build_message_line(outer)
 	_add_help_buttons(_panel)
 	_apply_scale.call_deferred()
 
@@ -396,7 +429,7 @@ func _build_source_tab() -> Control:
 	_source_pick = OptionButton.new()
 	_source_pick.focus_mode = Control.FOCUS_ALL
 	_source_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a Streaming together session. It follows whatever starts playing."
+	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a Streaming together session. It follows whatever starts playing.\nPicking one here doesn't change the screen: press Share / Show / Play in that section."
 	for it: Array in [["capture", "Browser tab (sender page)"], ["ndi", "NDI (OBS / NDI Tools)"], ["spout", "Spout (programs on this PC)"],
 			["file", "File or URL"], ["peer", "Someone's avatar (Streaming together)"]]:
 		_source_pick.add_item(String(it[1]))
@@ -405,6 +438,11 @@ func _build_source_tab() -> Control:
 		AppState.set_setting("source_tab_pick", String(_source_pick.get_item_metadata(i)))
 		_show_source_section(String(_source_pick.get_item_metadata(i))))
 	pick_row.add_child(_source_pick)
+	_now_label = _hint("")
+	_now_label.tooltip_text = "What the big screen shows right now, whichever source controls are open below."
+	_now_label.mouse_filter = Control.MOUSE_FILTER_PASS
+	_now_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_child(_now_label)
 	var cap := VBoxContainer.new()
 	cap.add_theme_constant_override("separation", 6)
 	v.add_child(cap)
@@ -457,16 +495,22 @@ func _build_source_tab() -> Control:
 	_ndi_menu.focus_mode = Control.FOCUS_ALL
 	_ndi_menu.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ndi_menu.fit_to_longest_item = false
+	_ndi_menu.tooltip_text = "NDI sources on your network: OBS (DistroAV > NDI main output, or an NDI filter on a source), NDI Tools, other PCs."
 	nr.add_child(_ndi_menu)
-	nr.add_child(_button("Show", func() -> void:
+	var show_ndi := _button("Show", func() -> void:
 		if _ndi_menu.selected >= 0 and _ndi_menu.get_item_metadata(_ndi_menu.selected) != null:
-			EventBus.ndi_connect_requested.emit(String(_ndi_menu.get_item_metadata(_ndi_menu.selected)))))
-	nr.add_child(_button("Stop", func() -> void: EventBus.ndi_stop_requested.emit()))
+			EventBus.ndi_connect_requested.emit(String(_ndi_menu.get_item_metadata(_ndi_menu.selected))))
+	show_ndi.tooltip_text = "Show the picked NDI source on the big screen, with its sound."
+	nr.add_child(show_ndi)
+	var stop_ndi := _button("Stop", func() -> void: EventBus.ndi_stop_requested.emit())
+	stop_ndi.tooltip_text = "Stop showing the NDI source."
+	nr.add_child(stop_ndi)
+	# the status line stays out of the fold: it says why the list is empty (plugin, runtime, OBS)
 	_ndi_label = Label.new()
 	_ndi_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_ndi_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(_ndi_label)
 	var ndi_adv := _fold(v, "source_ndi")
-	ndi_adv.add_child(_ndi_label)
 	ndi_adv.add_child(_check("ndi_auto", "Reconnect to the last source by itself"))
 	var nb := _slider("ndi_audio_buffer_ms", "Sound buffer", 50.0, 1500.0, 10.0, "%d ms")
 	nb.tooltip_text = "How much NDI sound is queued before it plays. More rides out hiccups on the network / OBS side,\nbut the sound runs that much behind the picture. Needs the patched NDI plugin."
@@ -495,8 +539,8 @@ func _build_source_tab() -> Control:
 	_spout_label = Label.new()
 	_spout_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_spout_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	v.add_child(_spout_label)      # (status, not help: stays out of the fold)
 	var spout_adv := _fold(v, "source_spout")
-	spout_adv.add_child(_spout_label)
 	var sauto := _check("spout_auto", "Show the last sender again by itself")
 	sauto.tooltip_text = "When the last Spout sender you showed starts again (and nothing else is on the screen), show it without clicking."
 	spout_adv.add_child(sauto)
@@ -528,6 +572,24 @@ func _build_source_tab() -> Control:
 	q.tooltip_text = "Resolution for downloads/conversion. Lower converts faster."
 	q.item_selected.connect(func(i: int) -> void: AppState.set_setting("max_height", q.get_item_id(i)))
 	r2.add_child(q)
+	# download / convert progress, or why it failed (plain words; the tool's own log under Details)
+	var r3 := HBoxContainer.new()
+	v.add_child(r3)
+	_video_status = _hint("")
+	_video_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_video_status.visible = false
+	r3.add_child(_video_status)
+	_video_retry = _button("Try again", func() -> void:
+		if _last_video_input != "":
+			EventBus.file_play_requested.emit(_last_video_input))
+	_video_retry.tooltip_text = "Load the same file or link again (for example after updating yt-dlp with tools\\get_tools.ps1)."
+	_video_retry.visible = false
+	r3.add_child(_video_retry)
+	_video_details_fold = _fold(v, "source_video_details", "Details")
+	(_video_details_fold.get_meta("fold_head") as Control).visible = false
+	_video_details = _hint("")
+	_video_details.tooltip_text = "What yt-dlp / ffmpeg printed last. Useful when asking for help."
+	_video_details_fold.add_child(_video_details)
 	# start on what plays now, else the last pick, else the browser tab
 	var pick := String(AppState.get_setting("source_tab_pick"))
 	var playing := AppState.get_source_mode()
@@ -1623,6 +1685,10 @@ func _on_net_confirm_needed(side: String, peer_id: int, who: String) -> void:
 	for b in [d.get_ok_button(), d.get_cancel_button()]:
 		b.add_to_group("keyboard_panel")        # (hotkeys stay off while the popup has focus)
 	_net_dialogs[peer_id] = d
+	# its own OS window even while the panel is docked: inside the main window (the one OBS
+	# captures) it would show the guest's name on stream, even with clean feed on
+	if _window == null and DisplayServer.has_feature(DisplayServer.FEATURE_SUBWINDOWS):
+		d.force_native = true
 	add_child(d)
 	d.popup_centered()
 
@@ -1691,6 +1757,7 @@ func _refresh_avatar_rows() -> void:
 
 
 func _on_net_state(info: Dictionary) -> void:
+	_refresh_strip()
 	if _net_status == null:
 		return
 	for key: String in _peer_menus:
@@ -1767,6 +1834,13 @@ func _lock(c: Control, what: String) -> void:
 
 # ── EventBus handlers ────────────────────────────────────────
 func _on_chat_status(info: Dictionary) -> void:
+	var now_connected := bool(info.get("connected", false))
+	if _core_was_connected and not now_connected and bool(AppState.get_setting("chat_enabled")):
+		EventBus.status_message.emit("Lost the connection to Stream Core: chat, bubbles and reactions stop until it's back (retrying).", true)
+	elif now_connected and not _core_was_connected and not _messages.is_empty():
+		EventBus.status_message.emit("Stream Core connected.", false)
+	_core_was_connected = now_connected
+	_refresh_strip()
 	if _chat_label == null:
 		return
 	if info.get("connected", false):
@@ -1937,6 +2011,8 @@ func _on_audience_count(seated: int, capacity: int) -> void:
 
 func _on_capture_status(info: Dictionary) -> void:
 	_capture_url = String(info.get("url", _capture_url))
+	_capture_info = info
+	_refresh_now()
 	_update_presenter_feeds(info)
 	if not info.get("connected", false):
 		_capture_label.text = "Sender page not connected."
@@ -2023,6 +2099,10 @@ func _update_pw_hint() -> void:
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if key == "together_password":
 		_update_pw_hint()
+	if key == "chat_enabled":
+		_refresh_strip()
+	if key == "ndi_source" or key == "spout_source":
+		_refresh_now()
 	if key == "panel_scale":
 		_scale_pending = 0.3      # applied once the slider stops moving (it moves under the mouse otherwise)
 	if key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_ndi")):
@@ -2109,6 +2189,203 @@ func _refresh_visible() -> void:
 
 
 # ── Widget helpers ───────────────────────────────────────────
+# ── What's going on: status strip, message line, big-screen line, video status ─────
+## Three coloured dots above the tabs: Stream Core, the big screen, Together. Each one jumps to its tab.
+func _build_status_strip() -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	for it: Array in [["core", "Chat", "Stream Core: is chat coming in? Click for the Chat tab."],
+			["screen", "Source", "The big screen: is something showing? Click for the Source tab."],
+			["together", "Together", "Streaming together: hosting, joined, or off. Click for the Together tab."]]:
+		var key := String(it[0])
+		var tab_name := String(it[1])
+		var b := Button.new()
+		b.flat = true
+		b.focus_mode = Control.FOCUS_ALL
+		b.tooltip_text = String(it[2])
+		b.add_theme_font_size_override("font_size", 13)
+		b.pressed.connect(func() -> void: _go_to_tab(tab_name))
+		h.add_child(b)
+		_strip[key] = b
+	_refresh_strip.call_deferred()
+	return h
+
+
+func _go_to_tab(tab_name: String) -> void:
+	var page := _tabs.get_node_or_null(tab_name)
+	if page:
+		_tabs.current_tab = page.get_index()
+
+
+const STRIP_GREEN := Color(0.45, 0.9, 0.5)
+const STRIP_AMBER := Color(1.0, 0.75, 0.3)
+const STRIP_RED := Color(1.0, 0.45, 0.4)
+const STRIP_GREY := Color(1, 1, 1, 0.5)
+
+
+func _set_strip(key: String, text: String, color: Color) -> void:
+	var b: Button = _strip.get(key)
+	if b == null:
+		return
+	b.text = "● " + text
+	for st in ["font_color", "font_hover_color", "font_focus_color", "font_pressed_color"]:
+		b.add_theme_color_override(st, color)
+
+
+func _refresh_strip() -> void:
+	if _strip.is_empty():
+		return
+	# Stream Core
+	if not bool(AppState.get_setting("chat_enabled")):
+		_set_strip("core", "Core off", STRIP_GREY)
+	elif ChatFeed.is_connected_to_core():
+		_set_strip("core", "Core", STRIP_GREEN)
+	else:
+		_set_strip("core", "Core not connected", STRIP_RED)
+	# the big screen
+	var mode := AppState.get_source_mode()
+	match mode:
+		"none":
+			_set_strip("screen", "Big screen empty", STRIP_AMBER)
+		"capture":
+			var ok := bool(_capture_info.get("connected", false)) and bool(_capture_info.get("capturing", false))
+			_set_strip("screen", "Big screen: tab" if ok else "Big screen: tab stopped", STRIP_GREEN if ok else STRIP_RED)
+		"file":
+			_set_strip("screen", "Big screen: video", STRIP_GREEN)
+		"ndi":
+			_set_strip("screen", "Big screen: NDI", STRIP_GREEN)
+		"spout":
+			_set_strip("screen", "Big screen: Spout", STRIP_GREEN)
+		_:
+			_set_strip("screen", "Big screen: " + mode, STRIP_GREEN)
+	# Together
+	var info := NetSession.get_info()
+	var role := String(info.get("role", "off"))
+	var guests := maxi((info.get("peers", []) as Array).size() - 1, 0)
+	if role == "host":
+		var waiting := (info.get("pending", []) as Array).size()
+		if waiting > 0:
+			_set_strip("together", "Together: %d waiting" % waiting, STRIP_AMBER)
+		else:
+			_set_strip("together", "Hosting (%d guest%s)" % [guests, "" if guests == 1 else "s"], STRIP_GREEN)
+	elif role == "guest":
+		var waiting_me := bool(info.get("waiting", false))
+		_set_strip("together", "Joining..." if waiting_me else "Joined", STRIP_AMBER if waiting_me else STRIP_GREEN)
+	elif bool(info.get("error", false)):
+		_set_strip("together", "Together: problem", STRIP_RED)
+	else:
+		_set_strip("together", "Together off", STRIP_GREY)
+
+
+## The footer's message line: the latest status / error message (red for errors). Clicking it shows
+## the last few, with times, and the tick that also puts messages on the room picture.
+func _build_message_line(outer: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	outer.add_child(row)
+	_msg_btn = Button.new()
+	_msg_btn.flat = true
+	_msg_btn.focus_mode = Control.FOCUS_ALL
+	_msg_btn.clip_text = true
+	_msg_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	_msg_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_msg_btn.custom_minimum_size = Vector2(200, 0)
+	_msg_btn.text = "No messages yet."
+	_msg_btn.tooltip_text = "The latest message from the app (red = a problem). Click to see the last %d." % MESSAGE_HISTORY
+	_msg_btn.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	row.add_child(_msg_btn)
+	_msg_fold = _fold(outer, "panel_messages", "Messages", row)
+	_msg_btn.pressed.connect(func() -> void: (_msg_fold.get_meta("fold_button") as Button).pressed.emit())
+	_msg_list = VBoxContainer.new()
+	_msg_list.add_theme_constant_override("separation", 2)
+	_msg_fold.add_child(_msg_list)
+	var on_pic := _check("messages_on_picture", "Show messages on the picture")
+	on_pic.tooltip_text = "Also show each message for a few seconds at the bottom of the room picture. Off by default: that's the window OBS captures, so messages (and errors) would show on your stream. Clean feed (F10) hides them either way."
+	_msg_fold.add_child(on_pic)
+
+
+func _on_status_message(text: String, is_error: bool) -> void:
+	var t := Time.get_time_dict_from_system()
+	_messages.push_front({"time": "%02d:%02d" % [int(t["hour"]), int(t["minute"])], "text": text, "error": is_error})
+	if _messages.size() > MESSAGE_HISTORY:
+		_messages.resize(MESSAGE_HISTORY)
+	if _msg_btn == null:
+		return
+	_msg_btn.text = "%s  %s" % [_messages[0]["time"], text.get_slice("\n", 0)]
+	_msg_btn.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5) if is_error else Color(0.92, 0.94, 1.0))
+	for c in _msg_list.get_children():
+		c.queue_free()
+	for m: Dictionary in _messages:
+		var l := _hint("%s  %s" % [m["time"], m["text"]])
+		if bool(m["error"]):
+			l.add_theme_color_override("font_color", Color(1.0, 0.55, 0.5))
+		_msg_list.add_child(l)
+	_refresh_strip()
+
+
+## Source tab: "On the big screen now: ..." whichever section is open below.
+func _refresh_now() -> void:
+	_refresh_strip()
+	if _now_label == null:
+		return
+	var what := "Nothing."
+	match AppState.get_source_mode():
+		"capture":
+			if bool(_capture_info.get("capturing", false)):
+				what = "Browser tab, \"%s\" (%d fps)" % [String(_capture_info.get("label", "tab")), int(_capture_info.get("fps", 0))]
+			else:
+				what = "Browser tab (waiting for the sender page)"
+		"file":
+			var f := _last_video_input.strip_edges()
+			what = "Video, %s" % (f.get_file() if not f.begins_with("http") else f.substr(0, 60)) if f != "" else "Video"
+		"ndi":
+			what = "NDI, %s" % String(AppState.get_setting("ndi_source"))
+		"spout":
+			what = "Spout, %s" % String(AppState.get_setting("spout_source"))
+	_now_label.text = "On the big screen now: " + what
+
+
+func _on_video_job(state: String, message: String, details: String) -> void:
+	if state == "downloading" or state == "converting":
+		if _video_state != "downloading" and _video_state != "converting":
+			_video_started_ms = Time.get_ticks_msec()
+	_video_state = state
+	_video_status.set_meta("message", message)
+	_video_details.text = details
+	(_video_details_fold.get_meta("fold_head") as Control).visible = state == "failed" and details != ""
+	if state != "failed" or details == "":
+		_video_details_fold.visible = false
+	elif PackedStringArray(String(AppState.get_setting("panel_advanced")).split(",", false)).has("source_video_details"):
+		_video_details_fold.visible = true
+	_video_tick = 1.0
+	_show_video_status()
+	_refresh_now()
+
+
+func _show_video_status() -> void:
+	if _video_status == null:
+		return
+	@warning_ignore("integer_division")
+	var secs := (Time.get_ticks_msec() - _video_started_ms) / 1000
+	@warning_ignore("integer_division")
+	var clock := "%d:%02d" % [secs / 60, secs % 60]
+	var text := ""
+	var color := Color(1, 1, 1, 0.78)
+	match _video_state:
+		"downloading":
+			text = "Downloading... %s" % clock
+		"converting":
+			text = "Converting... %s (long videos take a while)" % clock
+		"ready":
+			text = String(_video_status.get_meta("message", "Ready."))
+		"failed":
+			text = String(_video_status.get_meta("message", "Couldn't load the video."))
+			color = Color(1.0, 0.55, 0.5)
+	_video_status.text = text
+	_video_status.visible = text != ""
+	_video_status.add_theme_color_override("font_color", color)
+	_video_retry.visible = _video_state == "failed" and _last_video_input != ""
+
+
 func _tab(title: String) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.name = title
