@@ -740,7 +740,7 @@ func _crowd_idle_seconds() -> float:
 ##   - Twitch: "url" is the "default" format, a GIF for animated emotes and a PNG for the rest.
 ##   - 7TV: "url" is an animated WebP the engine can't read; 7TV has the same emote as a GIF.
 ##   - BetterTTV: "url" is a GIF and "static_url" is empty for animated emotes.
-##   - FrankerFaceZ: the animated one is WebP only, so the still one.
+##   - FrankerFaceZ: "url" is ".../animated/2", a WebP; the same link with ".gif" is a GIF.
 ## EmoteCache falls back to "static_url" when the animated one doesn't load.
 static func emote_url(e: Dictionary) -> String:
 	var url := String(e.get("url", ""))
@@ -749,6 +749,8 @@ static func emote_url(e: Dictionary) -> String:
 	if provider == "twitch" and url != "":
 		return url
 	if provider == "7tv" and bool(e.get("animated", false)) and url.ends_with("/2x.webp"):
+		return url.trim_suffix(".webp") + ".gif"
+	if provider == "ffz" and bool(e.get("animated", false)) and url.contains("/animated/"):
 		return url.trim_suffix(".webp") + ".gif"
 	return still if still != "" else url
 
