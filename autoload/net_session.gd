@@ -21,7 +21,7 @@ extends Node
 ##   - guests don't relay to each other directly (the host forwards what they need),
 ##   - web addresses must be http(s); a guest never opens a file path sent over the network.
 
-const PROTOCOL: int = 3       # 2: guests send chat in batches (_net_guest_chat_batch); 3: the unused one-line chat call (_net_guest_chat) was removed, which changes the list of calls
+const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
 const AUTH_TIMEOUT: float = 10.0
@@ -1193,6 +1193,13 @@ func _web_avatar(info: Dictionary) -> String:
 	if web == "":
 		web = String(info.get("avatar", ""))
 	return web.left(500) if web.begins_with("https://") else ""
+
+
+## Unused since chat goes in batches, but kept: removing an RPC changes the call list, so a
+## 2026.10.4 PC could no longer join this one.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_chat(msg: Dictionary) -> void:
+	_guest_chat_from(multiplayer.get_remote_sender_id(), msg)
 
 
 ## Host: a guest's batch of chat lines (see CHAT_BATCH_GAP).
