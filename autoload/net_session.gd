@@ -21,12 +21,17 @@ extends Node
 ##   - guests don't relay to each other directly (the host forwards what they need),
 ##   - web addresses must be http(s); a guest never opens a file path sent over the network.
 
-const PROTOCOL: int = 1
+const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
 const AUTH_TIMEOUT: float = 10.0
 const HANDSHAKE_TIMEOUT: float = 20.0   # (a fresh Cloudflare tunnel can be slow for its first connection)
 const CAMERA_SEND_GAP: float = 0.1      # camera updates at most 10 times a second
+## Guest: chat for the shared audience goes to the host in batches this often (one message per
+## batch instead of one per line, so busy chat doesn't queue up ahead of camera and video updates)...
+const CHAT_BATCH_GAP: float = 0.15
+## ... with at most this many lines a batch (the rest of a burst is dropped: the host only seats them).
+const CHAT_BATCH_MAX: int = 30
 ## Shortest password for hosting. A password saved before this was raised from 4 still works
 ## (see _old_password), with a note asking for a longer one.
 const MIN_PASSWORD: int = 8
@@ -98,6 +103,8 @@ var _tunnel_log: String = ""
 var _tunnel_wait: float = -1.0
 var _tunnel_warm: HTTPRequest           # host: one request through the new tunnel, so it's awake before guests use it
 var _ping_wait: float = 0.0
+var _chat_out: Array = []               # guest: chat lines waiting for the next batch to the host
+var _chat_wait: float = 0.0
 var _rtt: float = 0.0                   # guest: seconds for a message to the host and back
 ## The host's live feed (its shared tab, through VDO.Ninja): a random stream name and key per
 ## session, only ever sent to guests who passed the password check.
@@ -168,6 +175,11 @@ func _process(delta: float) -> void:
 		if _ping_wait <= 0.0:
 			_ping_wait = PING_GAP
 			_net_ping.rpc_id(1, Time.get_ticks_msec())
+		_chat_wait -= delta
+		if _chat_wait <= 0.0 and not _chat_out.is_empty():
+			_chat_wait = CHAT_BATCH_GAP
+			_net_guest_chat_batch.rpc_id(1, _chat_out)
+			_chat_out = []
 	if _roster_wait >= 0.0:
 		_roster_wait -= delta
 		if _roster_wait < 0.0:
@@ -647,6 +659,7 @@ func _close(message: String, is_error: bool = false) -> void:
 	_live_id = ""
 	_live_key = ""
 	_live_on = false
+	_chat_out.clear()
 	_host_sources.clear()
 	_emit_live()
 	_aud_shared = false
@@ -1165,7 +1178,8 @@ func _on_local_chat(msg: Dictionary) -> void:
 	out["avatar"] = _web_avatar(msg)
 	out["timestamp"] = float(msg.get("timestamp", Time.get_unix_time_from_system()))
 	out["emotes"] = msg.get("emotes", []) if msg.get("emotes") is Array else []
-	_net_guest_chat.rpc_id(1, out)
+	if _chat_out.size() < CHAT_BATCH_MAX:
+		_chat_out.append(out)
 
 
 func _on_local_user(info: Dictionary) -> void:
@@ -1183,7 +1197,19 @@ func _web_avatar(info: Dictionary) -> String:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _net_guest_chat(msg: Dictionary) -> void:
+	_guest_chat_from(multiplayer.get_remote_sender_id(), msg)
+
+
+## Host: a guest's batch of chat lines (see CHAT_BATCH_GAP).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_chat_batch(list: Array) -> void:
 	var id := multiplayer.get_remote_sender_id()
+	for msg: Variant in list.slice(0, CHAT_BATCH_MAX):
+		if msg is Dictionary:
+			_guest_chat_from(id, msg)
+
+
+func _guest_chat_from(id: int, msg: Dictionary) -> void:
 	if not _sharing_audience() or not _peers.has(id):
 		return
 	var clean := {}
