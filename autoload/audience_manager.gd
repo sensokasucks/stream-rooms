@@ -59,7 +59,6 @@ var _seat_row: PackedInt32Array = []
 var _seat_order: PackedInt32Array = []
 ## Seats whose distance from the stage differs by less than this share a row (metres).
 const ROW_TOLERANCE: float = 0.35
-const SEATING_MODES: PackedStringArray = ["random", "front", "front_random"]
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _check_in: float = 1.0
 var _ignore: PackedStringArray = []
@@ -173,11 +172,6 @@ func set_slot_kinds(kinds: PackedByteArray, presenter_slots: Dictionary) -> void
 ## KIND_SEAT / KIND_CROWD / KIND_PRESENTER.
 func get_slot_kind(slot: int) -> int:
 	return _kind[slot] if slot >= 0 and slot < _kind.size() else KIND_SEAT
-
-
-## Slot of presenter n's spot in this room, or -1.
-func get_presenter_slot(n: int) -> int:
-	return int(_presenter_slot.get(n, -1))
 
 
 ## Presenter number of a presenter-spot slot, or 0.

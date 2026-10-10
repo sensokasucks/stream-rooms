@@ -111,10 +111,6 @@ func get_effect_ids() -> PackedStringArray:
 	return out
 
 
-func get_recent() -> Array[Dictionary]:
-	return _last.duplicate()
-
-
 ## Plays a made-up reaction in the current room (panel "Test" button). Nothing is sent to Core.
 func play_test(effect: String, target: Dictionary = {}, params: Dictionary = {}) -> void:
 	var names := ChatFeed.TEST_NAMES

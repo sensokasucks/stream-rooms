@@ -8,7 +8,6 @@ extends Resource
 ## rooms doesn't load every model into memory.
 @export_file("*.tscn") var scene_path: String = ""
 @export var sort_order: int = 0
-@export var thumbnail: Texture2D
 
 @export_group("Lighting")
 @export var environment: Environment

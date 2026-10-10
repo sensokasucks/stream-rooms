@@ -37,7 +37,6 @@ const MIX_RATE: float = 22050.0
 @export var ambience_enabled: bool = true
 @export_range(0.0, 1.0) var room_tone_loudness: float = 0.08
 
-var _amb_player: AudioStreamPlayer
 var _amb_playback: AudioStreamGeneratorPlayback
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _lp: float = 0.0
@@ -59,7 +58,7 @@ func _ready() -> void:
 	if sun_shafts:
 		_build_sun_shafts()
 	if ambience_enabled:
-		_build_ambience()
+		_amb_playback = _start_generated_ambience(MIX_RATE, 0.3)
 	EventBus.setting_changed.connect(_on_lh_setting_changed)
 
 
@@ -260,18 +259,6 @@ func _tune_lights() -> void:
 			o.light_color = Color(1.0, 0.86, 0.66)
 		_base_energy[l] = o.light_energy
 		o.light_energy = _base_energy[l] * _level
-
-
-func _build_ambience() -> void:
-	_amb_player = AudioStreamPlayer.new()
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = MIX_RATE
-	gen.buffer_length = 0.3
-	_amb_player.stream = gen
-	_amb_player.bus = AudioManager.AMBIENCE_BUS
-	add_child(_amb_player)
-	_amb_player.play()
-	_amb_playback = _amb_player.get_stream_playback() as AudioStreamGeneratorPlayback
 
 
 func _fill_ambience() -> void:

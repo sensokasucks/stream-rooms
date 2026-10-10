@@ -10,8 +10,6 @@ signal screen_colors_changed(left: Color, center: Color, right: Color)
 signal webcam_texture_changed(texture: Texture2D)
 ## Which source feeds the screen: "none", "file", "capture" or "ndi".
 signal source_changed(mode: String)
-## True while the screen is actively playing (not stopped / paused).
-signal playback_active_changed(active: bool)
 
 # ── Requests (UI / hotkeys -> systems) ───────────────────────
 signal file_play_requested(input: String)

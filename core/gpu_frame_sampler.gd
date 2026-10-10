@@ -84,10 +84,6 @@ func sample(tex: Texture2D) -> Array[Color]:
 	return out
 
 
-func reset() -> void:
-	_pending = false
-
-
 func _on_data(data: PackedByteArray) -> void:
 	_in_flight = false
 	var w := ColorSampler.SAMPLE_W

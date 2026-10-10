@@ -252,10 +252,6 @@ func get_seat_head(slot: int) -> Vector3:
 	return (s["xf"] as Transform3D).origin + up
 
 
-func get_seat_scale(slot: int) -> float:
-	return float(_seats[slot]["scale"]) if slot >= 0 and slot < _seats.size() else 1.0
-
-
 ## Box around every audience seat (global; main and crowd seats, not presenter spots), for
 ## effects that cover the whole audience.
 func get_seats_bounds() -> AABB:

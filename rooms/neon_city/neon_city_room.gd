@@ -42,7 +42,6 @@ var _flares: Array[Dictionary] = []     # {mesh, light, base_scale, burst}
 var _noise: FastNoiseLite = FastNoiseLite.new()
 var _time: float = 0.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
-var _amb_player: AudioStreamPlayer
 var _amb_playback: AudioStreamGeneratorPlayback
 var _lp: float = 0.0
 var _lp2: float = 0.0
@@ -61,7 +60,7 @@ func _ready() -> void:
 	_build_ground_traffic()
 	_build_flares()
 	if ambience_enabled:
-		_build_ambience()
+		_amb_playback = _start_generated_ambience(22050.0, 0.35)
 	EventBus.setting_changed.connect(_on_setting_changed)
 	_apply_rain()
 	_housing = find_child(screen_housing_name, true, false) as MeshInstance3D
@@ -316,18 +315,6 @@ func _update_flares(delta: float) -> void:
 
 
 # ── Ambience: rain hiss + distant hum, generated live ─────────
-func _build_ambience() -> void:
-	_amb_player = AudioStreamPlayer.new()
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = 22050.0
-	gen.buffer_length = 0.35
-	_amb_player.stream = gen
-	_amb_player.bus = AudioManager.AMBIENCE_BUS
-	add_child(_amb_player)
-	_amb_player.play()
-	_amb_playback = _amb_player.get_stream_playback() as AudioStreamGeneratorPlayback
-
-
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return

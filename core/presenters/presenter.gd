@@ -27,7 +27,6 @@ var _tag: Label3D                 # the name tag above the picture
 var _badge: MeshInstance3D        # the podium picture
 var _badge_mat: StandardMaterial3D
 var _badge_path: String = ""      # the picture file the badge shows (so it isn't reloaded for nothing)
-var _badge_task: int = -1
 var _podium_faces: PackedVector3Array = []   # the podium's triangles, for sticking the picture to its front
 var _plane_size: Vector2
 var _feed: Texture2D
@@ -296,7 +295,6 @@ func _load_badge(path: String) -> void:
 		return
 	var out: Array = [null]
 	var task := WorkerThreadPool.add_task(func() -> void: out[0] = PictureFile.texture_from_bytes(bytes), false, "podium picture")
-	_badge_task = task
 	_finish_badge.call_deferred(task, path, out)
 
 

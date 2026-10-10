@@ -258,14 +258,6 @@ func _spaced(p: Vector3, kept: Array[Vector3], gap: float) -> bool:
 	return true
 
 
-## Crowd seat transforms (global), minus seats where a camera sits. Empty if the room has none.
-func get_crowd_seats() -> Array[Transform3D]:
-	var out: Array[Transform3D] = []
-	for e in get_crowd_seat_info():
-		out.append(e["xf"])
-	return out
-
-
 ## Crowd seats with what the seating plan needs: [{xf, level (1 lower tier, 2 balcony,
 ## 3 gallery), facing (global, flat; ZERO if unknown)}], minus seats where a camera sits.
 func get_crowd_seat_info() -> Array[Dictionary]:
@@ -309,6 +301,20 @@ func get_mirror_screens() -> Array[MeshInstance3D]:
 
 
 # ── Private ──────────────────────────────────────────────────
+## A sound the room makes up as it plays (air, rain, projector clatter), on the Ambience bus.
+## Starts the player and hands back its playback, which the room tops up every frame.
+func _start_generated_ambience(mix_rate: float, buffer_length: float) -> AudioStreamGeneratorPlayback:
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = mix_rate
+	gen.buffer_length = buffer_length
+	var amb := AudioStreamPlayer.new()
+	amb.stream = gen
+	amb.bus = AudioManager.AMBIENCE_BUS
+	add_child(amb)
+	amb.play()
+	return amb.get_stream_playback() as AudioStreamGeneratorPlayback
+
+
 func _apply_material_overrides() -> void:
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
