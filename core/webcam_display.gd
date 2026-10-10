@@ -40,10 +40,6 @@ func _exit_tree() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 
 
-func set_texture(tex: Texture2D) -> void:
-	_on_webcam_texture(tex)
-
-
 func _on_webcam_texture(tex: Texture2D) -> void:
 	_texture = tex
 	_mat.albedo_texture = tex

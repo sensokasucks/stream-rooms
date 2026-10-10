@@ -9,7 +9,6 @@ const MAX_BYTES: int = 3 * 1024 * 1024
 ## Widest / tallest picture decoded. A small file can claim a huge size (a 2 MB PNG of
 ## 16000 x 16000 pixels needs 1 GB once decoded), so the size is read from the header first.
 const MAX_SIDE: int = 4096
-const EXTENSIONS: PackedStringArray = ["png", "jpg", "jpeg", "webp", "gif"]
 
 
 ## "png" | "jpg" | "webp" | "gif" from the first bytes, or "" for anything else.

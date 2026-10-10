@@ -418,10 +418,6 @@ func set_react_paused(paused: bool) -> void:
 	EventBus.react_pause_changed.emit(paused)
 
 
-func is_focus_view() -> bool:
-	return _focus_view
-
-
 func toggle_focus_view() -> void:
 	_focus_view = not _focus_view
 	EventBus.focus_view_changed.emit(_focus_view)

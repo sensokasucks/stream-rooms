@@ -168,10 +168,6 @@ func get_texture() -> Texture2D:
 	return null
 
 
-func get_capture_url() -> String:
-	return capture_server.get_sender_url()
-
-
 func stop_file() -> void:
 	if AppState.get_source_mode() != "file":
 		return
@@ -592,10 +588,6 @@ func stop_ndi() -> void:
 		_set_source("none")
 
 
-func get_ndi_source() -> String:
-	return _ndi_name if _ndi_player else ""
-
-
 func _stop_ndi_player() -> void:
 	if _ndi_player:
 		_ndi_player.stop()
@@ -816,10 +808,6 @@ func stop_spout() -> void:
 	_stop_spout_texture()
 	if AppState.get_source_mode() == "spout":
 		_set_source("none")
-
-
-func get_spout_sender() -> String:
-	return _spout_name if _spout_tex else ""
 
 
 func _stop_spout_texture() -> void:

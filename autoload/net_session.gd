@@ -1195,11 +1195,6 @@ func _web_avatar(info: Dictionary) -> String:
 	return web.left(500) if web.begins_with("https://") else ""
 
 
-@rpc("any_peer", "call_remote", "reliable")
-func _net_guest_chat(msg: Dictionary) -> void:
-	_guest_chat_from(multiplayer.get_remote_sender_id(), msg)
-
-
 ## Host: a guest's batch of chat lines (see CHAT_BATCH_GAP).
 @rpc("any_peer", "call_remote", "reliable")
 func _net_guest_chat_batch(list: Array) -> void:

@@ -20,14 +20,12 @@ const PRESETS: Dictionary = {
 	"high": {"gfx_gi": true, "gfx_fog": "full", "gfx_ssao": true, "gfx_ssr": true, "gfx_msaa": 2,
 		"gfx_shadows": "high", "gfx_render_scale": 1.0},
 }
-const LEVELS: PackedStringArray = ["low", "medium", "high", "custom"]
 const KEYS: PackedStringArray = ["gfx_gi", "gfx_fog", "gfx_ssao", "gfx_ssr", "gfx_msaa", "gfx_shadows", "gfx_render_scale"]
 ## Ambient light added per unit of the room's SDFGI energy when SDFGI is switched off, so
 ## rooms lit mostly by bounce light don't go murky.
 const GI_OFF_AMBIENT: float = 0.12
 ## Volumetric fog froxel grid: [size, depth]. "full" = the engine defaults.
 const FOG_GRID: Dictionary = {"low": [40, 48], "full": [64, 64]}
-const FPS_CAPS: PackedInt32Array = [30, 60, 0]
 
 
 ## Which preset the individual switches match ("custom" if none).

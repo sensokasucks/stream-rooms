@@ -955,20 +955,6 @@ func _chat_window_options(v: VBoxContainer, key: String, where: String, side: bo
 		v.add_child(_tip(_slider(key + "_lift", "Up / down", -4.0, 4.0, 0.05, "%.2f m"), "Move the window up (+) or down (-) beside the screen."))
 
 
-## Kick / Twitch / YouTube / Other ticks bound to a comma-separated platforms setting.
-func _platform_row(key: String, label: String) -> VBoxContainer:
-	var box := VBoxContainer.new()
-	var h := HBoxContainer.new()
-	box.add_child(h)
-	var l := Label.new()
-	l.text = label
-	l.custom_minimum_size = Vector2(120, 0)
-	h.add_child(l)
-	h.add_child(_platform_chips(key))
-	box.add_child(_mix_warning(key))
-	return box
-
-
 ## The platform ticks on their own (a chat window's summary row).
 func _platform_chips(key: String) -> HBoxContainer:
 	var h := HBoxContainer.new()

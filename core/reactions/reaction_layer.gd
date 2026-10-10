@@ -67,10 +67,6 @@ func retire() -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
-func get_target_ids() -> PackedStringArray:
-	return PackedStringArray(_targets.keys() + _guests.keys())
-
-
 func get_live_count() -> int:
 	return _live
 

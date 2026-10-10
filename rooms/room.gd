@@ -258,14 +258,6 @@ func _spaced(p: Vector3, kept: Array[Vector3], gap: float) -> bool:
 	return true
 
 
-## Crowd seat transforms (global), minus seats where a camera sits. Empty if the room has none.
-func get_crowd_seats() -> Array[Transform3D]:
-	var out: Array[Transform3D] = []
-	for e in get_crowd_seat_info():
-		out.append(e["xf"])
-	return out
-
-
 ## Crowd seats with what the seating plan needs: [{xf, level (1 lower tier, 2 balcony,
 ## 3 gallery), facing (global, flat; ZERO if unknown)}], minus seats where a camera sits.
 func get_crowd_seat_info() -> Array[Dictionary]:
