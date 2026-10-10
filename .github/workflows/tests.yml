@@ -22,8 +22,7 @@ permissions:
 
 env:
   # The official Redot 26.2 Linux editor, pinned to one exact file.
-  REDOT_URL: https://github.com/Redot-Engine/redot-engine/releases/download/redot-26.2-stable/Redot_v26.2-stable_linux.x86_64.zip
-  REDOT_EXE: Redot_v26.2-stable_linux.x86_64
+  REDOT_URL: https://github.com/Redot-Engine/redot-engine/releases/download/redot-26.2-stable/Redot_v26.2-stable_linux_x64.zip
 
 jobs:
   check:
@@ -68,7 +67,8 @@ jobs:
       # so this step reads the output instead of the exit code.
       - name: Import the project and load every script
         run: |
-          ENGINE=$(find ~/engine -name "$REDOT_EXE*" -type f | head -n 1)
+          ENGINE=$(find ~/engine -type f -name "Redot_v26.2-stable_linux*" ! -name "*.zip" | head -n 1)
+          [ -n "$ENGINE" ] || { ls -laR ~/engine; echo "No engine file found."; exit 1; }
           chmod +x "$ENGINE"
           echo "ENGINE=$ENGINE" >> "$GITHUB_ENV"
           timeout -k 10 300 "$ENGINE" --headless --path . --import > import.log 2>&1 || true
