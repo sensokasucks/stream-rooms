@@ -107,7 +107,9 @@
 
 <script>
 "use strict";
-const WS_URL = "ws://127.0.0.1:{{WS_PORT}}";
+// The game writes this run's key in when it serves the page; a socket without it is refused.
+let wsKey = "{{WS_KEY}}";
+const wsUrl = () => "ws://127.0.0.1:{{WS_PORT}}/?key=" + encodeURIComponent(wsKey);
 const PKT_VIDEO = 1, PKT_AUDIO = 2, PKT_WEBCAM = 3, PKT_PRESENTER = 4;
 const PRESENTERS = 4;
 const PRES_HEIGHT = 480, PRES_FPS = 20, PRES_JPEG = 0.88;  // keyed pictures need clean edges
@@ -153,14 +155,25 @@ function connect() {
     else if (m.type === "buffered") buffered = m.buffered;
     else if (m.type === "fps") { workerFps = m.fps; tick(); }
     else if (m.type === "done") { const cb = pumpDone.get(m.id); if (cb) cb(); }
+    else if (m.type === "badkey") refreshKey();
     else if (m.type === "message") {
       let msg; try { msg = JSON.parse(m.text); } catch (_) { return; }
       if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots, msg.avatar, msg.screen);
       if (msg.type === "live_feed") applyLiveFeed(msg);
     }
   };
-  link.postMessage({ type: "connect", url: WS_URL, limits: {
+  link.postMessage({ type: "connect", url: wsUrl(), limits: {
     video: MAX_BUFFERED, pres: MAX_BUFFERED_PRES, presBusy: MAX_BUFFERED_PRES_BUSY, audio: MAX_BUFFERED_AUDIO, keepalive: PRES_KEEPALIVE_MS } });
+}
+// The game was restarted while this page stayed open: it has a new key, so read it from the
+// page's own address (other sites can't) and reconnect with it.
+let keyBusy = false;
+function refreshKey() {
+  if (keyBusy) return;
+  keyBusy = true;
+  fetch("/key", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((k) => {
+    if (k && link) { wsKey = k.trim(); link.postMessage({ type: "url", url: wsUrl() }); }
+  }).catch(() => {}).finally(() => { keyBusy = false; });
 }
 function setLink(ok) {
   $("linkDot").classList.toggle("ok", ok);
@@ -321,7 +334,11 @@ function connect() {
   ws.binaryType = "arraybuffer";
   ws.onopen = () => postMessage({ type: "link", ok: true });
   ws.onmessage = (e) => { if (typeof e.data === "string") postMessage({ type: "message", text: e.data }); };
-  ws.onclose = () => { postMessage({ type: "link", ok: false }); setTimeout(connect, 1000); };
+  ws.onclose = (e) => {
+    postMessage({ type: "link", ok: false });
+    if (e.code === 4001) postMessage({ type: "badkey" });   // the game restarted: fetch its new key
+    setTimeout(connect, 1000);
+  };
   ws.onerror = () => {};
 }
 setInterval(() => postMessage({ type: "buffered", buffered: ws ? ws.bufferedAmount : 0 }), 100);
@@ -381,6 +398,7 @@ function startPump(m) {
 onmessage = (e) => {
   const m = e.data;
   if (m.type === "connect") { url = m.url; limits = m.limits; connect(); }
+  else if (m.type === "url") url = m.url;   // a new key: the next reconnect uses it
   else if (m.type === "json") { if (ws && ws.readyState === 1) ws.send(m.text); }
   else if (m.type === "packet") sendPacket(m.kind, m.bytes, m.slot);
   else if (m.type === "busy") busyShare = m.on;

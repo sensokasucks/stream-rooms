@@ -71,6 +71,19 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	_check(cfg.load(AppState.get_settings_path()) == OK and absf(float(cfg.get_value("settings", "volume", -1.0)) - marker) < 0.001,
 			"a changed setting lands in settings_%s.cfg" % profile)
+	# saved safely: written to a .tmp first, then swapped in, the save before kept as .bak
+	AppState.set_setting("volume", 0.75 if absf(marker - 0.75) > 0.01 else 0.65)
+	SaveManager.save_now()
+	_check(FileAccess.file_exists(AppState.get_settings_path() + ".bak") and not FileAccess.file_exists(AppState.get_settings_path() + ".tmp"),
+			"the save before is kept as a .bak, no .tmp left over")
+	var broken := FileAccess.open(AppState.get_settings_path(), FileAccess.WRITE)
+	broken.store_string("[settings]\nvolume=")      # cut off mid-write
+	broken.close()
+	var before := float(AppState.get_setting("volume"))
+	AppState.set_setting("volume", 0.11)
+	SaveManager.load_settings()
+	_check(absf(float(AppState.get_setting("volume")) - marker) < 0.001, "a broken settings file falls back to the .bak (volume %.2f, was %.2f)" % [float(AppState.get_setting("volume")), before])
+	SaveManager.save_now()
 
 	# stay up a moment so a second copy started alongside overlaps with this one
 	await _secs(4.0)

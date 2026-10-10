@@ -6,6 +6,9 @@ extends Node
 ##   - URLs are downloaded with yt-dlp, then converted with ffmpeg.
 ## Results are cached in user://video_cache so the same video is instant next time.
 ## Heavy work runs on a background thread so the scene keeps rendering.
+## The tools run as child processes the thread watches: quitting (or freeing this node) stops
+## them at once instead of waiting minutes for a long convert to finish. A convert writes to a
+## ".part.ogv" file first, so a stopped one never leaves a broken video in the cache.
 
 signal status(message: String)
 signal ready_to_play(path: String)
@@ -18,8 +21,16 @@ var _cache_dir: String = "user://video_cache" if AppState.get_profile().is_empty
 ## Max height of converted video. Lower = faster conversion.
 var max_height := 720
 var busy := false
+## Downloads are capped (a co-host's link, or a host's for its guests, can't fill the disk).
+const MAX_DOWNLOAD := "2G"
+## ... and so is their length (seconds).
+const MAX_DURATION_S := 14400
 
 var _thread: Thread
+## Set on quit: the job's tool is stopped and the job ends early.
+var _cancel: bool = false
+## The tool the job is running now (0 = none), so quitting can stop it.
+var _pid: int = 0
 
 
 func request(raw: String) -> void:
@@ -67,6 +78,9 @@ func _finish(ok: bool, payload: String) -> void:
 
 
 func _exit_tree() -> void:
+	_cancel = true
+	if _pid > 0:
+		OS.kill(_pid)
 	if _thread and _thread.is_started():
 		_thread.wait_to_finish()
 
@@ -115,9 +129,11 @@ func _job_url(url: String) -> void:
 	_say("Downloading video with yt-dlp...")
 	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [_cache_dir, key])
 	var fmt := "bv*[height<=%d]+ba/b[height<=%d]/b" % [max_height, max_height]
+	# "<?" lets a plain file link through: yt-dlp can't tell its length, and "<" would skip it.
 	var args := PackedStringArray([
 		"--no-playlist", "--no-progress", "--no-warnings",
 		"-f", fmt, "--merge-output-format", "mkv",
+		"--max-filesize", MAX_DOWNLOAD, "--match-filter", "duration<?%d" % MAX_DURATION_S,
 		"-o", template,
 		"--print", "after_move:filepath", "--no-simulate",
 	])
@@ -125,13 +141,23 @@ func _job_url(url: String) -> void:
 		args.append_array(["--ffmpeg-location", ffmpeg])
 	args.append(url)
 	var output := []
-	var code := OS.execute(ytdlp, args, output, true)
+	var code := _run(ytdlp, args, output)
+	if _cancel:
+		return
 	var ytlog := "\n".join(output)
 	var src := ""
 	for line in ytlog.split("\n"):
 		var l := line.strip_edges()
-		if l != "" and FileAccess.file_exists(l):
+		# only the file this job asked for (a stray line naming another file must never be
+		# picked: it gets deleted after the convert)
+		if l != "" and l.replace("\\", "/").get_file().begins_with(key + "_src.") and FileAccess.file_exists(l):
 			src = l
+	if code == 0 and src == "" and ytlog.contains("does not pass filter"):
+		_done(false, "That video is longer than %d hours, too long to download here." % int(MAX_DURATION_S / 3600.0))
+		return
+	if code == 0 and src == "" and ytlog.to_lower().contains("max-filesize"):
+		_done(false, "That video is bigger than %s, too big to download here." % MAX_DOWNLOAD)
+		return
 	if code != 0 or src == "":
 		_done(false, "yt-dlp failed (code %d):\n%s" % [code, _tail(ytlog)])
 		return
@@ -154,8 +180,8 @@ func _convert(ffmpeg: String, src: String, out: String) -> String:
 		abs_part,
 	])
 	var output := []
-	var code := OS.execute(ffmpeg, args, output, true)
-	if code != 0 or not FileAccess.file_exists(part):
+	var code := _run(ffmpeg, args, output)
+	if _cancel or code != 0 or not FileAccess.file_exists(part):
 		DirAccess.remove_absolute(abs_part)
 		return "ffmpeg failed (code %d):\n%s" % [code, _tail("\n".join(output))]
 	DirAccess.rename_absolute(abs_part, ProjectSettings.globalize_path(out))
@@ -163,6 +189,40 @@ func _convert(ffmpeg: String, src: String, out: String) -> String:
 
 
 # ------------------------------------------------------------ helpers
+
+## Runs a tool (on the job thread) and waits for it, collecting what it prints (stdout and
+## stderr) into output. Stops it when _cancel is set. Returns its exit code (-1 = stopped/failed).
+func _run(exe: String, args: PackedStringArray, output: Array) -> int:
+	var info := OS.execute_with_pipe(exe, args, false)
+	if info.is_empty():
+		return -1
+	_pid = int(info["pid"])
+	var pipes: Array[FileAccess] = [info["stdio"], info["stderr"]]
+	var text := ""
+	while OS.is_process_running(_pid):
+		if _cancel:
+			OS.kill(_pid)
+			break
+		text += _drain(pipes)
+		OS.delay_msec(50)
+	text += _drain(pipes)
+	var code := -1 if _cancel else OS.get_process_exit_code(_pid)
+	_pid = 0
+	for f in pipes:
+		f.close()
+	output.append(text)
+	return code
+
+
+func _drain(pipes: Array[FileAccess]) -> String:
+	var out := ""
+	for f in pipes:
+		var chunk := f.get_buffer(65536)
+		while not chunk.is_empty():
+			out += chunk.get_string_from_utf8()
+			chunk = f.get_buffer(65536)
+	return out
+
 
 ## Looks for the tool next to the exported game, in the project's tools/ folder,
 ## then on the system PATH. Returns "" if it can't be found.

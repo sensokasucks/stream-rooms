@@ -235,6 +235,10 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 ## meanwhile: pausing it (process_mode disabled) brought the crash straight back.
 func _retire(room: Node3D) -> void:
 	room.visible = false
+	# its audience, reactions and chat windows stop listening now: for those 3 s they would
+	# otherwise play every reaction a second time (seat swaps undo themselves, refunds go wrong)
+	# and build seats and bubbles for the new room's chatters inside a room about to be freed
+	room.propagate_call("retire")
 	get_tree().create_timer(OLD_ROOM_FREE_DELAY).timeout.connect(func() -> void:
 		if is_instance_valid(room):
 			room.queue_free())

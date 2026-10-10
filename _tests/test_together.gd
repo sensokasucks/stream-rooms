@@ -87,9 +87,9 @@ func _host() -> void:
 	await _start_main()
 
 	# hosting refuses a too-short password
-	AppState.set_setting("together_password", "ab")
+	AppState.set_setting("together_password", "abcdef")
 	NetSession.host()
-	_check(NetSession.get_role() == "off", "hosting needs a password of 4+ characters")
+	_check(NetSession.get_role() == "off", "hosting needs a password of %d+ characters" % NetSession.MIN_PASSWORD)
 	AppState.set_setting("together_password", PASSWORD)
 	NetSession.host()
 	_check(NetSession.get_role() == "host", "hosting started (%s)" % NetSession.get_info()["status"])

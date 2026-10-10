@@ -23,10 +23,20 @@ extends Node
 
 const PROTOCOL: int = 1
 const MAX_GUESTS: int = 3
-const AUTH_TIMEOUT: float = 20.0        # (a fresh Cloudflare tunnel can be slow for its first connection)
-const HANDSHAKE_TIMEOUT: float = 20.0
+## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
+const AUTH_TIMEOUT: float = 10.0
+const HANDSHAKE_TIMEOUT: float = 20.0   # (a fresh Cloudflare tunnel can be slow for its first connection)
 const CAMERA_SEND_GAP: float = 0.1      # camera updates at most 10 times a second
-const MIN_PASSWORD: int = 4
+## Shortest password for hosting. A password saved before this was raised from 4 still works
+## (see _old_password), with a note asking for a longer one.
+const MIN_PASSWORD: int = 8
+const OLD_MIN_PASSWORD: int = 4
+## At most this many connections may be answering the password challenge at once (each one
+## holds big network buffers, and a guesser would open many in parallel).
+const MAX_UNAUTHENTICATED: int = 4
+## Wrong passwords from one address before it has to wait LOCKOUT_S seconds.
+const MAX_WRONG: int = 5
+const LOCKOUT_S: float = 60.0
 const TUNNEL_TIMEOUT: float = 40.0      # cloudflared usually has the address within 5 s
 const PING_GAP: float = 2.0             # guest: round-trip time to the host, for video sync
 ## Synced video: start without whoever isn't ready after this long (they catch up when they are).
@@ -60,6 +70,13 @@ var _error: bool = false
 var _address: String = ""               # host: what guests type in; guest: where it connected
 var _peers: Dictionary = {}             # peer id -> {"name": String, "cohost": bool}; the host is 1
 var _nonces: Dictionary = {}            # host: peer id -> challenge bytes
+## Host: wrong passwords per address: address -> {"count": int, "until": msec it may try again}.
+## (Through the Cloudflare tunnel every guest comes from cloudflared's address, so there it works
+## for everyone at once: a guesser also holds up real guests for a minute, but can't keep guessing.)
+var _wrong: Dictionary = {}
+## A short password (4 to 7 characters) that was already saved when the app started: it may still
+## host, with a note. One typed in after the start needs MIN_PASSWORD characters.
+var _old_password: String = ""
 var _hello_names: Dictionary = {}       # host: peer id -> name from its hello (until it's connected)
 ## Host: guests who passed the password check but aren't in yet. Both sides confirm first (the host
 ## sees the guest's name, the guest sees the host's), and nothing syncs until both said yes.
@@ -118,6 +135,9 @@ func _ready() -> void:
 	sm.connection_failed.connect(_on_connection_failed)
 	sm.server_disconnected.connect(_on_server_disconnected)
 	EventBus.setting_changed.connect(_on_setting_changed)
+	var saved_pw := String(AppState.get_setting("together_password")).strip_edges()
+	if saved_pw.length() >= OLD_MIN_PASSWORD and saved_pw.length() < MIN_PASSWORD:
+		_old_password = saved_pw
 	EventBus.room_requested.connect(_on_room_requested)
 	EventBus.curtain_changed.connect(_on_curtain_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
@@ -247,7 +267,8 @@ func host() -> void:
 	if _role != "off":
 		return
 	var pw := String(AppState.get_setting("together_password")).strip_edges()
-	if pw.length() < MIN_PASSWORD:
+	var short_ok := pw != "" and pw == _old_password
+	if pw.length() < MIN_PASSWORD and not short_ok:
 		_set_status("Pick a session password first (at least %d characters)." % MIN_PASSWORD, true)
 		return
 	var port := int(AppState.get_setting("together_port"))
@@ -287,7 +308,7 @@ func host() -> void:
 	var where := "Click Copy address and give it to your guests."
 	if ip == "127.0.0.1":
 		where = "Only copies on this PC can join" + (" (Tailscale isn't running)." if bind == "auto" else ".")
-	_set_status("Hosting. " + where)
+	_set_status("Hosting. " + where + password_note())
 
 
 func join() -> void:
@@ -319,6 +340,20 @@ func leave() -> void:
 	if _role == "off":
 		return
 	_close("Left the session." if _role == "guest" else "Stopped hosting.")
+
+
+## " Your password is short ..." while hosting with an old short password, else "".
+func password_note() -> String:
+	var pw := String(AppState.get_setting("together_password")).strip_edges()
+	if pw.length() < MIN_PASSWORD and pw == _old_password:
+		return " Your password is short: pick one with at least %d characters before the next session." % MIN_PASSWORD
+	return ""
+
+
+## True when the password box holds something too short to host with.
+func password_too_short() -> bool:
+	var pw := String(AppState.get_setting("together_password")).strip_edges()
+	return pw.length() < MIN_PASSWORD
 
 
 ## Host: let a guest change the room, curtain and other shared things too.
@@ -399,6 +434,23 @@ static func is_web_address(url: String) -> bool:
 func _on_peer_authenticating(id: int) -> void:
 	if _role != "host":
 		return
+	# limits before any challenge: too many half-open connections, a full session, an address
+	# that got the password wrong too often
+	if _nonces.size() >= MAX_UNAUTHENTICATED:
+		_sm().disconnect_peer.call_deferred(id)
+		return
+	var why := ""
+	var wait_s := _locked_out(_peer_address(id))
+	if wait_s > 0:
+		why = "Too many wrong passwords. Try again in %d seconds." % wait_s
+	elif guest_count() + _pending.size() + _hello_names.size() >= MAX_GUESTS:
+		why = "The session is full (%d guests)." % MAX_GUESTS
+	if why != "":
+		_sm().send_auth(id, var_to_bytes({"t": "refused", "reason": why}))
+		get_tree().create_timer(0.5).timeout.connect(func() -> void:
+			if _role == "host":
+				_sm().disconnect_peer(id))
+		return
 	var nonce := Crypto.new().generate_random_bytes(16)
 	_nonces[id] = nonce
 	_sm().send_auth(id, var_to_bytes({"t": "challenge", "nonce": nonce, "protocol": PROTOCOL, "version": _version()}))
@@ -420,7 +472,11 @@ func _on_hello(id: int, d: Dictionary) -> void:
 	var nonce: PackedByteArray = _nonces[id]
 	_nonces.erase(id)
 	var why := check_hello(d, nonce, String(AppState.get_setting("together_password")), _version())
+	if why == "" and guest_count() + _pending.size() + _hello_names.size() >= MAX_GUESTS:
+		why = "The session is full (%d guests)." % MAX_GUESTS
 	if why != "":
+		if why == "Wrong session password.":
+			_note_wrong(_peer_address(id))
 		_sm().send_auth(id, var_to_bytes({"t": "refused", "reason": why}))
 		EventBus.status_message.emit("Refused someone joining: " + why, true)
 		# a moment for the reason to arrive before the connection closes
@@ -431,6 +487,38 @@ func _on_hello(id: int, d: Dictionary) -> void:
 	var n := _clean_name(String(d.get("name", "")))
 	_hello_names[id] = n if n != "" else "Guest %d" % (_peers.size())
 	_sm().complete_auth(id)
+
+
+## Guests in the session now (not counting the host or anyone still joining).
+func guest_count() -> int:
+	return maxi(_peers.size() - 1, 0) if _role == "host" else 0
+
+
+## Where a connection comes from ("" if unknown).
+func _peer_address(id: int) -> String:
+	var mp := multiplayer.multiplayer_peer
+	if mp is WebSocketMultiplayerPeer:
+		return (mp as WebSocketMultiplayerPeer).get_peer_address(id)
+	return ""
+
+
+## Seconds this address still has to wait after too many wrong passwords (0 = may try).
+func _locked_out(address: String) -> int:
+	var w: Variant = _wrong.get(address)
+	if not w is Dictionary:
+		return 0
+	var left := int((w as Dictionary).get("until", 0)) - Time.get_ticks_msec()
+	return ceili(left / 1000.0) if left > 0 else 0
+
+
+func _note_wrong(address: String) -> void:
+	var w: Dictionary = _wrong.get(address, {"count": 0, "until": 0})
+	w["count"] = int(w["count"]) + 1
+	if int(w["count"]) >= MAX_WRONG:
+		w["count"] = 0
+		w["until"] = Time.get_ticks_msec() + int(LOCKOUT_S * 1000.0)
+		EventBus.status_message.emit("Several wrong passwords in a row: joining is paused for a minute.", true)
+	_wrong[address] = w
 
 
 func _on_host_auth(d: Dictionary) -> void:
@@ -533,6 +621,8 @@ func _on_server_disconnected() -> void:
 
 
 func _close(message: String, is_error: bool = false) -> void:
+	# (checked before _role is reset below: a guest's "right host?" popup must close too)
+	var was_waiting_guest := _role == "guest" and not _admitted
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -547,7 +637,7 @@ func _close(message: String, is_error: bool = false) -> void:
 	for id: int in _pending:
 		EventBus.net_confirm_closed.emit(id)
 	_pending.clear()
-	if _role == "guest" and not _admitted:
+	if was_waiting_guest:
 		EventBus.net_confirm_closed.emit(1)
 	_host_name = ""
 	_admitted = false

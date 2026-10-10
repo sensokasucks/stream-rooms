@@ -6,7 +6,7 @@ extends Node
 ##   <redot console exe> --path . _tests/test_shared_audience.tscn -- C:/temp/sr_tests --mp-profile=test
 
 const SESSION_PORT: int = 7396
-const PASSWORD: String = "audpass"
+const PASSWORD: String = "audiencepass"
 
 var _fails: int = 0
 var _out: String = ""
