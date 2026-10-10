@@ -1,6 +1,6 @@
 # Stream Rooms and Stream Core: user manual
 
-*October 2026 (updated 10 October). Stream Rooms 2026.10.1 and Fridge Stream Core.*
+*October 2026 (updated 10 October). Stream Rooms 2026.10.4 and Fridge Stream Core.*
 
 Stream Rooms puts your stream in a 3D room: a big screen shows a browser tab, a video or another program, the screen lights the room, and your chat sits in the seats as an audience. Fridge Stream Core is the companion program that reads your Kick, Twitch and YouTube chat and decides what chat is allowed to do (points, reactions, games). You capture the Stream Rooms window in OBS and stream it.
 
