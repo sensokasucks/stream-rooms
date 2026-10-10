@@ -523,7 +523,7 @@ func _throw(p: Dictionary, origin: Dictionary, tgt: Dictionary) -> void:
 	var dur := throw_time * clampf(a.distance_to(b) / 8.0, 0.6, 1.6)
 	var spin := randf_range(-1.0, 1.0) * TAU * 2.0
 	obj.global_position = a
-	var tw := create_tween()
+	var tw := (obj as Node).create_tween()      # dies with the thrown thing (never calls back on a freed one)
 	tw.tween_method(func(t: float) -> void:
 		if is_instance_valid(obj):
 			obj.global_position = a.lerp(mid, t).lerp(mid.lerp(b, t), t)
@@ -547,7 +547,7 @@ func _impact(p: Dictionary, at: Vector3, tgt: Dictionary) -> void:
 			var n: Vector3 = tgt["normal"]
 			var land := at + n * randf_range(0.8, 1.6) + Vector3(randf_range(-0.6, 0.6), -at.y + _floor_y(at), 0)
 			var peak := (at + land) * 0.5 + Vector3.UP * 0.6
-			var tw := create_tween()
+			var tw := (obj as Node).create_tween()      # dies with it
 			tw.tween_method(func(t: float) -> void:
 				if is_instance_valid(obj):
 					obj.global_position = at.lerp(peak, t).lerp(peak.lerp(land, t), t), 0.0, 1.0, 0.7)
@@ -609,7 +609,7 @@ func _pile_one(p: Dictionary, origin: Dictionary) -> void:
 	var a: Vector3 = origin["pos"]
 	var mid := (a + base) * 0.5 + Vector3.UP * 1.5
 	obj.global_position = a
-	var tw := create_tween()
+	var tw := (obj as Node).create_tween()      # dies with it (the pile cap can free one mid-flight)
 	tw.tween_method(func(t: float) -> void:
 		if is_instance_valid(obj):
 			obj.global_position = a.lerp(mid, t).lerp(mid.lerp(base, t), t), 0.0, 1.0, throw_time)
@@ -664,7 +664,7 @@ func _fall(p: Dictionary, at: Vector3, radius: float, default_count: int) -> voi
 		obj.global_position = start
 		var fall := dur * randf_range(0.55, 0.8)
 		var spin := randf_range(-3.0, 3.0)
-		var tw := create_tween()
+		var tw := (obj as Node).create_tween()      # dies with it
 		tw.tween_interval(randf() * (dur - fall))
 		tw.tween_method(func(t: float) -> void:
 			if is_instance_valid(obj):

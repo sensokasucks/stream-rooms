@@ -29,6 +29,11 @@ extends Node
 const BUBBLE_STYLES: int = 4
 ## Bubble colour styles a message can carry ({tint} part): Super Chat / Bits, Twitch highlights.
 const TINTS: PackedStringArray = ["paid", "highlighted", "gigantified"]
+## bubble_kind -> the setting that lets that kind of message get a bubble.
+const BUBBLE_FILTER_KEYS: Dictionary = {
+	"text": "audience_bubble_text", "emotes": "audience_bubble_emotes", "paid": "audience_bubble_paid",
+	"highlighted": "audience_bubble_highlighted", "reply": "audience_bubble_replies",
+}
 const KIND_SEAT: int = 0
 const KIND_CROWD: int = 1
 const KIND_PRESENTER: int = 2
@@ -457,10 +462,41 @@ func add_chat(msg: Dictionary) -> void:
 		# first part: who this answers (the bubble shows "replying to Name"); never an emote
 		parts.push_front({"reply_to": reply_to.left(60), "quote": String(msg.get("reply_quote", "")).left(120)})
 	var tint := String(msg.get("tint", ""))
-	if tint in TINTS and bool(AppState.get_setting("audience_bubble_tints")):
-		# first part: how the bubble stands out (Super Chat, Twitch highlight); never an emote
+	if tint in TINTS:
+		# first part: how the bubble stands out (Super Chat, Twitch highlight); never an emote.
+		# Kept with the colours off too: the bubble filter needs it (the bubble draws it plain then).
 		parts.push_front({"tint": tint})
 	EventBus.audience_spoke.emit(int(m["slot"]), parts)
+
+
+## What kind of message a bubble's parts are, for the bubble filter (Audience tab > Bubbles show):
+## "paid", "highlighted" (gigantified emotes too), "reply", "emotes" (nothing but emotes) or "text".
+## Paid and highlighted win over reply: a Super Chat that answers someone is a paid one.
+func bubble_kind(parts: Array) -> String:        # (not static: callers reach it through the autoload)
+	var reply := false
+	var words := false
+	var emotes := false
+	for p: Variant in parts:
+		if p is Dictionary:
+			var d: Dictionary = p
+			if d.has("url"):
+				emotes = true
+			elif d.has("reply_to"):
+				reply = true
+			elif String(d.get("tint", "")) == "paid":
+				return "paid"
+			elif String(d.get("tint", "")) in ["highlighted", "gigantified"]:
+				return "highlighted"
+		elif String(p).strip_edges() != "":
+			words = true
+	if reply:
+		return "reply"
+	return "emotes" if emotes and not words else "text"
+
+
+## True when the bubble filter lets this message get a speech bubble.
+func bubble_wanted(parts: Array) -> bool:
+	return bool(AppState.get_setting(BUBBLE_FILTER_KEYS[bubble_kind(parts)]))
 
 
 ## The two patterns message_parts uses, compiled once (it runs for every message in every chat
@@ -1110,7 +1146,7 @@ func hide_user(info: Dictionary) -> int:
 
 ## Does a chat_user_hidden info ({platform, user_id, names}) mean this chatter?
 ## key is "platform:user_id" (members, chat window cards).
-static func matches_hidden(info: Dictionary, key: String, who: String, login: String) -> bool:
+func matches_hidden(info: Dictionary, key: String, who: String, login: String) -> bool:        # (not static: callers reach it through the autoload)
 	var plat := String(info.get("platform", ""))
 	var key_plat := key.get_slice(":", 0)
 	if plat != "" and key_plat != plat:

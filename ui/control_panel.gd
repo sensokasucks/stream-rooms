@@ -1030,6 +1030,20 @@ func _build_audience_tab() -> Control:
 		["front_random", "Front row first, random seat in the row"],
 	]), "Where someone who starts chatting sits down. The Seating tab can keep platforms apart on top of this."))
 	v.add_child(_tip(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0), "How big the speech bubbles over the audience are."))
+	# a busy chat: pick which messages get a bubble (the chatter still sits down either way)
+	v.add_child(_heading("Bubbles show"))
+	var bf := HFlowContainer.new()
+	v.add_child(bf)
+	bf.add_child(_tip(_check("audience_bubble_text", "Text messages"), "Ordinary messages with words in them (emotes inside are fine). Off: only the kinds ticked next to it get a bubble."))
+	bf.add_child(_tip(_check("audience_bubble_emotes", "Emote-only"), "Messages that are nothing but emotes."))
+	bf.add_child(_tip(_check("audience_bubble_paid", "Paid"), "Super Chats, Kicks and Bits, also when they answer someone."))
+	bf.add_child(_tip(_check("audience_bubble_highlighted", "Highlighted"), "Twitch messages highlighted with channel points, and gigantified emotes."))
+	bf.add_child(_tip(_check("audience_bubble_replies", "Replies"), "Ordinary messages that answer someone (the bubble says \"replying to\"). Paid replies follow Paid."))
+	bf.add_child(_tip(_check("audience_bubble_animated", "Animated emotes"), "Animated emotes move in the bubbles. Off: they show their first frame, which is lighter on the PC when chat is very busy."))
+	var bp := HFlowContainer.new()
+	v.add_child(bp)
+	bp.add_child(_tip(_button("Show everything", func() -> void: _bubble_preset(true)), "Tick every kind of message (and animated emotes) again."))
+	bp.add_child(_tip(_button("Busy chat: paid and highlighted", func() -> void: _bubble_preset(false)), "Only paid and highlighted messages get a bubble, with still emotes. For when chat moves too fast to read."))
 	var r3 := HFlowContainer.new()
 	v.add_child(r3)
 	r3.add_child(_tip(_check("audience_names", "Name tags"), "Each chatter's name over their head."))
@@ -1135,6 +1149,13 @@ func _build_audience_tab() -> Control:
 	fm.tooltip_text = "Empty main seats show filler people too (the same share as Crowd fullness). Chatters take their places as they arrive."
 	crowd_opts.add_child(fm)
 	return adv.get_parent() as Control
+
+
+## Audience tab > Bubbles show: everything (true), or only paid and highlighted with still emotes.
+func _bubble_preset(everything: bool) -> void:
+	for key: String in AudienceManager.BUBBLE_FILTER_KEYS.values():
+		AppState.set_setting(key, everything or key in ["audience_bubble_paid", "audience_bubble_highlighted"])
+	AppState.set_setting("audience_bubble_animated", everything)
 
 
 ## Audience tab: "Hide a picture..." lists the people seated now, newest first (filled as it opens).

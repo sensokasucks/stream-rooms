@@ -110,7 +110,14 @@ func _ready() -> void:
 	EventBus.chat_message_received.emit(hl2)
 	await _secs(1.0)
 	var l_slot := AudienceManager.find_slot_by_name("Lumen")
-	_check(l_slot >= 0 and _spoken.has(l_slot) and _spoken[l_slot][0] is String, "with the colours off the bubble has no tint")
+	# (the {tint} marker still comes along, for the bubble filter; the bubble draws it plain)
+	_check(l_slot >= 0 and _spoken.has(l_slot) and _spoken[l_slot][0] is Dictionary and _spoken[l_slot][0].get("tint") == "highlighted",
+		"with the colours off the parts still say it's highlighted (for the bubble filter)")
+	if l_slot >= 0:
+		view._show_bubble(l_slot)
+		var lb: SpeechBubble = view._seats[l_slot]["bubble"]
+		_check(lb != null and not lb._fill.is_equal_approx(SpeechBubble.TINT_FILLS["highlighted"][1]) and lb._fill.v < 0.3,
+			"but the bubble is a plain dark one")
 	var last: Dictionary = cs._cards[cs._cards.size() - 1]
 	_check(String(last.get("tint", "")) == "" and not (last["tint_bg"] as ColorRect).visible, "and neither has the chat card")
 	AppState.set_setting("audience_bubble_tints", true)
