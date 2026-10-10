@@ -52,7 +52,6 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
-	"audience_platform_colors": true, # (old, unused: only read once to carry an old save over to audience_color_by)
 	"audience_color_by": "chat", # silhouette / name colours: chat (the chatter's own chat colour) | name (picked from the name) | platform
 	"platform_color_kick": Color("53fc18"),
 	"platform_color_twitch": Color("9146ff"),
@@ -136,7 +135,6 @@ const BASE_DEFAULTS: Dictionary = {
 	"vsync": true,               # wait for the display refresh (no tearing)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
-	"panel_folded": "",          # (old, unused: nothing reads it since the Advanced folds; kept so old saves load quietly)
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
 	"chat_left_header_on": true,
@@ -371,7 +369,8 @@ func apply_saved_settings(saved: Dictionary) -> void:
 	for key in saved.keys():
 		if DEFAULTS.has(key) and typeof(saved[key]) == typeof(DEFAULTS[key]):
 			_settings[key] = saved[key]
-	# older saves: "Use chat colours" off meant colours picked from names
+	# older saves: "Use chat colours" off meant colours picked from names (that old
+	# "audience_platform_colors" key is read straight from the file; it is no longer a setting)
 	if saved.get("audience_platform_colors") == false and not saved.has("audience_color_by"):
 		_settings["audience_color_by"] = "name"
 
