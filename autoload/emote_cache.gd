@@ -34,6 +34,7 @@ var _decoding: Dictionary = {}     # url -> {id, out: Array, body, save} while a
 var _fallback: Dictionary = {}     # url -> still picture to load instead when url can't be shown
 var _fetch: Dictionary = {}        # url -> the address downloaded for it (its fallback, after url failed)
 var _circle_jobs: Dictionary = {}  # url -> {id, out: Array} while a round picture is made on a worker thread
+var _circle_from_texture: Dictionary = {}  # url -> true: its disk copy didn't decode, so read the texture back
 var _sizes: Dictionary = {}        # cache key (url, or CIRCLE + url) -> estimated bytes
 var _used: Dictionary = {}         # cache key -> Time.get_ticks_msec() when last asked for
 var _total_bytes: int = 0
@@ -93,7 +94,7 @@ func get_circle_texture(url: String, size: int = 128) -> Texture2D:
 	# is read back from the graphics card. No copy (or a GIF): its first frame, read back once.
 	var body := PackedByteArray()
 	var path := _disk_path(url)
-	if FileAccess.file_exists(path):
+	if FileAccess.file_exists(path) and not _circle_from_texture.has(url):
 		body = FileAccess.get_file_as_bytes(path)
 	var img: Image = null
 	if body.is_empty() or GifDecoder.is_gif(body):
@@ -209,9 +210,7 @@ func _finish(url: String, req: HTTPRequest, body: PackedByteArray) -> void:
 	var tex := _decode(body)
 	if tex:
 		_store(url, tex)
-		var f := FileAccess.open(_disk_path(url), FileAccess.WRITE)
-		if f:
-			f.store_buffer(body)
+		_save(url, body)
 		EventBus.emote_ready.emit(url)
 	elif not _try_fallback(url):
 		_fail(url)
@@ -256,6 +255,9 @@ func _process(_delta: float) -> void:
 			_account(CIRCLE + url, _circles[url])
 			made += 1
 			EventBus.emote_ready.emit(url)
+		elif not _circle_from_texture.has(url):
+			_circle_from_texture[url] = true      # the disk copy didn't decode: next time use the texture
+			EventBus.emote_ready.emit(url)
 	for url: String in _decoding.keys():
 		var job: Dictionary = _decoding[url]
 		if WorkerThreadPool.is_task_completed(int(job["id"])):
@@ -297,9 +299,7 @@ func _gif_done(url: String, result: Dictionary, body: PackedByteArray, save: boo
 		tex = anim
 	_store(url, tex)
 	if save:
-		var f := FileAccess.open(_disk_path(url), FileAccess.WRITE)
-		if f:
-			f.store_buffer(body)
+		_save(url, body)
 	EventBus.emote_ready.emit(url)
 
 
@@ -334,6 +334,15 @@ static func _image_from(body: PackedByteArray) -> Image:
 	if img.get_format() == Image.FORMAT_RGB8:
 		img.convert(Image.FORMAT_RGBA8)     # (RGB8 isn't supported on every graphics card: avoids a warning per picture)
 	return img
+
+
+## The disk copy, closed before anyone hears the picture is ready: a listener asking for the
+## round version reads it straight back, and a half-written file is a "corrupt" PNG.
+func _save(url: String, body: PackedByteArray) -> void:
+	var f := FileAccess.open(_disk_path(url), FileAccess.WRITE)
+	if f:
+		f.store_buffer(body)
+		f.close()
 
 
 ## Redot's JPEG loader turns down a picture over small flaws that libjpeg only warns about (some
