@@ -301,6 +301,20 @@ func get_mirror_screens() -> Array[MeshInstance3D]:
 
 
 # ── Private ──────────────────────────────────────────────────
+## A sound the room makes up as it plays (air, rain, projector clatter), on the Ambience bus.
+## Starts the player and hands back its playback, which the room tops up every frame.
+func _start_generated_ambience(mix_rate: float, buffer_length: float) -> AudioStreamGeneratorPlayback:
+	var gen := AudioStreamGenerator.new()
+	gen.mix_rate = mix_rate
+	gen.buffer_length = buffer_length
+	var amb := AudioStreamPlayer.new()
+	amb.stream = gen
+	amb.bus = AudioManager.AMBIENCE_BUS
+	add_child(amb)
+	amb.play()
+	return amb.get_stream_playback() as AudioStreamGeneratorPlayback
+
+
 func _apply_material_overrides() -> void:
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D

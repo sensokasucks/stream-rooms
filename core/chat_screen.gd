@@ -33,9 +33,7 @@ const GAP: float = 22.0
 const BAR_W: float = 5.0
 const LINE_GAP: float = 8.0
 const TEXT_COLOR: Color = Color(0.93, 0.93, 0.95)
-const EMOJI_FONTS: PackedStringArray = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla"]
 
-static var _font: Font
 static var _bold: Font
 
 var _size: Vector2 = Vector2(8.6, 1.5)
@@ -420,7 +418,7 @@ func _add_card(card: Dictionary) -> void:
 	rtl.scroll_active = false
 	rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	rtl.add_theme_font_override("normal_font", _shared_font())
+	rtl.add_theme_font_override("normal_font", SpeechBubble.shared_font())
 	rtl.add_theme_font_override("bold_font", _bold_font())
 	rtl.add_theme_color_override("default_color", TEXT_COLOR)
 	rtl.position = Vector2(BAR_W + 10.0, 0)
@@ -749,21 +747,10 @@ func _text_size() -> int:
 	return roundi(BASE_TEXT * clampf(float(AppState.get_setting(_key + "_text")), 0.5, 3.0))
 
 
-static func _shared_font() -> Font:
-	if _font == null:
-		var emoji := SystemFont.new()
-		emoji.font_names = EMOJI_FONTS
-		var f := FontVariation.new()
-		f.base_font = ThemeDB.fallback_font
-		f.fallbacks = [emoji]
-		_font = f
-	return _font
-
-
 static func _bold_font() -> Font:
 	if _bold == null:
 		var f := FontVariation.new()
-		f.base_font = _shared_font()
+		f.base_font = SpeechBubble.shared_font()
 		f.variation_embolden = 0.8
 		_bold = f
 	return _bold

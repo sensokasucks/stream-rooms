@@ -47,7 +47,6 @@ var _dust: GPUParticles3D
 var _dust_mat: ShaderMaterial
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 
-var _amb_player: AudioStreamPlayer
 var _amb_playback: AudioStreamGeneratorPlayback
 var _t: float = 0.0                  # sample clock (seconds)
 var _motor_phase: float = 0.0
@@ -72,7 +71,7 @@ func _ready() -> void:
 	if dust_enabled:
 		_build_dust.call_deferred()
 	if ambience_enabled:
-		_build_ambience()
+		_amb_playback = _start_generated_ambience(MIX_RATE, 0.3)
 
 
 func _process(delta: float) -> void:
@@ -174,18 +173,6 @@ func _build_dust() -> void:
 
 
 # ── Sound: projector + room tone + clock ─────────────────────
-func _build_ambience() -> void:
-	_amb_player = AudioStreamPlayer.new()
-	var gen := AudioStreamGenerator.new()
-	gen.mix_rate = MIX_RATE
-	gen.buffer_length = 0.3
-	_amb_player.stream = gen
-	_amb_player.bus = AudioManager.AMBIENCE_BUS
-	add_child(_amb_player)
-	_amb_player.play()
-	_amb_playback = _amb_player.get_stream_playback() as AudioStreamGeneratorPlayback
-
-
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return

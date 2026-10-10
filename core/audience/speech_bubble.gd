@@ -46,7 +46,7 @@ func _init() -> void:
 	_rtl.scroll_active = false
 	_rtl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_rtl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_rtl.add_theme_font_override("normal_font", _shared_font())
+	_rtl.add_theme_font_override("normal_font", shared_font())
 	_rtl.add_theme_font_size_override("normal_font_size", TEXT_SIZE)
 	_rtl.add_theme_color_override("default_color", TEXT_COLOR)
 	add_child(_rtl)
@@ -156,12 +156,9 @@ func _draw() -> void:
 	draw_colored_polygon(tail, _fill)
 
 
-## The bubble font (theme font + colour emoji fallback). Also used by the reaction effects.
+## The bubble font (theme font + colour emoji fallback). Also used by the reaction effects,
+## name tags and the chat windows, so there is one copy of it.
 static func shared_font() -> Font:
-	return _shared_font()
-
-
-static func _shared_font() -> Font:
 	if _font == null:
 		var emoji := SystemFont.new()
 		emoji.font_names = EMOJI_FONTS
