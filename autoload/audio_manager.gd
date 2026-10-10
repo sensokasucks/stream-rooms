@@ -232,6 +232,21 @@ func _update_mic_input() -> void:
 		_mic_capture.clear_buffer()
 
 
+## Why auto-duck can't hear anything ("" when it can, or when it's off): shown next to the
+## React tab's mic meter. Asks the same questions as _update_mic_input, without side effects.
+func get_mic_problem() -> String:
+	if not bool(AppState.get_setting("duck_enabled")):
+		return ""
+	if not bool(ProjectSettings.get_setting("audio/driver/enable_input", false)):
+		return "Mic input is off"
+	if AudioServer.get_driver_name() == "Dummy":
+		return "No sound device"
+	var devices := AudioServer.get_input_device_list()
+	if devices.size() <= 1 and (devices.is_empty() or devices[0] == "Default"):
+		return "No microphone"
+	return ""
+
+
 func _read_mic_level_db() -> float:
 	var n := _mic_capture.get_frames_available()
 	if n <= 0:

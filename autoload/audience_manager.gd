@@ -58,7 +58,7 @@ const SEATING_MODES: PackedStringArray = ["random", "front", "front_random"]
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _check_in: float = 1.0
 var _ignore: PackedStringArray = []
-var _hide_avatars: PackedStringArray = []
+var _hide_avatars: Array[Dictionary] = []    # "Hide pictures of": {platform ("" = any), name}
 var _kind: PackedByteArray = []          # slot -> KIND_* (missing = KIND_SEAT)
 var _presenter_slot: Dictionary = {}     # presenter n -> slot, for this room's podiums
 var _links: Dictionary = {}              # presenter n -> [{platform, name}] (lower case, no "@")
@@ -251,7 +251,7 @@ func get_seat_member(slot: int) -> Dictionary:
 		return {}
 	var m: Dictionary = _members[_slots[slot]]
 	var avatar := String(m.get("avatar", ""))
-	if not bool(AppState.get_setting("audience_avatars")) or _hide_avatars.has(String(m["name"]).to_lower()):
+	if not bool(AppState.get_setting("audience_avatars")) or is_picture_hidden(String(m.get("key", "")).get_slice(":", 0), String(m["name"]), String(m.get("username", ""))):
 		avatar = ""
 	return {"name": m["name"], "color": m["color"], "style": m["style"], "avatar": avatar,
 		"title": String(m.get("title", ""))}
@@ -921,6 +921,37 @@ func apply_preset(preset: String) -> void:
 		AppState.set_setting("seating_by_platform", false)
 		set_plan({})
 		return
+	set_plan(preset_plan(preset))
+	AppState.set_setting("seating_by_platform", true)
+
+
+## Would this preset throw away a seating plan someone made? False when the plan is empty or is
+## already what the preset makes (the Seating tab only asks "Replace your seating plan?" then).
+func preset_replaces_plan(preset: String) -> bool:
+	var has_plan := false
+	for id: String in _plan.keys():
+		if not (_plan[id] as PackedStringArray).is_empty():
+			has_plan = true
+	if not has_plan:
+		return false
+	var want: Dictionary = {} if preset == "anyone" else preset_plan(preset)
+	var ids: Dictionary = {}
+	for id: String in _plan.keys():
+		ids[id] = true
+	for id: String in want.keys():
+		ids[id] = true
+	for id: String in ids.keys():
+		var a: Array = Array(_plan.get(id, PackedStringArray()))
+		var b: Array = Array(want.get(id, PackedStringArray()))
+		a.sort()
+		b.sort()
+		if a != b:
+			return true
+	return false
+
+
+## The seating plan a preset makes for this room's sections ("twitch_apart" or "quadrant_each").
+func preset_plan(preset: String) -> Dictionary:
 	var plan: Dictionary = {}
 	var others := PackedStringArray(["kick", "youtube", "other"])
 	var by_level: Dictionary = {}
@@ -946,8 +977,7 @@ func apply_preset(preset: String) -> void:
 				plan[ids[k]] = PackedStringArray(["twitch"]) if k < ids.size() / 2 else others
 			else:
 				plan[ids[k]] = PackedStringArray([PLATFORMS[k % PLATFORMS.size()]])
-	set_plan(plan)
-	AppState.set_setting("seating_by_platform", true)
+	return plan
 
 
 ## Can a chatter of this platform group sit in this slot under the seating plan?
@@ -1098,12 +1128,52 @@ func _refresh_all_seats() -> void:
 			EventBus.audience_updated.emit(i)
 
 
+## "Hide pictures of" (Audience tab), read like Stream Core's "Never show a picture for": a name
+## matches the display name or the login, ignoring case and a leading "@"; "kick:name" only
+## matches on that platform. Names may be on separate lines too (pasted from Core's list).
 func _parse_hidden_avatars() -> void:
 	_hide_avatars.clear()
-	for part in String(AppState.get_setting("audience_hide_avatars")).split(",", false):
+	for part in String(AppState.get_setting("audience_hide_avatars")).replace("\n", ",").split(",", false):
 		var p := part.strip_edges().to_lower()
+		var plat := ""
+		var colon := p.find(":")
+		if colon > 0 and LINK_PLATFORMS.has(p.substr(0, colon).strip_edges()):
+			plat = LINK_PLATFORMS[p.substr(0, colon).strip_edges()]
+			p = p.substr(colon + 1).strip_edges()
+		p = p.trim_prefix("@")
 		if p != "":
-			_hide_avatars.append(p)
+			_hide_avatars.append({"platform": plat, "name": p})
+
+
+## True when "Hide pictures of" names this chatter (display name or login; "kick:name" only on Kick).
+func is_picture_hidden(platform: String, display_name: String, login: String = "") -> bool:
+	if _hide_avatars.is_empty():
+		return false
+	var names := [display_name.strip_edges().trim_prefix("@").to_lower(), login.strip_edges().trim_prefix("@").to_lower()]
+	platform = platform.to_lower()
+	for h: Dictionary in _hide_avatars:
+		if String(h["platform"]) != "" and String(h["platform"]) != platform:
+			continue
+		if String(h["name"]) != "" and names.has(String(h["name"])):
+			return true
+	return false
+
+
+## The people seated right now (main seats and crowd), newest first: [{name, platform, username}].
+## For the Audience tab's quick "Hide a picture..." list.
+func get_seated_people(limit: int = 40) -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var keys: Array = []
+	for k: String in _members.keys():
+		var m: Dictionary = _members[k]
+		if int(m.get("slot", -1)) >= 0:
+			keys.append(k)
+	keys.sort_custom(func(a: String, b: String) -> bool:
+		return float((_members[a] as Dictionary).get("last", 0.0)) > float((_members[b] as Dictionary).get("last", 0.0)))
+	for k: String in keys.slice(0, limit):
+		var m: Dictionary = _members[k]
+		out.append({"name": String(m.get("name", "")), "platform": k.get_slice(":", 0), "username": String(m.get("username", ""))})
+	return out
 
 
 func _parse_ignore() -> void:

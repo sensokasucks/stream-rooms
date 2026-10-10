@@ -474,7 +474,8 @@ func _fill(card: Dictionary) -> void:
 	rtl.add_theme_font_size_override("normal_font_size", size)
 	rtl.add_theme_font_size_override("bold_font_size", size)
 	var pic := String(card["avatar"])
-	if pic != "" and bool(AppState.get_setting("chat_screen_pictures")) and bool(AppState.get_setting("audience_avatars")):
+	if pic != "" and bool(AppState.get_setting("chat_screen_pictures")) and bool(AppState.get_setting("audience_avatars")) \
+			and not AudienceManager.is_picture_hidden(String(card.get("user_key", "")).get_slice(":", 0), String(card["name"]), String(card.get("login", ""))):
 		var tex := EmoteCache.get_circle_texture(pic)
 		if tex:
 			var s := roundi(size * 1.25)
@@ -617,7 +618,7 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_apply_style()
 	elif key == _key + "_header" or key == _key + "_header_on":
 		_dirty = true
-	elif key in [_key + "_text", _key + "_outline", "chat_screen_pictures", "audience_avatars", "audience_color_by"] or key.begins_with("platform_color_"):
+	elif key in [_key + "_text", _key + "_outline", "chat_screen_pictures", "audience_avatars", "audience_hide_avatars", "audience_color_by"] or key.begins_with("platform_color_"):
 		for c in _cards:
 			_fill(c)
 		_dirty = true

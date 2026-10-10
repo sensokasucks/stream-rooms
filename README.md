@@ -65,7 +65,7 @@ minimised window, and a shared tab in it may stop producing frames.
 game's Source tab both warn you if the browser couldn't silence it. If that happens, mute the tab.
 
 **Lip-sync:** the picture travels a longer path than the sound, so audio is delayed by 150 ms by
-default. Adjust **Audio delay** or **Video delay** in the *Sound* tab.
+default. Adjust **Audio delay** or **Video delay** in the *Sound* tab ▸ Advanced.
 
 **Only your sender page can use it:** each time the game starts it makes a new secret key and
 writes it into the sender page. The game only takes pictures and sound from a page that has that
@@ -113,14 +113,19 @@ broken video in the cache.
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
 
 **Field of view:** Room tab → *Field of view* (25–110°, default 65), or the mouse wheel while
-right-dragging. **See into the room from outside** (Room tab, on by default): back the camera out
+right-dragging. **See into the room from outside** (Room tab ▸ Advanced, on by default): back the camera out
 through a wall and the wall (and anything else between you and the room) is cut away instead of
 the view going black. It kicks in when none of the room's camera markers can see the camera; the
 walls get collision shapes for this (only these rays use them).
 
+**Big screen light:** Room tab ▸ Advanced → **Screen light** (how much light the big screen
+throws into the room) and **Screen glow** (how bright the picture itself glows). They used to be
+on the Sound tab.
+
 **Auto-duck:** in the *React* tab the video audio drops (14 dB by default) while your mic hears
-you, then comes back up. Set **Talk threshold** by watching the mic meter. Windows may ask for
-microphone permission the first time.
+you, then comes back up. Set **Talk threshold** (React tab ▸ Advanced, with **Duck by**) by
+watching the mic meter. When auto-duck is on but can't hear anything, the meter says
+**No microphone** (or **No sound device**). Windows may ask for microphone permission the first time.
 On some PCs starting the microphone freezes the game (it happened on a PC with no speakers set up).
 The game notices: the next start switches **Lower the video while the mic hears me** off and says
 so. Starting with `-- --no-mic` (or **Start without microphone.bat** next to an exported game)
@@ -135,9 +140,12 @@ window picks its own sources. There are four windows:
 - **Under the screen** (chat screen) and **Above the screen** (reply screen), in rooms that
   have them.
 
-Each window is one line in the Chat tab: its **Show** tick, its name, the platform ticks, a
-small ⚠ when its text would be too small to read on stream, and **Advanced ▸** for the rest.
-- **Show** turns it on or off.
+Each window is one line in the Chat tab: its **Show** tick (labelled with the window's name),
+the platform ticks, a small ⚠ when its text would be too small to read on stream, and
+**Advanced ▸** for the rest.
+- The tick with the window's name (**Left of the screen**, **Right of the screen** ...) turns it
+  on or off.
+- The ⚠ is a button: click it to open that window's **Advanced ▸**, where **Make readable** is.
 - The platform ticks (Kick, Twitch, YouTube, Other): tick one to give it a window of its own, or
   several to mix them. None ticked = no chat in that window. A warning shows (under Advanced)
   when Twitch is mixed with others.
@@ -154,8 +162,11 @@ small ⚠ when its text would be too small to read on stream, and **Advanced ▸
   after what it shows ("Twitch chat", "Kick · YouTube chat", "Stream Core replies"); a
   one-platform window's header takes that platform's colour. On by default for the side
   windows.
-- Text size, background, text outline and columns (and, for the side windows, width, height,
-  gap to the screen and up / down).
+- **Text size**, **Background**, **Text outline** and **Columns** (the side windows too), and
+  for the side windows **Width**, **Height**, **Gap to screen** and **Up / down**.
+- **Pictures in chat windows** (above the windows) shows chatters' profile pictures next to
+  their names. The Audience tab's **Chatter pictures (everywhere)** turns pictures off
+  everywhere, the chat windows included.
 
 ### Chat box on the picture (Chat tab)
 A chat box in a corner of the picture itself, like the chat games boards: it isn't part of the
@@ -190,7 +201,8 @@ Keeps each platform's chatters physically apart in the audience.
 - **Keep platforms apart when their seats are full:** on, a chatter whose platform's seats are
   all taken waits for one (or bumps their own platform's quietest chatter); off, they sit
   anywhere free.
-- **Presets:** *Anyone anywhere*, *Twitch apart (left)* (Twitch in Q1 + Q3 and the left crowd
+- **Presets** (they ask "Replace your seating plan?" first when you made a plan by hand that
+  they would change): *Anyone anywhere*, *Twitch apart (left)* (Twitch in Q1 + Q3 and the left crowd
   sections, everyone else on the right), *A quadrant each* (Kick Q1, Twitch Q2, YouTube Q3,
   other Q4; the crowd sections take turns on each level: 101 Kick, 102 Twitch, 103 YouTube …).
   In *Twitch apart*, the crowd's left sections on each level (101-102, 201-202, 301-302) are
@@ -215,7 +227,7 @@ Keeps each platform's chatters physically apart in the audience.
   Enter. It's clamped to the slider's range.
 - **Help you can see:** every setting with a tooltip has a yellow **?** beside it that shows
   the same help as a line under it.
-- **Colour:** Audience tab → **Colour-blind safe colours** switches the platform colours to
+- **Colour:** Audience tab ▸ Advanced → **Colour-blind safe colours** switches the platform colours to
   ones that stay distinct with red-green colour blindness (Okabe-Ito); **Brand colours** puts
   them back. The seating chart labels sections with letters (K T Y O: **K**ick,
   **T**witch, **Y**ouTube, **O**ther) as well as colour, and warnings start with ⚠.
@@ -225,7 +237,7 @@ Keeps each platform's chatters physically apart in the audience.
 - **Flashing lights** (Games tab): **Flash strength** (0-100%) sets how bright FLASHBANG,
   police lights, flicker, fireworks and fire get. **Photosensitive-safe mode** caps flashes at
   30%, slows strobes to under 3 flashes a second, makes FLASHBANG a soft swell and turns camera
-  shake off.
+  shake off. While it's on and Flash strength is set higher, a note under it says so.
 
 ## Performance and laptops (Room tab)
 **Performance (this PC)** under the Room tab's **Advanced ▸**. Remembered on this PC, not per room.
@@ -246,7 +258,7 @@ Keeps each platform's chatters physically apart in the audience.
   needs. **V-Sync** (on by default) stops tearing on your own screen; if 60 fps stutters on a
   high-refresh screen, try it off.
 - **Streaming from a laptop** (RTX 3060 class): start on **Medium** or **Low**, cap at your
-  stream's frame rate, and set **Most chatters in crowd** (Audience tab) to about 100-150.
+  stream's frame rate, and set **Most chatters in crowd** (Audience tab ▸ Advanced) to about 100-150.
   Run plugged in, on Windows' best-performance power mode, and make sure Redot and OBS use the
   NVIDIA GPU (Windows Settings → System → Display → Graphics → High performance). Use NVENC
   in OBS so the encoder doesn't load the CPU.
@@ -286,8 +298,10 @@ and settles when it opens.
   app behind the curtain, ready for a reveal when you go live.
 - **Sign:** text on a board hanging on the closed curtain (e.g. *Be right back*; the **Be right
   back** button fills it in and closes the curtain). Blank = no sign.
-- Room tab → *Stage curtain*: colour, speed, sound volume (the swish and drum roll are made in
-  the game, no audio files), *Reveal dims the lights*, *Curtain in rooms* (off = no curtain).
+- Room tab ▸ Advanced ▸ **Curtain options**: **Curtain colour**, **Curtain speed**,
+  **Curtain sounds** (the swish and drum roll are made in the game, no audio files),
+  **Reveal dims the lights**, **Mute stream sound while closed**, **Start closed** and
+  **Curtain in rooms** (off = no curtain).
 - Stream Core can run it too: Admin → Live controls → *Stage curtain*, or mods type
   `!curtain open | close | reveal` (Chat games on). The game tells Core whether it's open.
 - It stays closed / open across room changes. Rooms can add a `CURTAIN_Main` empty in Blender
@@ -321,7 +335,7 @@ Everything is in the **Presenters** tab:
   - **Key similarity** (how close to the key colour counts as background)
   - **Key smoothness** (soft edge)
   - **Spill removal** (takes the green glow off hair and shoulders)
-- **Zoom** / **Move up/down:** frame the picture.
+- **Zoom** / **Presenter up/down:** frame the picture (up/down is a share of the frame's height).
 
 Camera and tab pictures come through the **sender page** (Source tab > Open sender page):
 - **Cameras** start by themselves when you choose *Camera* in the game. The browser asks for
@@ -364,12 +378,13 @@ for none.
 **Podium picture:** a picture on the front of the podium: a logo, an avatar, a badge. **Browse...**
 picks a PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB; **Clear** removes it. The picture
 is stuck to the podium's front surface (it finds the surface itself, so a slanted front works) and
-keeps its shape. **Picture size** scales it, **Picture self-lit** shows it in its own colours
-whatever the room's light, and **Move left/right** / **Move up/down** slide it along the front.
+keeps its shape. **Picture size** scales it, **Podium picture self-lit** shows it in its own colours
+whatever the room's light, and **Podium picture left/right** / **Podium picture up/down** slide it
+along the front.
 When streaming together, guests get a copy of the picture (the file itself travels, so it works
 even though it only exists on your PC).
-Once a picture is chosen, its **Advanced ▸** holds **Picture size**, **Picture self-lit** and the two
-**Move** sliders.
+Once a picture is chosen, its **Advanced ▸** holds **Picture size**, **Podium picture self-lit** and
+the two **Podium picture** sliders.
 
 ## NDI (OBS / NDI Tools)
 The main screen and the presenters can show **NDI** sources. That's lighter than the browser
@@ -429,11 +444,11 @@ compression, and transparency is kept.
 ## Chat audience (Fridge Stream Core)
 Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill up with your chat:
 - **Seats:** everyone who chats gets a seat with a head-and-shoulders silhouette in their own
-  colour. **Colour silhouettes by** (Audience tab) picks the colour:
-  - *Chat colour* (default): the platform's chat colour when it has one; otherwise a colour
-    picked from their name, so it's the same every time.
-  - *Name only*: always the colour from their name.
-  - *Platform*: one colour per platform (Kick green, Twitch purple, YouTube red, other grey by
+  colour. **Colour chatters by** (Audience tab ▸ Advanced) picks the colour:
+  - *Their chat colour (else from their name)* (default): the platform's chat colour when it has
+    one; otherwise a colour picked from their name, so it's the same every time.
+  - *Picked from their name*: always the colour from their name.
+  - *Their platform*: one colour per platform (Kick green, Twitch purple, YouTube red, other grey by
     default; change them with the four colour pickers below it).
 - **Busy chat:** chatter pictures are cut round on background threads (a few finished per frame)
   instead of pixel by pixel on the main thread, and pictures and emotes in memory are kept to
@@ -471,16 +486,21 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     when the site provides one, otherwise their name as text (the Redot output then says "Emote
     image not supported"). If an animated emote doesn't load, its still picture is used instead.
   - Normal emoji use your system's colour emoji font (Segoe UI Emoji on Windows).
-- **Chatter pictures:** Kick, Twitch and YouTube chatters' profile pictures fill the silhouette's
+- **Chatter pictures (everywhere):** Kick, Twitch and YouTube chatters' profile pictures fill the silhouette's
   head, cropped round inside their colour ring.
   - Stream Core finds the pictures and saves a copy of each one, and Stream Rooms loads them
     from Core. YouTube pictures come with each message. For Kick and Twitch, Core looks each new
     chatter up once, so their picture appears a moment after their first message. Twitch needs
     **Connect Twitch** in Core's dashboard.
-  - Turn pictures off with **Chatter pictures**, or hide one person's picture with
-    **Hide pictures of** (Audience tab). Those names are also added to Core's list (the
-    **Chatter profile pictures** card in Core's dashboard), so Core's chat overlay hides them
-    too. To show someone again, remove the name in both places.
+  - Turn pictures off everywhere with **Chatter pictures (everywhere)** (Audience tab), or only in
+    the chat windows with **Pictures in chat windows** (Chat tab).
+  - Hide one person's picture with **Hide pictures of** (Audience tab), the same list as Core's
+    **Never show a picture for**: a name matches the display name or the login, and
+    `kick:name` (or `twitch:` / `youtube:`) only matches on that platform. Mid-stream it's
+    quicker to pick them from **Hide a picture...** under it: it lists the people seated now,
+    newest first, and adds `platform:name` for you. Those names are also added to Core's list
+    (the **Chatter profile pictures** card in Core's dashboard), so Core's chat overlay hides
+    them too. To show someone again, remove the name in both places.
   - When streaming together, guests' PCs get the platform's own picture link, since Core's copy
     only exists on your PC.
 - **Red-flagged chatters:** Stream Core's dashboard (**Chat history** page, **🚩 Red flags**) has a
@@ -510,7 +530,7 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   - **Crowd chatters move down** (on by default): when a main seat frees up, the most recently
     active chatter in the crowd moves down into it.
   - **Crowd timeout** is the crowd seats' own idle timeout (the main seats use **Idle timeout**).
-  - **Most chatters in crowd** (0 = no limit) caps how many chatters sit in the crowd seats at
+  - **Most chatters in crowd** (0 shows as **No limit**) caps how many chatters sit in the crowd seats at
     once. No seats go away: filler people fill the rest, so the room looks the same. Chatters
     are what cost CPU and GPU (picture, name tag, bubble each); filler people are free. When
     the cap is reached, a new chatter takes the seat of whoever has been quiet the longest.
@@ -525,12 +545,16 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   the balcony or a post) isn't drawn until it comes into view. Animated bubbles far away
   redraw about 12 times a second instead of every frame. The per-seat work only runs while the
   camera moves.
-- **Settings:** all in the **Audience** tab.
-  - bubble time, bubble size and bubble colours
-  - name tags, dim placeholders on empty seats, hiding `!commands`
-  - use chat colours
-  - an ignore list for bots
-  - **Test chat** fills seats with made-up chatters
+- **Settings:** all in the **Audience** tab. The ones you use while live are on top:
+  - **Show audience**, **Test chat** (fills seats with made-up chatters) and **Empty all seats**
+    (everyone leaves their seat; it asks first)
+  - **New chatters sit**, **Bubble size**, **Name tags**, **Chatter pictures (everywhere)**,
+    **Hide pictures of** and **Hide a picture...**
+  - **Advanced ▸** holds the rest: **Idle timeout**, **Seat spacing**, **Bubble time**,
+    **Bubble colours**, **Colour paid and highlighted messages** (the chat windows' cards too),
+    **Show empty seats** (dim placeholders on empty seats), **Hide !commands in bubbles**,
+    **Regulars' titles on name tags**, **Ignore names** (bots), the **Colours** block and the
+    **Crowd** block
 
 Chat comes from **Fridge Stream Core** (FlaVR Leftovers workshop):
 - Start it with *START Stream Core.bat*. The game connects to its overlay WebSocket at
@@ -574,8 +598,8 @@ Turn it on in the **Chat** tab (*Under the screen*) or press **C**.
   (separate from the Audience tab's *Hide !commands in bubbles*).
 - Messages flow down the columns like a newspaper, newest at the bottom right. The oldest drop
   off when it's full.
-- Chat tab settings: which platforms it shows, Stream Core replies, chatter pictures, text
-  size, columns (1-4) and background opacity (0% = text floating on its own).
+- Chat tab settings: which platforms it shows, Stream Core replies, **Pictures in chat windows**,
+  text size, columns (1-4) and background opacity (0% = text floating on its own).
 - Other rooms can have one: add a `CHAT_Screen` empty at the top centre of the panel (local -Y
   in Blender faces the audience) and set `chat_screen_size` (metres) on the room's root node.
 
@@ -613,7 +637,7 @@ point costs, opt-outs) and the game plays it. Set reactions up in Stream Core:
 - When the game connects, it tells Core which effects it can play and what the current room
   offers, and reports back after each reaction. If it can't play one (reactions off, a wiggle from
   someone without a seat), Core gives the points back.
-- **Audience tab → Chat reactions:** *Play reactions*, *Allow camera shake*, *Reaction size*, and a
+- **Games tab → Chat reactions:** *Play reactions*, *Allow camera shake*, *Reaction size*, and a
   **Test here** button that plays any effect in the current room without Core.
 - Room targets are found automatically: `screen`, `webcam` (WEBCAM_Frame), `chat` (CHAT_Screen)
   and, for each presenter on set, `presenter<n>` (their picture) and `podium<n>` (the front of
@@ -626,8 +650,9 @@ point costs, opt-outs) and the game plays it. Set reactions up in Stream Core:
   police lights. Reactions that name several people (`crowd`) play from each of their seats.
 - **Chat games boards** (polls, predictions, the hype meter, cheer vs boo, heists, trivia, ratings) from
   Stream Core's Chat games page show on the reply screen in rooms that have one, and in the top-right
-  corner otherwise. **Audience tab → Chat games:** *Boards in the corner* (auto / always / never),
-  *Board size*, *Regulars' titles on name tags* (Stream Core streak titles: "Name · Regular").
+  corner otherwise. **Games tab → Chat games:** **Boards in the corner** (auto / always / never),
+  **Board size**. **Regulars' titles on name tags** (Stream Core streak titles: "Name · Regular")
+  is under Audience tab ▸ Advanced.
   They stay up in clean feed (they're part of the show). Code: `ui/board_hud.gd`, `core/chat_screen.gd`.
   Test: `_tests/test_chat_games.tscn`. Spec: `fridge-stream-core/docs/CHAT_GAMES.md`.
 - Code: `autoload/reactions.gd` (the Core link, meters), `core/reactions/reaction_layer.gd`
@@ -669,7 +694,7 @@ Then:
    decline, or no answer within two minutes, closes the connection with a message saying why.
    The names are the **Your name** each person typed.
 
-**Leave / stop hosting** ends your part. A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
+**Leave / stop hosting** ends your part (while you host with guests in, it asks first). A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
 
 **Limits that protect the host:** at most three guests (a fourth is told the session is full).
 After five wrong passwords from one place, joining from there pauses for a minute (through the
@@ -910,7 +935,7 @@ Included rooms:
   - The picture has an old-film look: faded warm colour, grain, dust specks, hairs, a drifting
     scratch, gate weave, flicker and a projector hot-spot. The light on the room flickers with it.
   - The sound goes through a tinny old speaker: no bass or treble, mono, a little distortion
-    and film flutter. Use **Speaker FX** in the *Sound* tab to set how much (0% = clean).
+    and film flutter. Use **Speaker FX** in the *Sound* tab ▸ Advanced to set how much (0% = clean).
   - **Film look** in the Room tab sets how much of the old-film look the picture gets:
     0% = clean, 100% = the room's look, up to 200% for extra dust, hairs, scratches and flicker.
   - The projector beam lights exactly the picture area. The mask is traced from the projector's

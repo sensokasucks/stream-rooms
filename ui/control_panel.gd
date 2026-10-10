@@ -98,6 +98,9 @@ var _video_state: String = ""           # "", "downloading", "converting", "read
 var _video_started_ms: int = 0
 var _video_tick: float = 0.0
 var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
+var _confirm: ConfirmationDialog        # "Empty all seats?" and the other ask-first questions
+var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's picture
+var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 
 
 func _ready() -> void:
@@ -468,8 +471,9 @@ func _build_source_tab() -> Control:
 	v.add_child(_heading("Browser tab (live)"))
 	var row := HBoxContainer.new()
 	v.add_child(row)
-	row.add_child(_button("Open sender page", func() -> void:
-		if _capture_url != "": OS.shell_open(_capture_url)))
+	row.add_child(_tip(_button("Open sender page", func() -> void:
+		if _capture_url != "": OS.shell_open(_capture_url)),
+		"Opens the sender page in your browser. Pick the tab or window to share there, and it shows on the big screen."))
 	_capture_label = Label.new()
 	_capture_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_capture_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -511,7 +515,8 @@ func _build_source_tab() -> Control:
 	_ndi_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	v.add_child(_ndi_label)
 	var ndi_adv := _fold(v, "source_ndi")
-	ndi_adv.add_child(_check("ndi_auto", "Reconnect to the last source by itself"))
+	ndi_adv.add_child(_tip(_check("ndi_auto", "Reconnect to the last source by itself"),
+		"When the NDI source you showed last comes back (OBS restarted, for example), show it again without pressing Show."))
 	var nb := _slider("ndi_audio_buffer_ms", "Sound buffer", 50.0, 1500.0, 10.0, "%d ms")
 	nb.tooltip_text = "How much NDI sound is queued before it plays. More rides out hiccups on the network / OBS side,\nbut the sound runs that much behind the picture. Needs the patched NDI plugin."
 	ndi_adv.add_child(nb)
@@ -553,18 +558,20 @@ func _build_source_tab() -> Control:
 	v.add_child(r1)
 	_url = LineEdit.new()
 	_url.placeholder_text = "YouTube URL or path to a video file"
+	_url.tooltip_text = "A video address (YouTube and the like, downloaded with yt-dlp) or a video file on this PC. Enter or Play starts it."
 	_url.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_url.text_submitted.connect(func(t: String) -> void:
 		_url.release_focus()
 		EventBus.file_play_requested.emit(t))
 	r1.add_child(_url)
-	r1.add_child(_button("Play", func() -> void: EventBus.file_play_requested.emit(_url.text)))
-	r1.add_child(_button("Browse...", func() -> void: _dialog.popup_centered_ratio(0.6)))
+	r1.add_child(_tip(_button("Play", func() -> void: EventBus.file_play_requested.emit(_url.text)),
+		"Play it on the big screen. An address is downloaded and converted first (the status line below shows how far it got)."))
+	r1.add_child(_tip(_button("Browse...", func() -> void: _dialog.popup_centered_ratio(0.6)), "Pick a video file on this PC."))
 	var r2 := HBoxContainer.new()
 	v.add_child(r2)
-	r2.add_child(_button("Pause / resume", func() -> void: EventBus.file_pause_toggle_requested.emit()))
-	r2.add_child(_button("Stop", func() -> void: EventBus.file_stop_requested.emit()))
-	r2.add_child(_check("loop_files", "Loop"))
+	r2.add_child(_tip(_button("Pause / resume", func() -> void: EventBus.file_pause_toggle_requested.emit()), "Pause the video, or carry on."))
+	r2.add_child(_tip(_button("Stop", func() -> void: EventBus.file_stop_requested.emit()), "Stop the video; the big screen goes dark."))
+	r2.add_child(_tip(_check("loop_files", "Loop"), "Start the video again from the beginning when it ends."))
 	var q := OptionButton.new()
 	for h in [480, 720, 1080]:
 		q.add_item("%dp" % h, h)
@@ -624,20 +631,29 @@ func _build_room_tab() -> Control:
 	_room_select.item_selected.connect(func(i: int) -> void:
 		AppState.request_room(String(_room_select.get_item_metadata(i))))
 	v.add_child(_room_select)
-	v.add_child(_slider("house_lights", "House lights", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	_room_select.tooltip_text = "Which room you're in. PgUp / PgDn also switch rooms."
+	v.add_child(_tip(_slider("house_lights", "House lights", 0.0, 1.0, 0.01, "%d%%", 100.0),
+		"The room's own lights. Lower them for a cinema feel; the big screen still lights the room."))
 	_build_curtain_controls(v)
 	v.add_child(_heading("Cameras (keys 1-9, 0 = 10th)"))
 	_camera_box = HFlowContainer.new()
 	v.add_child(_camera_box)
-	v.add_child(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"))
+	v.add_child(_tip(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"),
+		"How wide the camera sees. Lower zooms in, higher shows more of the room."))
 	# set-up-once settings: curtain options, this room's own looks, the camera's see-through, performance
 	var adv := _fold(v, "room")
 	_build_curtain_options(adv)
+	adv.add_child(_heading("Big screen light"))
+	adv.add_child(_tip(_slider("screen_light", "Screen light", 0.0, 4.0, 0.05, "%.2f"),
+		"How much light the big screen throws into the room (on the seats, walls and audience). 0 = none."))
+	adv.add_child(_tip(_slider("screen_glow", "Screen glow", 0.2, 4.0, 0.05, "%.2f"),
+		"How bright the picture itself glows. Higher makes it bloom; lower makes it look more like a matt print."))
 	_room_box = VBoxContainer.new()
 	_room_box.add_theme_constant_override("separation", 6)
 	adv.add_child(_room_box)
 	adv.add_child(_heading("Camera"))
-	adv.add_child(_check("camera_see_through", "See into the room from outside (instead of black)"))
+	adv.add_child(_tip(_check("camera_see_through", "See into the room from outside (instead of black)"),
+		"When a camera is outside the room's walls, show the room through them instead of a black picture."))
 	_build_performance_controls(adv)
 	return v
 
@@ -685,19 +701,20 @@ func _build_curtain_controls(v: VBoxContainer) -> void:
 	v.add_child(_heading("Stage curtain (B, Shift+B = reveal)"))
 	var row := HFlowContainer.new()
 	v.add_child(row)
-	_curtain_buttons = [_button("Close", func() -> void: AppState.set_curtain(true)),
-		_button("Open", func() -> void: AppState.set_curtain(false)),
-		_button("Reveal", func() -> void: AppState.reveal_curtain()),
-		_button("Be right back", func() -> void:
+	_curtain_buttons = [_tip(_button("Close", func() -> void: AppState.set_curtain(true)), "Close the stage curtain (B).") as Button,
+		_tip(_button("Open", func() -> void: AppState.set_curtain(false)), "Open the stage curtain (B).") as Button,
+		_tip(_button("Reveal", func() -> void: AppState.reveal_curtain()), "Open the curtain with a drum roll and a lighting moment (Shift+B).") as Button,
+		_tip(_button("Be right back", func() -> void:
 			AppState.set_setting("curtain_sign", "Be right back")
-			AppState.set_curtain(true))]
+			AppState.set_curtain(true)), "Close the curtain with a \"Be right back\" sign on it.") as Button]
 	for b in _curtain_buttons:
 		row.add_child(b)
 	_curtain_label = Label.new()
 	_curtain_label.modulate = Color(1, 1, 1, 0.7)
 	row.add_child(_curtain_label)
 	_refresh_curtain_label()
-	v.add_child(_text_setting("curtain_sign", "Sign", "shown on the closed curtain (blank = none)"))
+	v.add_child(_tip(_text_setting("curtain_sign", "Sign", "shown on the closed curtain (blank = none)"),
+		"Text on the closed curtain, like \"Starting soon\". Leave it empty for a plain curtain."))
 
 
 ## The curtain's set-up-once options (Room tab > Advanced).
@@ -705,13 +722,13 @@ func _build_curtain_options(v: VBoxContainer) -> void:
 	v.add_child(_heading("Curtain options"))
 	var r2 := HFlowContainer.new()
 	v.add_child(r2)
-	r2.add_child(_check("curtain_enabled", "Curtain in rooms"))
-	r2.add_child(_check("curtain_start_closed", "Start closed"))
-	r2.add_child(_check("curtain_mute", "Mute stream sound while closed"))
-	r2.add_child(_check("curtain_show_lights", "Reveal dims the lights"))
-	v.add_child(_color("curtain_color", "Curtain colour"))
-	v.add_child(_slider("curtain_speed", "Curtain speed", 0.25, 3.0, 0.05, "%d%%", 100.0))
-	v.add_child(_slider("curtain_sound", "Curtain sounds", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	r2.add_child(_tip(_check("curtain_enabled", "Curtain in rooms"), "Rooms with a stage get a curtain in front of the big screen. Off: no curtain anywhere."))
+	r2.add_child(_tip(_check("curtain_start_closed", "Start closed"), "The curtain is closed when Stream Rooms starts, ready for a reveal."))
+	r2.add_child(_tip(_check("curtain_mute", "Mute stream sound while closed"), "The big screen's sound fades out while the curtain is closed."))
+	r2.add_child(_tip(_check("curtain_show_lights", "Reveal dims the lights"), "Reveal (Shift+B) dims the room lights while the curtain opens, like a show starting."))
+	v.add_child(_tip(_color("curtain_color", "Curtain colour"), "The colour of the curtain cloth."))
+	v.add_child(_tip(_slider("curtain_speed", "Curtain speed", 0.25, 3.0, 0.05, "%d%%", 100.0), "How fast the curtain opens and closes. 100% is the normal speed."))
+	v.add_child(_tip(_slider("curtain_sound", "Curtain sounds", 0.0, 1.0, 0.01, "%d%%", 100.0), "How loud the curtain's swoosh and the reveal's drum roll are. 0% = silent."))
 
 
 func _refresh_curtain_label() -> void:
@@ -724,16 +741,19 @@ func _build_react_tab() -> Control:
 	var row := HBoxContainer.new()
 	v.add_child(row)
 	_react_btn = _button("Pause to react (Space)", func() -> void: AppState.toggle_react_pause())
+	_react_btn.tooltip_text = "Pause the video to talk about it; press again (or Space) to carry on."
 	row.add_child(_react_btn)
-	row.add_child(_button("Focus view (F)", func() -> void: AppState.toggle_focus_view()))
-	row.add_child(_button("Clean feed (F10)", func() -> void: AppState.toggle_clean_feed()))
-	v.add_child(_check("react_lights_up", "Raise the lights while paused"))
-	v.add_child(_check("react_camera", "Jump to the Reaction camera while paused"))
-	v.add_child(_check("auto_dim_house", "Dim room lights while playing"))
-	v.add_child(_check("webcam_in_room", "Show webcam in the room (off = corner overlay)"))
+	row.add_child(_tip(_button("Focus view (F)", func() -> void: AppState.toggle_focus_view()),
+		"Fill the picture with the big screen, without the room round it. Press again to go back."))
+	row.add_child(_tip(_button("Clean feed (F10)", func() -> void: AppState.toggle_clean_feed()),
+		"Hide all controls and messages from the room picture (the webcam overlay stays). Press again to bring them back."))
+	v.add_child(_tip(_check("react_lights_up", "Raise the lights while paused"), "The room lights come up while the video is paused, so you're easier to see."))
+	v.add_child(_tip(_check("react_camera", "Jump to the Reaction camera while paused"), "Switch to the room's Reaction camera while paused and back to the last camera after."))
+	v.add_child(_tip(_check("auto_dim_house", "Dim room lights while playing"), "The room lights go down while a video plays and come back up when it stops."))
+	v.add_child(_tip(_check("webcam_in_room", "Show webcam in the room (off = corner overlay)"), "Your webcam on a screen inside the room. Off: it sits in a corner of the picture instead."))
 
 	v.add_child(_heading("Auto-duck when I talk"))
-	v.add_child(_check("duck_enabled", "Lower the video while the mic hears me"))
+	v.add_child(_tip(_check("duck_enabled", "Lower the video while the mic hears me"), "The video gets quieter while you talk, and comes back up when you stop."))
 	var meter := HBoxContainer.new()
 	v.add_child(meter)
 	var ml := Label.new()
@@ -751,26 +771,32 @@ func _build_react_tab() -> Control:
 	_duck_label = Label.new()
 	_duck_label.custom_minimum_size = Vector2(80, 0)
 	meter.add_child(_duck_label)
-	v.add_child(_slider("duck_threshold_db", "Talk threshold", -60.0, -10.0, 1.0, "%d dB"))
-	v.add_child(_slider("duck_amount_db", "Duck by", -30.0, -3.0, 1.0, "%d dB"))
+	meter.tooltip_text = "How loud your microphone is right now. It says \"ducking\" while the video is lowered, or \"No microphone\" when auto-duck can't hear you."
+	_refresh_mic_note()
+	# set-up-once: how loud counts as talking, and how far the video goes down
+	var adv := _fold(v, "react")
+	adv.add_child(_tip(_slider("duck_threshold_db", "Talk threshold", -60.0, -10.0, 1.0, "%d dB"),
+		"How loud the mic must be to count as talking. Raise it if keyboard noise or the room makes it duck; lower it if it misses you."))
+	adv.add_child(_tip(_slider("duck_amount_db", "Duck by", -30.0, -3.0, 1.0, "%d dB"),
+		"How much quieter the video gets while you talk. -10 dB is about half as loud."))
 	return v
 
 
 func _build_audio_tab() -> Control:
 	var v := _tab("Sound")
-	v.add_child(_slider("volume", "Video volume", 0.0, 1.0, 0.01, "%d%%", 100.0))
-	v.add_child(_slider("ambience_volume", "Room ambience", 0.0, 1.0, 0.01, "%d%%", 100.0))
-	v.add_child(_slider("room_acoustics", "Room acoustics", 0.0, 2.0, 0.01, "%d%%", 100.0))
-	v.add_child(_slider("room_speaker", "Speaker FX", 0.0, 1.0, 0.01, "%d%%", 100.0))
-	v.add_child(_slider("audio_delay_ms", "Audio delay", 0.0, 800.0, 10.0, "%d ms"))
-	v.add_child(_slider("video_delay_ms", "Video delay", 0.0, 800.0, 10.0, "%d ms"))
-	var tip := Label.new()
-	tip.text = "Lip-sync: if the sound is early, raise Audio delay. If the picture is early, raise Video delay."
-	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	tip.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
-	v.add_child(tip)
-	v.add_child(_slider("screen_light", "Screen light", 0.0, 4.0, 0.05, "%.2f"))
-	v.add_child(_slider("screen_glow", "Screen glow", 0.2, 4.0, 0.05, "%.2f"))
+	v.add_child(_tip(_slider("volume", "Video volume", 0.0, 1.0, 0.01, "%d%%", 100.0), "How loud the big screen's sound is (video, browser tab, NDI or Spout)."))
+	v.add_child(_tip(_slider("ambience_volume", "Room ambience", 0.0, 1.0, 0.01, "%d%%", 100.0), "Background sound of the room (a murmuring crowd, city noise...). 0% = off."))
+	# set-up-once: the room's echo, the old-speaker sound and lip-sync (Screen light / glow: Room tab > Advanced)
+	var adv := _fold(v, "sound")
+	adv.add_child(_tip(_slider("room_acoustics", "Room acoustics", 0.0, 2.0, 0.01, "%d%%", 100.0),
+		"How much the room's echo colours the sound. 0% = dry sound, 100% = the room as designed."))
+	adv.add_child(_tip(_slider("room_speaker", "Speaker FX", 0.0, 1.0, 0.01, "%d%%", 100.0),
+		"Makes the sound like it comes from the room's own speakers (thinner, a bit old). 0% = clean sound."))
+	adv.add_child(_tip(_slider("audio_delay_ms", "Audio delay", 0.0, 800.0, 10.0, "%d ms"),
+		"Holds the sound back. Raise it if you hear things before you see them."))
+	adv.add_child(_tip(_slider("video_delay_ms", "Video delay", 0.0, 800.0, 10.0, "%d ms"),
+		"Holds the picture back. Raise it if you see things before you hear them."))
+	adv.add_child(_hint("Lip-sync: if the sound is early, raise Audio delay. If the picture is early, raise Video delay."))
 	return v
 
 
@@ -779,16 +805,17 @@ func _build_chat_tab() -> Control:
 	v.add_child(_heading("Chat (Fridge Stream Core)"))
 	var row := HBoxContainer.new()
 	v.add_child(row)
-	row.add_child(_check("chat_enabled", "Connect"))
+	row.add_child(_tip(_check("chat_enabled", "Connect"), "Get chat from Fridge Stream Core (the audience, chat windows, reactions and boards all need it)."))
 	_chat_label = Label.new()
 	_chat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_chat_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	row.add_child(_chat_label)
-	row.add_child(_button("Retry now", func() -> void: ChatFeed.reconnect()))
-	v.add_child(_text_setting("chat_core_url", "Core address", "ws://127.0.0.1:3850/ws"))
+	row.add_child(_tip(_button("Retry now", func() -> void: ChatFeed.reconnect()), "Try to reach Stream Core again now, instead of waiting for the next automatic try."))
+	v.add_child(_tip(_text_setting("chat_core_url", "Core address", "ws://127.0.0.1:3850/ws"),
+		"Where Stream Core listens. Leave it as ws://127.0.0.1:3850/ws unless you changed Core's port."))
 	var test_row := HBoxContainer.new()
 	v.add_child(test_row)
-	test_row.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
+	test_row.add_child(_tip(_button("Test chat", func() -> void: ChatFeed.send_test_chat()), "Send a few made-up chat messages, to see the audience and chat windows without going live."))
 	var tl := _hint("Made-up chatters on Kick, Twitch and YouTube.")
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	test_row.add_child(tl)
@@ -797,7 +824,8 @@ func _build_chat_tab() -> Control:
 	v.add_child(_hint("One line per window: tick Show, then tick the platforms it shows. One platform per window keeps chats apart (Twitch asks for its chat to be kept separate); several tick mixes them. Advanced ▸ has replies, header, text size, looks and position."))
 	var shared := HFlowContainer.new()
 	v.add_child(shared)
-	shared.add_child(_check("chat_screen_pictures", "Chatter pictures"))
+	shared.add_child(_tip(_check("chat_screen_pictures", "Pictures in chat windows"),
+		"Chatters' profile pictures next to their names in the chat windows. The audience's heads have their own tick (Audience tab > Chatter pictures (everywhere)); with that one off, the chat windows show no pictures either."))
 	var hc := _check("chat_screen_hide_commands", "Hide !commands")
 	hc.tooltip_text = "Leave !commands (like !tomato) out of the chat windows. The audience bubbles have their own setting."
 	shared.add_child(hc)
@@ -809,24 +837,7 @@ func _build_chat_tab() -> Control:
 	_chat_window(v, "chat_screen", "Under the screen (C)", "Rooms with a chat panel under the screen (Lecture Hall (Panel)).", false)
 	_chat_window(v, "reply_screen", "Above the screen (R)", "Rooms with a reply screen above the main screen (Lecture Hall (Panel)).", false)
 
-	v.add_child(_heading("Chat games boards"))
-	var r6 := HBoxContainer.new()
-	v.add_child(r6)
-	var bl := Label.new()
-	bl.text = "Boards in the corner"
-	bl.custom_minimum_size = Vector2(120, 0)
-	r6.add_child(bl)
-	var hud := OptionButton.new()
-	hud.focus_mode = Control.FOCUS_ALL
-	var modes := [["auto", "Auto (when no chat window shows them)"], ["on", "Always"], ["off", "Never"]]
-	for m: Array in modes:
-		hud.add_item(String(m[1]))
-		if String(m[0]) == String(AppState.get_setting("board_hud")):
-			hud.select(hud.item_count - 1)
-	hud.item_selected.connect(func(i: int) -> void: AppState.set_setting("board_hud", String(modes[i][0])))
-	hud.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	r6.add_child(hud)
-	v.add_child(_slider("board_hud_scale", "Board size", 0.5, 2.5, 0.05, "%d%%", 100.0))
+	v.add_child(_hint("Chat games boards (polls, predictions ...): Games tab."))
 
 	v.add_child(_heading("Chat box on the picture"))
 	var ch := _option("chat_hud", "Chat box", [["auto", "Auto (when no chat window shows chat)"], ["on", "Always"], ["off", "Never"]])
@@ -865,24 +876,33 @@ func _chat_window(v: VBoxContainer, key: String, title: String, where: String, s
 	# the summary row: Show, the window's name, its platforms, a ⚠ when the text is too small, Advanced
 	var head := HBoxContainer.new()
 	v.add_child(head)
-	var show_box := _check(key, "")
+	# the window's name is the tick's own text: clicking the name ticks it, and a screen reader /
+	# keyboard focus (F6) lands on "Left of the screen", not on a bare box
+	var show_box := _check(key, title)
 	show_box.tooltip_text = "Show this window. " + where
+	show_box.add_theme_font_size_override("font_size", 14)
+	show_box.add_theme_color_override("font_color", Color(1.0, 0.72, 0.4))
+	show_box.custom_minimum_size = Vector2(180, 0)
 	head.add_child(show_box)
-	var t := _heading(title)
-	t.add_theme_font_size_override("font_size", 14)
-	t.custom_minimum_size = Vector2(150, 0)
-	head.add_child(t)
 	head.add_child(_platform_chips(key + "_chat"))
-	var mark := Label.new()
+	# ⚠ when the text is too small on stream: a button that opens the Advanced fold (Make readable is there)
+	var mark := Button.new()
 	mark.text = "⚠"
+	mark.flat = true
+	mark.focus_mode = Control.FOCUS_ALL
 	mark.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
 	mark.visible = false
+	mark.tooltip_text = "The text in this window is hard to read on stream. Click to open its settings (Make readable)."
 	head.add_child(mark)
 	_size_marks[key] = mark
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	_chat_window_options(_fold(v, "chat_" + key, "Advanced", head), key, where, side)
+	var body := _fold(v, "chat_" + key, "Advanced", head)
+	mark.pressed.connect(func() -> void:
+		if not body.visible:
+			(body.get_meta("fold_button") as Button).pressed.emit())
+	_chat_window_options(body, key, where, side)
 
 
 ## A chat window's Advanced options: replies, header, text size, looks (and, beside the screen,
@@ -890,18 +910,21 @@ func _chat_window(v: VBoxContainer, key: String, title: String, where: String, s
 func _chat_window_options(v: VBoxContainer, key: String, where: String, side: bool) -> void:
 	v.add_child(_hint(where))
 	v.add_child(_mix_warning(key + "_chat"))
-	v.add_child(_option(key + "_replies", "Stream Core replies", [["off", "Off"], ["on", "Always"], ["fallback", "When there's no reply screen"]]))
+	v.add_child(_tip(_option(key + "_replies", "Stream Core replies", [["off", "Off"], ["on", "Always"], ["fallback", "When there's no reply screen"]]),
+		"Stream Core's answers to chat commands (!points, trivia results ...) in this window. \"When there's no reply screen\" shows them only in rooms without the reply screen above the big screen."))
 	if AppState.DEFAULTS.has(key + "_replies_for"):
 		var rf := _option(key + "_replies_for", "Replies to", [["all", "Every platform's chatters"], ["chat", "Only this window's platforms"]])
 		rf.tooltip_text = "Which chatters' Stream Core replies this window shows. A window with no chat ticked shows them all."
 		v.add_child(rf)
 	if AppState.DEFAULTS.has(key + "_header_on"):
 		var hh := _text_setting(key + "_header", "Header", "Automatic (e.g. \"Twitch chat\")")
+		(hh.get_child(1) as Control).tooltip_text = "The header's text. Leave it empty to name it after what the window shows."
 		var hc := _check(key + "_header_on", "Show")
 		hc.tooltip_text = "A header line across the top of the window. Leave the text empty to name it after what it shows."
 		hh.add_child(hc)
 		v.add_child(hh)
-	v.add_child(_slider(key + "_text", "Text size", 0.5, 3.0, 0.05, "%d%%", 100.0))
+	v.add_child(_tip(_slider(key + "_text", "Text size", 0.5, 3.0, 0.05, "%d%%", 100.0),
+		"How big the text in this window is. A ⚠ on the window's line means viewers can hardly read it from the camera in use."))
 	var warn_row := HBoxContainer.new()
 	var warn := _hint("")
 	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
@@ -917,17 +940,19 @@ func _chat_window_options(v: VBoxContainer, key: String, where: String, side: bo
 	_size_warnings[key] = warn
 	warn.set_meta("row", warn_row)
 	warn.set_meta("fix", fix)
-	v.add_child(_slider(key + "_bg", "Background", 0.0, 1.0, 0.01, "%d%%", 100.0))
+	v.add_child(_tip(_slider(key + "_bg", "Background", 0.0, 1.0, 0.01, "%d%%", 100.0),
+		"How solid the window's dark background is. 0% = see-through (turn Text outline up then)."))
 	var ol := _slider(key + "_outline", "Text outline", 0.0, 1.0, 0.05, "%d%%", 100.0)
 	ol.tooltip_text = "A dark edge round every letter, so the text stays readable over the room when the background is see-through (low Background)."
 	v.add_child(ol)
-	if AppState.DEFAULTS.has(key + "_columns") and not side:
-		v.add_child(_slider(key + "_columns", "Columns", 1.0, 4.0, 1.0, "%d"))
+	if AppState.DEFAULTS.has(key + "_columns"):
+		v.add_child(_tip(_slider(key + "_columns", "Columns", 1.0, 4.0, 1.0, "%d"),
+			"Messages flow top to bottom through this many columns. More columns fit more messages in a wide window."))
 	if side:
-		v.add_child(_slider(key + "_width", "Width", 0.8, 6.0, 0.05, "%.2f m"))
-		v.add_child(_slider(key + "_height", "Height", 0.3, 1.6, 0.01, "%d%%", 100.0))
-		v.add_child(_slider(key + "_gap", "Gap to screen", -1.0, 4.0, 0.05, "%.2f m"))
-		v.add_child(_slider(key + "_lift", "Up / down", -4.0, 4.0, 0.05, "%.2f m"))
+		v.add_child(_tip(_slider(key + "_width", "Width", 0.8, 6.0, 0.05, "%.2f m"), "How wide the window is, in metres in the room."))
+		v.add_child(_tip(_slider(key + "_height", "Height", 0.3, 1.6, 0.01, "%d%%", 100.0), "How tall the window is, as a share of the big screen's height."))
+		v.add_child(_tip(_slider(key + "_gap", "Gap to screen", -1.0, 4.0, 0.05, "%.2f m"), "Space between the window and the big screen. Below 0 it overlaps the screen's edge."))
+		v.add_child(_tip(_slider(key + "_lift", "Up / down", -4.0, 4.0, 0.05, "%.2f m"), "Move the window up (+) or down (-) beside the screen."))
 
 
 ## Kick / Twitch / YouTube / Other ticks bound to a comma-separated platforms setting.
@@ -986,26 +1011,61 @@ func _build_audience_tab() -> Control:
 	v.add_child(_heading("Virtual audience"))
 	var r2 := HBoxContainer.new()
 	v.add_child(r2)
-	r2.add_child(_check("audience_enabled", "Show audience"))
+	r2.add_child(_tip(_check("audience_enabled", "Show audience"), "Chatters sit in the room as silhouettes with name tags and speech bubbles."))
 	_seat_label = Label.new()
 	_seat_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_seat_label.text = "No seats in this room."
 	r2.add_child(_seat_label)
-	r2.add_child(_button("Test chat", func() -> void: ChatFeed.send_test_chat()))
-	r2.add_child(_button("Clear", func() -> void: AudienceManager.clear()))
-	v.add_child(_option("audience_seating", "New chatters sit", [
+	r2.add_child(_tip(_button("Test chat", func() -> void: ChatFeed.send_test_chat()), "Send a few made-up chat messages, so you can see the audience without going live."))
+	r2.add_child(_tip(_button("Empty all seats", func() -> void:
+		if AudienceManager.get_seated_people(1).is_empty():
+			AudienceManager.clear()
+			return
+		_ask("Empty all seats?", "Everyone in the audience leaves their seat now. They sit down again when they next chat.",
+			"Empty all seats", func() -> void: AudienceManager.clear())),
+		"Everyone leaves their seat (asks first). They sit down again when they next chat."))
+	v.add_child(_tip(_option("audience_seating", "New chatters sit", [
 		["random", "Anywhere (random)"],
 		["front", "Front row first, from the middle"],
 		["front_random", "Front row first, random seat in the row"],
-	]))
+	]), "Where someone who starts chatting sits down. The Seating tab can keep platforms apart on top of this."))
+	v.add_child(_tip(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0), "How big the speech bubbles over the audience are."))
+	var r3 := HFlowContainer.new()
+	v.add_child(r3)
+	r3.add_child(_tip(_check("audience_names", "Name tags"), "Each chatter's name over their head."))
+	var pics := _check("audience_avatars", "Chatter pictures (everywhere)")
+	pics.tooltip_text = "Chatters' profile pictures (Kick, Twitch, YouTube) as their heads and in the chat windows. Off: no pictures anywhere (the Chat tab's Pictures in chat windows only turns them off in the chat windows). Stream Core finds and saves the pictures; for Twitch it needs Connect Twitch in Core's dashboard."
+	r3.add_child(pics)
+	var hide_row := _text_setting("audience_hide_avatars", "Hide pictures of", "names, comma separated (kick:name for one platform)")
+	(hide_row.get_child(1) as Control).tooltip_text = "Never show a picture for these people (same as Stream Core's Chatter profile pictures > Never show a picture for). A name matches the display name or the login; write kick:name, twitch:name or youtube:name for one platform only. The names are also added to Core's list, so Core's chat overlay hides them too. To show someone again, take them off here and in Core's dashboard."
+	v.add_child(hide_row)
+	# a quick way mid-stream: pick someone who is seated now instead of typing their exact name
+	var hide_pick_row := HBoxContainer.new()
+	v.add_child(hide_pick_row)
+	var hp_l := Label.new()
+	hp_l.text = ""
+	hp_l.custom_minimum_size = Vector2(120, 0)
+	hide_pick_row.add_child(hp_l)
+	_hide_pick = OptionButton.new()
+	_hide_pick.focus_mode = Control.FOCUS_ALL
+	_hide_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_hide_pick.fit_to_longest_item = false
+	_hide_pick.tooltip_text = "Pick someone seated right now (newest first) to hide their picture. Their name is added to Hide pictures of."
+	_hide_pick.add_item("Hide a picture...")
+	_hide_pick.get_popup().about_to_popup.connect(_fill_hide_pick)
+	_hide_pick.item_selected.connect(_on_hide_pick)
+	hide_pick_row.add_child(_hide_pick)
+
+	# set-up-once: timing, looks, colours, the crowd
+	var adv := _fold(v, "audience")
+	v = adv
 	var idle := _slider("audience_idle_min", "Idle timeout", 1.0, 60.0, 1.0, "%d min")
 	idle.tooltip_text = "Minutes without chatting before someone gives up a main seat."
 	v.add_child(idle)
 	var gap := _slider("audience_seat_gap", "Seat spacing", 0.5, 1.6, 0.05, "%.2f m")
 	gap.tooltip_text = "Room between seated chatters along a row. Seats closer than this to a taken one stay empty, so people don't sit shoulder to shoulder; the room has fewer seats then. 0.50 m uses every seat. The room reloads when you change it."
 	v.add_child(gap)
-	v.add_child(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"))
-	v.add_child(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0))
+	v.add_child(_tip(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"), "How long a speech bubble stays up (a newer message from the same person replaces it)."))
 	var bubble_colours := _option("audience_bubble_theme", "Bubble colours", [
 		["light", "Light (white bubbles, dark text)"],
 		["dark", "Dark (dark bubbles, light text)"],
@@ -1013,21 +1073,14 @@ func _build_audience_tab() -> Control:
 	bubble_colours.tooltip_text = "The colour of the audience's speech bubbles. The outline keeps each chatter's colour either way."
 	v.add_child(bubble_colours)
 	var tints := _check("audience_bubble_tints", "Colour paid and highlighted messages")
-	tints.tooltip_text = "Super Chats, Kicks and Bits get a gold bubble and chat-window card; Twitch messages highlighted with channel points get a purple one; a gigantified emote is drawn big. Off: they look like any other message."
+	tints.tooltip_text = "Super Chats, Kicks and Bits get a gold bubble and chat-window card; Twitch messages highlighted with channel points get a purple one; a gigantified emote is drawn big. This also changes the chat windows' cards. Off: they look like any other message."
 	v.add_child(tints)
-	var r3 := HFlowContainer.new()
-	v.add_child(r3)
-	r3.add_child(_check("audience_names", "Name tags"))
-	r3.add_child(_check("audience_show_empty", "Show empty seats"))
-	r3.add_child(_check("audience_hide_commands", "Hide !commands in bubbles"))
-	var pics := _check("audience_avatars", "Chatter pictures")
-	pics.tooltip_text = "Chatters' profile pictures (Kick, Twitch, YouTube) as their heads and in the chat windows. Stream Core finds and saves the pictures; for Twitch it needs Connect Twitch in Core's dashboard."
-	r3.add_child(pics)
-	v.add_child(_check("audience_titles", "Regulars' titles on name tags"))
-	v.add_child(_text_setting("audience_ignore", "Ignore names", "bots, comma separated"))
-	var hide_row := _text_setting("audience_hide_avatars", "Hide pictures of", "names, comma separated")
-	(hide_row.get_child(1) as Control).tooltip_text = "People whose picture is never shown. The names are also added to Stream Core's list (Chatter profile pictures card), so Core's chat overlay hides them too. To show someone again, take them off here and in Core's dashboard."
-	v.add_child(hide_row)
+	var r4 := HFlowContainer.new()
+	v.add_child(r4)
+	r4.add_child(_tip(_check("audience_show_empty", "Show empty seats"), "Dim placeholders on the empty seats, so you can see where the seats are."))
+	r4.add_child(_tip(_check("audience_hide_commands", "Hide !commands in bubbles"), "A chatter who only types a !command (like !tomato) still sits down, but gets no speech bubble for it."))
+	v.add_child(_tip(_check("audience_titles", "Regulars' titles on name tags"), "Stream Core's titles for regulars (watch streaks and the like) under their name tag."))
+	v.add_child(_tip(_text_setting("audience_ignore", "Ignore names", "bots, comma separated"), "Chat accounts that never sit in the audience or show in the chat windows, such as bots."))
 
 	v.add_child(_heading("Colours"))
 	var cb := _option("audience_color_by", "Colour chatters by", [
@@ -1038,6 +1091,7 @@ func _build_audience_tab() -> Control:
 	cb.tooltip_text = "Silhouettes, name tags, bubbles and chat windows. \"Their platform\" makes it easy to see who's on which platform."
 	v.add_child(cb)
 	var pc := HFlowContainer.new()
+	pc.tooltip_text = "Each platform's colour, used by \"Colour chatters by: Their platform\", the seating chart and the chat windows' platform ticks."
 	v.add_child(pc)
 	for g in AudienceManager.PLATFORMS:
 		var c := _color("platform_color_" + g, String(AudienceManager.PLATFORM_LABELS[g]))
@@ -1051,9 +1105,10 @@ func _build_audience_tab() -> Control:
 			AppState.set_setting("platform_color_" + g, Color(String(COLOR_SAFE[g]))))
 	safe.tooltip_text = "Kick bluish green, Twitch reddish purple, YouTube orange, other sky blue: colours that stay apart for the common kinds of colour blindness (Okabe-Ito palette). The seating chart also marks sections with letters."
 	pr.add_child(safe)
-	pr.add_child(_button("Brand colours", func() -> void:
+	pr.add_child(_tip(_button("Brand colours", func() -> void:
 		for g in AudienceManager.PLATFORMS:
-			AppState.set_setting("platform_color_" + g, AppState.DEFAULTS["platform_color_" + g])))
+			AppState.set_setting("platform_color_" + g, AppState.DEFAULTS["platform_color_" + g])),
+		"Put the platforms' own colours back (Kick green, Twitch purple, YouTube red)."))
 
 	v.add_child(_heading("Crowd (Lecture Hall tiers, balcony, gallery)"))
 	var crowd_row := HBoxContainer.new()
@@ -1063,12 +1118,13 @@ func _build_audience_tab() -> Control:
 	crowd_row.add_child(crowd_check)
 	var fill := _slider("audience_crowd_fill", "Crowd fullness", 0.0, 1.0, 0.01, "%d%%", 100.0)
 	fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fill.tooltip_text = "How many of the crowd seats filler people take. Chatters take their places as they arrive."
 	crowd_row.add_child(fill)
 	var crowd_idle := _slider("audience_crowd_idle_min", "Crowd timeout", 1.0, 60.0, 1.0, "%d min")
 	crowd_idle.tooltip_text = "Minutes without chatting before a chatter gives up a crowd seat. Presenters linked to chat never time out."
 	v.add_child(crowd_idle)
-	var crowd_max := _slider("audience_crowd_max", "Most chatters in crowd", 0.0, 400.0, 10.0, "%d")
-	crowd_max.tooltip_text = "How many chatters can sit in the crowd seats at once. 0 = no limit. Every seat stays and filler people fill the rest, so the room looks the same; each chatter in the crowd costs a little CPU and GPU (picture, name tag, bubble), filler people cost nothing. When it's reached, a new chatter takes the seat of whoever has been quiet the longest. Try 100-150 on a laptop."
+	var crowd_max := _slider("audience_crowd_max", "Most chatters in crowd", 0.0, 400.0, 10.0, "%d", 1.0, "No limit")
+	crowd_max.tooltip_text = "How many chatters can sit in the crowd seats at once (0 = No limit). Every seat stays and filler people fill the rest, so the room looks the same; each chatter in the crowd costs a little CPU and GPU (picture, name tag, bubble), filler people cost nothing. When it's reached, a new chatter takes the seat of whoever has been quiet the longest. 300 is the default; try 100-150 on a laptop."
 	v.add_child(crowd_max)
 	var crowd_opts := HFlowContainer.new()
 	v.add_child(crowd_opts)
@@ -1078,7 +1134,43 @@ func _build_audience_tab() -> Control:
 	var fm := _check("audience_fill_main", "Filler people in empty main seats")
 	fm.tooltip_text = "Empty main seats show filler people too (the same share as Crowd fullness). Chatters take their places as they arrive."
 	crowd_opts.add_child(fm)
-	return v
+	return adv.get_parent() as Control
+
+
+## Audience tab: "Hide a picture..." lists the people seated now, newest first (filled as it opens).
+func _fill_hide_pick() -> void:
+	_hide_pick.clear()
+	_hide_pick.add_item("Hide a picture...")
+	_hide_pick.set_item_metadata(0, "")
+	for p: Dictionary in AudienceManager.get_seated_people():
+		var who := SafeText.clean(String(p["name"]))
+		var plat := String(p["platform"])
+		_hide_pick.add_item("%s (%s)" % [who, String(AudienceManager.PLATFORM_LABELS.get(AudienceManager.platform_group(plat), plat))])
+		# the display name (what Stream Core's list matches too), or the login if the name has a comma
+		var nm := String(p["name"]).strip_edges().trim_prefix("@")
+		if nm.contains(",") or nm == "":
+			nm = String(p["username"])
+		_hide_pick.set_item_metadata(_hide_pick.item_count - 1, ("%s:%s" % [plat, nm]) if AudienceManager.LINK_PLATFORMS.has(plat) else nm)
+	if _hide_pick.item_count == 1:
+		_hide_pick.add_item("(nobody is seated)")
+		_hide_pick.set_item_disabled(1, true)
+	_hide_pick.select(0)
+
+
+## Picking someone adds "platform:name" to Hide pictures of (only that platform's person of that name).
+func _on_hide_pick(i: int) -> void:
+	var entry: Variant = _hide_pick.get_item_metadata(i)
+	_hide_pick.select(0)
+	if entry == null or String(entry) == "":
+		return
+	var list := PackedStringArray()
+	for part in String(AppState.get_setting("audience_hide_avatars")).split(",", false):
+		if part.strip_edges() != "":
+			list.append(part.strip_edges())
+	if not list.has(String(entry)):
+		list.append(String(entry))
+	AppState.set_setting("audience_hide_avatars", ", ".join(list))
+	EventBus.status_message.emit("Picture hidden: %s." % String(entry), false)
 
 
 func _build_seating_tab() -> Control:
@@ -1087,20 +1179,22 @@ func _build_seating_tab() -> Control:
 	v.add_child(_hint("Keep each platform's chatters physically apart. The main seats are four quadrants (as the audience faces the stage); the Lecture Hall's crowd seats are stadium sections: 101… lower tier, 201… balcony, 301… gallery, numbered from the audience's left round to the right. Click a section on the chart, then tick who may sit there (no ticks = anyone)."))
 	var r := HFlowContainer.new()
 	v.add_child(r)
-	r.add_child(_check("seating_by_platform", "Seat chatters by platform"))
+	r.add_child(_tip(_check("seating_by_platform", "Seat chatters by platform"), "Use the seating plan below: each section only seats the platforms ticked for it."))
 	var strict := _check("seating_strict", "Keep platforms apart when their seats are full")
 	strict.tooltip_text = "On: a chatter whose sections are full takes the seat of the idlest chatter there (or waits). Off: they sit anywhere that's free."
 	r.add_child(strict)
 	var pr := HFlowContainer.new()
 	v.add_child(pr)
-	pr.add_child(_button("Anyone anywhere", func() -> void: AudienceManager.apply_preset("anyone")))
-	var b1 := _button("Twitch apart (left)", func() -> void: AudienceManager.apply_preset("twitch_apart"))
-	b1.tooltip_text = "Twitch on the audience's left (front + back left, the left half of every crowd level); Kick, YouTube and others on the right. Matches the default chat windows (Twitch left)."
+	pr.add_child(_tip(_button("Anyone anywhere", func() -> void: _apply_seating_preset("anyone")),
+		"Clear the seating plan and turn Seat chatters by platform off: anyone sits anywhere. Asks first if you made a plan."))
+	var b1 := _button("Twitch apart (left)", func() -> void: _apply_seating_preset("twitch_apart"))
+	b1.tooltip_text = "Twitch on the audience's left (front + back left, the left half of every crowd level); Kick, YouTube and others on the right. Matches the default chat windows (Twitch left). Asks first if it would replace a plan you made."
 	pr.add_child(b1)
-	var b2 := _button("A quadrant each", func() -> void: AudienceManager.apply_preset("quadrant_each"))
-	b2.tooltip_text = "Kick front left, Twitch front right, YouTube back left, other back right; crowd sections take turns."
+	var b2 := _button("A quadrant each", func() -> void: _apply_seating_preset("quadrant_each"))
+	b2.tooltip_text = "Kick front left, Twitch front right, YouTube back left, other back right; crowd sections take turns. Asks first if it would replace a plan you made."
 	pr.add_child(b2)
-	pr.add_child(_button("Re-seat everyone now", func() -> void: AudienceManager.reseat_by_plan()))
+	pr.add_child(_tip(_button("Re-seat everyone now", func() -> void: AudienceManager.reseat_by_plan()),
+		"Right now, move everyone sitting in a section their platform may not use to a seat it may use."))
 	# floors: the chart shows one at a time (downstairs, or the balcony + gallery upstairs)
 	var fr := HBoxContainer.new()
 	v.add_child(fr)
@@ -1116,6 +1210,7 @@ func _build_seating_tab() -> Control:
 		fb.toggle_mode = true
 		fb.button_group = fg
 		fb.focus_mode = Control.FOCUS_ALL
+		fb.tooltip_text = "Show this floor's sections on the chart below."
 		fb.button_pressed = f[0] == SeatingChart.BOTTOM
 		var which: String = f[0]
 		fb.pressed.connect(func() -> void: _chart.show_floor(which))
@@ -1143,6 +1238,7 @@ func _build_seating_tab() -> Control:
 		c.text = String(AudienceManager.PLATFORM_LABELS[g])
 		c.focus_mode = Control.FOCUS_ALL
 		c.disabled = true
+		c.tooltip_text = "May %s chatters sit in the picked section? No ticks = anyone." % String(AudienceManager.PLATFORM_LABELS[g])
 		c.add_theme_color_override("font_color", AudienceManager.platform_color(g).lightened(0.3))
 		c.toggled.connect(func(_on: bool) -> void: _save_section())
 		sr.add_child(c)
@@ -1153,6 +1249,16 @@ func _build_seating_tab() -> Control:
 	EventBus.seating_changed.connect(_refresh_capacity)
 	_refresh_capacity()
 	return v
+
+
+## A seating preset, asking first when it would replace a plan that isn't empty and differs from it.
+func _apply_seating_preset(preset: String) -> void:
+	if not AudienceManager.preset_replaces_plan(preset):
+		AudienceManager.apply_preset(preset)
+		return
+	var what := "clears your seating plan and lets anyone sit anywhere" if preset == "anyone" else "replaces your seating plan with the preset"
+	_ask("Replace your seating plan?", "This %s. The sections you ticked by hand are lost." % what,
+		"Replace it", func() -> void: AudienceManager.apply_preset(preset))
 
 
 func _on_section_picked(id: String) -> void:
@@ -1203,9 +1309,9 @@ func _build_games_tab() -> Control:
 	v.add_child(_hint("🍅 / !tomato @name from chat. Set them up in Stream Core: Admin → Config → Reactions."))
 	var r4 := HFlowContainer.new()
 	v.add_child(r4)
-	r4.add_child(_check("reactions_enabled", "Play reactions"))
-	r4.add_child(_check("reaction_camera_shake", "Allow camera shake"))
-	v.add_child(_slider("reaction_size", "Reaction size", 0.3, 3.0, 0.05, "%d%%", 100.0))
+	r4.add_child(_tip(_check("reactions_enabled", "Play reactions"), "Chat reactions from Stream Core play in the room. Off: they're ignored."))
+	r4.add_child(_tip(_check("reaction_camera_shake", "Allow camera shake"), "Some reactions (a big hit, an explosion) shake the camera. Photosensitive-safe mode turns this off."))
+	v.add_child(_tip(_slider("reaction_size", "Reaction size", 0.3, 3.0, 0.05, "%d%%", 100.0), "How big thrown and falling reaction objects are."))
 	v.add_child(_heading("Flashing lights (photosensitive viewers)"))
 	var fs := _slider("flash_strength", "Flash strength", 0.0, 1.0, 0.05, "%d%%", 100.0)
 	fs.tooltip_text = "How bright flashing reactions get: FLASHBANG, police lights, flicker, fireworks and fire. 0% = no flashes at all; the rest of each reaction still plays."
@@ -1213,19 +1319,42 @@ func _build_games_tab() -> Control:
 	var safe := _check("photosensitive_safe", "Photosensitive-safe mode")
 	safe.tooltip_text = "Caps flashes at 30% (whatever Flash strength says), slows strobing lights to under 3 flashes a second (the WCAG limit), turns a FLASHBANG into a soft swell, and turns camera shake off."
 	v.add_child(safe)
+	_flash_note = _hint("")
+	_flash_note.add_theme_color_override("font_color", Color(1.0, 0.75, 0.35))
+	v.add_child(_flash_note)
+	_refresh_flash_note()
 	var r5 := HBoxContainer.new()
 	v.add_child(r5)
 	var pick := OptionButton.new()
+	pick.focus_mode = Control.FOCUS_ALL
+	pick.tooltip_text = "A reaction to try out with Test here."
 	pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	for id in Reactions.get_effect_ids():
 		if id != "meter":
 			pick.add_item(id)
 	r5.add_child(pick)
-	r5.add_child(_button("Test here", func() -> void:
-		Reactions.play_test(pick.get_item_text(pick.selected))))
+	r5.add_child(_tip(_button("Test here", func() -> void:
+		Reactions.play_test(pick.get_item_text(pick.selected))), "Play the picked reaction in this room now. Nothing is sent to Stream Core."))
 	v.add_child(_heading("Chat games"))
-	v.add_child(_hint("Polls, predictions, trivia, the hype meter ... from Stream Core: Admin → Chat games. Where their boards show: Chat tab."))
+	v.add_child(_hint("Polls, predictions, trivia, the hype meter ... from Stream Core: Admin → Chat games. Their boards show on a chat window (Chat tab) or in a corner of the picture:"))
+	var hud := _option("board_hud", "Boards in the corner", [["auto", "Auto (when no chat window shows them)"], ["on", "Always"], ["off", "Never"]])
+	(hud.get_child(1) as Control).size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hud.tooltip_text = "Chat games boards in the top right corner of the picture, so they show from every camera. Auto: only in rooms where no chat window shows them."
+	v.add_child(hud)
+	v.add_child(_tip(_slider("board_hud_scale", "Board size", 0.5, 2.5, 0.05, "%d%%", 100.0), "How big the boards in the corner are."))
 	return v
+
+
+## Games tab: with Photosensitive-safe mode on, say that Flash strength is capped (it still shows
+## the number you set).
+func _refresh_flash_note() -> void:
+	if _flash_note == null:
+		return
+	var safe := bool(AppState.get_setting("photosensitive_safe"))
+	var strength := float(AppState.get_setting("flash_strength"))
+	var cap := ReactionLayer.SAFE_FLASH_CAP
+	_flash_note.visible = safe and strength > cap
+	_flash_note.text = "Photosensitive-safe mode is on: flashes stay at %d%% or less (Flash strength says %d%%)." % [roundi(cap * 100.0), roundi(strength * 100.0)]
 
 
 ## Okabe-Ito colours: tell apart with red-green colour blindness (Kick green vs YouTube red don't).
@@ -1249,7 +1378,7 @@ func _build_presenters_tab() -> Control:
 	l.custom_minimum_size = Vector2(120, 0)
 	on_row.add_child(l)
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
-		on_row.add_child(_check(AppState.presenter_key(n, "on"), str(n)))
+		on_row.add_child(_tip(_check(AppState.presenter_key(n, "on"), str(n)), "Presenter %d on set: their podium, picture and lamp show in rooms with podiums." % n))
 	var edit_row := HBoxContainer.new()
 	v.add_child(edit_row)
 	var l2 := Label.new()
@@ -1263,6 +1392,7 @@ func _build_presenters_tab() -> Control:
 		b.toggle_mode = true
 		b.button_group = group
 		b.focus_mode = Control.FOCUS_ALL
+		b.tooltip_text = "Show presenter %d's settings below." % n
 		var idx := n - 1
 		b.toggled.connect(func(on: bool) -> void:
 			if on:
@@ -1307,6 +1437,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	cam.focus_mode = Control.FOCUS_ALL
 	cam.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	cam.fit_to_longest_item = false
+	cam.tooltip_text = "Which camera this podium shows (the list comes from your sender page)."
 	cam.item_selected.connect(func(i: int) -> void: AppState.set_setting(k.call("camera"), String(cam.get_item_metadata(i))))
 	cam_row.add_child(cam)
 	d.add_child(cam_row)
@@ -1358,22 +1489,27 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	d.add_child(feed)
 	_pres_feed_labels.append(feed)
 	var r := HFlowContainer.new()
-	r.add_child(_check(k.call("self_lit"), "Self-lit (light panel)"))
+	r.add_child(_tip(_check(k.call("self_lit"), "Self-lit (light panel)"), "The presenter's picture glows like a light panel instead of taking the room's light."))
 	var keybox := _check(k.call("key"), "Chroma key")
+	keybox.tooltip_text = "Cut the key colour (a green screen) out of the picture, so only the person shows."
 	r.add_child(keybox)
-	r.add_child(_color(k.call("key_color"), "Key colour"))
+	r.add_child(_tip(_color(k.call("key_color"), "Key colour"), "The background colour the chroma key cuts out (pick your green screen's colour)."))
 	d.add_child(r)
 	rows["picture"].append(r)
-	d.add_child(_slider(k.call("light"), "Podium light", 0.0, 3.0, 0.01, "%d%%", 100.0))
-	for key_row: Control in [_slider(k.call("key_similarity"), "Key similarity", 0.0, 0.8, 0.005, "%.3f"),
-			_slider(k.call("key_smoothness"), "Key smoothness", 0.0, 0.3, 0.005, "%.3f"),
-			_slider(k.call("key_spill"), "Spill removal", 0.0, 1.0, 0.01, "%d%%", 100.0)]:
+	d.add_child(_tip(_slider(k.call("light"), "Podium light", 0.0, 3.0, 0.01, "%d%%", 100.0), "How bright the lamp over this podium is. 0% = off."))
+	for key_row: Control in [_tip(_slider(k.call("key_similarity"), "Key similarity", 0.0, 0.8, 0.005, "%.3f"),
+				"How close to the key colour still counts as background. Raise it if green is left round the person; lower it if parts of them vanish."),
+			_tip(_slider(k.call("key_smoothness"), "Key smoothness", 0.0, 0.3, 0.005, "%.3f"),
+				"How soft the cut-out edge is. A little softness hides a jagged outline."),
+			_tip(_slider(k.call("key_spill"), "Spill removal", 0.0, 1.0, 0.01, "%d%%", 100.0),
+				"Takes the green glow off the person's edges (hair, shoulders).")]:
 		d.add_child(key_row)
 		rows["picture"].append(key_row)
 	rows["keybox"] = keybox
 	_refresh_presenter_rows(n)
-	d.add_child(_slider(k.call("zoom"), "Zoom", 0.3, 3.0, 0.01, "%.2fx"))
-	d.add_child(_slider(k.call("offset_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f"))
+	d.add_child(_tip(_slider(k.call("zoom"), "Zoom", 0.3, 3.0, 0.01, "%.2fx"), "How big the presenter's picture is inside its frame."))
+	d.add_child(_tip(_slider(k.call("offset_y"), "Presenter up/down", -0.5, 0.5, 0.01, "%d%%", 100.0),
+		"Move the presenter's picture up (+) or down (-) in its frame, as a share of the frame's height."))
 	var tag := _text_setting(k.call("name"), "Name tag", "shown above the picture (blank = none)")
 	tag.tooltip_text = "A name shown above this presenter's picture, for example their channel name."
 	d.add_child(tag)
@@ -1392,13 +1528,13 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	var ps := _slider(k.call("picture_scale"), "Picture size", 0.2, 3.0, 0.05, "%d%%", 100.0)
 	ps.tooltip_text = "How big the podium picture is. 100% fits the front of the podium."
 	pic_rows.append(ps)
-	var plit := _check(k.call("picture_self_lit"), "Picture self-lit")
+	var plit := _check(k.call("picture_self_lit"), "Podium picture self-lit")
 	plit.tooltip_text = "Show the podium picture in its own colours, however dark or coloured the room's light is."
 	pic_rows.append(plit)
-	var px := _slider(k.call("picture_x"), "Move left/right", -0.5, 0.5, 0.01, "%.2f m")
+	var px := _slider(k.call("picture_x"), "Podium picture left/right", -0.5, 0.5, 0.01, "%.2f m")
 	px.tooltip_text = "Slide the podium picture sideways, as the audience sees it (right is +)."
 	pic_rows.append(px)
-	var py := _slider(k.call("picture_y"), "Move up/down", -0.5, 0.5, 0.01, "%.2f m")
+	var py := _slider(k.call("picture_y"), "Podium picture up/down", -0.5, 0.5, 0.01, "%.2f m")
 	py.tooltip_text = "Slide the podium picture up (+) or down (-)."
 	pic_rows.append(py)
 	var pic_adv := _fold(d, "presenter_%d_picture" % n)
@@ -1492,7 +1628,7 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 func _build_together_tab() -> Control:
 	var v := _tab("Together")
 	v.add_child(_heading("Streaming together"))
-	v.add_child(_hint("Up to four people in the same room. The host runs the show (room, curtain, presenters); guests fly their own camera and stream their own view. Chat reactions from every channel play for everyone. Connect over Tailscale: guests type the host's 100.x address."))
+	v.add_child(_hint("Up to four people in the same room. The host runs the show (room, curtain, presenters); guests fly their own camera and stream their own view. Chat reactions from every channel play for everyone. Host: pick Listen on, click Host a session, then Copy address and send it privately. Guest: paste it under Join."))
 	var name_row := _text_setting("together_name", "Your name", "shown to the others")
 	(name_row.get_child(1) as Control).tooltip_text = "The name the others see next to your camera and in the list below."
 	v.add_child(name_row)
@@ -1537,8 +1673,14 @@ func _build_together_tab() -> Control:
 	_net_join_btn.tooltip_text = "Connect to the host. Your room, curtain and presenters then follow theirs."
 	v.add_child(_net_join_btn)
 
-	_net_leave_btn = _button("Leave / stop hosting", func() -> void: NetSession.leave())
-	_net_leave_btn.tooltip_text = "End your part in the session. Everything stays as it is now."
+	_net_leave_btn = _button("Leave / stop hosting", func() -> void:
+		var guests := NetSession.guest_count()
+		if guests == 0:
+			NetSession.leave()
+			return
+		_ask("Stop hosting?", "This ends the session for your %s. They keep what they see now, but stop following you." % ("guest" if guests == 1 else "%d guests" % guests),
+			"Stop hosting", func() -> void: NetSession.leave()))
+	_net_leave_btn.tooltip_text = "End your part in the session. Everything stays as it is now. While you host with guests in, it asks first."
 	v.add_child(_net_leave_btn)
 	_net_status = _hint("")
 	v.add_child(_net_status)
@@ -2035,8 +2177,8 @@ func _on_camera_presets(names: PackedStringArray) -> void:
 		c.queue_free()
 	for i in names.size():
 		var idx := i
-		_camera_box.add_child(_button("%d  %s" % [i + 1, names[i]], func() -> void:
-			EventBus.camera_preset_requested.emit(idx)))
+		_camera_box.add_child(_tip(_button("%d  %s" % [i + 1, names[i]], func() -> void:
+			EventBus.camera_preset_requested.emit(idx)), "Switch to this camera (key %d)." % ((i + 1) % 10)))
 
 
 func _on_room_changed(room_id: String) -> void:
@@ -2085,6 +2227,16 @@ func _on_mic_level(db: float) -> void:
 
 func _on_ducking(ducking: bool) -> void:
 	_duck_label.text = "ducking" if ducking else ""
+	if not ducking:
+		_refresh_mic_note()
+
+
+## React tab: "No microphone" (or no sound device) next to the empty meter while auto-duck is on
+## but can't hear anything.
+func _refresh_mic_note() -> void:
+	if _duck_label == null or _duck_label.text == "ducking":
+		return
+	_duck_label.text = AudioManager.get_mic_problem()
 
 
 ## Together tab: a note while the password is too short to host with.
@@ -2099,6 +2251,10 @@ func _update_pw_hint() -> void:
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if key == "together_password":
 		_update_pw_hint()
+	if key == "duck_enabled":
+		_refresh_mic_note()
+	if key == "photosensitive_safe" or key == "flash_strength":
+		_refresh_flash_note()
 	if key == "chat_enabled":
 		_refresh_strip()
 	if key == "ndi_source" or key == "spout_source":
@@ -2430,6 +2586,42 @@ func _fold(v: VBoxContainer, id: String, label: String = "Advanced", head: Conta
 	return body
 
 
+## Gives a control its tooltip (and so its "?" help) and hands it back, for one-line add_child calls.
+func _tip(c: Control, text: String) -> Control:
+	c.tooltip_text = text
+	return c
+
+
+## "Are you sure?" before something that can't be undone with one click (Empty all seats, a seating
+## preset over a hand-made plan, stopping a session with guests in it). `action` runs on OK only.
+## Like the Together popups, it opens as its own OS window while the panel is docked, so it never
+## shows in the window OBS captures.
+func _ask(title: String, text: String, ok_text: String, action: Callable) -> void:
+	if _confirm != null and is_instance_valid(_confirm):
+		_confirm.queue_free()
+	var d := ConfirmationDialog.new()
+	d.exclusive = false
+	d.unresizable = true
+	d.min_size = Vector2i(400, 0)
+	d.title = title
+	d.dialog_text = text
+	d.ok_button_text = ok_text
+	d.cancel_button_text = "Cancel"
+	d.get_ok_button().tooltip_text = "Go ahead."
+	d.get_cancel_button().tooltip_text = "Leave everything as it is."
+	for b in [d.get_ok_button(), d.get_cancel_button()]:
+		b.add_to_group("keyboard_panel")        # (hotkeys stay off while the popup has focus)
+	d.confirmed.connect(func() -> void:
+		action.call()
+		d.queue_free())
+	d.canceled.connect(d.queue_free)
+	if _window == null and DisplayServer.has_feature(DisplayServer.FEATURE_SUBWINDOWS):
+		d.force_native = true
+	_confirm = d
+	add_child(d)
+	d.popup_centered()
+
+
 func _hint(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -2486,16 +2678,24 @@ func _color(key: String, text: String) -> HBoxContainer:
 ## scale: display multiplier (e.g. 100 to show 0..1 as 0..100%).
 ## A number typed into a slider's value box: the first number in it, in the units shown
 ## (e.g. "75" for 75%), clamped to the slider's range.
-func _apply_typed(s: HSlider, num: LineEdit, fmt: String, t: String) -> void:
+func _apply_typed(s: HSlider, num: LineEdit, fmt: String, t: String, zero_text: String = "") -> void:
 	var rx := RegEx.new()
 	rx.compile("-?[0-9]*[.,]?[0-9]+")
 	var m := rx.search(t)
 	if m != null:
 		s.value = clampf(float(m.get_string().replace(",", ".")), s.min_value, s.max_value)
-	num.text = fmt % s.value
+	num.text = _slider_text(fmt, s.value, zero_text)
 
 
-func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, display_scale: float = 1.0) -> HBoxContainer:
+## A slider's value as its box shows it: the format, or e.g. "No limit" at 0 when it has a zero text.
+static func _slider_text(fmt: String, x: float, zero_text: String) -> String:
+	if zero_text != "" and is_zero_approx(x):
+		return zero_text
+	return fmt % x
+
+
+## zero_text: shown in the value box instead of 0 (e.g. "No limit"), where 0 means "none set".
+func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, display_scale: float = 1.0, zero_text: String = "") -> HBoxContainer:
 	var h := HBoxContainer.new()
 	var l := Label.new()
 	l.text = label
@@ -2515,15 +2715,15 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 	var num := LineEdit.new()
 	num.flat = true
 	num.custom_minimum_size = Vector2(78, 0)
-	num.text = fmt % s.value
+	num.text = _slider_text(fmt, s.value, zero_text)
 	num.select_all_on_focus = true
-	num.tooltip_text = "Click and type an exact value, then Enter"
+	num.tooltip_text = "Click and type an exact value, then Enter" + (" (0 = %s)" % zero_text.to_lower() if zero_text != "" else "")
 	num.add_theme_color_override("font_color", Color(1, 1, 1, 0.92))
 	h.add_child(num)
 	var is_int := typeof(AppState.get_setting(key)) == TYPE_INT
 	s.value_changed.connect(func(x: float) -> void:
 		if not num.has_focus():
-			num.text = fmt % x
+			num.text = _slider_text(fmt, x, zero_text)
 		if _syncing:
 			return      # only matching a setting that changed elsewhere (it may round differently)
 		var raw := x / display_scale
@@ -2532,9 +2732,9 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 		else:
 			AppState.set_setting(key, raw))
 	num.text_submitted.connect(func(t: String) -> void:
-		_apply_typed(s, num, fmt, t)
+		_apply_typed(s, num, fmt, t, zero_text)
 		num.release_focus())
-	num.focus_exited.connect(func() -> void: num.text = fmt % s.value)
+	num.focus_exited.connect(func() -> void: num.text = _slider_text(fmt, s.value, zero_text))
 	_sliders[key] = s
 	return h
 
@@ -2670,7 +2870,7 @@ func _check_text_sizes() -> void:
 		lbl.visible = px > 0.0 and px < MIN_STREAM_TEXT_PX
 		(lbl.get_meta("row") as Control).visible = lbl.visible
 		if _size_marks.has(key):
-			(_size_marks[key] as Label).visible = lbl.visible
+			(_size_marks[key] as Control).visible = lbl.visible
 		if lbl.visible:
 			var ok_size := float(AppState.get_setting(key + "_text")) * MIN_STREAM_TEXT_PX / px
 			var need := ceili(ok_size * 20.0) * 5
@@ -2679,4 +2879,4 @@ func _check_text_sizes() -> void:
 			lbl.text = ("⚠ From this camera the text is only about %d px tall on a 1080p stream (hard to read). " % roundi(px)) + \
 				("Try Text size %d%% or more, or a closer camera." % need if need <= 300 else "Use a closer camera (even 300% text won't be enough from here).")
 			if _size_marks.has(key):
-				(_size_marks[key] as Label).tooltip_text = lbl.text
+				(_size_marks[key] as Control).tooltip_text = lbl.text + " Click to open this window's settings."
