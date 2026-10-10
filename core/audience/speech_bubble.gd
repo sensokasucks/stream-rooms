@@ -69,6 +69,8 @@ func set_content(speaker: String, parts: Array, color: Color, style: int, textur
 			reply_quote = String(mark.get("quote", ""))
 		tint = String(mark.get("tint", tint))
 		parts = parts.slice(1)
+	if not bool(AppState.get_setting("audience_bubble_tints")):
+		tint = ""         # (the marker still comes along for the bubble filter: drawn plain)
 	var dark := String(AppState.get_setting("audience_bubble_theme")) == "dark"
 	var text_color := DARK_TEXT if dark else TEXT_COLOR
 	_fill = (DARK_FILL if dark else FILL).lerp(color, 0.07)

@@ -32,7 +32,9 @@ func _ready() -> void:
 	var st_still := {"provider": "7tv", "url": seven + "/2x.webp", "static_url": seven + "/2x_static.webp", "animated": false}
 	_check(AudienceManager.emote_url(st_still) == seven + "/2x_static.webp", "still 7TV emotes use the still WebP")
 	var ffz := {"provider": "ffz", "url": "https://cdn.ffz/emote/1/animated/2", "static_url": "https://cdn.ffz/emote/1/2", "animated": true}
-	_check(AudienceManager.emote_url(ffz) == "https://cdn.ffz/emote/1/2", "animated FrankerFaceZ emotes (WebP only) use the still one")
+	_check(AudienceManager.emote_url(ffz) == "https://cdn.ffz/emote/1/animated/2.gif", "animated FrankerFaceZ emotes use the GIF")
+	var ffz_still := {"provider": "ffz", "url": "https://cdn.ffz/emote/2/2", "static_url": "https://cdn.ffz/emote/2/2", "animated": false}
+	_check(AudienceManager.emote_url(ffz_still) == "https://cdn.ffz/emote/2/2", "still FrankerFaceZ emotes use the still one")
 	var bttv := {"provider": "bttv", "url": "https://cdn.betterttv.net/emote/9/2x", "static_url": "", "animated": true}
 	_check(AudienceManager.emote_url(bttv) == "https://cdn.betterttv.net/emote/9/2x", "animated BetterTTV emotes use their GIF")
 

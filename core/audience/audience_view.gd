@@ -881,6 +881,8 @@ func _on_spoke(slot: int, parts: Array) -> void:
 		var n := int(s["n"])
 		if not bool(AppState.get_setting(AppState.presenter_key(n, "chat_bubbles"))):
 			return
+	if not AudienceManager.bubble_wanted(parts):
+		return            # Audience tab > Bubbles show: not this kind of message
 	for p: Variant in parts:          # start downloading emotes right away
 		if p is Dictionary and (p as Dictionary).has("url"):
 			EmoteCache.get_texture(String(p["url"]))
@@ -1061,10 +1063,13 @@ func _render_bubble(i: int) -> void:
 		return
 	var textures: Dictionary = {}
 	var waiting: Array = []
+	var still := not bool(AppState.get_setting("audience_bubble_animated"))
 	for p: Variant in s["parts"]:
 		if p is Dictionary and (p as Dictionary).has("url"):
 			var url := String(p["url"])
 			var tex := EmoteCache.get_texture(url)
+			if tex is AnimatedTexture and still:
+				tex = (tex as AnimatedTexture).get_frame_texture(0)    # first frame: the bubble draws once
 			if tex:
 				textures[url] = tex
 			elif not EmoteCache.is_failed(url):

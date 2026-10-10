@@ -93,8 +93,8 @@ func _say(msg: String) -> void:
 	status.emit.call_deferred(msg)
 
 
-func _stage(name: String) -> void:
-	stage.emit.call_deferred(name)
+func _stage(what: String) -> void:
+	stage.emit.call_deferred(what)
 
 
 func _done(ok: bool, payload: String) -> void:

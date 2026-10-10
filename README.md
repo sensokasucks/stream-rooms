@@ -471,6 +471,14 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an
   Emote" message shows its last emote big. Needs the matching Stream Core update.
   **Test chat** sends one of these now and then so you can see them.
+- **Bubbles show** (Audience tab): for a very busy chat, pick which messages get a speech bubble.
+  Tick any mix of **Text messages** (ordinary messages with words in them), **Emote-only**,
+  **Paid** (Super Chats, Kicks and Bits, also when they answer someone), **Highlighted** (Twitch
+  highlighted messages and gigantified emotes) and **Replies** (ordinary messages that answer
+  someone). Untick **Animated emotes** to show every emote as a still picture, which is lighter
+  on the PC. A chatter whose message gets no bubble still sits down. Two buttons set it in one
+  click: **Busy chat: paid and highlighted** (only those two, with still emotes) and **Show
+  everything** (every box ticked again). The chat windows always show every message.
 - **Seat spacing** (Audience tab): how much room there is between seated chatters along a row,
   1 m by default. Seats closer than that to a taken one stay empty, so nobody sits shoulder to
   shoulder; the room has fewer seats than it has places (the Lecture Hall's front pews seat every
@@ -480,11 +488,10 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   That covers Twitch emotes plus BetterTTV, FrankerFaceZ and 7TV emotes (Stream Core sends them
   with each message) and Kick emotes.
   - Images download once and are kept in `user://emote_cache/` (`autoload/emote_cache.gd`).
-  - Animated emotes (Twitch, Kick, BetterTTV, 7TV) play in the bubbles and on the chat screen.
-    The engine can't read GIFs, so `core/gif_decoder.gd` decodes them on a worker thread.
-    Animated WebP can't be decoded yet (FrankerFaceZ's animated emotes): those show a still frame
-    when the site provides one, otherwise their name as text (the Redot output then says "Emote
-    image not supported"). If an animated emote doesn't load, its still picture is used instead.
+  - Animated emotes (Twitch, Kick, BetterTTV, FrankerFaceZ, 7TV) play in the bubbles and on the
+    chat screen. The engine can't read GIFs, so `core/gif_decoder.gd` decodes them on a worker thread.
+    Animated WebP can't be decoded, so 7TV and FrankerFaceZ emotes are fetched as GIFs instead.
+    If an animated emote doesn't load, its still picture is used instead.
   - Normal emoji use your system's colour emoji font (Segoe UI Emoji on Windows).
 - **Chatter pictures (everywhere):** Kick, Twitch and YouTube chatters' profile pictures fill the silhouette's
   head, cropped round inside their colour ring.
@@ -548,7 +555,8 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
 - **Settings:** all in the **Audience** tab. The ones you use while live are on top:
   - **Show audience**, **Test chat** (fills seats with made-up chatters) and **Empty all seats**
     (everyone leaves their seat; it asks first)
-  - **New chatters sit**, **Bubble size**, **Name tags**, **Chatter pictures (everywhere)**,
+  - **New chatters sit**, **Bubble size**, **Bubbles show** (with **Show everything** and
+    **Busy chat: paid and highlighted**), **Name tags**, **Chatter pictures (everywhere)**,
     **Hide pictures of** and **Hide a picture...**
   - **Advanced ▸** holds the rest: **Idle timeout**, **Seat spacing**, **Bubble time**,
     **Bubble colours**, **Colour paid and highlighted messages** (the chat windows' cards too),

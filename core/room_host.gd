@@ -239,9 +239,12 @@ func _retire(room: Node3D) -> void:
 	# otherwise play every reaction a second time (seat swaps undo themselves, refunds go wrong)
 	# and build seats and bubbles for the new room's chatters inside a room about to be freed
 	room.propagate_call("retire")
+	# (the room's id, not the room: a lambda holding a node that's gone logs an error when called)
+	var room_id := room.get_instance_id()
 	get_tree().create_timer(OLD_ROOM_FREE_DELAY).timeout.connect(func() -> void:
-		if is_instance_valid(room):
-			room.queue_free())
+		var old := instance_from_id(room_id) as Node
+		if old:
+			old.queue_free())
 
 
 ## Quitting frees the room too: dark first, AppState quits after its delay.

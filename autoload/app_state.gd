@@ -42,6 +42,13 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_bubble_size": 1.0, # speech bubble size multiplier
 	"audience_bubble_theme": "light",  # speech bubble colours: light (white) or dark
 	"audience_bubble_tints": true,     # Super Chats / Bits and Twitch highlighted messages get a coloured bubble and chat card
+	# which messages get a speech bubble (for a busy chat; see AudienceManager.bubble_kind)
+	"audience_bubble_text": true,         # ordinary messages with words in them
+	"audience_bubble_emotes": true,       # messages that are only emotes
+	"audience_bubble_paid": true,         # Super Chats, Kicks, Bits (replies or not)
+	"audience_bubble_highlighted": true,  # Twitch highlighted messages and gigantified emotes
+	"audience_bubble_replies": true,      # ordinary messages that answer someone
+	"audience_bubble_animated": true,     # animated emotes move in bubbles (off: their first frame, lighter)
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
