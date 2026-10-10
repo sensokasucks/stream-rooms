@@ -7,9 +7,11 @@
 #     @warning_ignore("integer_division")
 # It guesses: read each line it prints before changing anything.
 #   python tools\lint_warnings.py
+# GitHub runs it on every pull request (.github/workflows/tests.yml); it fails when anything is listed.
 import glob
 import os
 import re
+import sys
 
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
@@ -137,3 +139,5 @@ for f in files:
             if m and not re.search(r"^\d+\.\d", m.group(2)):
                 print(f"{f}:{i}: whole-number division? {code.strip()[:100]}"); found += 1
 print("candidates:", found)
+# Exit code 1 when something was found, so the GitHub check can fail on it.
+sys.exit(1 if found else 0)
