@@ -1027,3 +1027,19 @@ The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppSt
 
 ## Checks on GitHub (for developers)
 Every pull request (and every push to main) runs a short check on GitHub: the script warning check (`tools/lint_warnings.py`), a project import that fails on any script that doesn't load, and a few fast tests without a graphics card (`tools/ci_tests.sh`). The full test set (Forward+, pictures, crashes) still runs on the PC with `tools\run_tests.ps1`.
+
+## License
+
+Copyright (C) 2026 Sensoka (sensokasucks).
+
+This project is free software under the [GNU General Public License v3.0](LICENSE) (GPL-3.0). You can use it for free, including on monetized streams and other commercial use, change it, and share it. If you pass it on to anyone, changed or not, free or paid, you must give them the full source code under the same GPL-3.0 terms.
+
+Bundled third-party parts keep their own licenses, as noted next to them:
+
+- Redot / Godot engine (used to build the app): MIT
+- `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
+- `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
+- `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
+
+The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.
