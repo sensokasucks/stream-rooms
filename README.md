@@ -972,7 +972,8 @@ Included rooms:
   - **Light rays** (Room tab, both Lecture Halls): how visible the sunbeams are, 0-200%
     (0% = off).
   - The screen is 14.4 m x 8.1 m and stands right on the stage floor, with a matte white face.
-  - The ring chandelier dims with the house lights. Use **House lights** in the *Room* tab to set
+  - One ring chandelier hangs high in the middle of the ceiling, above every seat's view of the
+    screen. It dims with the house lights. Use **House lights** in the *Room* tab to set
     the level by hand (it scales the automatic dimming too).
   - 12 cameras: pit, front row, centre rows, rear diagonal, side seat under the balcony,
     three balcony seats, the gallery rail, a Reaction camera by the webcam monitor, the lectern
