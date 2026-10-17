@@ -13,7 +13,7 @@ extends Room
 const MIX_RATE: float = 22050.0
 
 @export_group("Light groups")
-@export var chandelier_energy: float = 4.0
+@export var chandelier_energy: float = 9.0
 @export var chandelier_range: float = 34.0
 @export var gallery_energy: float = 1.6
 @export var gallery_range: float = 12.0

@@ -264,7 +264,9 @@ if PANEL:
 PODIUMS = [(-6.65, 2.55), (-5.2, 2.45), (5.2, 2.45), (6.65, 2.55)]
 PRESENTER_W, PRESENTER_H = 1.3, 1.25         # the feed plane behind each podium (must match the room)
 PRESENTER_BACK, PRESENTER_LIFT = 0.45, 0.75  # plane: this far behind the podium, bottom this high
-CHAND = Vector((0.0, -4.0, 9.6))
+# big ring chandelier: near the middle of the ceiling and high, hung clear under the tie
+# beams (underside z 16.6) and above the gallery eye line (z 12.2) so it never hides the screen
+CHAND = Vector((0.0, -2.0, 14.6))
 
 
 def v2(x, y):
@@ -1128,15 +1130,6 @@ def build_chandelier():
         a = 2 * math.pi * k / 12
         sphere(mb, up + Vector((math.cos(a) * 0.8, math.sin(a) * 0.8, 0.08)), 0.06, "Bulb", subdiv=1)
         bar(mb, up + Vector((math.cos(a) * 0.8, math.sin(a) * 0.8, 0)), c + Vector((math.cos(a) * 2.3, math.sin(a) * 2.3, 0)), 0.02, "Brass")
-    # a second, smaller fixture hanging higher over the stage end (as in the reference)
-    hi = Vector((0.0, 1.0, 15.5))
-    cyl(mb, (hi.x, hi.y, (hi.z + CEIL_TOP) / 2), 0.04, CEIL_TOP - hi.z, "Brass", segs=8)
-    torus(mb, hi, 1.5, 0.05, "Brass", segs=40, rsegs=5)
-    for k in range(20):
-        a = 2 * math.pi * k / 20
-        sphere(mb, hi + Vector((math.cos(a) * 1.5, math.sin(a) * 1.5, 0.1)), 0.06, "Bulb", subdiv=1)
-        if k % 4 == 0:
-            bar(mb, hi + Vector((math.cos(a) * 1.5, math.sin(a) * 1.5, 0)), hi + Vector((0, 0, 1.1)), 0.02, "Brass")
     # small pendant lamps under the balcony (like the reference's hanging lanterns)
     # well back under the balcony, clear of the posts: one over each half-bay between the
     # wall pilasters on the diagonals and the back wall
@@ -1205,7 +1198,6 @@ def build_markers(mon_pos, beam_pos):
     for k in range(4):
         a = 2 * math.pi * k / 4 + 0.4
         empty("LAMP_Chandelier_%d" % (k + 1), CHAND + Vector((math.cos(a) * 1.6, math.sin(a) * 1.6, -0.4)), parent=lh)
-    empty("LAMP_Chandelier_High", Vector((0, 1.0, 14.9)), parent=lh)
     gline = offset_line(WALL, GAL_FRONT_D + 0.8)
     for k, (a, b) in enumerate(zip(gline[:-1], gline[1:])):
         p = (a + b) / 2
