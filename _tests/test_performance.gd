@@ -4,6 +4,7 @@ func _secs(t): await get_tree().create_timer(t).timeout
 func _shot(path):
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
+# Blender coordinates (Z up) -> Redot coordinates (Y up), for positions taken from the .blend
 func _b2g(v: Vector3) -> Vector3:
 	return Vector3(v.x, v.z, -v.y)
 var _t: float = 0.0

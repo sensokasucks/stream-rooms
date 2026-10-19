@@ -5,24 +5,28 @@ extends Control
 ## grey for "anyone"), taken seats as bigger dots in their chatter's platform colour, and
 ## each section's name. Click a section to pick it for editing.
 
+## The user clicked (or arrowed to) a section; the Seating tab then shows its platform ticks.
 signal section_picked(id: String)
+## The room gained or lost upstairs seats; the Seating tab shows or hides its floor buttons.
 signal floors_changed(has_top: bool)
 
 const BOTTOM: String = "bottom"
 const TOP: String = "top"
 
-const STAGE_H: float = 18.0
-const MARGIN: float = 10.0
+const STAGE_H: float = 18.0      # pixels: the "STAGE / SCREEN" bar at the top
+const MARGIN: float = 10.0       # pixels round the chart
+## One letter per platform group, written after a section's name so the plan doesn't rely on colour alone.
 const LETTER: Dictionary = {"kick": "K", "twitch": "T", "youtube": "Y", "other": "O"}
-const LEGEND_H: float = 16.0
+const LEGEND_H: float = 16.0     # pixels: the platform legend along the bottom
 
+## The picked section's id ("Q1".."Q4", "101", ...), "" when none.
 var selected: String = ""
 ## Which floor is drawn: BOTTOM (main seats, the lower tier, the stage) or TOP (balcony + gallery).
 var floor_shown: String = BOTTOM
 var _has_top: bool = false
-var _chart: Dictionary = {}
+var _chart: Dictionary = {}               # AudienceManager.get_chart(): spots, kinds, sections, taken, stage
 var _dots: Array[Vector2] = []           # slot -> position on the chart (NAN = not drawn)
-var _redraw_in: float = -1.0
+var _redraw_in: float = -1.0              # seconds until a delayed redraw (< 0 = none waiting)
 
 
 func _ready() -> void:
@@ -51,6 +55,7 @@ func _soon() -> void:
 		_redraw_in = 0.3       # seats fill in bursts: redraw once they settle
 
 
+## Re-reads the chart from AudienceManager, works out whether there is a top floor, and redraws.
 func _refresh() -> void:
 	_chart = AudienceManager.get_chart()
 	var had := _has_top
@@ -72,6 +77,7 @@ func has_top_floor() -> bool:
 	return _has_top
 
 
+## Draw BOTTOM or TOP (the Seating tab's floor buttons).
 func show_floor(which: String) -> void:
 	floor_shown = which
 	_refresh()
@@ -85,6 +91,7 @@ static func floor_of(id: String) -> String:
 	return BOTTOM
 
 
+## Is seat slot i drawn on the floor shown? Presenter podiums always count as downstairs.
 func _on_floor(i: int, sections: PackedStringArray, kinds: PackedByteArray) -> bool:
 	if i < kinds.size() and kinds[i] == AudienceManager.KIND_PRESENTER:
 		return floor_shown == BOTTOM
@@ -92,6 +99,7 @@ func _on_floor(i: int, sections: PackedStringArray, kinds: PackedByteArray) -> b
 
 
 ## Seats projected top-down, the stage at the top, the audience's left on the left.
+## Fills _dots (pixel positions per seat slot) scaled to fit the seats of the floor shown.
 func _layout() -> void:
 	_dots.clear()
 	var spots: Array = _chart.get("spots", [])
@@ -132,6 +140,9 @@ func _layout() -> void:
 		_dots.append(offset + (raw[i] - lo) * k if _on_floor(i, secs, kinds) else Vector2(NAN, NAN))
 
 
+## Draws the stage bar, every seat dot (a taken seat is a slightly bigger dot in the chatter's
+## platform colour, the picked section's seats get a white ring, podiums are small rectangles),
+## the section names with their platform letters, and the legend.
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.02, 0.03, 0.9))
 	if has_focus():
@@ -220,6 +231,8 @@ func _section_colour(id: String, plan_on: bool) -> Color:
 	return c.darkened(0.35)
 
 
+## Arrow keys step through the sections; a left click picks the section of the nearest seat
+## (within 18 px).
 func _gui_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_right") or event.is_action_pressed("ui_down"):
 		_step_section(1)

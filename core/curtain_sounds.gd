@@ -2,12 +2,17 @@ class_name CurtainSounds
 extends RefCounted
 ## Sounds for the stage curtain, made in code (no audio files): a cloth swish, a snare drum
 ## roll that swells, and a cymbal crash with a bass hit. Built once and cached.
+## Used by StageCurtain (stage_curtain.gd): swish when the curtain moves, drum_roll for the
+## Shift+B reveal. The seeds are fixed, so a sound is the same every time.
 
+## Sample rate of the generated sounds (Hz).
 const RATE: int = 44100
 
+## Finished sounds by name + length ("swish1.20", "roll3.00" ...), so each is only built once.
 static var _cache: Dictionary = {}
 
 
+## A cloth swish lasting `seconds`: filtered noise that is loudest in the middle of the move.
 static func swish(seconds: float) -> AudioStreamWAV:
 	var key := "swish%.2f" % seconds
 	if _cache.has(key):
@@ -24,6 +29,7 @@ static func swish(seconds: float) -> AudioStreamWAV:
 		# the sweep: brighter in the middle of the move, soft at both ends
 		var env := sin(PI * t)
 		env = env * env * (0.75 + 0.25 * sin(t * 37.0) * sin(t * 13.0))
+		# two simple low-pass filters; the louder part of the sweep is also brighter
 		var cut := 0.04 + 0.22 * env
 		var white := rng.randf_range(-1.0, 1.0)
 		lp += (white - lp) * cut
@@ -50,6 +56,7 @@ static func drum_roll(seconds: float) -> AudioStreamWAV:
 	var t := 0.0
 	var stroke := 0
 	while t < seconds:
+		# strokes per second speed up and get louder towards the end; every other stroke is softer
 		var rate := lerpf(14.0, 22.0, t / seconds)
 		var gain := lerpf(0.18, 0.85, pow(t / seconds, 1.6)) * (0.85 if stroke % 2 else 1.0)
 		var start := int(t * RATE)
@@ -78,6 +85,7 @@ static func drum_roll(seconds: float) -> AudioStreamWAV:
 	return s
 
 
+## Packs float samples into a mono 16-bit WAV, normalised so the loudest sample is at 90%.
 static func _to_wav(samples: PackedFloat32Array) -> AudioStreamWAV:
 	var peak := 0.0001
 	for v in samples:

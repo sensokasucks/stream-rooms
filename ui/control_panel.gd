@@ -1,7 +1,30 @@
 extends CanvasLayer
 ## Control panel (Tab to hide/show). Thin UI: it shows AppState / EventBus data
 ## and forwards user input to AppState setters or EventBus requests. No logic.
+## It is the ControlPanel node in core/main.tscn and is built entirely in code (no .tscn of its own).
+##
+## Map of this file (the "# ──" banners mark the sections):
+##   _ready, _input, _process   wiring to EventBus; F6 keyboard mode, Tab hide / show; small timers
+##   Own window (F9)            moving the panel into its own OS window and back (_apply_window_mode)
+##   Build                      _build() makes the panel, then one builder per tab, in tab order:
+##                              _build_source_tab, _build_room_tab, _build_react_tab, _build_audio_tab
+##                              (the Sound tab), _build_chat_tab, _build_audience_tab, _build_seating_tab,
+##                              _build_games_tab, _build_presenters_tab, _build_together_tab.
+##                              _option and _text_setting sit between the Presenters and Together tabs.
+##   EventBus handlers          _on_*(): keep labels, menus and controls in step with the rest of the app
+##   NDI / Spout                source menus and status lines (big screen and podiums)
+##   What's going on            the status strip above the tabs, the message line, the video status
+##   Widget helpers             _tab, _fold, _tip, _ask, _hint, _heading, _button, _check, _color, _slider
+##   Accessibility helpers      panel size (Ctrl+= / Ctrl+-), focus outline, "?" help, text-size warnings
+##
+## How controls stay in sync with settings: each bound helper (_slider, _check, _option, _color,
+## _text_setting) keeps its control in _sliders / _checks / _options / _colors / _texts under the
+## setting key. The control writes with AppState.set_setting; _on_setting_changed moves it when the
+## setting changes elsewhere (a hotkey, the Together host, a test). The same dictionaries are what
+## _refresh_locks greys out for a guest. Every control needs a tooltip_text: _add_help_buttons turns
+## it into a "?" button, and test_panel_tidy fails on a control without one.
 
+## The panel's width in pixels at 100% Panel size (it grows a little if the tab names need more).
 @export var panel_width: float = 580.0
 
 var _panel: PanelContainer
@@ -103,6 +126,8 @@ var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's 
 var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 
 
+## Builds the whole panel, then connects the EventBus signals it shows and fills the status
+## lines once. NDI / Spout availability is read first because the tab builders use it.
 func _ready() -> void:
 	_ndi_available = NdiReceiver.is_available()
 	_spout_available = SpoutReceiver.is_available()
@@ -142,6 +167,8 @@ func _ready() -> void:
 		_apply_window_mode.call_deferred()
 
 
+## Keys that work from anywhere in the main window: F6 (keyboard mode), F9 (own window), Tab
+## (hide / show the panel) and Esc (leave keyboard mode). In its own window, _on_window_input does this.
 func _input(event: InputEvent) -> void:
 	# on the button's release, not its press: losing focus mid-press cancels a button's click
 	if event is InputEventMouseButton and not (event as InputEventMouseButton).pressed:
@@ -187,6 +214,7 @@ func has_keyboard_focus() -> bool:
 	return f != null and _panel.is_ancestor_of(f)
 
 
+## Esc in keyboard mode: drop the focus so the hotkeys work again.
 func _release_panel_focus() -> void:
 	var vp: Viewport = _window if _window else get_viewport()
 	var f := vp.gui_get_focus_owner()
@@ -204,6 +232,8 @@ func _drop_mouse_focus(vp: Viewport) -> void:
 		f.release_focus()
 
 
+## Small timers only: the video status clock (1 s), the chat text-size check (1 s), a Panel size
+## change waiting for the slider to settle (0.3 s), and saving the panel window's position (2 s).
 func _process(delta: float) -> void:
 	if _video_state == "downloading" or _video_state == "converting":
 		_video_tick -= delta
@@ -235,10 +265,14 @@ func toggle_window() -> void:
 	_apply_window_mode()
 
 
+## Is the panel in its own OS window (for tests)?
 func is_in_window() -> bool:
 	return _window != null
 
 
+## Puts the panel where the "panel_window" setting says. A real OS window needs the root's
+## gui_embed_subwindows off; it is turned back on (deferred) once the window is gone. The window
+## opens where it was last ("panel_window_pos") and is opaque, while the docked panel is see-through.
 func _apply_window_mode() -> void:
 	var want := bool(AppState.get_setting("panel_window"))
 	if want and _window == null:
@@ -307,6 +341,8 @@ func _fit_height() -> void:
 		_panel.size.y = 0.0       # shrink to fit the new minimum
 
 
+## Remembers the panel window's position in "panel_window_pos" ("x,y"), only when it moved
+## (every setting change also schedules a save of settings.cfg).
 func _save_window_pos() -> void:
 	if _window == null:
 		return
@@ -345,6 +381,9 @@ func _on_window_input(event: InputEvent) -> void:
 
 
 # ── Build ────────────────────────────────────────────────────
+## Builds the whole panel once: the status strip, the tabs (each inside a ScrollContainer), the
+## hotkey line, the bottom row (own window, Panel size), the message line, then the "?" help buttons
+## and the two file dialogs (video file, podium picture).
 func _build() -> void:
 	_panel = PanelContainer.new()
 	_panel.position = Vector2(16, 16)
@@ -421,6 +460,8 @@ func _build() -> void:
 	add_child(_pic_dialog)
 
 
+## Source tab: "Big screen shows" picks which source's section is visible (one VBox per source mode
+## in _source_sections: capture, ndi, spout, file, peer). Returns the tab's page.
 func _build_source_tab() -> Control:
 	var v := _tab("Source")
 	# one source at a time: pick what the big screen shows, see only that source's controls
@@ -621,6 +662,9 @@ func _show_source_section(mode: String) -> void:
 	_fit_height.call_deferred()
 
 
+## Room tab: room picker, house lights, curtain, camera buttons (filled by _on_camera_presets) and
+## field of view. Advanced: curtain options, screen light / glow, this room's own controls (_room_box,
+## filled by _on_room_controls), see-through cameras and performance.
 func _build_room_tab() -> Control:
 	var v := _tab("Room")
 	v.add_child(_heading("Room"))
@@ -697,6 +741,8 @@ func _build_performance_controls(v: VBoxContainer) -> void:
 	v.add_child(vs)
 
 
+## The curtain buttons and its sign (Room tab). The buttons are kept in _curtain_buttons so
+## _refresh_locks can grey them out for a guest.
 func _build_curtain_controls(v: VBoxContainer) -> void:
 	v.add_child(_heading("Stage curtain (B, Shift+B = reveal)"))
 	var row := HFlowContainer.new()
@@ -731,11 +777,14 @@ func _build_curtain_options(v: VBoxContainer) -> void:
 	v.add_child(_tip(_slider("curtain_sound", "Curtain sounds", 0.0, 1.0, 0.01, "%d%%", 100.0), "How loud the curtain's swoosh and the reveal's drum roll are. 0% = silent."))
 
 
+## "open" / "closed" next to the curtain buttons (EventBus.curtain_changed).
 func _refresh_curtain_label() -> void:
 	if _curtain_label:
 		_curtain_label.text = "closed" if AppState.is_curtain_closed() else "open"
 
 
+## React tab: pause to react, focus view, clean feed, what happens while paused, and auto-duck
+## with its mic meter (fed by _on_mic_level / _on_ducking).
 func _build_react_tab() -> Control:
 	var v := _tab("React")
 	var row := HBoxContainer.new()
@@ -782,6 +831,7 @@ func _build_react_tab() -> Control:
 	return v
 
 
+## Sound tab: video and ambience volume. Advanced: room acoustics, speaker sound and lip-sync delays.
 func _build_audio_tab() -> Control:
 	var v := _tab("Sound")
 	v.add_child(_tip(_slider("volume", "Video volume", 0.0, 1.0, 0.01, "%d%%", 100.0), "How loud the big screen's sound is (video, browser tab, NDI or Spout)."))
@@ -800,6 +850,8 @@ func _build_audio_tab() -> Control:
 	return v
 
 
+## Chat tab: the Stream Core connection (autoload/chat_feed.gd), the four chat windows in and around
+## the room (_chat_window for each) and the chat box on the picture (ui/chat_hud.gd).
 func _build_chat_tab() -> Control:
 	var v := _tab("Chat")
 	v.add_child(_heading("Chat (Fridge Stream Core)"))
@@ -979,6 +1031,8 @@ func _platform_chips(key: String) -> HBoxContainer:
 	return h
 
 
+## The "Twitch mixed with other platforms" warning for a window's platform setting ("<window>_chat").
+## Twitch asks for its chat to be kept apart from other platforms' chat.
 func _mix_warning(key: String) -> Label:
 	var warn := _hint("⚠ Twitch chat mixed with other platforms in this window.")
 	warn.add_theme_color_override("font_color", Color(1.0, 0.75, 0.3))
@@ -987,11 +1041,14 @@ func _mix_warning(key: String) -> Label:
 	return warn
 
 
+## Shows the warning while the window has Twitch and at least one other platform ticked.
 func _refresh_mix_warning(key: String) -> void:
 	var have := String(AppState.get_setting(key)).split(",", false)
 	(_mix_warnings[key] as Label).visible = have.has("twitch") and have.size() > 1
 
 
+## Audience tab: show the audience, which messages get bubbles, name tags and pictures, hiding
+## someone's picture. Advanced: timeouts, spacing, bubble looks, colours and the filler crowd.
 func _build_audience_tab() -> Control:
 	var v := _tab("Audience")
 	v.add_child(_heading("Virtual audience"))
@@ -1180,6 +1237,8 @@ func _on_hide_pick(i: int) -> void:
 	EventBus.status_message.emit("Picture hidden: %s." % String(entry), false)
 
 
+## Seating tab: seating by platform, presets, the seating chart (ui/seating_chart.gd) with its floor
+## buttons, and the platform ticks for the picked section. The plan itself lives in AudienceManager.
 func _build_seating_tab() -> Control:
 	var v := _tab("Seating")
 	v.add_child(_heading("Seating by platform"))
@@ -1268,6 +1327,8 @@ func _apply_seating_preset(preset: String) -> void:
 		"Replace it", func() -> void: AudienceManager.apply_preset(preset))
 
 
+## The chart picked a section: show its name and seat count, and set its platform ticks (without
+## writing them back).
 func _on_section_picked(id: String) -> void:
 	var label := id
 	for sec in AudienceManager.get_sections():
@@ -1281,6 +1342,7 @@ func _on_section_picked(id: String) -> void:
 		c.set_pressed_no_signal(allowed.has(g))
 
 
+## A platform tick changed: save the picked section's platforms to the seating plan.
 func _save_section() -> void:
 	if _chart == null or _chart.selected == "":
 		return
@@ -1310,6 +1372,8 @@ func _refresh_capacity() -> void:
 		_on_section_picked(_chart.selected)
 
 
+## Games tab: chat reactions (with a test button), the flashing-light safety settings, and the chat
+## games boards in the corner (ui/board_hud.gd).
 func _build_games_tab() -> Control:
 	var v := _tab("Games")
 	v.add_child(_heading("Chat reactions"))
@@ -1372,6 +1436,8 @@ const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green
 	["peer", "Someone's avatar (Together)"]]
 
 
+## Presenters tab: who is on set, and one settings block per presenter (_build_presenter_detail);
+## the "Edit presenter" buttons show one block at a time.
 func _build_presenters_tab() -> Control:
 	var v := _tab("Presenters")
 	_pres_count_label = Label.new()
@@ -1421,6 +1487,9 @@ func _build_presenters_tab() -> Control:
 	return v
 
 
+## Presenter n's settings (n = 1..PRESENTER_COUNT); keys come from AppState.presenter_key(n, field).
+## The rows that only matter for some sources are kept in _pres_rows[n - 1] and shown or hidden by
+## _refresh_presenter_rows.
 func _build_presenter_detail(n: int) -> VBoxContainer:
 	var k := func(f: String) -> String: return AppState.presenter_key(n, f)
 	var d := VBoxContainer.new()
@@ -1569,6 +1638,8 @@ func _fill_camera_menu(n: int, cameras: Array) -> void:
 	_fill_camera_items(_pres_camera_menus[n - 1], String(AppState.get_setting(AppState.presenter_key(n, "camera"))), cameras)
 
 
+## Fills a camera dropdown. cameras: [{id, label}, ...] from the sender page; metadata is the id
+## ("" = the default camera). A saved camera that isn't connected stays listed so the choice isn't lost.
 func _fill_camera_items(menu: OptionButton, want: String, cameras: Array) -> void:
 	menu.clear()
 	menu.add_item("Default camera")
@@ -1842,6 +1913,8 @@ func _on_net_confirm_needed(side: String, peer_id: int, who: String) -> void:
 	d.popup_centered()
 
 
+## EventBus.net_confirm_closed: close that popup. It is marked "done" first, because closing it
+## fires "canceled", which would otherwise answer No.
 func _on_net_confirm_closed(peer_id: int) -> void:
 	if _net_dialogs.has(peer_id):
 		var d: ConfirmationDialog = _net_dialogs[peer_id]
@@ -1874,6 +1947,8 @@ func _peer_menu(key: String, label: String) -> HBoxContainer:
 	return h
 
 
+## Refills a "Whose avatar" dropdown from NetSession's peer list. Skipped while its list is open,
+## so the items don't change under the mouse.
 func _fill_peer_menu(key: String) -> void:
 	var menu: OptionButton = _peer_menus[key]
 	if menu.get_popup().visible:
@@ -1897,6 +1972,7 @@ func _fill_peer_menu(key: String) -> void:
 		menu.select(menu.item_count - 1)
 
 
+## Together tab: the camera row only for a camera avatar, the address row only for a web page.
 func _refresh_avatar_rows() -> void:
 	if _avatar_rows.is_empty():
 		return
@@ -1905,6 +1981,9 @@ func _refresh_avatar_rows() -> void:
 	(_avatar_rows["url"] as Control).visible = src == "web"
 
 
+## EventBus.net_state_changed (format at that signal): status line, which buttons work, and the
+## list of people (the host also gets Co-host and Remove per guest). The address is never shown,
+## only dots: the panel can be on stream.
 func _on_net_state(info: Dictionary) -> void:
 	_refresh_strip()
 	if _net_status == null:
@@ -1969,6 +2048,8 @@ func _refresh_locks() -> void:
 		_lock(b, "curtain")
 
 
+## Greys out one control while NetSession.is_locked(what). Its own tooltip is kept in the "tip" meta
+## and comes back when the lock goes.
 func _lock(c: Control, what: String) -> void:
 	var locked := NetSession.is_locked(what)
 	if not c.has_meta("tip"):
@@ -1982,6 +2063,8 @@ func _lock(c: Control, what: String) -> void:
 	c.tooltip_text = "The host controls this while you're a guest." if locked else String(c.get_meta("tip"))
 
 # ── EventBus handlers ────────────────────────────────────────
+## EventBus.chat_status_changed ({connected, url, error}): the Chat tab's status, the strip, and a
+## message when the connection to Stream Core is lost or comes back.
 func _on_chat_status(info: Dictionary) -> void:
 	var now_connected := bool(info.get("connected", false))
 	if _core_was_connected and not now_connected and bool(AppState.get_setting("chat_enabled")):
@@ -2001,6 +2084,8 @@ func _on_chat_status(info: Dictionary) -> void:
 		_chat_label.text = "Waiting for Stream Core%s (retrying)." % ((": " + err) if err != "" else "")
 
 
+## From the sender page's status: refill the camera dropdowns when its camera list changed (compared
+## as JSON, so not on every status) and write each presenter's feed line ("Live: ...", "Waiting ...").
 func _update_presenter_feeds(info: Dictionary) -> void:
 	var connected := bool(info.get("connected", false))
 	var cams: Array = info.get("cameras", []) if info.get("cameras") is Array else []
@@ -2041,6 +2126,8 @@ func _update_presenter_feeds(info: Dictionary) -> void:
 
 
 # ── NDI ──────────────────────────────────────────────────────
+## EventBus.ndi_sources_changed: refill the Source tab's and the podiums' NDI dropdowns (not while
+## one is open) and their status lines.
 func _on_ndi_sources(names: PackedStringArray, available: bool) -> void:
 	_ndi_names = names
 	_ndi_available = available
@@ -2080,6 +2167,7 @@ func _fill_name_menu(menu: OptionButton, names: PackedStringArray, want: String,
 		menu.select(menu.item_count - 1)
 
 
+## The Source tab's NDI status line: plugin missing, showing, searching, or how many were found.
 func _refresh_ndi_label() -> void:
 	if _ndi_label == null:
 		return
@@ -2094,6 +2182,7 @@ func _refresh_ndi_label() -> void:
 		_ndi_label.text = "%d NDI source(s) found. Pick one and click Show." % _ndi_names.size()
 
 
+## Presenter n's feed line when it shows an NDI source.
 func _ndi_presenter_text(n: int) -> String:
 	var want := String(AppState.get_setting(AppState.presenter_key(n, "ndi")))
 	if not _ndi_available:
@@ -2106,6 +2195,7 @@ func _ndi_presenter_text(n: int) -> String:
 
 
 # ── Spout ────────────────────────────────────────────────────
+## EventBus.spout_senders_changed: like _on_ndi_sources, for Spout.
 func _on_spout_senders(names: PackedStringArray, available: bool) -> void:
 	_spout_names = names
 	_spout_available = available
@@ -2121,6 +2211,7 @@ func _on_spout_senders(names: PackedStringArray, available: bool) -> void:
 	_refresh_spout_label()
 
 
+## The Source tab's Spout status line.
 func _refresh_spout_label() -> void:
 	if _spout_label == null:
 		return
@@ -2135,6 +2226,7 @@ func _refresh_spout_label() -> void:
 		_spout_label.text = "%d Spout sender(s) running. Pick one and click Show." % _spout_names.size()
 
 
+## Presenter n's feed line when it shows a Spout sender.
 func _spout_presenter_text(n: int) -> String:
 	var want := String(AppState.get_setting(AppState.presenter_key(n, "spout")))
 	if not _spout_available:
@@ -2146,11 +2238,13 @@ func _spout_presenter_text(n: int) -> String:
 	return "Live: Spout %s" % want
 
 
+## EventBus.room_presenters_changed: how many podiums this room has.
 func _on_room_presenters(count: int) -> void:
 	_pres_count_label.text = "This room has no podiums." if count == 0 else \
 		"%d podiums in this room. Tick who's on set, then pick what each one shows." % count
 
 
+## EventBus.audience_count_changed: "12 / 40 seats taken" on the Audience tab.
 func _on_audience_count(seated: int, capacity: int) -> void:
 	if capacity <= 0:
 		_seat_label.text = "No seats in this room."
@@ -2158,6 +2252,8 @@ func _on_audience_count(seated: int, capacity: int) -> void:
 		_seat_label.text = "%d / %d seats taken" % [seated, capacity]
 
 
+## EventBus.capture_status_changed (the sender page, via CaptureServer; keys at that signal, plus
+## label, capturing, cameras and presenters): the Source tab's line, the presenters' feeds, the strip.
 func _on_capture_status(info: Dictionary) -> void:
 	_capture_url = String(info.get("url", _capture_url))
 	_capture_info = info
@@ -2179,6 +2275,7 @@ func _on_capture_status(info: Dictionary) -> void:
 	_capture_label.text = text
 
 
+## EventBus.camera_presets_changed: one button per camera of this room (keys 1-9, 0 = the 10th).
 func _on_camera_presets(names: PackedStringArray) -> void:
 	for c in _camera_box.get_children():
 		c.queue_free()
@@ -2188,12 +2285,16 @@ func _on_camera_presets(names: PackedStringArray) -> void:
 			EventBus.camera_preset_requested.emit(idx)), "Switch to this camera (key %d)." % ((i + 1) % 10)))
 
 
+## EventBus.room_changed: point the room dropdown at the room now loaded (PgUp / PgDn, the host).
 func _on_room_changed(room_id: String) -> void:
 	for i in _room_select.item_count:
 		if String(_room_select.get_item_metadata(i)) == room_id:
 			_room_select.select(i)
 
 
+## EventBus.room_controls_changed: rebuild this room's own controls (Room tab > Advanced). The spec
+## format is at Room.get_controls() in rooms/room.gd (RoomHost adds the screen's). The old room's keys
+## are dropped from the control dictionaries first, so nothing writes to freed controls.
 func _on_room_controls(controls: Array) -> void:
 	for key in _room_keys:
 		_sliders.erase(key)
@@ -2224,14 +2325,17 @@ func _on_room_controls(controls: Array) -> void:
 	_add_help_buttons(_room_box)
 
 
+## EventBus.react_pause_changed: the React button's text.
 func _on_react_pause_changed(paused: bool) -> void:
 	_react_btn.text = "Resume (Space)" if paused else "Pause to react (Space)"
 
 
+## EventBus.mic_level_changed: the mic meter, in dB (the bar shows -60..0).
 func _on_mic_level(db: float) -> void:
 	_mic_bar.value = db
 
 
+## EventBus.ducking_changed: "ducking" next to the meter while the video is turned down.
 func _on_ducking(ducking: bool) -> void:
 	_duck_label.text = "ducking" if ducking else ""
 	if not ducking:
@@ -2255,6 +2359,9 @@ func _update_pw_hint() -> void:
 	_net_pw_hint.text = "This password is short. To host, pick one with at least %d characters (guests just type the same one)." % NetSession.MIN_PASSWORD
 
 
+## EventBus.setting_changed: a setting changed somewhere (this panel, a hotkey, the Together host,
+## a test). Moves the control bound to it (without writing it back) and refreshes the notes, menus
+## and rows that depend on it. A new control made with the helpers needs nothing here.
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if key == "together_password":
 		_update_pw_hint()
@@ -2312,8 +2419,9 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_refresh_presenter_rows(int(key.get_slice("_", 1)))
 
 
-## Only the rows that matter for what a presenter shows: the camera picker for a camera, the NDI
-## picker for NDI, the address for a web page, and the chroma key controls for a picture.
+## Only the rows that matter for what a presenter shows: the camera picker for a camera, the NDI /
+## Spout picker for NDI / Spout, the person for an avatar, the address for a web page, the chroma
+## key controls for a picture, and the podium picture's fold only once a picture is set.
 func _refresh_presenter_rows(n: int) -> void:
 	if n < 1 or n > _pres_rows.size():
 		return
@@ -2340,6 +2448,8 @@ func _refresh_presenter_rows(n: int) -> void:
 		((rows["picture"] as Array)[i] as Control).visible = picture if i == 0 else keyed
 
 
+## Shows the panel unless Tab hid it; docked, clean feed (F10) hides it too. The focus is dropped
+## when it hides, so the hotkeys work.
 func _refresh_visible() -> void:
 	if _window:
 		# its own window isn't in the stream picture, so clean feed doesn't hide it
@@ -2351,7 +2461,7 @@ func _refresh_visible() -> void:
 		get_viewport().gui_release_focus()
 
 
-# ── Widget helpers ───────────────────────────────────────────
+# (the widget helpers are further down, from _tab())
 # ── What's going on: status strip, message line, big-screen line, video status ─────
 ## Three coloured dots above the tabs: Stream Core, the big screen, Together. Each one jumps to its tab.
 func _build_status_strip() -> HBoxContainer:
@@ -2374,18 +2484,21 @@ func _build_status_strip() -> HBoxContainer:
 	return h
 
 
+## Opens the tab whose page is named tab_name (the page names are the tab titles).
 func _go_to_tab(tab_name: String) -> void:
 	var page := _tabs.get_node_or_null(tab_name)
 	if page:
 		_tabs.current_tab = page.get_index()
 
 
+## Status strip colours: green = working, amber = needs a look, red = a problem, grey = off.
 const STRIP_GREEN := Color(0.45, 0.9, 0.5)
 const STRIP_AMBER := Color(1.0, 0.75, 0.3)
 const STRIP_RED := Color(1.0, 0.45, 0.4)
 const STRIP_GREY := Color(1, 1, 1, 0.5)
 
 
+## One dot of the status strip: "● text" in that colour (hover / focus keep the colour too).
 func _set_strip(key: String, text: String, color: Color) -> void:
 	var b: Button = _strip.get(key)
 	if b == null:
@@ -2395,6 +2508,8 @@ func _set_strip(key: String, text: String, color: Color) -> void:
 		b.add_theme_color_override(st, color)
 
 
+## Works out all three dots from ChatFeed, the source mode / sender page status and NetSession.
+## Called whenever one of those changes (and on every status message).
 func _refresh_strip() -> void:
 	if _strip.is_empty():
 		return
@@ -2466,6 +2581,8 @@ func _build_message_line(outer: VBoxContainer) -> void:
 	_msg_fold.add_child(on_pic)
 
 
+## EventBus.status_message: newest first, MESSAGE_HISTORY kept. The footer shows the first line of
+## the latest; the Messages fold lists them all. (Overlay shows it on the picture, when allowed.)
 func _on_status_message(text: String, is_error: bool) -> void:
 	var t := Time.get_time_dict_from_system()
 	_messages.push_front({"time": "%02d:%02d" % [int(t["hour"]), int(t["minute"])], "text": text, "error": is_error})
@@ -2507,6 +2624,8 @@ func _refresh_now() -> void:
 	_now_label.text = "On the big screen now: " + what
 
 
+## EventBus.video_job_changed (core/video_loader.gd): starts the clock when a download / convert
+## begins, and offers the tool's log under Details only after a failure.
 func _on_video_job(state: String, message: String, details: String) -> void:
 	if state == "downloading" or state == "converting":
 		if _video_state != "downloading" and _video_state != "converting":
@@ -2524,6 +2643,8 @@ func _on_video_job(state: String, message: String, details: String) -> void:
 	_refresh_now()
 
 
+## The File section's status line: an elapsed clock while busy (updated every second from _process),
+## the result message, and Try again after a failure.
 func _show_video_status() -> void:
 	if _video_status == null:
 		return
@@ -2549,6 +2670,9 @@ func _show_video_status() -> void:
 	_video_retry.visible = _video_state == "failed" and _last_video_input != ""
 
 
+# ── Widget helpers ───────────────────────────────────────────
+## A tab page. Its name is the tab's title: _build gives it to the page's ScrollContainer, which is
+## what _go_to_tab and _check_text_sizes look up by name.
 func _tab(title: String) -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.name = title
@@ -2629,6 +2753,7 @@ func _ask(title: String, text: String, ok_text: String, action: Callable) -> voi
 	d.popup_centered()
 
 
+## A small, wrapped, dimmed line of explanation.
 func _hint(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -2639,6 +2764,7 @@ func _hint(text: String) -> Label:
 	return l
 
 
+## A section heading inside a tab (orange).
 func _heading(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
@@ -2647,6 +2773,7 @@ func _heading(text: String) -> Label:
 	return l
 
 
+## A button that calls cb when pressed. Give it a tooltip (_tip).
 func _button(text: String, cb: Callable) -> Button:
 	var b := Button.new()
 	b.text = text
@@ -2655,6 +2782,7 @@ func _button(text: String, cb: Callable) -> Button:
 	return b
 
 
+## A tick box bound to a bool setting.
 func _check(key: String, text: String) -> CheckBox:
 	var c := CheckBox.new()
 	c.text = text
@@ -2665,6 +2793,7 @@ func _check(key: String, text: String) -> CheckBox:
 	return c
 
 
+## A labelled colour picker bound to a Color setting (no alpha).
 func _color(key: String, text: String) -> HBoxContainer:
 	var h := HBoxContainer.new()
 	var l := Label.new()
@@ -2682,7 +2811,6 @@ func _color(key: String, text: String) -> HBoxContainer:
 	return h
 
 
-## scale: display multiplier (e.g. 100 to show 0..1 as 0..100%).
 ## A number typed into a slider's value box: the first number in it, in the units shown
 ## (e.g. "75" for 75%), clamped to the slider's range.
 func _apply_typed(s: HSlider, num: LineEdit, fmt: String, t: String, zero_text: String = "") -> void:
@@ -2701,7 +2829,11 @@ static func _slider_text(fmt: String, x: float, zero_text: String) -> String:
 	return fmt % x
 
 
+## A labelled slider bound to a float or int setting, with a box showing (and taking) the value.
+## lo / hi / step are in the setting's own units; fmt formats the shown value (e.g. "%d%%").
+## display_scale: display multiplier (e.g. 100 to show 0..1 as 0..100%).
 ## zero_text: shown in the value box instead of 0 (e.g. "No limit"), where 0 means "none set".
+## An int setting is written back as an int (a float would be ignored on the next load).
 func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt: String, display_scale: float = 1.0, zero_text: String = "") -> HBoxContainer:
 	var h := HBoxContainer.new()
 	var l := Label.new()
@@ -2747,6 +2879,7 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 
 
 # ── Accessibility helpers ────────────────────────────────────
+## The "panel_scale" setting, clamped to 0.75..2 (1 = 100%).
 func _panel_scale() -> float:
 	return clampf(float(AppState.get_setting("panel_scale")), 0.75, 2.0)
 
@@ -2770,6 +2903,7 @@ func _apply_scale() -> void:
 	_fit_height()
 
 
+## Ctrl+= / Ctrl+- make the panel 10% bigger / smaller.
 func _unhandled_key_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	if key == null or not key.pressed or not key.ctrl_pressed:
@@ -2853,10 +2987,12 @@ func _add_help_buttons(root: Node) -> void:
 		row.set_meta("help_label", hint)
 
 
-## Chat tab: warn when a window's text would be too small to read on a 1080p stream from the
-## camera in use (checked once a second while the panel shows the Chat tab).
+## The smallest text height, in pixels of a 1080p stream, that counts as readable.
 const MIN_STREAM_TEXT_PX: float = 16.0
 
+## Chat tab: warn when a window's text would be too small to read on a 1080p stream from the
+## camera in use (checked once a second while the panel shows the Chat tab). "Make readable"
+## gets the smallest Text size that would do, rounded up to 5%.
 func _check_text_sizes() -> void:
 	if _size_warnings.is_empty() or not _panel.is_visible_in_tree():
 		return

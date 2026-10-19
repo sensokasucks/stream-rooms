@@ -6,7 +6,12 @@
 
 import os, re, shutil, sys, glob
 W = sys.argv[1]
+# Wiki page name from a title: runs of anything but letters and digits become one "-".
 def page_name(title): return re.sub(r'[^A-Za-z0-9]+', '-', title).strip('-')
+# Writes one wiki into <work folder>/built/<name> (emptied first). pages: (page name, source .md
+# relative to root, image folders to copy...). Links to another listed page become that page's
+# name, links to pictures point at images/, and any other relative link goes to the file on
+# GitHub (github.com/sensokasucks/<repo>/blob/HEAD/...). Also writes _Sidebar.md listing every page.
 def build(name, repo, root, pages, sidebar_title):
     out = os.path.join(W, "built", name); shutil.rmtree(out, ignore_errors=True); os.makedirs(out)
     srcmap = {os.path.normpath(src): page for page, src, *_ in pages}
@@ -22,6 +27,7 @@ def build(name, repo, root, pages, sidebar_title):
             if path and re.search(r'\.(png|jpg|jpeg|gif|webp)$', path, re.I): return f'[{label}](images/{os.path.basename(path)})'
             return f'[{label}](https://github.com/sensokasucks/{repo}/blob/HEAD/{norm.replace(os.sep, "/") if norm else ""}{"#"+anchor if anchor else ""})'
         text = re.sub(r'\[([^\]]*)\]\(([^)\s]+)\)', fix, text)
+        # a picture the step above sent to GitHub (not in a copied folder) still shows from images/
         text = re.sub(r'!\[([^\]]*)\]\(https://github\.com/[^)]*/blob/HEAD/[^)]*?/([^/)]+\.(?:png|jpg|jpeg|gif|webp))\)', r'![\1](images/\2)', text, flags=re.I)
         open(os.path.join(out, page + '.md'), 'w', encoding='utf-8', newline='\n').write(text)
         for d in imgs:
@@ -30,6 +36,7 @@ def build(name, repo, root, pages, sidebar_title):
                 if os.path.isfile(f): shutil.copy(f, os.path.join(out, 'images', os.path.basename(f)))
     side = f"**{sidebar_title}**\n\n" + "\n".join(f"- [[{p.replace('-', ' ')}|{p}]]" for p, *_ in pages)
     open(os.path.join(out, '_Sidebar.md'), 'w', encoding='utf-8', newline='\n').write(side + "\n")
+# Where the two repositories live on the owner's PC: change these on another machine.
 sr = "C:/Users/jonza/Documents/RedotHomeTheater/stream_rooms"
 build("stream-rooms.wiki", "stream-rooms", sr, [("Home", "README.md"), ("Manual", "docs/manual/MANUAL.md", "docs/manual/images"),
     ("Room-Building-Guide", "docs/manual/ROOM_GUIDE.md"), ("Multiplayer-Notes", "docs/MULTIPLAYER.md"), ("Notes-for-Claude-Code", "CLAUDE.md")], "Stream Rooms")
@@ -37,6 +44,7 @@ fl = "G:/AI/claude/FlaVR_leftovers"
 pages = [("Home", "README.md"), ("Stream-Core-Manual", "fridge-stream-core/docs/manual/MANUAL.md", "fridge-stream-core/docs/manual/images"),
          ("Release-Notes", "RELEASE_NOTES.md"), ("Git-Helpers", "GIT.md"), ("Stream-Core", "fridge-stream-core/README.md"),
          ("Stream-Core-Scripts", "fridge-stream-core/SCRIPTS.md"), ("Stream-Core-Changelog", "fridge-stream-core/CHANGELOG.md")]
+# every Stream Core doc gets a page, then each app's README and the checklists
 for f in sorted(glob.glob(os.path.join(fl, "fridge-stream-core/docs/**/*.md"), recursive=True)):
     pages.append(("Stream-Core-" + page_name(os.path.splitext(os.path.basename(f))[0].replace('_', ' ').title()), os.path.relpath(f, fl).replace(os.sep, '/')))
 for app in ["fridge-chat-credits", "fridge-minecraft", "fridge-factorio-stats", "fridge-granvir-stats", "fridge-reactive-image", "fridge-reactive-image-legacy"]:
@@ -44,6 +52,7 @@ for app in ["fridge-chat-credits", "fridge-minecraft", "fridge-factorio-stats", 
 for f in sorted(glob.glob(os.path.join(fl, "checklists/*.md"))):
     base = os.path.splitext(os.path.basename(f))[0]
     pages.append(("Checklists" if base in ("INDEX", "README") else "Checklist-" + page_name(base.replace('_', ' ').title()), f"checklists/{base}.md"))
+# drop pages whose name is already taken (the first one listed wins)
 seen = set(); pages = [p for p in pages if not (p[0] in seen or seen.add(p[0]))]
 build("flavr-leftovers.wiki", "flavr-leftovers", fl, pages, "FlaVR Leftovers")
 print("built")

@@ -9,6 +9,7 @@ extends Node
 ##   - owns applause / boo meters, which live across room changes.
 ## Protocol: FlaVR_leftovers/fridge-stream-core/docs/REACTIONS.md
 
+## Protocol version sent in "hello"; must match what Stream Core expects (see REACTIONS.md).
 const PROTOCOL: int = 1
 ## A reaction the room never reports on counts as dropped after this long.
 const RESULT_TIMEOUT: float = 20.0
@@ -17,6 +18,7 @@ const ROOM_STATE_MIN_GAP: float = 1.0
 
 ## The effects this game can play. Settings (params) are left to Core's built-in list except
 ## where the game adds its own; Core fills in defaults and sends them with each reaction.
+## Each id must be one ReactionLayer (core/reactions/reaction_layer.gd) can play; Core shows the label.
 const EFFECTS: Array[Dictionary] = [
 	{"id": "throw", "label": "Throw at target", "targeted": true, "params": [
 		{"name": "object", "type": "text", "default": "🍅", "label": "Object (emoji)"},
@@ -48,6 +50,7 @@ const EFFECTS: Array[Dictionary] = [
 	{"id": "fireworks", "label": "Fireworks", "targeted": false, "params": []},
 ]
 
+# What the current room offers, as last told by its ReactionLayer (sent to Core as room_state).
 var _room_id: String = ""
 var _room_open: bool = false
 var _room_owner: int = 0          # instance id of the ReactionLayer that registered last
@@ -57,6 +60,7 @@ var _state_dirty: bool = false
 var _state_wait: float = 0.0
 var _pending: Dictionary = {}     # reaction id -> seconds left before it counts as dropped
 var _meters: Dictionary = {}      # meter id -> {value, goal, decay, label, idle}
+# Note: nothing outside this file reads _last at the moment.
 var _last: Array[Dictionary] = [] # recent reactions for the panel: {reaction, from, target, outcome}
 
 
@@ -104,6 +108,7 @@ func clear_room(layer: Object) -> void:
 	_mark_dirty()
 
 
+## The ids in EFFECTS (the panel's test list; NetSession checks reactions from other PCs against it).
 func get_effect_ids() -> PackedStringArray:
 	var out := PackedStringArray()
 	for e in EFFECTS:
@@ -130,6 +135,7 @@ func play_test(effect: String, target: Dictionary = {}, params: Dictionary = {})
 
 
 # ── Core link ────────────────────────────────────────────────
+## Each time ChatFeed (re)connects to Core: say hello with our effects, then send the room and stage.
 func _on_chat_status(info: Dictionary) -> void:
 	if not bool(info.get("connected", false)):
 		return
@@ -161,6 +167,8 @@ func _mark_dirty() -> void:
 	_state_dirty = true
 
 
+## Sends "room_state" to Core: the room id ("" = no room ready), its targets, guests and seated names.
+## Throttled through _mark_dirty / _process to at most one per ROOM_STATE_MIN_GAP seconds.
 func _send_room_state() -> void:
 	_state_dirty = false
 	_state_wait = ROOM_STATE_MIN_GAP
@@ -172,6 +180,9 @@ func _send_room_state() -> void:
 
 
 # ── Reactions ────────────────────────────────────────────────
+## A reaction from Core (EventBus.reaction_received) or play_test: checks it, starts its result
+## timer and hands it to the room (EventBus.reaction_play). NetSession also listens to reaction_play
+## to send it to the other PCs in a session.
 func _on_reaction(d: Dictionary) -> void:
 	if String(d.get("route", "game")) != "game":
 		return            # meant for the browser fallback overlay
@@ -193,6 +204,7 @@ func _on_reaction(d: Dictionary) -> void:
 	EventBus.reaction_play.emit(d)
 
 
+## ReactionLayer said how a reaction went (EventBus.reaction_finished).
 func _on_finished(reaction_id: String, outcome: String) -> void:
 	if not _pending.has(reaction_id):
 		return
@@ -200,6 +212,7 @@ func _on_finished(reaction_id: String, outcome: String) -> void:
 	_report(reaction_id, outcome)
 
 
+## Sends "reaction_result" to Core (Core refunds "dropped" ones). Test reactions are not reported.
 func _report(reaction_id: String, outcome: String) -> void:
 	for r in _last:
 		if String(r["id"]) == reaction_id:
@@ -209,6 +222,7 @@ func _report(reaction_id: String, outcome: String) -> void:
 	ChatFeed.send_message({"type": "reaction_result", "data": {"id": reaction_id, "outcome": outcome}})
 
 
+## Keeps the last 12 reactions (newest first) in _last.
 func _remember(d: Dictionary, outcome: String) -> void:
 	var from: Dictionary = d.get("from", {}) if d.get("from") is Dictionary else {}
 	var t: Variant = d.get("target")
@@ -221,6 +235,8 @@ func _remember(d: Dictionary, outcome: String) -> void:
 
 
 # ── Meters (applause / boo) ──────────────────────────────────
+## A "meter" reaction: adds its count to the meter (params: meter_id, goal, decay_sec, payoff_effect).
+## At the goal the meter resets and the payoff effect (confetti by default) plays.
 func _meter_add(d: Dictionary) -> void:
 	var p: Dictionary = d.get("params", {}) if d.get("params") is Dictionary else {}
 	var mid := String(p.get("meter_id", "applause"))
@@ -243,6 +259,7 @@ func _meter_add(d: Dictionary) -> void:
 				"params": {"count": 160}, "count": 1, "target": null, "from": d.get("from", {}), "route": "game", "seed": randi()})
 
 
+## After 3 s without new input a meter drains: a full meter empties in decay seconds.
 func _decay_meters(delta: float) -> void:
 	for mid: String in _meters.keys():
 		var m: Dictionary = _meters[mid]

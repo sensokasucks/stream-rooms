@@ -1,5 +1,6 @@
 extends Node
 ## GpuFrameSampler matches the old full-frame CPU sampling, and is cheaper at 1080p.
+## Older-style test: prints values to compare between runs (most checks have no PASS / FAIL line).
 func _ready():
 	var img := Image.create(1920, 1080, false, Image.FORMAT_RGBA8)
 	img.fill_rect(Rect2i(0, 0, 640, 1080), Color(0.9, 0.2, 0.1))

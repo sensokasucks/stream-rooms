@@ -12,6 +12,7 @@ extends Room
 @export var rain_enabled: bool = true
 ## Raindrops at 100% on the Rain slider (the slider goes to 200%).
 @export var rain_amount: int = 6000
+## Fall speed of the drops (m/s).
 @export var rain_speed: float = 28.0
 @export var rain_color: Color = Color(0.7, 0.8, 1.0, 0.32)
 
@@ -25,6 +26,7 @@ extends Room
 @export var ground_count: int = 26
 ## Every Nth flying craft carries a real light.
 @export var lit_craft_every: int = 5
+## Stretch of the avenue (Z, metres) that traffic drives along before it wraps round.
 @export var avenue_z_range: Vector2 = Vector2(-280.0, 70.0)
 
 @export_group("Flares")
@@ -36,16 +38,19 @@ extends Room
 @export_range(0.0, 1.0) var rain_loudness: float = 0.35
 
 var _rain: GPUParticles3D
-var _craft: Array[Dictionary] = []      # {node, dir, speed, min, max, axis}
-var _cars: Array[Dictionary] = []
-var _flares: Array[Dictionary] = []     # {mesh, light, base_scale, burst}
+var _craft: Array[Dictionary] = []      # {node, dir (+1/-1), speed (m/s), min, max, axis (0 = X, 2 = Z)}
+var _cars: Array[Dictionary] = []  # same keys as _craft
+var _flares: Array[Dictionary] = []     # {mesh, light, seed, burst (0..1), next_burst (s)}
+## Smooth noise for the flare flicker.
 var _noise: FastNoiseLite = FastNoiseLite.new()
 var _time: float = 0.0
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _amb_playback: AudioStreamGeneratorPlayback
+# filter and oscillator states for the generated ambience
 var _lp: float = 0.0
 var _lp2: float = 0.0
 var _hum_phase: float = 0.0
+## The screen_housing_name mesh and its see-through copy of the material (made on first use).
 var _housing: MeshInstance3D
 var _housing_mat: StandardMaterial3D
 
@@ -67,10 +72,12 @@ func _ready() -> void:
 	_apply_housing()
 
 
+## The room is freed on a room swap: drop the EventBus connection with it.
 func _exit_tree() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 
 
+## Room tab: the Rain slider ("rain_amount" setting, 0..2).
 func get_controls() -> Array[Dictionary]:
 	if not rain_enabled:
 		return []
@@ -88,6 +95,8 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_apply_housing()
 
 
+## "holo_transparency" (hologram screens): fades the housing out with the screen, and hides it
+## when the screen is fully see-through. 0 puts the imported material back.
 func _apply_housing() -> void:
 	if _housing == null or _housing.mesh == null:
 		return
@@ -116,6 +125,7 @@ func _process(delta: float) -> void:
 
 
 # ── Rain ─────────────────────────────────────────────────────
+## One GPUParticles3D of thin boxes falling from a 76 x 76 m area above the camera.
 func _build_rain() -> void:
 	_rain = GPUParticles3D.new()
 	_rain.name = "Rain"
@@ -151,6 +161,7 @@ func _rain_level() -> float:
 	return clampf(float(AppState.get_setting("rain_amount")), 0.0, 2.0)
 
 
+## Slider 0..2 -> amount_ratio 0..1 of the particles built for 200%.
 func _apply_rain() -> void:
 	if _rain == null:
 		return
@@ -160,6 +171,7 @@ func _apply_rain() -> void:
 	_rain.emitting = r > 0.001
 
 
+## Keeps the rain box above and a little ahead of the active camera, so rain falls wherever you look.
 func _follow_camera() -> void:
 	if _rain == null:
 		return
@@ -172,6 +184,7 @@ func _follow_camera() -> void:
 
 
 # ── Traffic ──────────────────────────────────────────────────
+## Unshaded, over-bright material for head / tail lights (glows with the Environment's glow).
 func _light_mat(color: Color, energy: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -179,6 +192,7 @@ func _light_mat(color: Color, energy: float) -> StandardMaterial3D:
 	return m
 
 
+## A simple box vehicle with two head lights and two tail lights, facing -Z.
 func _vehicle(body_size: Vector3, head: Color, tail: Color, body_color: Color) -> Node3D:
 	var root := Node3D.new()
 	var body := MeshInstance3D.new()
@@ -205,6 +219,8 @@ func _vehicle(body_size: Vector3, head: Color, tail: Color, body_color: Color) -
 	return root
 
 
+## Craft on four lanes above the avenue, half each way, plus every 6th on a far high lane that
+## crosses the view along X.
 func _build_flying_traffic() -> void:
 	var lanes_x := [-8.0, -4.0, 4.0, 8.0]
 	var heights := [23.0, 28.0, 33.0, 37.0, 41.0]   # below the billboard tower's traffic portal (44.5 m), above the gantry
@@ -241,6 +257,7 @@ func _build_flying_traffic() -> void:
 		_craft.append(d)
 
 
+## Cars on four street lanes: the two left ones drive toward the viewer.
 func _build_ground_traffic() -> void:
 	var lanes := [[-8.2, 1.0], [-2.8, 1.0], [2.8, -1.0], [8.2, -1.0]]   # left lanes toward viewer
 	for i in ground_count:
@@ -256,6 +273,7 @@ func _build_ground_traffic() -> void:
 			"min": avenue_z_range.x, "max": avenue_z_range.y})
 
 
+## Moves each vehicle along its axis; past the end of its range it wraps to the other end.
 func _move(list: Array[Dictionary], delta: float) -> void:
 	for d in list:
 		var n: Node3D = d["node"]
@@ -270,6 +288,7 @@ func _move(list: Array[Dictionary], delta: float) -> void:
 
 
 # ── Flare stacks ─────────────────────────────────────────────
+## Each FLARE_ marker gets a stretched glowing sphere (the flame) and a big orange light.
 func _build_flares() -> void:
 	var flame_mat := StandardMaterial3D.new()
 	flame_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
@@ -298,6 +317,7 @@ func _build_flares() -> void:
 			"burst": 0.0, "next_burst": _rng.randf_range(3.0, 10.0)})
 
 
+## Flicker from noise, plus a burst every 5-14 s that swells the flame and light, then dies down.
 func _update_flares(delta: float) -> void:
 	for f in _flares:
 		f["next_burst"] = float(f["next_burst"]) - delta
@@ -315,6 +335,8 @@ func _update_flares(delta: float) -> void:
 
 
 # ── Ambience: rain hiss + distant hum, generated live ─────────
+## Called every frame: rain hiss and rumble from filtered noise (scaled by the Rain slider),
+## random drips and a faint 52 Hz city hum.
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return

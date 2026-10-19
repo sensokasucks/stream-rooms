@@ -2,6 +2,7 @@ extends CanvasLayer
 ## "Screen focus" view: the video flat and full-frame, letterboxed, so viewers can
 ## read text and details. Fades in/out on EventBus.focus_view_changed.
 
+## Seconds the view takes to fade in or out.
 @export var fade_time: float = 0.25
 
 var _root: Control
@@ -59,17 +60,21 @@ func _ready() -> void:
 			_on_curtain(AppState.is_curtain_covering()))
 
 
+## EventBus.curtain_covering_changed (and the curtain's sign / colour settings): cover the picture
+## with a flat curtain colour and its sign, so focus view doesn't show what the curtain hides.
 func _on_curtain(covering: bool) -> void:
 	_curtain.visible = covering
 	_curtain.color = (AppState.get_setting("curtain_color") as Color).darkened(0.35)
 	_curtain_text.text = String(AppState.get_setting("curtain_sign")).strip_edges()
 
 
+## EventBus.screen_texture_changed: the big screen's current picture (null = nothing showing).
 func _on_texture_changed(tex: Texture2D) -> void:
 	_picture.texture = tex
 	_no_signal.visible = tex == null
 
 
+## EventBus.focus_view_changed (F key / React tab): fade in, or fade out and then hide.
 func _on_focus_view_changed(on: bool) -> void:
 	if _tween and _tween.is_valid():
 		_tween.kill()

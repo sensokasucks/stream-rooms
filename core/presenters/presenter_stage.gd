@@ -1,7 +1,9 @@
 class_name PresenterStage
 extends Node3D
 ## Builds a Presenter at every PRESENTER_<n> marker of the room (attached by RoomHost,
-## freed with the room) and tells the app how many podiums there are.
+## freed with the room) and tells the app how many podiums there are
+## (EventBus.room_presenters_changed). Up to AppState.PRESENTER_COUNT podiums.
+## RoomHost keeps get_presenter_map() as its presenter_nodes.
 
 var _presenters: Array[Presenter] = []
 
@@ -16,7 +18,7 @@ func setup(setups: Array[Dictionary], plane_size: Vector2) -> void:
 	EventBus.room_presenters_changed.emit(_presenters.size())
 
 
-## The presenter on podium n, or null.
+## The presenter on podium n, or null. (Used by tests.)
 func get_presenter(n: int) -> Presenter:
 	for p in _presenters:
 		if p.number == n:

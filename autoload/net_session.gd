@@ -20,8 +20,17 @@ extends Node
 ##     and only whitelisted setting keys with the right type,
 ##   - guests don't relay to each other directly (the host forwards what they need),
 ##   - web addresses must be http(s); a guest never opens a file path sent over the network.
+##
+## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
+## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
+## room, curtain), Podium pictures, Synced video, Shared audience, Live feed (VDO.Ninja), Reactions,
+## Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
+## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
+## Network protocol number, checked in the password step along with the app version. Raise it when
+## the RPCs change in a way older copies can't follow.
 const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
+## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
 const AUTH_TIMEOUT: float = 10.0
@@ -65,8 +74,10 @@ const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]
 ## Presenter sources that only exist on the host's PC (its camera, browser tab, NDI, Spout): guests show
 ## a silhouette instead. A "web" page (e.g. a VDO.Ninja link) works for everyone.
 const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
+## Curtain styles accepted from the network (same as EventBus.curtain_changed's style).
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
 
+# Session state below. Most of it only means something for one role; the comment says which.
 var _shared: Dictionary = {}            # setting key -> true
 var _host_shares: Dictionary = {}       # guest: group -> bool, as the host last said (empty = all)
 var _role: String = "off"               # "off" | "host" | "guest"
@@ -95,13 +106,18 @@ var auto_confirm: bool = false
 var _cams: Dictionary = {}              # host: peer id -> last camera Transform3D
 var _refused: String = ""               # guest: why the host said no
 var _applying: bool = false             # guest: applying the host's state (the gate lets it through)
+# guest: the "use Medium graphics" suggestion was dismissed (see get_info's suggest_medium)
 var _medium_dismissed: bool = false
+# seconds until this PC's camera may be sent again (CAMERA_SEND_GAP)
 var _cam_wait: float = 0.0
 var _last_cam: Transform3D
 var _tunnel_pid: int = -1               # host: the cloudflared process
+# host: the cloudflared log file the tunnel address is read from
 var _tunnel_log: String = ""
+# host: seconds left to find the tunnel address (-1 = not waiting)
 var _tunnel_wait: float = -1.0
 var _tunnel_warm: HTTPRequest           # host: one request through the new tunnel, so it's awake before guests use it
+# guest: seconds until the next ping (PING_GAP)
 var _ping_wait: float = 0.0
 var _chat_out: Array = []               # guest: chat lines waiting for the next batch to the host
 var _chat_wait: float = 0.0
@@ -117,6 +133,7 @@ var _host_sources: Dictionary = {}      # guest: presenter source keys -> what t
 var _live_quality: Dictionary = {}      # guest: the host's quality settings for the live feed and avatars
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
 var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
+# host: last synced-video id handed out (each new video gets the next number)
 var _video_count: int = 0
 ## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
 var _video: Dictionary = {}
@@ -124,6 +141,8 @@ var _video: Dictionary = {}
 var _guest_video: Dictionary = {}
 
 
+## Builds the shared-key whitelist and hooks up SceneMultiplayer's signals (password step,
+## peers joining and leaving) and the EventBus signals the session follows.
 func _ready() -> void:
 	for k in SHARED_BASE:
 		_shared[k] = true
@@ -167,6 +186,8 @@ func _exit_tree() -> void:
 		_close("")
 
 
+## Only runs during a session: timers (video, tunnel, ping, chat batches, roster, popups),
+## then this PC's camera to the others while it moves.
 func _process(delta: float) -> void:
 	_video_timeout(delta)
 	_tunnel_poll(delta)
@@ -226,10 +247,12 @@ func pending_guests() -> Array:
 	return list
 
 
+## "off" | "host" | "guest".
 func get_role() -> String:
 	return _role
 
 
+## True for setting keys on the shared whitelist (SHARED_BASE + the shared presenter fields).
 func is_shared(key: String) -> bool:
 	return _shared.has(key)
 
@@ -258,6 +281,7 @@ func group_shared(group: String) -> bool:
 	return bool(AppState.get_setting("together_share_" + group))
 
 
+## Host: {group: bool} from the together_share_* settings, sent to guests.
 func _share_flags() -> Dictionary:
 	var out := {}
 	for g in SHARE_GROUPS:
@@ -275,6 +299,8 @@ func display_name() -> String:
 	return n
 
 
+## Together tab "Host": checks the password, listens on together_port, and starts the tunnel when
+## together_bind is "tunnel". "auto" listens on the Tailscale address if there is one, else 127.0.0.1.
 func host() -> void:
 	if _role != "off":
 		return
@@ -323,6 +349,7 @@ func host() -> void:
 	_set_status("Hosting. " + where + password_note())
 
 
+## Together tab "Join": connects to together_address. The password step follows in _on_host_auth.
 func join() -> void:
 	if _role != "off":
 		return
@@ -348,6 +375,7 @@ func join() -> void:
 	_set_status("Connecting to the host...")
 
 
+## Together tab "Leave" / "Stop hosting".
 func leave() -> void:
 	if _role == "off":
 		return
@@ -443,6 +471,7 @@ static func is_web_address(url: String) -> bool:
 
 
 # ── Connection ───────────────────────────────────────────────
+## Host: a new connection arrived. Send it the password challenge (a random nonce), or a refusal.
 func _on_peer_authenticating(id: int) -> void:
 	if _role != "host":
 		return
@@ -468,6 +497,7 @@ func _on_peer_authenticating(id: int) -> void:
 	_sm().send_auth(id, var_to_bytes({"t": "challenge", "nonce": nonce, "protocol": PROTOCOL, "version": _version()}))
 
 
+## SceneMultiplayer's auth_callback: one message of the password step, on either side.
 func _on_auth(id: int, data: PackedByteArray) -> void:
 	var d: Variant = bytes_to_var(data)          # never decodes objects
 	if not d is Dictionary:
@@ -478,6 +508,7 @@ func _on_auth(id: int, data: PackedByteArray) -> void:
 		_on_host_auth(d)
 
 
+## Host: the guest's answer to the challenge ({t: "hello", name, protocol, version, proof}).
 func _on_hello(id: int, d: Dictionary) -> void:
 	if String(d.get("t", "")) != "hello" or not _nonces.has(id):
 		return
@@ -523,6 +554,7 @@ func _locked_out(address: String) -> int:
 	return ceili(left / 1000.0) if left > 0 else 0
 
 
+## Host: counts a wrong password from this address; MAX_WRONG in a row locks it out for LOCKOUT_S.
 func _note_wrong(address: String) -> void:
 	var w: Dictionary = _wrong.get(address, {"count": 0, "until": 0})
 	w["count"] = int(w["count"]) + 1
@@ -533,6 +565,7 @@ func _note_wrong(address: String) -> void:
 	_wrong[address] = w
 
 
+## Guest: the host's challenge (answered with the proof) or its refusal (kept for the close message).
 func _on_host_auth(d: Dictionary) -> void:
 	match String(d.get("t", "")):
 		"challenge":
@@ -558,6 +591,7 @@ func _on_auth_failed(id: int) -> void:
 		_close.call_deferred(_refused if _refused != "" else "The host didn't let this copy in. Check the password.", true)
 
 
+## Host: the password step passed. The guest is pending until both sides confirm (_maybe_admit).
 func _on_peer_connected(id: int) -> void:
 	if _role != "host":
 		return
@@ -592,6 +626,7 @@ func _maybe_admit(id: int) -> void:
 	_set_status("%s joined." % _peers[id]["name"])
 
 
+## Host: a guest (or someone still waiting to be let in) left.
 func _on_peer_disconnected(id: int) -> void:
 	if _role == "host" and _pending.has(id):
 		var who := String(_pending[id]["name"])
@@ -611,6 +646,7 @@ func _on_peer_disconnected(id: int) -> void:
 	_set_status("%s left." % n)
 
 
+## Guest: the connection and password step are done; the host's welcome comes next.
 func _on_connected() -> void:
 	if _role != "guest":
 		return
@@ -632,6 +668,8 @@ func _on_server_disconnected() -> void:
 		_close.call_deferred(_refused if _refused != "" else "The session ended (the host stopped, or the connection dropped).", _refused != "")
 
 
+## Ends the session on this PC and resets every bit of session state. Call it deferred from network
+## signals (see docs/MULTIPLAYER.md: closing inside SceneMultiplayer's poll crashes the engine).
 func _close(message: String, is_error: bool = false) -> void:
 	# (checked before _role is reset below: a guest's "right host?" popup must close too)
 	var was_waiting_guest := _role == "guest" and not _admitted
@@ -694,6 +732,7 @@ func _gate(what: String, value: Variant) -> bool:
 	return false
 
 
+## Host: passes shared settings on to the guests, and reacts to its own Together tab settings.
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if _role == "host" and _shared.has(key) and group_shared(_group_of(key)):
 		_to_guests("_net_setting", [key, value])
@@ -714,11 +753,13 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_to_guests("_net_live", [_live_info_for_guests()])
 
 
+## Host: a room change goes to the guests (when the room group is shared).
 func _on_room_requested(room_id: String) -> void:
 	if _role == "host" and group_shared("room"):
 		_to_guests("_net_room", [room_id])
 
 
+## Host: the curtain goes to the guests (when the curtain group is shared).
 func _on_curtain_changed(closed: bool, style: String) -> void:
 	if _role == "host" and group_shared("curtain"):
 		_to_guests("_net_curtain", [closed, style])
@@ -752,6 +793,7 @@ func _snapshot(groups: Array = SHARE_GROUPS) -> Dictionary:
 	return snap
 
 
+## Guest: the host's state (from _snapshot) on joining, or one group's part when it's switched on.
 @rpc("authority", "call_remote", "reliable")
 func _net_snapshot(snap: Dictionary) -> void:
 	if not _from_host():
@@ -775,12 +817,14 @@ func _net_snapshot(snap: Dictionary) -> void:
 	_emit_state()
 
 
+## Guest: one shared setting changed on the host (checked by _setting_ok in _apply_setting).
 @rpc("authority", "call_remote", "reliable")
 func _net_setting(key: String, value: Variant) -> void:
 	if _from_host():
 		_apply_setting(key, value)
 
 
+## Guest: which groups the host shares now.
 @rpc("authority", "call_remote", "reliable")
 func _net_share_flags(flags: Dictionary) -> void:
 	if _from_host():
@@ -812,6 +856,7 @@ func _send_picture(n: int, to: int) -> void:
 		_to_guests("_net_picture", [n, kind, bytes])
 
 
+## Guest: presenter n's podium picture from the host (checked for type and size), or empty to clear it.
 @rpc("authority", "call_remote", "reliable")
 func _net_picture(n: int, kind: String, bytes: PackedByteArray) -> void:
 	if not _from_host() or n < 1 or n > AppState.PRESENTER_COUNT or not group_shared("presenters"):
@@ -843,18 +888,21 @@ func _set_local(key: String, value: Variant) -> void:
 	_applying = false
 
 
+## Guest: the host changed the room.
 @rpc("authority", "call_remote", "reliable")
 func _net_room(room_id: String) -> void:
 	if _from_host():
 		_apply_room(room_id)
 
 
+## Guest: the host's curtain closed / opened.
 @rpc("authority", "call_remote", "reliable")
 func _net_curtain(closed: bool, style: String) -> void:
 	if _from_host():
 		_apply_curtain(closed, style)
 
 
+## Guest: who is in the session ([{id, name, cohost, avatar}]). The first one means the host let us in.
 @rpc("authority", "call_remote", "reliable")
 func _net_roster(list: Array) -> void:
 	if not _from_host():
@@ -874,6 +922,7 @@ func _net_roster(list: Array) -> void:
 	_emit_live()
 
 
+## Guest: someone else left (their camera marker goes).
 @rpc("authority", "call_remote", "reliable")
 func _net_left(peer_id: int) -> void:
 	if _from_host():
@@ -901,6 +950,8 @@ func _net_request(what: String, value: Variant) -> void:
 		AppState.set_setting(what, value)
 
 
+## Guest: applies a host setting past the gate. A presenter source that only exists on the host's
+## PC becomes a silhouette here (the host's value is kept in _host_sources).
 func _apply_setting(key: String, value: Variant) -> void:
 	if not _setting_ok(key, value):
 		return
@@ -912,6 +963,7 @@ func _apply_setting(key: String, value: Variant) -> void:
 	_applying = false
 
 
+## Guest: changes to the host's room if it's a known one and not the current one.
 func _apply_room(room_id: Variant) -> void:
 	if not room_id is String or RoomCatalog.get_info(room_id) == null:
 		return
@@ -922,6 +974,7 @@ func _apply_room(room_id: Variant) -> void:
 	_applying = false
 
 
+## Guest: sets the curtain as the host has it.
 func _apply_curtain(closed: Variant, style: String) -> void:
 	if not closed is bool or not CURTAIN_STYLES.has(style):
 		return
@@ -960,6 +1013,7 @@ func _host_video_request(input: String) -> bool:
 	return false
 
 
+## The big screen loaded the synced video and stopped on its first frame: say we're ready.
 func _on_file_prepared(input: String) -> void:
 	if _role == "host" and not _video.is_empty() and input == String(_video["url"]) and not bool(_video["live"]):
 		_video["live"] = true
@@ -970,6 +1024,7 @@ func _on_file_prepared(input: String) -> void:
 		_apply_video_state()      # (a late joiner catches up with the last position it heard)
 
 
+## The synced video didn't load here. Host: stop it for everyone. Guest: tell the host.
 func _on_file_prepare_failed(input: String, message: String) -> void:
 	if _role == "host" and not _video.is_empty() and input == String(_video["url"]):
 		_set_status("The video didn't load here: " + message, true)
@@ -979,6 +1034,7 @@ func _on_file_prepare_failed(input: String, message: String) -> void:
 		_net_video_failed.rpc_id(1, int(_guest_video["id"]), message.left(200))
 
 
+## Host: this PC (peer id; 1 = the host) has the video ready. Starts when everyone has.
 func _mark_ready(peer_id: int) -> void:
 	_video["ready"][peer_id] = true
 	for id: int in _peers:
@@ -987,6 +1043,7 @@ func _mark_ready(peer_id: int) -> void:
 	_start_video()
 
 
+## Host: after READY_TIMEOUT seconds the video starts without whoever is still loading.
 func _video_timeout(delta: float) -> void:
 	if _role != "host" or _video.is_empty() or bool(_video["started"]) or not bool(_video["live"]):
 		return
@@ -1000,6 +1057,7 @@ func _video_timeout(delta: float) -> void:
 		_start_video()
 
 
+## Host: play from 0 here and on every guest at once.
 func _start_video() -> void:
 	if bool(_video["started"]):
 		return
@@ -1015,6 +1073,7 @@ func _on_file_progress(position: float, playing: bool) -> void:
 		_to_guests("_net_video_state", [int(_video["id"]), position, playing])
 
 
+## Host: the big screen's source changed (EventBus.source_changed).
 func _on_source_changed(mode: String) -> void:
 	if _role == "host":
 		_to_guests("_net_live", [_live_info_for_guests()])     # sharing a tab started / stopped
@@ -1024,6 +1083,7 @@ func _on_source_changed(mode: String) -> void:
 		_video.clear()
 
 
+## Host: a guest has video `id` loaded and paused on its first frame.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_video_ready(id: int) -> void:
 	var from := multiplayer.get_remote_sender_id()
@@ -1034,6 +1094,7 @@ func _net_video_ready(id: int) -> void:
 	_mark_ready(from)
 
 
+## Host: a guest couldn't load video `id`.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_video_failed(id: int, message: String) -> void:
 	var from := multiplayer.get_remote_sender_id()
@@ -1044,12 +1105,15 @@ func _net_video_failed(id: int, message: String) -> void:
 		_mark_ready(from)        # don't keep everyone waiting
 
 
+## Guest: the host wants everyone to load this web link.
 @rpc("authority", "call_remote", "reliable")
 func _net_video_load(id: int, url: String) -> void:
 	if _from_host():
 		_guest_load_video(id, url)
 
 
+## Guest: where the host's video is (seconds) and whether it plays. ScreenFeed only seeks when the
+## difference is bigger than its SYNC_TOLERANCE_S.
 @rpc("authority", "call_remote", "reliable")
 func _net_video_state(id: int, position: float, playing: bool) -> void:
 	if not _from_host() or _guest_video.is_empty() or id != int(_guest_video["id"]):
@@ -1058,6 +1122,7 @@ func _net_video_state(id: int, position: float, playing: bool) -> void:
 	_apply_video_state()
 
 
+## Guest: the host stopped the synced video.
 @rpc("authority", "call_remote", "reliable")
 func _net_video_stop(id: int) -> void:
 	if not _from_host() or _guest_video.is_empty() or id != int(_guest_video["id"]):
@@ -1088,11 +1153,12 @@ func _apply_video_state() -> void:
 	EventBus.file_sync_requested.emit(pos, playing)
 
 
-## Round trip to the host in seconds (ENet keeps a running average).
+## Round trip to the host in seconds: a running average of the ping RPCs (see _net_pong).
 func _rtt_s() -> float:
 	return _rtt
 
 
+## Host: a guest's ping; sent straight back.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_ping(sent_ms: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
@@ -1100,6 +1166,7 @@ func _net_ping(sent_ms: int) -> void:
 		_net_pong.rpc_id(id, sent_ms)
 
 
+## Guest: the ping came back; _rtt is a running average (70% old, 30% new).
 @rpc("authority", "call_remote", "reliable")
 func _net_pong(sent_ms: int) -> void:
 	if _from_host():
@@ -1115,6 +1182,8 @@ func _sharing_audience() -> bool:
 	return _role == "host" and bool(AppState.get_setting("together_shared_audience")) and _peers.size() > 1
 
 
+## Host: tells guests whether they mirror the audience, sets the streamer areas (one per person
+## when together_audience_areas is on), and sends the roster soon after.
 func _update_audience_sharing() -> void:
 	if _role != "host":
 		return
@@ -1133,10 +1202,12 @@ func _streamer_index(peer_id: int) -> int:
 	return maxi(ids.find(peer_id), 0)
 
 
+## The current room id (the shared-audience messages carry it: a roster only fits its own room).
 func _room() -> String:
 	return String(AppState.get_setting("room_id"))
 
 
+# The _on_aud_* handlers pass AudienceManager's changes to the guests while the audience is shared.
 func _on_aud_seated(slot: int) -> void:
 	if _sharing_audience():
 		_to_guests("_net_aud_seat", [_room(), slot, AudienceManager.wire_member(slot)])
@@ -1162,6 +1233,7 @@ func _on_seating_changed() -> void:
 		_roster_wait = 0.3          # (a room change seats many at once: one roster after it settles)
 
 
+## Host: the whole seating (AudienceManager.get_roster) to every guest.
 func _send_roster_to_guests() -> void:
 	if _sharing_audience():
 		_to_guests("_net_aud_roster", [_room(), AudienceManager.get_roster()])
@@ -1182,12 +1254,14 @@ func _on_local_chat(msg: Dictionary) -> void:
 		_chat_out.append(out)
 
 
+## Guest: a chatter's picture changed (or they were hidden): pass it to the host's audience.
 func _on_local_user(info: Dictionary) -> void:
 	if _role == "guest" and _aud_shared:
 		_net_guest_user.rpc_id(1, {"platform": String(info.get("platform", "")), "user_id": String(info.get("user_id", "")),
 			"avatar": _web_avatar(info), "hidden": bool(info.get("hidden", false))})
 
 
+## The https picture link from a chat message or user update ("" if it only has a local one).
 func _web_avatar(info: Dictionary) -> String:
 	var web := String(info.get("avatar_web", ""))
 	if web == "":
@@ -1211,6 +1285,8 @@ func _net_guest_chat_batch(list: Array) -> void:
 			_guest_chat_from(id, msg)
 
 
+## Host: one chat line from guest `id`, rebuilt from plain, length-capped values (it comes from
+## another PC) and seated in the shared audience tagged with that guest's streamer index.
 func _guest_chat_from(id: int, msg: Dictionary) -> void:
 	if not _sharing_audience() or not _peers.has(id):
 		return
@@ -1238,6 +1314,7 @@ func _guest_chat_from(id: int, msg: Dictionary) -> void:
 		AudienceManager.add_chat(clean)
 
 
+## Host: a guest's chatter picture change for the shared audience (https pictures only).
 @rpc("any_peer", "call_remote", "reliable")
 func _net_guest_user(info: Dictionary) -> void:
 	var id := multiplayer.get_remote_sender_id()
@@ -1250,6 +1327,7 @@ func _net_guest_user(info: Dictionary) -> void:
 			"avatar": "" if hidden else avatar.left(500), "hidden": hidden})
 
 
+## Guest: the host started / stopped sharing its audience; this PC mirrors it or seats its own again.
 @rpc("authority", "call_remote", "reliable")
 func _net_aud_mode(shared: bool) -> void:
 	if _from_host():
@@ -1258,6 +1336,7 @@ func _net_aud_mode(shared: bool) -> void:
 		_emit_state()
 
 
+# The _net_aud_* RPCs below hand the host's seating to AudienceManager's mirror_* functions.
 @rpc("authority", "call_remote", "reliable")
 func _net_aud_roster(room: String, list: Array) -> void:
 	if _from_host() and _aud_shared:
@@ -1300,12 +1379,14 @@ func _live_info_for_guests() -> Dictionary:
 		"quality": _quality()}
 
 
+## Guest: the host's live-feed info changed (see _live_info_for_guests).
 @rpc("authority", "call_remote", "reliable")
 func _net_live(info: Dictionary) -> void:
 	if _from_host():
 		_apply_live(info)
 
 
+## Guest: keeps the host's live-feed info (bad stream names / keys are dropped) and tells the sender page.
 func _apply_live(info: Dictionary) -> void:
 	var id := String(info.get("id", ""))
 	var key := String(info.get("key", ""))
@@ -1323,6 +1404,8 @@ func _apply_live(info: Dictionary) -> void:
 	_emit_state()
 
 
+## Tells ScreenFeed (and through it the sender page) what to do with VDO.Ninja: publish (host),
+## view (guest) or nothing. Format in EventBus.live_feed_changed.
 func _emit_live() -> void:
 	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
@@ -1384,6 +1467,7 @@ func is_host_live() -> bool:
 	return _role == "guest" and _live_on
 
 
+## n random letters and digits (look-alikes like 0/O and 1/l left out), from a secure random source.
 static func _random_token(n: int) -> String:
 	var chars := "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	var bytes := Crypto.new().generate_random_bytes(n)
@@ -1457,6 +1541,8 @@ func _play_remote(d: Dictionary) -> void:
 
 
 # ── Cameras ──────────────────────────────────────────────────
+## Guest: someone's camera moved (sent by the host for itself and for the other guests).
+## Channel 1, unreliable: a lost update is fine, the next one follows.
 @rpc("authority", "call_remote", "unreliable_ordered", 1)
 func _net_camera(peer_id: int, x: Transform3D) -> void:
 	if not _from_host() or peer_id == multiplayer.get_unique_id():
@@ -1464,6 +1550,7 @@ func _net_camera(peer_id: int, x: Transform3D) -> void:
 	EventBus.net_camera_moved.emit(peer_id, _peer_name(peer_id), x)
 
 
+## Host: a guest's camera moved; shown here and passed on to the other guests.
 @rpc("any_peer", "call_remote", "unreliable_ordered", 1)
 func _net_guest_camera(x: Transform3D) -> void:
 	var id := multiplayer.get_remote_sender_id()
@@ -1510,6 +1597,7 @@ func _net_declined(reason: String) -> void:
 		_refused = reason
 
 
+## Host: a pending guest is refused (declined or timed out): tell them why, then disconnect.
 func _turn_away(id: int, reason: String, status: String) -> void:
 	_pending.erase(id)
 	EventBus.net_confirm_closed.emit(id)
@@ -1521,6 +1609,7 @@ func _turn_away(id: int, reason: String, status: String) -> void:
 	_set_status(status)
 
 
+## Host: pending guests not let in within CONFIRM_TIMEOUT seconds are turned away.
 func _pending_timeout(delta: float) -> void:
 	if _pending.is_empty():
 		return
@@ -1532,6 +1621,7 @@ func _pending_timeout(delta: float) -> void:
 
 
 # ── Connection helpers ───────────────────────────────────────
+## A WebSocket peer with buffers big enough for a whole audience roster.
 func _make_peer() -> WebSocketMultiplayerPeer:
 	var peer := WebSocketMultiplayerPeer.new()
 	peer.inbound_buffer_size = 4 * 1024 * 1024       # (a whole audience roster in one message)
@@ -1579,6 +1669,7 @@ func _tunnel_start(port: int) -> void:
 	_set_status("Hosting. Asking Cloudflare for a tunnel address...")
 
 
+## Host: while waiting for the tunnel, looks for its address in cloudflared's log each frame.
 func _tunnel_poll(delta: float) -> void:
 	if _tunnel_wait < 0.0:
 		return
@@ -1615,6 +1706,7 @@ func _tunnel_warm_up(url: String) -> void:
 		_set_status("Hosting. Waking the tunnel up...")
 
 
+## Host: stops cloudflared (on leaving or closing).
 func _tunnel_stop() -> void:
 	_tunnel_wait = -1.0
 	if _tunnel_warm:
@@ -1631,14 +1723,17 @@ func is_tunnel() -> bool:
 
 
 # ── Helpers ──────────────────────────────────────────────────
+## The scene's multiplayer API (it's SceneMultiplayer, which has the auth step).
 func _sm() -> SceneMultiplayer:
 	return multiplayer as SceneMultiplayer
 
 
+## Guest: true when the current RPC came from the host. Every host-only RPC checks this first.
 func _from_host() -> bool:
 	return _role == "guest" and multiplayer.get_remote_sender_id() == 1
 
 
+## The host, or a guest the host ticked as co-host.
 func _is_cohost() -> bool:
 	if _role == "host":
 		return true
@@ -1652,6 +1747,7 @@ func _peer_name(id: int) -> String:
 	return String(_peers[id]["name"]) if _peers.has(id) else "Guest"
 
 
+## Host: who is in the session, to every guest (and the panel through _emit_state).
 func _send_roster() -> void:
 	var list: Array = []
 	for id: int in _peers:
@@ -1668,6 +1764,7 @@ func _to_guests(method: String, args: Array) -> void:
 			callv("rpc_id", [id, method] + args)
 
 
+## The Together tab's status line; also shown as a status message, so never put an address in it.
 func _set_status(text: String, is_error: bool = false) -> void:
 	_status = text
 	_error = is_error
@@ -1675,10 +1772,12 @@ func _set_status(text: String, is_error: bool = false) -> void:
 	_emit_state()
 
 
+## Tells the panel the session changed (EventBus.net_state_changed with get_info()).
 func _emit_state() -> void:
 	EventBus.net_state_changed.emit(get_info())
 
 
+## The app version (Project Settings > application/config/version); host and guests must match.
 static func _version() -> String:
 	return String(ProjectSettings.get_setting("application/config/version", "dev"))
 

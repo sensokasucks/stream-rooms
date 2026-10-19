@@ -5,9 +5,12 @@ extends Node
 ##   1-9, 0     camera presets (0 = 10th)        F10   clean feed (hide all UI)
 ##   PgUp/PgDn  previous/next room    F11   fullscreen
 ##   C          chat screen on/off (rooms with one)
+##   R          reply screen on/off (Stream Core's replies; rooms with one)
 ##   B          stage curtain close / open      Shift+B  curtain reveal (lights, drum roll)
 ##   F9         control panel in its own window / back in the main window (handled by the panel)
 ## (Tab for the control panel is handled by the panel itself.)
+## Lives as the Hotkeys node in core/main.tscn. Keep the list above and the README in sync with
+## _handle() when adding a key.
 
 
 func _input(event: InputEvent) -> void:
@@ -22,6 +25,7 @@ func _input(event: InputEvent) -> void:
 			focus.release_focus()
 			get_viewport().set_input_as_handled()
 		return
+	# checked before _handle(), which only sees the keycode and would treat it as plain B
 	if key.keycode == KEY_B and key.shift_pressed:
 		AppState.reveal_curtain()
 		get_viewport().set_input_as_handled()
@@ -43,6 +47,8 @@ func _focus_owner() -> Control:
 	return null
 
 
+## True when n is inside the control panel's keyboard mode (F6), i.e. it or a parent is in the
+## "keyboard_panel" group.
 func _in_keyboard_panel(n: Node) -> bool:
 	while n != null:
 		if n.is_in_group("keyboard_panel"):
@@ -51,6 +57,8 @@ func _in_keyboard_panel(n: Node) -> bool:
 	return false
 
 
+## Runs the action for a plain key. Returns false when the key is not a hotkey, so the event
+## goes on to the rest of the app.
 func _handle(keycode: Key) -> bool:
 	match keycode:
 		KEY_SPACE:

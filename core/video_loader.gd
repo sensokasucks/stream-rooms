@@ -9,19 +9,27 @@ extends Node
 ## The tools run as child processes the thread watches: quitting (or freeing this node) stops
 ## them at once instead of waiting minutes for a long convert to finish. A convert writes to a
 ## ".part.ogv" file first, so a stopped one never leaves a broken video in the cache.
+## The VideoLoader node under ScreenFeed in core/main.tscn; ScreenFeed calls request() and
+## listens to the signals below. Tools are found by _find_tool (tools/get_tools.ps1 fetches them).
+## No class_name: ScreenFeed preloads this script to reach plain_error().
 
+## Progress text for the panel's message line (EventBus.status_message).
 signal status(message: String)
 ## "downloading" or "converting": what the job is doing now (for the panel's status line).
 signal stage(name: String)
+## The .ogv to play (a cache path, or the user's own .ogv).
 signal ready_to_play(path: String)
+## The job failed. message is raw (may hold the tool's log); see plain_error for a short version.
 signal failed(message: String)
 
 ## (A copy started with --mp-profile keeps its own cache, so two copies on one PC never convert
 ## into the same file at once.)
 var _cache_dir: String = "user://video_cache" if AppState.get_profile().is_empty() else "user://video_cache_%s" % AppState.get_profile()
 
-## Max height of converted video. Lower = faster conversion.
+## Max height of converted video, in pixels. Lower = faster conversion. ScreenFeed sets it from
+## the "max_height" setting before each request; it is part of the cache file name.
 var max_height := 720
+## True while a download / convert job runs; only one job at a time.
 var busy := false
 ## Downloads are capped (a co-host's link, or a host's for its guests, can't fill the disk).
 const MAX_DOWNLOAD := "2G"
@@ -35,6 +43,8 @@ var _cancel: bool = false
 var _pid: int = 0
 
 
+## Starts work on what the user typed: a URL, a file path (quotes from Windows' "Copy as path"
+## are trimmed) or a .ogv. Ends with ready_to_play or failed, unless the app quits first.
 func request(raw: String) -> void:
 	var input := raw.strip_edges().trim_prefix("\"").trim_suffix("\"")
 	if input == "":
@@ -79,6 +89,7 @@ func _finish(ok: bool, payload: String) -> void:
 		failed.emit(payload)
 
 
+## Quitting: stop the running tool so the thread ends now instead of after the convert.
 func _exit_tree() -> void:
 	_cancel = true
 	if _pid > 0:
@@ -88,6 +99,7 @@ func _exit_tree() -> void:
 
 
 # ------------------------------------------------------------ thread jobs
+# Everything below runs on _thread, so signals and _finish go through call_deferred.
 
 func _say(msg: String) -> void:
 	status.emit.call_deferred(msg)
@@ -101,6 +113,8 @@ func _done(ok: bool, payload: String) -> void:
 	_finish.call_deferred(ok, payload)
 
 
+## Thread job: convert a local file. The cache name comes from the full path and modified time,
+## so an edited file is converted again.
 func _job_local(path: String) -> void:
 	var abs_src := ProjectSettings.globalize_path(path)
 	var mtime := FileAccess.get_modified_time(path)
@@ -118,6 +132,8 @@ func _job_local(path: String) -> void:
 	_done(err == "", out if err == "" else err)
 
 
+## Thread job: download with yt-dlp (capped by MAX_DOWNLOAD / MAX_DURATION_S, height <=
+## max_height), then convert. The cache name is the URL's md5; the download is deleted after.
 func _job_url(url: String) -> void:
 	var key := url.md5_text()
 	var out := "%s/%s_%d.ogv" % [_cache_dir, key, max_height]
@@ -177,6 +193,8 @@ func _job_url(url: String) -> void:
 	_done(err == "", out if err == "" else err)
 
 
+## Converts src to Theora video + Vorbis stereo 44.1 kHz audio at out (no taller than
+## max_height). Returns "" on success or an error text starting "ffmpeg failed".
 func _convert(ffmpeg: String, src: String, out: String) -> String:
 	var part := out.get_basename() + ".part.ogv"
 	var abs_part := ProjectSettings.globalize_path(part)
@@ -200,6 +218,7 @@ func _convert(ffmpeg: String, src: String, out: String) -> String:
 # ------------------------------------------------------------ helpers
 
 ## A failure in plain words (the raw yt-dlp / ffmpeg log is kept for a Details fold).
+## Matches the English text yt-dlp and YouTube print; check them again when yt-dlp changes wording.
 static func plain_error(raw: String) -> String:
 	var low := raw.to_lower()
 	if raw.begins_with("yt-dlp failed") or raw.begins_with("ffmpeg failed"):
@@ -247,6 +266,7 @@ func _run(exe: String, args: PackedStringArray, output: Array) -> int:
 	return code
 
 
+## Reads whatever the tool printed so far, so its pipes never fill up and block it.
 func _drain(pipes: Array[FileAccess]) -> String:
 	var out := ""
 	for f in pipes:
@@ -280,6 +300,7 @@ func _missing_msg(tool: String) -> String:
 		"or put %s in the project's tools/ folder or on your PATH.") % [tool, tool]
 
 
+## The last few lines of a tool's log (the error is usually at the end).
 func _tail(text: String, lines := 6) -> String:
 	var parts := text.strip_edges().split("\n")
 	return "\n".join(parts.slice(maxi(parts.size() - lines, 0)))

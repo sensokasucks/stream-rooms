@@ -1,6 +1,8 @@
 extends Node
 ## Panel size, keyboard mode, typed slider values, "?" help, colour-blind colours + chart letters,
 ## chat text outline + small-text warning, flash strength / photosensitive-safe mode.
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 func _secs(t): await get_tree().create_timer(t).timeout
 func _shot(path):
 	await RenderingServer.frame_post_draw

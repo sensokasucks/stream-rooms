@@ -6,6 +6,8 @@ extends RefCounted
 ## so on. Every layout of that message then logs "Parameter "sd" is null" and "p_start < 0 ||
 ## p_length < 0" errors and the broken line is dropped. Marks after a blank have nothing to sit
 ## on anyway, so they are removed; everything else is left alone.
+## Call SafeText.clean on any chat text (names, messages, quotes) before a Label, Label3D or
+## RichTextLabel shows it. Used by the audience view, speech bubbles, reactions, board HUD and panel.
 
 
 ## The text with combining marks that follow a blank removed. Marks at the very start go too,
@@ -14,6 +16,8 @@ static func clean(s: String) -> String:
 	if s.is_empty() or s.to_utf8_buffer().size() == s.length():     # plain ASCII: nothing to fix
 		return s
 	var ts := TextServerManager.get_primary_interface()
+	# the leading space makes marks at the very start look like marks after a blank; it is
+	# cut off again at the end
 	var t := " " + s
 	# grapheme ends: a space plus the marks stuck to it is one grapheme. After a tab or a line
 	# break the marks are graphemes of their own; " " + them being one grapheme gives them away.
@@ -23,9 +27,11 @@ static func clean(s: String) -> String:
 	var changed := false
 	for end in ends:
 		var c := t.unicode_at(from)
+		# a blank with marks stuck to it: keep the blank, drop the marks
 		if end - from > 1 and _is_blank(c):
 			out += t[from]
 			changed = true
+		# marks right after a tab or line break: drop them
 		elif from > 0 and _is_break(t.unicode_at(from - 1)) and ts.string_get_character_breaks(" " + t.substr(from, end - from)).size() == 1:
 			changed = true
 		else:
@@ -39,6 +45,8 @@ static func _is_break(c: int) -> bool:
 	return (c >= 0x09 and c <= 0x0D) or c == 0x85 or c == 0x2028 or c == 0x2029
 
 
+## Any Unicode space or line break (ASCII space, no-break space, the U+2000 spaces, ideographic
+## space...): the characters that combining marks must not follow.
 static func _is_blank(c: int) -> bool:
 	return c == 0x20 or (c >= 0x09 and c <= 0x0D) or c == 0x85 or c == 0xA0 or c == 0x1680 \
 		or (c >= 0x2000 and c <= 0x200A) or c == 0x2028 or c == 0x2029 or c == 0x202F or c == 0x205F or c == 0x3000

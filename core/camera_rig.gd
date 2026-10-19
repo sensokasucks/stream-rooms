@@ -3,29 +3,36 @@ extends Camera3D
 ## Camera presets from the room's CAM_* markers, with smooth moves between them,
 ## plus free-look (hold right mouse, WASD / Q-E, Shift = faster).
 ## During a react pause it can jump to the room's "Reaction" preset and return after.
+## The CameraRig node in core/main.tscn. main.gd hands it each new room (set_presets, set_room);
+## the number keys arrive as EventBus.camera_preset_requested (hotkeys.gd).
 
+## Seconds a smooth move between presets takes.
 @export var move_time: float = 0.9
+## Radians of turn per pixel of mouse movement while right-dragging.
 @export var look_sensitivity: float = 0.0025
+## Free-look flying speed in metres per second (Shift = 3x).
 @export var move_speed: float = 2.5
 ## See-through: when a wall is between the camera and the inside of the room, the near clip
 ## plane moves to that wall's inner face, so you look into the room (a cutaway) instead of at
 ## the back of the wall. "Inside" = the room's camera markers; the walls get collision shapes
 ## on WALL_LAYER (only used for these rays).
 const WALL_LAYER: int = 1 << 19
+## Normal near clip distance in metres, used whenever the camera is inside the room.
 const BASE_NEAR: float = 0.05
+## Field of view limits in degrees (setting "camera_fov").
 const FOV_MIN: float = 25.0
 const FOV_MAX: float = 110.0
 
 var _presets: Array[Transform3D] = []
 var _labels: PackedStringArray = []
-var _reaction_index: int = -1
-var _pre_react_transform: Transform3D
+var _reaction_index: int = -1          # preset whose label contains "reaction" (-1 = none)
+var _pre_react_transform: Transform3D  # where the camera was before the react pause moved it
 var _pre_react_valid: bool = false
 var _tween: Tween
-var _yaw: float = 0.0
+var _yaw: float = 0.0                  # free-look angles in radians, kept in step by _sync_angles
 var _pitch: float = 0.0
 var _looking: bool = false
-var _shake_left: float = 0.0
+var _shake_left: float = 0.0           # seconds of shake left (of _shake_total)
 var _shake_total: float = 0.0
 var _shake_strength: float = 0.0
 var _probes: Array[Vector3] = []       # points inside the room (camera markers)
@@ -50,7 +57,9 @@ func set_room(room: Room) -> void:
 	_last_inside = null
 	for m in room.get_camera_markers():
 		_probes.append(m.global_position)
+	# a trimesh collider per static mesh, so the see-through rays can find the walls
 	for mi in room.get_static_meshes():
+		# (already done: the room was loaded before)
 		if mi.find_child("*_wall_col", false, false):
 			continue
 		var shape := mi.mesh.create_trimesh_shape()
@@ -67,7 +76,8 @@ func set_room(room: Room) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
-## Called by main when a room is ready (parent wiring).
+## Called by main when a room is ready (parent wiring). markers / labels: the room's camera
+## markers in order (key 1 = first). Jumps to the first preset.
 func set_presets(markers: Array[Node3D], labels: PackedStringArray) -> void:
 	_presets.clear()
 	_labels = labels
@@ -81,6 +91,7 @@ func set_presets(markers: Array[Node3D], labels: PackedStringArray) -> void:
 		go_to_preset(0, false)
 
 
+## Moves to preset `index` (0-based; out of range is ignored). Also EventBus.camera_preset_requested.
 func go_to_preset(index: int, smooth: bool = true) -> void:
 	if index < 0 or index >= _presets.size():
 		return
@@ -88,6 +99,8 @@ func go_to_preset(index: int, smooth: bool = true) -> void:
 
 
 ## A short shake (chat reaction). Uses the lens offset, so it never fights camera moves.
+## From EventBus.camera_shake_requested (ReactionLayer). strength 0..2, seconds 0.05..3.
+## Off when "reaction_camera_shake" is off or in photosensitive-safe mode (CLAUDE.md rule).
 func shake(strength: float, seconds: float) -> void:
 	if not bool(AppState.get_setting("reaction_camera_shake")) or bool(AppState.get_setting("photosensitive_safe")):
 		return
@@ -116,6 +129,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		rotation = Vector3(_pitch, _yaw, 0.0)
 
 
+## Shake and see-through every frame, then WASD / Q-E flying (not while typing in a text box).
 func _process(delta: float) -> void:
 	_update_shake(delta)
 	_update_near()
@@ -133,6 +147,7 @@ func _process(delta: float) -> void:
 	_kill_tween()
 	_sync_angles()
 	var speed := move_speed * (3.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0)
+	# forward / sideways move flat along the floor whatever the pitch; Q / E go straight down / up
 	var flat := Basis(Vector3.UP, _yaw) * Vector3(input.x, 0.0, input.z)
 	if flat.length() > 0.0:
 		global_position += flat.normalized() * speed * delta
@@ -140,6 +155,8 @@ func _process(delta: float) -> void:
 
 
 # ── Private ──────────────────────────────────────────────────
+## React pause (Space): go to the "Reaction" preset, and back to where we were when it ends.
+## Needs the "react_camera" setting and a preset labelled with "reaction".
 func _on_react_pause_changed(paused: bool) -> void:
 	if not AppState.get_setting("react_camera") or _reaction_index < 0:
 		return
@@ -152,6 +169,7 @@ func _on_react_pause_changed(paused: bool) -> void:
 		_move_to(_pre_react_transform, true)
 
 
+## Jumps or glides (move_time, sine ease) to a transform. Free-look or flying cancels a glide.
 func _move_to(target: Transform3D, smooth: bool) -> void:
 	_kill_tween()
 	if not smooth:
@@ -171,6 +189,8 @@ func _kill_tween() -> void:
 	_tween = null
 
 
+## Reads yaw / pitch back from the current transform, so free-look starts from where a preset
+## move left the camera.
 func _sync_angles() -> void:
 	var fwd := -global_transform.basis.z
 	_yaw = atan2(-fwd.x, -fwd.z)
@@ -194,6 +214,7 @@ func _update_near() -> void:
 		if probe.distance_to(cam) < 0.3:
 			_inside_at(cam)
 			return
+		# a ray from the marker to the camera; back faces count, since the wall is seen from inside
 		var q := PhysicsRayQueryParameters3D.create(probe, cam, WALL_LAYER)
 		q.hit_back_faces = true
 		var hit := space.intersect_ray(q)
@@ -204,6 +225,8 @@ func _update_near() -> void:
 		if ahead > best_dot:
 			best_dot = ahead
 			best_hit = hit["position"]
+	# every marker is blocked: clip just past the wall (2 cm), or further if needed to reach back to
+	# the last spot inside the room
 	var d := ((best_hit as Vector3) - cam).dot(fwd) + 0.02
 	if _last_inside != null:
 		d = maxf(d, ((_last_inside as Vector3) - cam).dot(fwd) - 0.1)
@@ -215,6 +238,7 @@ func _inside_at(p: Vector3) -> void:
 	near = BASE_NEAR
 
 
+## Random lens offset that fades out linearly over the shake's length.
 func _update_shake(delta: float) -> void:
 	if _shake_left <= 0.0:
 		return

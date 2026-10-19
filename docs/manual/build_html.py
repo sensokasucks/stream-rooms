@@ -1,10 +1,13 @@
 # Rebuilds the one-file HTML (pictures embedded) from a Markdown file. Run inside docs/manual:
 #   python build_html.py            (MANUAL.md -> MANUAL.html)
 #   python build_html.py ROOM_GUIDE.md
+# Needs the markdown and Pillow packages (pip install markdown pillow). Pictures referenced as
+# images/... are re-saved as JPEG (quality 86) and embedded, so the .html works on its own.
 import re, base64, io, sys, markdown
 from PIL import Image
 src=sys.argv[1] if len(sys.argv) > 1 else 'MANUAL.md'; md=open(src,encoding='utf-8').read()
 body=markdown.markdown(md, extensions=['tables','toc','fenced_code'])
+# re.sub callback: one src="images/..." attribute -> an embedded data: URL
 def emb(m):
     path=m.group(1)
     im=Image.open(path).convert('RGB'); b=io.BytesIO(); im.save(b,'JPEG',quality=86,optimize=True)
@@ -12,6 +15,8 @@ def emb(m):
 body=re.sub(r'src="(images/[^"]+)"',emb,body)
 # captions from alt text
 body=re.sub(r'<p><img alt="([^"]*)" (src="[^"]+") /></p>', r'<figure><img alt="\1" \2 loading="lazy"><figcaption>\1</figcaption></figure>', body)
+# Page style: light and dark colours as variables, dark used when the system asks for it
+# (a data-theme attribute on <html> can force either).
 css='''
 :root{--bg:#f7f6f3;--fg:#1d1d22;--muted:#5d5d68;--card:#ffffff;--line:#dedbd4;--accent:#b4341f;--code:#efece6}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#131317;--fg:#e9e7e2;--muted:#a3a1ab;--card:#1c1c22;--line:#2f2f37;--accent:#ff8a65;--code:#25252c}}
@@ -33,6 +38,7 @@ figure img{display:block;max-width:100%;height:auto;margin:0 auto;border-radius:
 figcaption{color:var(--muted);font-size:.9em;margin-top:6px;text-align:center}
 hr{border:0;border-top:2px solid var(--line);margin:3em 0}
 '''
+# page title from the file name; the output sits next to the source (MANUAL.md -> MANUAL.html)
 title='Room Building Guide' if 'ROOM' in src else 'Stream Rooms Manual'
 html=f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title><style>{css}</style></head><body><main>{body}</main></body></html>'''

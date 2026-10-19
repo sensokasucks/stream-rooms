@@ -7,9 +7,9 @@ extends CanvasLayer
 
 const MARGIN: float = 16.0     # pixels from the picture's edge on a 1080p stream
 
-var _win: ChatScreen
-var _rect: TextureRect
-var _tick: float = 0.0
+var _win: ChatScreen       # the chat window itself, drawn off-screen into its own viewport texture
+var _rect: TextureRect     # shows that texture in the corner of the picture
+var _tick: float = 0.0     # seconds until the next _refresh(); set to 0 to refresh on the next frame
 
 
 func _ready() -> void:
@@ -32,6 +32,8 @@ func _ready() -> void:
 	_refresh()
 
 
+## Refreshes twice a second (a chat window in the room can appear or hide at any time); setting,
+## room and window-size changes force a refresh on the next frame.
 func _process(delta: float) -> void:
 	_tick -= delta
 	if _tick > 0.0:
@@ -68,6 +70,8 @@ func _box_px() -> Vector2i:
 	return Vector2i(maxi(roundi(w), 64), maxi(roundi(h), 64))
 
 
+## Turns the box on or off ("chat_hud" mode), sizes the window to "chat_hud_width" / "chat_hud_height"
+## (shares of the picture) and places it in "chat_hud_corner", MARGIN away from the edges.
 func _refresh() -> void:
 	var mode := String(AppState.get_setting("chat_hud"))
 	var on := mode == "on" or (mode == "auto" and not room_shows_chat())

@@ -26,6 +26,7 @@ extends Node
 ## area (set_streamer_areas). A guest is a "mirror": it seats nobody itself and shows the host's
 ## roster (mirror_*), so every PC shows the same people in the same seats.
 
+## How many speech-bubble shapes there are; each member gets one, picked from their name.
 const BUBBLE_STYLES: int = 4
 ## Bubble colour styles a message can carry ({tint} part): Super Chat / Bits, Twitch highlights.
 const TINTS: PackedStringArray = ["paid", "highlighted", "gigantified"]
@@ -34,13 +35,17 @@ const BUBBLE_FILTER_KEYS: Dictionary = {
 	"text": "audience_bubble_text", "emotes": "audience_bubble_emotes", "paid": "audience_bubble_paid",
 	"highlighted": "audience_bubble_highlighted", "reply": "audience_bubble_replies",
 }
+## Slot kinds (see the top of the file). Stored per slot in _kind.
 const KIND_SEAT: int = 0
 const KIND_CROWD: int = 1
 const KIND_PRESENTER: int = 2
+## Platform prefixes allowed in "kick:name" style entries (presenter chat links, hidden pictures).
 const LINK_PLATFORMS: Dictionary = {"kick": "kick", "twitch": "twitch", "youtube": "youtube", "yt": "youtube", "tiktok": "tiktok"}
+## Most characters of a message shown in a bubble (longer ones end with "…").
 const MAX_TEXT: int = 140
 ## An emote counts as this many characters toward MAX_TEXT.
 const EMOTE_WEIGHT: int = 3
+## Picture address for a Kick emote id (from the "[emote:id:name]" token in the message).
 const KICK_EMOTE_URL: String = "https://files.kick.com/emotes/%s/fullsize"
 
 ## key "platform:user_id" -> {key, name, color: Color, style: int, slot: int, last: float}
@@ -60,6 +65,7 @@ var _seat_order: PackedInt32Array = []
 ## Seats whose distance from the stage differs by less than this share a row (metres).
 const ROW_TOLERANCE: float = 0.35
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
+# seconds until the next idle check (_expire_idle runs once a second)
 var _check_in: float = 1.0
 var _ignore: PackedStringArray = []
 var _hide_avatars: Array[Dictionary] = []    # "Hide pictures of": {platform ("" = any), name}
@@ -71,6 +77,7 @@ var _section_info: Dictionary = {}       # section id -> {label, kind, order}
 var _spots: Array[Vector3] = []          # slot -> seat position (for the seating chart)
 var _stage_point: Variant = null
 var _plan: Dictionary = {}               # section id -> PackedStringArray of platform groups (empty = anyone)
+## The platform groups the seating plan works with (see platform_group).
 const PLATFORMS: PackedStringArray = ["kick", "twitch", "youtube", "other"]
 const PLATFORM_LABELS: Dictionary = {"kick": "Kick", "twitch": "Twitch", "youtube": "YouTube", "other": "Other"}
 var _mirror: bool = false                # guest: showing the host's roster
@@ -182,6 +189,7 @@ func get_slot_presenter(slot: int) -> int:
 	return 0
 
 
+## How many slots the current room has (seats, crowd seats and presenter spots).
 func get_capacity() -> int:
 	return _slots.size()
 
@@ -349,6 +357,7 @@ func swap_seats(a: int, b: int) -> bool:
 	return true
 
 
+## Moves the person in `from` to the empty slot `to` (views hear left + seated). Returns `to`.
 func _move(from: int, to: int) -> int:
 	var k := _slots[from]
 	_set_slot(from, "")
@@ -359,6 +368,7 @@ func _move(from: int, to: int) -> int:
 	return to
 
 
+## How many slots are taken right now (every kind).
 func get_seated_count() -> int:
 	return _slots.filter(func(k: String) -> bool: return k != "").size()
 
@@ -511,6 +521,7 @@ static func _spaces_re() -> RegEx:
 	return _space_re
 
 
+## Puts member m in slot (it must be empty) and tells the views (EventBus.audience_seated).
 func _seat(m: Dictionary, slot: int, notify_count: bool) -> void:
 	m["slot"] = slot
 	_set_slot(slot, String(m["key"]))
@@ -583,6 +594,7 @@ func _evict_most_idle(group: String = "") -> int:
 	return best
 
 
+## Empties a slot. forget = also drop the member from the roster; else they wait for a seat.
 func _unseat(slot: int, forget: bool) -> void:
 	var k := _slots[slot]
 	if k == "":
@@ -595,6 +607,7 @@ func _unseat(slot: int, forget: bool) -> void:
 	EventBus.audience_left.emit(slot)
 
 
+## Once a second: chatters quiet for longer than the idle time leave their seat and are forgotten.
 func _expire_idle() -> void:
 	if _mirror:
 		return
@@ -644,6 +657,7 @@ func _fill_from_crowd() -> bool:
 	return moved
 
 
+## Tells the panel and views the seated count and room capacity (EventBus.audience_count_changed).
 func _emit_count() -> void:
 	EventBus.audience_count_changed.emit(get_seated_count(), _slots.size())
 
@@ -698,6 +712,7 @@ func _crowd_cap() -> int:
 	return maxi(int(AppState.get_setting("audience_crowd_max")), 0)
 
 
+## True when the crowd holds as many chatters as "audience_crowd_max" allows.
 func crowd_full() -> bool:
 	var cap := _crowd_cap()
 	return cap > 0 and get_crowd_count() >= cap
@@ -720,6 +735,7 @@ func _enforce_crowd_cap() -> void:
 	_emit_count()
 
 
+## Idle timeout for chatters in main seats ("audience_idle_min", minutes -> seconds).
 func _idle_seconds() -> float:
 	return maxf(float(AppState.get_setting("audience_idle_min")), 0.05) * 60.0
 
@@ -850,6 +866,7 @@ func platform_color(platform: String) -> Color:
 	return AppState.get_setting("platform_color_" + platform_group(platform)) as Color
 
 
+## The seating group of a member: "streamer<n>" while streamer areas are on, else their platform group.
 func _group_of(m: Dictionary) -> String:
 	if _area_count > 1:
 		return "streamer%d" % int(m.get("streamer", 0))
@@ -875,6 +892,7 @@ func set_slot_sections(sections: PackedStringArray, info: Dictionary) -> void:
 	_area_cache.clear()
 
 
+## The section id of a slot ("Q1".."Q4", "101".., or "" for none).
 func get_section(slot: int) -> String:
 	return _section[slot] if slot >= 0 and slot < _section.size() else ""
 
@@ -914,6 +932,7 @@ func set_plan(plan: Dictionary) -> void:
 	_save_plan(plan)
 
 
+## Stores the plan as JSON in the "seating_plan" setting; its setting_changed then reparses it.
 func _save_plan(plan: Dictionary) -> void:
 	var out: Dictionary = {}
 	for id: String in plan.keys():
@@ -921,6 +940,7 @@ func _save_plan(plan: Dictionary) -> void:
 	AppState.set_setting("seating_plan", JSON.stringify(out))
 
 
+## Reads the "seating_plan" setting into _plan (section id -> platform groups).
 func _parse_plan() -> void:
 	_plan.clear()
 	var raw := String(AppState.get_setting("seating_plan")).strip_edges()
@@ -939,6 +959,7 @@ func _parse_plan() -> void:
 			_plan[id] = groups
 
 
+## True when "Seat chatters by platform" (seating_by_platform) is on.
 func _plan_on() -> bool:
 	return bool(AppState.get_setting("seating_by_platform"))
 
@@ -1090,6 +1111,7 @@ func is_ignored(who: String) -> bool:
 	return _ignore.has(who.to_lower())
 
 
+## EventBus.chat_user_updated. A mirror ignores it: the host sends picture changes instead.
 func _on_user_updated(info: Dictionary) -> void:
 	if not _mirror:
 		update_user(info)
@@ -1116,6 +1138,7 @@ func update_user(info: Dictionary) -> void:
 		EventBus.audience_updated.emit(int(m["slot"]))
 
 
+## EventBus.chat_user_hidden. A mirror ignores it: the host's roster already leaves them out.
 func _on_user_hidden(info: Dictionary) -> void:
 	if not _mirror:
 		hide_user(info)
@@ -1154,6 +1177,7 @@ func matches_hidden(info: Dictionary, key: String, who: String, login: String) -
 	return (who != "" and names.has(who.to_lower())) or (login != "" and names.has(login.to_lower()))
 
 
+## Asks every view to redraw its seated person (e.g. pictures switched on / off).
 func _refresh_all_seats() -> void:
 	for i in _slots.size():
 		if _slots[i] != "":
@@ -1208,6 +1232,7 @@ func get_seated_people(limit: int = 40) -> Array[Dictionary]:
 	return out
 
 
+## Reads the "audience_ignore" setting (comma separated, lower case) into _ignore.
 func _parse_ignore() -> void:
 	_ignore.clear()
 	for part in String(AppState.get_setting("audience_ignore")).split(",", false):
@@ -1241,6 +1266,7 @@ func linked_presenter(platform: String, display_name: String, login: String) -> 
 	return 0
 
 
+## Reads every presenter's "Chat name" setting (presenter_<n>_chat) into _links.
 func _parse_links() -> void:
 	_links.clear()
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -1287,6 +1313,7 @@ func _reconcile_presenters() -> void:
 		_emit_count()
 
 
+## Re-reads the lists and re-seats people when one of the audience settings changes.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key.begins_with("presenter_") and (key.ends_with("_chat") or key.ends_with("_on")):
 		_parse_links()
@@ -1323,6 +1350,7 @@ func set_mirror(on: bool) -> void:
 	_pending_roster = {}
 
 
+## True on a guest that shows the host's roster (see set_mirror).
 func is_mirror() -> bool:
 	return _mirror
 
@@ -1339,6 +1367,8 @@ func set_streamer_areas(count: int) -> void:
 	reseat_by_plan()
 
 
+## The streamer index whose viewers sit in this section, or -1 (no areas / unknown section).
+## Worked out once per room and kept in _area_cache.
 func _area_of_section(id: String) -> int:
 	if _area_count < 2 or id == "":
 		return -1
@@ -1402,6 +1432,8 @@ func mirror_roster(room: String, list: Array) -> void:
 	EventBus.seating_changed.emit()
 
 
+## Mirror: the host seated someone (wm from wire_member). Ignored if it's for another room.
+## The mirror_* functions are called by NetSession's _net_aud_* RPCs; keep them in step with it.
 func mirror_seat(room: String, slot: int, wm: Dictionary, notify: bool = true) -> void:
 	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size():
 		return
@@ -1420,6 +1452,7 @@ func mirror_seat(room: String, slot: int, wm: Dictionary, notify: bool = true) -
 		EventBus.seating_changed.emit()
 
 
+## Mirror: the host's chatter in this slot left.
 func mirror_leave(room: String, slot: int) -> void:
 	if _mirror and room == _capacity_room and slot >= 0 and slot < _slots.size() and _slots[slot] != "":
 		_unseat(slot, true)
@@ -1427,6 +1460,7 @@ func mirror_leave(room: String, slot: int) -> void:
 		EventBus.seating_changed.emit()
 
 
+## Mirror: something about the person in this slot changed (picture, title ...).
 func mirror_update(room: String, slot: int, wm: Dictionary) -> void:
 	if not _mirror or room != _capacity_room or slot < 0 or slot >= _slots.size() or _slots[slot] == "":
 		return
@@ -1473,6 +1507,8 @@ func _web_avatar(m: Dictionary) -> String:
 	return avatar if avatar.begins_with("https://") else ""
 
 
+## Copies a wire_member dictionary from the network into member m. Everything is length-capped
+## and only https pictures are kept, because it comes from another PC.
 func _apply_wire(m: Dictionary, wm: Dictionary) -> void:
 	m["name"] = String(wm.get("name", "?")).left(40)
 	m["username"] = String(wm.get("username", "")).left(40)

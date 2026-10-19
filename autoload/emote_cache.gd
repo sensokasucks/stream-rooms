@@ -14,6 +14,7 @@ extends Node
 ## are dropped, except ones a seat, bubble or chat window still shows (they'd come back as a copy).
 
 const CACHE_DIR: String = "user://emote_cache/"
+## Downloads running at once; the rest wait in _queue.
 const MAX_PARALLEL: int = 4
 const MAX_BYTES: int = 6 * 1024 * 1024   # reaction pictures from Stream Core can be up to 5 MB
 ## Pictures and emotes kept in memory (and on the graphics card), estimated with mipmaps.
@@ -40,16 +41,21 @@ var _used: Dictionary = {}         # cache key -> Time.get_ticks_msec() when las
 var _total_bytes: int = 0
 ## The budget in use (MAX_CACHE_BYTES; tests lower it).
 var max_cache_bytes: int = MAX_CACHE_BYTES
+# _masks is static so every size's mask is built once; worker threads only read it.
 static var _masks: Dictionary = {} # size -> {"mask": Image, "edge": PackedInt32Array, "alpha": PackedFloat32Array}
+## Prefix that marks a round picture's key in _sizes / _used (CIRCLE + url), apart from the plain one.
 const CIRCLE := "○"
 
 
+# _process only runs while worker-thread jobs are waiting (GIF decodes, round pictures).
 func _ready() -> void:
 	DirAccess.make_dir_recursive_absolute(CACHE_DIR)
 	set_process(false)
 
 
 # ── Public API ───────────────────────────────────────────────
+## The picture for url if it's in memory or on disk, else null and the download is queued
+## (EventBus.emote_ready(url) fires when it's ready). Failed addresses stay null this session.
 func get_texture(url: String) -> Texture2D:
 	if url == "" or _failed.has(url):
 		return null
@@ -176,11 +182,13 @@ func set_fallback(url: String, still: String) -> void:
 		_fallback[url] = still
 
 
+## True when url couldn't be downloaded or decoded (the caller shows the emote's name instead).
 func is_failed(url: String) -> bool:
 	return _failed.has(url)
 
 
 # ── Private ──────────────────────────────────────────────────
+## Starts queued downloads until MAX_PARALLEL are running. _fetch can swap in a fallback address.
 func _pump() -> void:
 	while _active.size() < MAX_PARALLEL and not _queue.is_empty():
 		var url: String = _queue.pop_front()
@@ -200,6 +208,7 @@ func _on_done(result: int, code: int, _headers: PackedStringArray, body: PackedB
 	_finish(url, req, body)
 
 
+## A download ended (body empty on failure): decode, cache in memory and on disk, or try the fallback.
 func _finish(url: String, req: HTTPRequest, body: PackedByteArray) -> void:
 	_active.erase(url)
 	req.queue_free()
@@ -236,6 +245,7 @@ func _decode_gif(url: String, body: PackedByteArray, save: bool) -> void:
 	set_process(true)
 
 
+## Collects finished worker-thread jobs: round pictures (a few per frame) and GIF decodes.
 func _process(_delta: float) -> void:
 	if _decoding.is_empty() and _circle_jobs.is_empty():
 		set_process(false)
@@ -266,6 +276,7 @@ func _process(_delta: float) -> void:
 			_gif_done(url, (job["out"] as Array)[0], job["body"], bool(job["save"]))
 
 
+## Waits for running worker-thread jobs at quit, so none outlives the cache it writes into.
 func _exit_tree() -> void:
 	for job: Dictionary in _decoding.values():
 		WorkerThreadPool.wait_for_task_completion(int(job["id"]))
@@ -275,6 +286,7 @@ func _exit_tree() -> void:
 	_circle_jobs.clear()
 
 
+## A GIF decode finished: one frame = a plain texture, more = an AnimatedTexture (capped at its MAX_FRAMES).
 func _gif_done(url: String, result: Dictionary, body: PackedByteArray, save: bool) -> void:
 	var frames: Array = result.get("frames", [])
 	if frames.is_empty():
@@ -303,12 +315,14 @@ func _gif_done(url: String, result: Dictionary, body: PackedByteArray, save: boo
 	EventBus.emote_ready.emit(url)
 
 
+## A short description of an unsupported picture's format, for the warning in _finish.
 static func _kind(body: PackedByteArray) -> String:
 	if body.size() >= 12 and body.slice(0, 4).get_string_from_ascii() == "RIFF":
 		return "animated WebP" if body.slice(12, 16).get_string_from_ascii() == "VP8X" and (body[20] & 0x02) != 0 else "WebP"
 	return "first bytes %s" % body.slice(0, 4).hex_encode()
 
 
+## Bytes -> a texture with mipmaps, or null. GIFs don't come here (see _decode_gif).
 func _decode(body: PackedByteArray) -> Texture2D:
 	var img := _image_from(body)
 	if img == null:
@@ -379,11 +393,13 @@ static func _tidy_jpeg(body: PackedByteArray) -> PackedByteArray:
 
 
 # ── Size budget ──────────────────────────────────────────────
+## Every texture added to the cache goes through _store / _account, so the size budget stays right.
 func _store(url: String, tex: Texture2D) -> void:
 	_textures[url] = tex
 	_account(url, tex)
 
 
+## Records a texture's estimated size and use time under key, and trims if over budget.
 func _account(key: String, tex: Texture2D) -> void:
 	_total_bytes -= int(_sizes.get(key, 0))
 	var b := _texture_bytes(tex)
@@ -394,6 +410,7 @@ func _account(key: String, tex: Texture2D) -> void:
 		_trim()
 
 
+## Estimated memory of a texture: 4 bytes per pixel (+1/3 for mipmaps; animated frames have none).
 static func _texture_bytes(tex: Texture2D) -> int:
 	if tex is AnimatedTexture:
 		var anim := tex as AnimatedTexture
@@ -435,11 +452,13 @@ static func _in_use(store: Dictionary, url: String) -> bool:
 	return tex.get_reference_count() > 2
 
 
+## Marks url as failed (no retry this session). The list is emptied when it gets very long.
 func _fail(url: String) -> void:
 	if _failed.size() >= MAX_FAILED:
 		_failed.clear()
 	_failed[url] = true
 
 
+## The disk copy's file name: the address's MD5 (the real format is found from the bytes on load).
 func _disk_path(url: String) -> String:
 	return CACHE_DIR + url.md5_text() + ".img"

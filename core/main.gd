@@ -1,11 +1,14 @@
 extends Node3D
 ## Wiring layer for the core scene. Connects child signals to siblings and
 ## loads the starting room. Holds no state of its own.
+## Attached to the root of core/main.tscn; the two exports are set in that scene.
 
 @export var room_host: RoomHost
 @export var camera_rig: CameraRig
 
 
+## Picks the start room (the saved room_id, or the first room in RoomCatalog if that one is gone),
+## then handles the start-up options: closed curtain, window title and a file on the command line.
 func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
 	add_child(NetMarkers.new())     # the others' cameras while streaming together
@@ -29,11 +32,14 @@ func _ready() -> void:
 			break
 
 
+## The window's close button. auto_accept_quit is off (see _ready), so this is the only way out:
+## AppState.request_quit saves the settings and darkens the room before quitting.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
 		AppState.request_quit(0)
 
 
+## RoomHost finished loading a room: hand its camera markers (number keys 1-9, 0) to the camera rig.
 func _on_room_ready(room: Room, _info: RoomInfo) -> void:
 	var markers := room.get_camera_markers()
 	var labels := PackedStringArray()

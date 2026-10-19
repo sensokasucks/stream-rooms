@@ -7,9 +7,14 @@ extends Control
 ## The text is a RichTextLabel so chat emotes sit inline and wrap with the words;
 ## emoji use the system's colour emoji font.
 
+# Sizes below are in bubble pixels (AudienceView turns pixels into metres with bubble_pixel_size).
+## Widest the text gets before it wraps.
 const MAX_TEXT_WIDTH: float = 380.0
+## Space between the text and the edge of the body.
 const PAD: float = 20.0
+## Visible outline width: drawn twice as wide, with the fill covering its inner half.
 const OUTLINE: float = 5.0
+## How far the tail reaches below the body.
 const TAIL_H: float = 30.0
 const NAME_SIZE: int = 24
 const TEXT_SIZE: int = 30
@@ -27,13 +32,16 @@ const TINT_FILLS: Dictionary = {
 	"paid": [Color(1.0, 0.93, 0.68, 0.97), Color(0.42, 0.32, 0.05, 0.96)],
 	"highlighted": [Color(0.86, 0.8, 1.0, 0.97), Color(0.4, 0.31, 0.68, 0.96)],
 }
+## Colour emoji fonts tried in order (Windows, macOS, Linux...), as the fallback of shared_font().
 const EMOJI_FONTS: PackedStringArray = ["Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Twemoji Mozilla"]
 
+## Cache for shared_font().
 static var _font: Font
 
 var _color: Color = Color.WHITE
 var _style: int = 0
 var _fill: Color = FILL
+## The bubble body and tail tip, in pixels, worked out by set_content() and drawn by _draw().
 var _body: Rect2 = Rect2()
 var _tail_tip: Vector2 = Vector2.ZERO
 var _rtl: RichTextLabel
@@ -169,6 +177,7 @@ static func shared_font() -> Font:
 	return _font
 
 
+## Outline of the bubble body (no tail) for the current style, as a closed list of points.
 func _shape_points() -> PackedVector2Array:
 	var r := _body
 	var pts := PackedVector2Array()

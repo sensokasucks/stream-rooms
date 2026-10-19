@@ -5,15 +5,18 @@ extends CanvasLayer
 ## on = always, off = never. Boards stay up in clean feed: they're part of the show.
 ## Boards come from ChatFeed (EventBus.board_changed / board_cleared).
 
+## A board's width in pixels, before "board_hud_scale" is applied.
 const WIDTH: float = 430.0
 const BAR_BG: Color = Color(0.1, 0.12, 0.17, 1.0)
 const BAR_FILL: Color = Color(0.25, 0.72, 1.0)
+## The winning line, and the border / footer of a closed board.
 const WIN: Color = Color(0.33, 0.99, 0.09)
+## The second side of a "tug" board (cheer vs boo); the first side uses WIN.
 const BOO: Color = Color(1.0, 0.32, 0.27)
 
 var _root: VBoxContainer
 var _panels: Dictionary = {}      # board id -> {panel, board, time: Label}
-var _tick: float = 0.0
+var _tick: float = 0.0              # seconds until the next countdown / visibility check
 
 
 func _ready() -> void:
@@ -34,6 +37,8 @@ func _ready() -> void:
 	_refresh_visible()
 
 
+## Twice a second: re-check whether the boards should show and update each open board's
+## countdown ("12s", from its "ends_at" unix time).
 func _process(delta: float) -> void:
 	_tick -= delta
 	if _tick > 0.0:
@@ -56,6 +61,8 @@ func get_board_count() -> int:
 	return _panels.size()
 
 
+## Applies the "board_hud" mode (auto / on / off) and "board_hud_scale", and keeps the stack
+## pinned to the top-right corner (its width changes with the content and the scale).
 func _refresh_visible() -> void:
 	var mode := String(AppState.get_setting("board_hud"))
 	var on := mode == "on"
@@ -72,6 +79,7 @@ func _refresh_visible() -> void:
 	_root.position = Vector2(vw - maxf(_root.size.x, WIDTH) * sc - 16.0, 16.0)
 
 
+## EventBus.board_cleared: fade the board out and drop it.
 func _on_cleared(id: String) -> void:
 	var e: Variant = _panels.get(id)
 	if e == null:
@@ -84,6 +92,8 @@ func _on_cleared(id: String) -> void:
 	_refresh_visible()
 
 
+## EventBus.board_changed: a new board fades in at the bottom of the stack; a changed one is
+## rebuilt in its old place so the stack doesn't jump.
 func _on_board(b: Dictionary) -> void:
 	var id := String(b.get("id", ""))
 	var old: Variant = _panels.get(id)
@@ -103,6 +113,9 @@ func _on_board(b: Dictionary) -> void:
 	_tick = 0.0
 
 
+## One board's panel. The board format is described at EventBus.board_changed. "kind" picks the
+## look: "bars" (default, a bar per line), "meter" (compact), "question" (text lines, no bars),
+## "tug" (two bars, WIN vs BOO). The countdown label is kept in the panel's "time" meta.
 func _build(b: Dictionary) -> PanelContainer:
 	var kind := String(b.get("kind", "bars"))
 	var closed := String(b.get("state", "")) == "closed"
@@ -144,6 +157,8 @@ func _build(b: Dictionary) -> PanelContainer:
 	return panel
 
 
+## One line of a board: label, a bar filled to "pct" (0..1) and the "note" (or "value") on the right.
+## A "question" board shows the label as wrapped text instead.
 func _line(l: Dictionary, kind: String, index: int) -> Control:
 	var win := bool(l.get("win", false))
 	var label_text := String(l.get("label", ""))
@@ -190,6 +205,8 @@ func _line(l: Dictionary, kind: String, index: int) -> Control:
 	return row
 
 
+## A label in the speech bubbles' font with a dark outline. Board text can come from chat, so it
+## goes through SafeText.clean (see CLAUDE.md: Redot drops lines with stray combining marks).
 func _label(text: String, size: int, color: Color) -> Label:
 	var l := Label.new()
 	l.text = SafeText.clean(text)

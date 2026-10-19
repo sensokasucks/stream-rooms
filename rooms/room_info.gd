@@ -1,15 +1,21 @@
+## Read by RoomCatalog (lists the rooms), RoomHost (loads the scene, applies the Environment and
+## screen look) and AudioManager (ambience and reverb).
 class_name RoomInfo
 extends Resource
 ## Static description of a swappable room. One room_info.tres per folder in res://rooms/.
 
+## Unique room id (normally the folder name); settings and the room picker use it. Empty = skipped.
 @export var id: String = ""
+## Name shown in the control panel's room list.
 @export var display_name: String = ""
 ## Path to the room scene (root must use room.gd). Kept as a path so listing
 ## rooms doesn't load every model into memory.
 @export_file("*.tscn") var scene_path: String = ""
+## Position in the room list (lower first; ties sorted by display name).
 @export var sort_order: int = 0
 
 @export_group("Lighting")
+## The room's sky, fog, glow and tone mapping; RoomHost puts graphics quality on top of it.
 @export var environment: Environment
 ## Scales how strongly the screen lights this room.
 @export_range(0.0, 4.0) var screen_light_multiplier: float = 1.0
@@ -30,7 +36,9 @@ extends Resource
 @export var screen_hologram: bool = false
 
 @export_group("Audio")
+## Looping background sound on the Ambience bus (optional; some rooms generate theirs in code).
 @export var ambience: AudioStream
+## Reverb on the stream's sound, scaled by the Sound tab's reverb amount.
 @export_range(0.0, 1.0) var reverb_room_size: float = 0.35
 @export_range(0.0, 1.0) var reverb_damping: float = 0.5
 @export_range(0.0, 1.0) var reverb_wet: float = 0.12

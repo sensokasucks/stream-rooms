@@ -7,6 +7,7 @@ extends Node
 ## would quietly bring back every default). Loading falls back to the .bak if the file is broken.
 
 const SECTION: String = "settings"
+## Seconds of quiet after the last setting change before the file is written.
 const SAVE_DELAY: float = 0.75
 
 var _timer: Timer
@@ -22,6 +23,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
+## Called once at startup (this autoload loads right after AppState, see project.godot).
 func load_settings() -> void:
 	var path := AppState.get_settings_path()
 	var cfg := ConfigFile.new()
@@ -37,6 +39,7 @@ func load_settings() -> void:
 	AppState.apply_saved_settings(saved)
 
 
+## Writes every setting now. Also called by AppState.request_quit before the app quits.
 func save_now() -> void:
 	var cfg := ConfigFile.new()
 	var all := AppState.get_all_settings()
@@ -48,6 +51,7 @@ func save_now() -> void:
 	if err != OK:
 		push_warning("Could not save settings (%d)" % err)
 		return
+	# DirAccess rename / remove need real OS paths, not user:// paths.
 	var abs_path := ProjectSettings.globalize_path(path)
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(abs_path + ".bak")
@@ -57,10 +61,12 @@ func save_now() -> void:
 		push_warning("Could not save settings (%d)" % err)
 
 
+## Restarts the debounce timer, so a burst of changes ends in one save.
 func _on_setting_changed(_key: String, _value: Variant) -> void:
 	_timer.start()
 
 
+## A change still waiting for its timer is written before the app closes.
 func _exit_tree() -> void:
 	if _timer and not _timer.is_stopped():
 		save_now()

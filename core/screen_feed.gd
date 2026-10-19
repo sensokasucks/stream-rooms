@@ -9,9 +9,16 @@ extends Node
 ## A capture connection takes over from a playing file (not from NDI / Spout, which you pick on purpose).
 ## Presenters can also show NDI sources and Spout senders (presenter sources "ndi" / "spout").
 ## Publishes: EventBus.screen_texture_changed, screen_colors_changed,
-## webcam_texture_changed, and AppState source / playback state.
+## webcam_texture_changed, presenter_texture_changed (podium feeds), capture_status_changed, the
+## file_* sync signals for streaming together, and AppState source / playback state.
+## The ScreenFeed node in core/main.tscn, with CaptureServer, VideoLoader, VideoPlayer and
+## StreamAudio as children (the exports below). It also makes GpuFrameSampler, NdiReceiver and
+## SpoutReceiver children in _ready. Map of the file: public API, file source, capture source
+## (browser tab, webcam, presenter feeds, sender page messages), reaction pause, NDI, Spout.
 
+## Screen and room-light colour while nothing is showing (ScreenLights uses it too).
 const IDLE_COLOR: Color = Color(0.06, 0.08, 0.16)
+## Most browser frames held for video_delay_ms; older ones are dropped.
 const MAX_VIDEO_QUEUE: int = 90
 ## Streaming together: a synced video further than this from the host's position jumps to it.
 const SYNC_TOLERANCE_S: float = 0.3
@@ -32,11 +39,13 @@ const VIDEO_LOADER := preload("res://core/video_loader.gd")
 @export var video_loader: Node          # core/video_loader.gd
 @export var video_player: VideoStreamPlayer
 @export var stream_audio_player: AudioStreamPlayer
+## How often per second the room-light colours are taken from a file / NDI / Spout picture
+## (browser frames bring their own colours from CaptureServer).
 @export var sample_rate_hz: float = 20.0
 
 var _capture_texture: ImageTexture
 var _webcam_texture: ImageTexture
-var _gen_playback: AudioStreamGeneratorPlayback
+var _gen_playback: AudioStreamGeneratorPlayback   # StreamAudio's buffer (browser sound, or NDI pulled sound)
 var _audio_queue: Array = []        # [[recv_time_s, PackedVector2Array], ...]
 var _video_queue: Array = []        # [[recv_time_s, Image, Array[Color]], ...]
 var _sample_timer: float = 0.0
@@ -51,15 +60,16 @@ var _sender_was_connected: bool = false
 var _ndi: NdiReceiver
 var _gpu_sampler: GpuFrameSampler
 var _ndi_pull: bool = false                 # main NDI sound pulled into StreamAudio (patched plugin)
-var _ndi_gen_capacity: int = 0
-var _ndi_target_s: float = 0.5
-var _ndi_skips: int = 0
-var _ndi_buffering: bool = false
-var _ndi_buffer_apply_in: float = -1.0
+var _ndi_gen_capacity: int = 0              # frames StreamAudio's buffer holds when empty
+var _ndi_target_s: float = 0.5              # seconds of NDI sound to keep queued
+var _ndi_skips: int = 0                     # generator skip count last seen (a rise = it ran dry)
+var _ndi_buffering: bool = false            # sound paused while the buffer fills
+var _ndi_buffer_apply_in: float = -1.0      # seconds until a new ndi_audio_buffer_ms is applied
 var _ndi_padded: int = 0                    # pulls that came back with silence added at the end
 var _ndi_dry_net: int = 0                   # sound ran dry while NDI had nothing ready (network / OBS)
 var _ndi_dry_game: int = 0                  # sound ran dry after a slow game frame
 var _ndi_late_s: float = 1000.0             # time since the last slow game frame
+# slow-frame counters for the 10 s NDI report (_watch_hitches)
 var _hitch_count: int = 0
 var _hitch_worst: float = 0.0
 var _hitch_report_in: float = 10.0
@@ -69,8 +79,8 @@ var _ndi_size: Vector2i = Vector2i.ZERO
 var _ndi_presenters: Dictionary = {}        # presenter -> {"name", "player", "size"}
 var _live_feed: Dictionary = {"role": "off"}   # streaming together: what the sender page should do
 var _prepare_input: String = ""            # loading to stop on the first frame (streaming together)
-var _sync_cooldown: float = 0.0
-var _progress_wait: float = 0.0
+var _sync_cooldown: float = 0.0             # seconds before the next sync jump is allowed
+var _progress_wait: float = 0.0             # seconds to the next file_progress report
 var _progress_playing: bool = false
 var _spout: SpoutReceiver
 var _spout_tex: Texture2D                   # main screen (a SpoutTexture: updates itself every frame)
@@ -79,6 +89,8 @@ var _spout_size: Vector2i = Vector2i.ZERO
 var _spout_presenters: Dictionary = {}      # presenter -> {"name", "tex", "size"}
 
 
+## Connects the child nodes and EventBus requests, and opens the capture ports. Browser sound
+## plays through an AudioStreamGenerator (48 kHz, 2 s buffer) on StreamAudio.
 func _ready() -> void:
 	video_player.bus = AudioManager.VIDEO_BUS
 	video_player.finished.connect(_on_file_finished)
@@ -131,6 +143,9 @@ func _ready() -> void:
 	EventBus.ndi_stop_requested.connect(stop_ndi)
 
 
+## Every frame: release delayed browser frames and sound, sample room colours, watch NDI / Spout
+## picture sizes, report file progress, top up NDI sound, and drop feeds that went quiet
+## (webcam after 2 s, presenter feeds after 3 or 15 s).
 func _process(delta: float) -> void:
 	var now := Time.get_ticks_msec() / 1000.0
 	_flush_video(now)
@@ -159,6 +174,7 @@ func _process(delta: float) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
+## The picture on the screen now, or null. RoomHost hands it to a new room's ScreenLights.
 func get_texture() -> Texture2D:
 	match AppState.get_source_mode():
 		"file": return video_player.get_video_texture()
@@ -168,6 +184,7 @@ func get_texture() -> Texture2D:
 	return null
 
 
+## Stops a playing file (EventBus.file_stop_requested, or when it ends without loop_files).
 func stop_file() -> void:
 	if AppState.get_source_mode() != "file":
 		return
@@ -177,6 +194,7 @@ func stop_file() -> void:
 
 
 # ── File source ──────────────────────────────────────────────
+## EventBus.file_play_requested (Source tab, command line): a URL or path for VideoLoader.
 func _on_file_play_requested(input: String) -> void:
 	if AppState.get_source_mode() == "capture":
 		EventBus.status_message.emit("A browser tab is being shared - stop sharing in the browser first.", true)
@@ -199,6 +217,8 @@ func _on_file_prepare_requested(input: String) -> void:
 	video_loader.request(input)
 
 
+## VideoLoader failed: plain message on the message line, raw log in the Details fold
+## (video_job_changed), and tell a streaming-together session the prepare failed.
 func _on_loader_failed(message: String) -> void:
 	var plain: String = VIDEO_LOADER.plain_error(message)
 	EventBus.status_message.emit(plain, true)
@@ -210,6 +230,7 @@ func _on_loader_failed(message: String) -> void:
 		EventBus.file_prepare_failed.emit(input, message)
 
 
+## Plays a ready .ogv on the VideoPlayer and makes "file" the source.
 func _play_file(path: String) -> void:
 	var stream := VideoStreamTheora.new()
 	stream.file = path
@@ -298,12 +319,15 @@ func _sample_frame(tex: Texture2D) -> void:
 
 
 # ── Capture source ───────────────────────────────────────────
+## A browser frame from CaptureServer: queued with its arrival time so video_delay_ms can hold it.
 func _on_capture_frame(img: Image, colors: Array[Color]) -> void:
 	_video_queue.append([Time.get_ticks_msec() / 1000.0, img, colors])
 	while _video_queue.size() > MAX_VIDEO_QUEUE:
 		_video_queue.pop_front()
 
 
+## Shows the newest browser frame that has waited video_delay_ms (older ones are skipped). The
+## first frame takes over from a file; the texture is only rebuilt when the size changes.
 func _flush_video(now: float) -> void:
 	var delay: float = float(AppState.get_setting("video_delay_ms")) / 1000.0
 	var latest: Array = []
@@ -331,6 +355,7 @@ func _flush_video(now: float) -> void:
 		EventBus.screen_colors_changed.emit(colors[0], colors[1], colors[2])
 
 
+## Browser sound (48 kHz stereo). Ignored while NDI is on: NDI sound uses the same player.
 func _on_capture_audio(frames: PackedVector2Array) -> void:
 	if AppState.get_source_mode() == "ndi":
 		return
@@ -340,6 +365,7 @@ func _on_capture_audio(frames: PackedVector2Array) -> void:
 	_audio_queue.append([Time.get_ticks_msec() / 1000.0, frames])
 
 
+## Feeds browser sound that has waited audio_delay_ms into the generator, as far as it has room.
 func _flush_audio(now: float) -> void:
 	if _gen_playback == null:
 		return
@@ -355,6 +381,7 @@ func _flush_audio(now: float) -> void:
 		_audio_queue.pop_front()
 
 
+## A webcam frame from the sender page (shown by WebcamDisplay).
 func _on_webcam_frame(img: Image) -> void:
 	_webcam_last_s = Time.get_ticks_msec() / 1000.0
 	if _webcam_texture == null or Vector2i(_webcam_texture.get_size()) != img.get_size():
@@ -377,17 +404,13 @@ func _on_presenter_frame(slot: int, img: Image) -> void:
 		tex.update(img)
 
 
+## Podium n's browser feed stopped: tell the presenter (null texture).
 func _clear_presenter(n: int) -> void:
 	if _presenter_textures.has(n):
 		_presenter_textures.erase(n)
 		EventBus.presenter_texture_changed.emit(n, null)
 
 
-## Tells the sender page which presenter feeds to run: camera (started automatically),
-## tab (the page asks you to pick one) or off. Only while the room has podiums.
-## Streaming together with avatars on: the podium that's mine also goes out to the others
-## ("publish"), and a podium that belongs to someone else shows their avatar ("view") instead of a
-## capture here (the shader keys it here, so the key colour still travels along).
 ## Streaming together: a podium (or the big screen) set to someone's avatar. The sender page shows
 ## my own avatar straight from its capture ("mine"), and views anyone else's through VDO.Ninja
 ## ("view"). Someone who isn't in the session right now: {} (the podium waits).
@@ -399,6 +422,12 @@ func _peer_slot(who: String) -> Dictionary:
 	return {}
 
 
+## Tells the sender page which presenter feeds to run: camera (started automatically),
+## tab (the page asks you to pick one) or off. Only while the room has podiums.
+## Streaming together with avatars on: the podium that's mine also goes out to the others
+## ("publish"), and a podium that belongs to someone else shows their avatar ("view") instead of a
+## capture here (the shader keys it here, so the key colour still travels along).
+## Message: {type: "presenters", slots: [one per podium], avatar, screen}; web/sender.html reads it.
 func _sync_presenter_feeds() -> void:
 	var slots: Array = []
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -442,12 +471,14 @@ func _on_live_feed_changed(info: Dictionary) -> void:
 	_sync_presenter_feeds()
 
 
+## Sends the current live-feed instructions ({type: "live_feed", role, ...}) to the sender page.
 func _send_live_feed() -> void:
 	var msg := _live_feed.duplicate()
 	msg["type"] = "live_feed"
 	capture_server.send_to_sender(msg)
 
 
+## A room loaded with `count` podiums: start / stop the presenter feeds to match.
 func _on_room_presenters(count: int) -> void:
 	_room_presenters = count
 	_sync_presenter_feeds()
@@ -455,6 +486,9 @@ func _on_room_presenters(count: int) -> void:
 	_sync_spout_presenters()
 
 
+## The sender page's status (or {} when it disconnects): passed on to the panel as
+## capture_status_changed (plus connected, fps, url). A fresh connection gets the presenter and
+## live-feed instructions again; a stopped share ends the capture source.
 func _on_sender_status(info: Dictionary) -> void:
 	var status := info.duplicate()
 	status["connected"] = capture_server.is_connected_to_sender()
@@ -487,6 +521,8 @@ func _on_sender_status(info: Dictionary) -> void:
 
 
 # ── Reaction pause ───────────────────────────────────────────
+## React pause (Space): pauses a file here; for the other sources sends the system Play/Pause key
+## (SystemMedia) so the video in the browser / other program pauses.
 func _on_react_pause_changed(paused: bool) -> void:
 	match AppState.get_source_mode():
 		"file":
@@ -500,6 +536,8 @@ func _on_react_pause_changed(paused: bool) -> void:
 
 
 # ── Private ──────────────────────────────────────────────────
+## Records the source ("none", "file", "capture", "ndi", "spout") in AppState; "none" also
+## clears the screen and lights and ends a react pause.
 func _set_source(mode: String) -> void:
 	AppState.set_source_mode(mode)
 	if mode == "none":
@@ -508,6 +546,7 @@ func _set_source(mode: String) -> void:
 		EventBus.screen_colors_changed.emit(IDLE_COLOR, IDLE_COLOR, IDLE_COLOR)
 
 
+## Whether something is actually playing right now, for AppState.set_playback_active.
 func _update_playback_active(now: float) -> void:
 	var active := false
 	match AppState.get_source_mode():
@@ -518,6 +557,7 @@ func _update_playback_active(now: float) -> void:
 	AppState.set_playback_active(active)
 
 
+## Presenter, avatar, NDI buffer and capture port settings that need the feeds redone.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key.begins_with("presenter_") and (key.ends_with("_on") or key.ends_with("_source") or key.ends_with("_camera")
 			or key.ends_with("_url") or key.ends_with("_key_color") or key.ends_with("_peer")):
@@ -534,6 +574,7 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		capture_server.start(AppState.get_capture_port("capture_http_port"), AppState.get_capture_port("capture_ws_port"))
 
 
+## Applies a changed ndi_audio_buffer_ms to the running NDI sound.
 func _apply_ndi_buffer_setting() -> void:
 	if _ndi_pull and _gen_playback:
 		var old := _ndi_target_s
@@ -580,6 +621,7 @@ func start_ndi(source_name: String) -> void:
 	EventBus.status_message.emit("Showing NDI source %s" % source_name, false)
 
 
+## Stops the main-screen NDI source (EventBus.ndi_stop_requested); presenter NDI feeds stay.
 func stop_ndi() -> void:
 	if _ndi_player == null:
 		return
@@ -668,6 +710,7 @@ func _pump_ndi_audio(delta: float) -> void:
 		_ndi_rebuffer()
 
 
+## NdiReceiver's source list changed (EventBus.ndi_sources_changed).
 func _on_ndi_sources(names: PackedStringArray, _available: bool) -> void:
 	# the source went away (OBS closed...): let go, so it reconnects when it comes back
 	if _ndi_player and not names.has(_ndi_name):
@@ -802,6 +845,7 @@ func start_spout(sender_name: String) -> void:
 	EventBus.status_message.emit("Showing Spout sender %s" % sender_name, false)
 
 
+## Stops the main-screen Spout sender (EventBus.spout_stop_requested).
 func stop_spout() -> void:
 	if _spout_tex == null:
 		return
@@ -816,6 +860,8 @@ func _stop_spout_texture() -> void:
 	_spout_size = Vector2i.ZERO
 
 
+## SpoutReceiver's sender list changed: let go of a sender that left, reconnect to the last one
+## (spout_auto) when nothing else is showing, and redo the presenter feeds.
 func _on_spout_senders(names: PackedStringArray, _available: bool) -> void:
 	if _spout_tex and not names.has(_spout_name):
 		EventBus.status_message.emit("Spout sender %s went away." % _spout_name, true)
@@ -843,6 +889,8 @@ func _watch_spout_sizes() -> void:
 			EventBus.presenter_texture_changed.emit(n, tex)
 
 
+## Presenters set to "Spout sender": one texture each. The presenter gets it once the first
+## frame gives it a size (_watch_spout_sizes).
 func _sync_spout_presenters() -> void:
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
 		var want := ""

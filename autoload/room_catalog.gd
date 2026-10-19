@@ -6,6 +6,8 @@ const ROOMS_DIR: String = "res://rooms"
 const INFO_FILE: String = "room_info.tres"
 
 var _rooms: Dictionary = {}          # id -> RoomInfo
+## Room ids in display order (RoomInfo.sort_order, then display name); the panel and
+## AppState.cycle_room use this order.
 var _order: PackedStringArray = []
 
 
@@ -13,14 +15,17 @@ func _ready() -> void:
 	_scan()
 
 
+## All room ids, in display order.
 func get_ids() -> PackedStringArray:
 	return _order
 
 
+## The RoomInfo for an id, or null for an unknown id (AppState.request_room checks this).
 func get_info(room_id: String) -> RoomInfo:
 	return _rooms.get(room_id) as RoomInfo
 
 
+## Loads every room_info.tres under res://rooms once at startup. A folder without one is skipped.
 func _scan() -> void:
 	var dir := DirAccess.open(ROOMS_DIR)
 	if dir == null:

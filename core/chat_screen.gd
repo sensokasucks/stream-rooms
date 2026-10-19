@@ -18,16 +18,24 @@ extends Node3D
 ## it has nothing to show.
 ## The node is the panel's top centre, +Z faces the audience.
 ## Reads the same chat as the virtual audience (ChatFeed -> Stream Core), so it follows the
-## audience's "Ignore names" and "Hide !commands" options and its name colours.
+## audience's "Ignore names" option and its name colours. Hiding !commands has its own setting
+## for every window (chat_screen_hide_commands), separate from the speech bubbles'.
 ## Messages flow top-to-bottom through N columns (like a newspaper); the oldest drop off
 ## when the panel is full. Drawn in 2D into a SubViewport that only redraws when chat changes.
+## Made by RoomHost (chat_screen, reply_screen), SideChats (chat_left / chat_right) and ChatHud
+## (flat). Every window is in the "chat_windows" group (ChatHud and the control panel look them up).
+## Each window's settings (<window>_text, _bg, _columns, _header ...) are in AppState.DEFAULTS.
 
 ## Pixels per metre of the panel (capped at MAX_PX wide).
 const PX_PER_M: float = 300.0
 const MAX_PX: int = 3072
+## Messages kept in memory; older ones are freed even if hidden.
 const KEEP: int = 80
+## Longest message text kept, in characters.
 const MAX_TEXT: int = 300
+## Text size in pixels at <window>_text 1.0.
 const BASE_TEXT: int = 32
+## Layout in pixels: panel padding, gap between columns, colour bar width, gap between messages.
 const PAD: float = 16.0
 const GAP: float = 22.0
 const BAR_W: float = 5.0
@@ -48,18 +56,19 @@ var _quad: MeshInstance3D
 var _mat: StandardMaterial3D = StandardMaterial3D.new()
 ## One per message: {name, hex, parts: Array, avatar, urls: PackedStringArray, node: Control, rtl: RichTextLabel, bar: ColorRect}
 var _cards: Array[Dictionary] = []
-var _dirty: bool = true
-var _animating: bool = false
+var _dirty: bool = true          # needs a new layout and redraw (done once in _process)
+var _animating: bool = false     # an animated emote is on the panel: redraw every frame
 var _key: String = "chat_screen"      # settings prefix (the window)
 var _platforms: PackedStringArray = []   # platform groups whose chat this window shows
-var _reply_mode: String = "off"
+var _reply_mode: String = "off"   # <window>_replies: off | on | fallback
 var _showing_replies: bool = false
-var _expire_in: float = 0.5
-var _board_clock: float = 1.0
+var _expire_in: float = 0.5        # seconds to the next check for replies past their hold time
+var _board_clock: float = 1.0      # seconds to the next board countdown refresh
 var _flat: bool = false        # drawn for ChatHud (2D) instead of a panel in the room
 var _flat_on: bool = false     # (flat) the HUD wants it up
 var _shown: bool = true        # (flat) has something to show (a replies-only window hides while empty)
 
+## Colour bar and name of Stream Core replies (and closed boards).
 const REPLY_COLOR: Color = Color(0.33, 0.99, 0.09)
 ## Card backgrounds for messages that stand out: Super Chat / Bits gold, Twitch highlight purple.
 const TINT_COLORS: Dictionary = {"paid": Color(0.55, 0.42, 0.06, 0.75), "highlighted": Color(0.46, 0.37, 0.74, 0.75)}
@@ -112,6 +121,7 @@ func is_flat() -> bool:
 	return _flat
 
 
+## The window's settings key ("chat_screen", "chat_left" ...).
 func get_window_key() -> String:
 	return _key
 
@@ -121,6 +131,8 @@ func is_showing_replies() -> bool:
 	return _showing_replies
 
 
+## Builds the SubViewport with its background, status text and header, and (not flat) the quad
+## in the room that shows it. setup() must have run before this.
 func _ready() -> void:
 	add_to_group("chat_windows")
 	var px := Vector2i(roundi(_size.x * PX_PER_M), roundi(_size.y * PX_PER_M))
@@ -206,6 +218,8 @@ func retire() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 
 
+## Twice a second: drop replies past their hold time; once a second: tick board countdowns.
+## Then lay out and redraw only if something changed.
 func _process(delta: float) -> void:
 	if _showing_replies:
 		_expire_in -= delta
@@ -243,6 +257,7 @@ func get_visible_count() -> int:
 	return n
 
 
+## Removes every message.
 func clear() -> void:
 	for c in _cards:
 		(c["node"] as Control).queue_free()
@@ -251,6 +266,8 @@ func clear() -> void:
 
 
 # ── Replies ──────────────────────────────────────────────────
+## EventBus.core_reply_received: one Stream Core reply
+## ({message, platform, reply_to_user, timestamp, history}).
 func _on_reply(r: Dictionary) -> void:
 	if not _showing_replies:
 		return
@@ -280,6 +297,7 @@ func _reply_allowed(plat: String) -> bool:
 	return _platforms.has(AudienceManager.platform_group(plat))
 
 
+## Drops replies older than reply_screen_hold_s (boards stay until Stream Core clears them).
 func _expire_replies() -> void:
 	var hold := float(AppState.get_setting("reply_screen_hold_s"))
 	if hold <= 0.0 or _cards.is_empty():
@@ -308,6 +326,7 @@ func _on_board(b: Dictionary) -> void:
 		"urls": PackedStringArray(), "reply": true, "board": b, "ts": Time.get_unix_time_from_system()})
 
 
+## EventBus.board_cleared: Stream Core closed a board; remove its card.
 func _on_board_cleared(id: String) -> void:
 	for c in _cards.duplicate():
 		if c.has("board") and String((c["board"] as Dictionary).get("id", "")) == id:
@@ -363,6 +382,8 @@ func _fill_board(card: Dictionary) -> void:
 
 
 # ── Chat ─────────────────────────────────────────────────────
+## EventBus.chat_message_received (ChatFeed's message dict): a card for chat from this window's
+## platforms, unless the name is ignored or it's a hidden !command.
 func _on_chat(msg: Dictionary) -> void:
 	if bool(msg.get("system", false)) or _platforms.is_empty():
 		return
@@ -404,6 +425,8 @@ func _on_user_hidden(info: Dictionary) -> void:
 		_dirty = true
 
 
+## Builds the controls for a new message card (see _cards for the fields), fills it and keeps
+## at most KEEP cards. Layout happens later in _process.
 func _add_card(card: Dictionary) -> void:
 	var node := Control.new()
 	var tint_bg := ColorRect.new()      # Super Chat / Twitch highlight: a coloured box behind the card
@@ -447,6 +470,8 @@ func _add_card(card: Dictionary) -> void:
 	_dirty = true
 
 
+## (Re)writes a card's text: avatar, coloured name, "replying to" line, then text and emotes.
+## Called again when an emote or avatar finishes downloading or a look setting changes.
 func _fill(card: Dictionary) -> void:
 	_apply_outline(card["rtl"] as RichTextLabel)
 	if card.has("board"):
@@ -506,6 +531,7 @@ func _fill(card: Dictionary) -> void:
 			rtl.add_text(SafeText.clean(String(p)))
 
 
+## EventBus.emote_ready: an emote or avatar picture arrived; refill the cards that use it.
 func _on_emote_ready(url: String) -> void:
 	for c in _cards:
 		if (c["urls"] as PackedStringArray).has(url):
@@ -513,6 +539,7 @@ func _on_emote_ready(url: String) -> void:
 			_dirty = true
 
 
+## Stream Core connection changed: redraw so the "Waiting for ..." text is right.
 func _on_status(_info: Dictionary) -> void:
 	_dirty = true
 
@@ -577,6 +604,7 @@ func _layout() -> void:
 			_status.text = "Waiting for chat…"
 
 
+## Hides or shows the panel without touching `visible` (which follows the on/off setting).
 func _set_shown(on: bool) -> void:
 	if _flat:
 		_shown = on
@@ -584,6 +612,7 @@ func _set_shown(on: bool) -> void:
 		_quad.visible = on
 
 
+## True when cards start..end (heights in pixels) fit in `cols` columns of col_h pixels.
 func _fits(heights: Array[float], start: int, cols: int, col_h: float) -> bool:
 	var col := 0
 	var y := 0.0
@@ -601,6 +630,7 @@ func _fits(heights: Array[float], start: int, cols: int, col_h: float) -> bool:
 
 
 # ── Settings ─────────────────────────────────────────────────
+## Only this window's own settings (and the few shared ones listed) cause work.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key in [_key + "_chat", _key + "_replies", _key + "_replies_for", "reply_screen"]:
 		_read_sources()
@@ -639,6 +669,7 @@ func _read_sources() -> void:
 		if not keep:
 			_cards.erase(c)
 			(c["node"] as Control).queue_free()
+	# replies just switched on: show the boards that are already running
 	if _showing_replies and not was:
 		for b: Dictionary in ChatFeed.get_boards():
 			_on_board(b)
@@ -650,11 +681,13 @@ static func reply_screen_showing() -> bool:
 	return AppState.room_has_reply_screen() and bool(AppState.get_setting("reply_screen"))
 
 
+## Background opacity from <window>_bg (0..1).
 func _apply_style() -> void:
 	_bg_style.bg_color = Color(0.03, 0.035, 0.05, clampf(float(AppState.get_setting(_key + "_bg")), 0.0, 1.0))
 	_dirty = true
 
 
+## On / off: the window's own setting ("chat_screen" ...), or ChatHud's say for a flat one.
 func _refresh_visibility() -> void:
 	visible = _flat_on if _flat else bool(AppState.get_setting(_key))
 	# the corner boards (BoardHud, "auto") stay away while a window shows the boards
@@ -743,10 +776,12 @@ func estimate_text_px(out_height: float = 1080.0) -> float:
 	return a.distance_to(b) * out_height / maxf(vh, 1.0)
 
 
+## Text size in pixels: BASE_TEXT times <window>_text (0.5..3).
 func _text_size() -> int:
 	return roundi(BASE_TEXT * clampf(float(AppState.get_setting(_key + "_text")), 0.5, 3.0))
 
 
+## The speech bubble font, emboldened; built once and shared by all windows.
 static func _bold_font() -> Font:
 	if _bold == null:
 		var f := FontVariation.new()

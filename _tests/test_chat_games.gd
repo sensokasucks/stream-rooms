@@ -1,6 +1,8 @@
 extends Node
 ## Chat games in Stream Rooms: the new crowd / seat effects, boards in the corner HUD and on
 ## the reply screen, seat moves and swaps, regulars' titles on name tags.
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 var outcomes: Dictionary = {}
 func _secs(t): await get_tree().create_timer(t).timeout
 func _shot(path):

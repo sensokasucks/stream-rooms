@@ -4,6 +4,9 @@ extends Node3D
 ## the room's TVScreen mesh (and any SCREEN_Mirror_* meshes), and drives three
 ## spotlights + a fill light from the left / centre / right colours of the picture.
 ## Mirror screens get a soft spill light each. Freed together with the room.
+## Inputs: EventBus.screen_texture_changed / screen_colors_changed (ScreenFeed),
+## curtain_covering_changed (StageCurtain) and the screen_light / screen_glow / film_look /
+## holo_* settings. The screen's look comes from screen.gdshader / screen_holo.gdshader.
 
 const SCREEN_SHADER: Shader = preload("res://core/screen.gdshader")
 ## Same picture, but see-through (for rooms with RoomInfo.screen_hologram).
@@ -14,6 +17,8 @@ const HOLO_PARAMS: Dictionary = {
 	"holo_speed": "holo_speed", "holo_noise": "holo_noise",
 	"holo_color1": "holo_color1", "holo_color2": "holo_color2",
 }
+## Light energy at full brightness (screen_light 1.0) for the three spots, the fill light, the
+## projector beam and each mirror screen's spill light.
 const SPOT_ENERGY: float = 4.0
 const SPILL_ENERGY: float = 1.5
 const BEAM_ENERGY: float = 6.0
@@ -22,8 +27,10 @@ const MIRROR_ENERGY: float = 2.0
 const FILM_FPS: float = 18.0
 ## Render layer 20: projection screens, so the projector beam can skip them.
 const PROJECTED_LAYER: int = 1 << 19
+## Every render layer (1-20), the beam's cull mask before PROJECTED_LAYER is taken out.
 const ALL_LAYERS: int = (1 << 20) - 1
 
+## How fast the lights follow the picture's colours (higher = faster; per second, roughly).
 @export var response_speed: float = 10.0
 @export var cast_shadows: bool = true
 
@@ -33,11 +40,13 @@ var _spots: Array[SpotLight3D] = []
 var _spill: OmniLight3D
 var _beam: SpotLight3D
 var _mirror_lights: Array[OmniLight3D] = []
-var _multiplier: float = 1.0
+var _multiplier: float = 1.0    # the room's RoomInfo.screen_light_multiplier
 var _film: float = 0.0          # current film dirt (drives the light flicker)
 var _room_film: float = 0.0     # the room's own film amount (RoomInfo)
 var _hologram: bool = false
 var _params: Dictionary = {}    # every shader parameter set, so a shader swap can restore them
+# _targets: colours the lights head for; _colors: where they are now (eased in _process);
+# _last_screen: the picture's latest colours, kept while the curtain overrides _targets
 var _targets: Array[Color] = [ScreenFeed.IDLE_COLOR, ScreenFeed.IDLE_COLOR, ScreenFeed.IDLE_COLOR]
 var _last_screen: Array[Color] = []
 var _colors: Array[Color] = [ScreenFeed.IDLE_COLOR, ScreenFeed.IDLE_COLOR, ScreenFeed.IDLE_COLOR]
@@ -93,6 +102,8 @@ func _exit_tree() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 
 
+## Eases the lights toward the target colours every frame. The beam ignores screen_light: it is
+## the projector's own light, not light bouncing off the picture.
 func _process(delta: float) -> void:
 	if _spots.is_empty():
 		return
@@ -122,6 +133,7 @@ func _film_flicker() -> float:
 	return 1.0 - minf(_film, 1.5) * 0.14 * fposmod(sin(fr * 12.9898) * 43758.5453, 1.0)
 
 
+## The screen's picture (null = idle colour). From EventBus.screen_texture_changed.
 func _set_texture(tex: Texture2D) -> void:
 	_set_param("has_texture", tex != null)
 	_set_param("screen_texture", tex)
@@ -165,6 +177,7 @@ func _apply_film() -> void:
 	_set_param("film_dirt", _film)
 
 
+## Hologram rooms: one holo_* setting to its shader parameter (see HOLO_PARAMS).
 func _apply_holo(key: String) -> void:
 	var v: Variant = AppState.get_setting(key)
 	if key == "holo_transparency":
@@ -180,6 +193,7 @@ func _apply_holo(key: String) -> void:
 		_set_param(HOLO_PARAMS[key], v)
 
 
+## Sets a screen shader parameter and remembers it (see _params). Use this, not _mat directly.
 func _set_param(param: String, value: Variant) -> void:
 	_params[param] = value
 	_mat.set_shader_parameter(param, value)
@@ -229,6 +243,8 @@ func _screen_frame(mesh: MeshInstance3D) -> Dictionary:
 	return {"center": center, "normal": normal, "across": across, "width": width}
 
 
+## The visible projector beam (rooms with a BEAM_Projector marker): a spot light that mostly
+## shows up in volumetric fog.
 func _build_beam(projector: Node3D) -> void:
 	# Aim from the booth at the screen centre and size the cone to just cover the screen.
 	var aabb := _screen.get_aabb()
@@ -289,6 +305,7 @@ func _beam_gate_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 
+## A SCREEN_Mirror_* mesh: same material (so the same picture) plus a spill light 3 m in front.
 func _add_mirror(mesh: MeshInstance3D) -> void:
 	mesh.material_override = _mat
 	var f := _screen_frame(mesh)
@@ -303,6 +320,8 @@ func _add_mirror(mesh: MeshInstance3D) -> void:
 	_mirror_lights.append(l)
 
 
+## Three spots side by side just in front of the screen (one per third of the picture) and a fill
+## light 2 m out. spot_range: RoomInfo.screen_light_range, metres.
 func _build_lights(spot_range: float) -> void:
 	var f := _screen_frame(_screen)
 	var center: Vector3 = f["center"]

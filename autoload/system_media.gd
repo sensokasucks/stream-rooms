@@ -7,6 +7,7 @@ extends Node
 ## no way to confirm the browser actually paused, so callers should say "sent",
 ## not "paused".
 
+# Linux only: whether we already looked for playerctl (checked once, the result cached below).
 var _linux_tool_checked: bool = false
 var _linux_tool_found: bool = false
 

@@ -10,6 +10,8 @@ extends MultiMeshInstance3D
 ##     they play, nothing per person.
 
 const SHADER: Shader = preload("res://core/audience/crowd.gdshader")
+## Motion name -> crowd.gdshader's motion_style number (1 dance, 2 cheer, 3 wiggle, 4 jump).
+## Keep in sync with the shader; motions it has no style for fall back to a near one.
 const MOTIONS: Dictionary = {"dance": 1, "cheer": 2, "wiggle": 3, "jump": 4, "wave": 4, "flinch": 3, "spin": 3}
 ## Muted colours for filler people, so chatters (bright platform colours) still stand out.
 const TINTS: PackedColorArray = [Color(0.55, 0.52, 0.62), Color(0.62, 0.5, 0.45), Color(0.46, 0.55, 0.6),
@@ -19,7 +21,9 @@ var _mat: ShaderMaterial = ShaderMaterial.new()
 var _count: int = 0
 var _filler: PackedByteArray = []     # 1 = this seat has a filler person at the current fill
 var _taken: PackedByteArray = []      # 1 = a chatter sits here (drawn by AudienceView)
+## Each filler person's colour; its alpha (set in _apply) is what shows or hides them.
 var _tints: PackedColorArray = []
+# Seconds since the crowd motion / wave started (-1 = none), fed to the shader each frame.
 var _motion_t: float = -1.0
 var _motion_len: float = 0.0
 var _wave_t: float = -1.0
@@ -38,6 +42,7 @@ func setup(seats: Array[Transform3D], bust_height: float, bust_lift: float, silh
 	mm.use_custom_data = true
 	mm.mesh = quad
 	mm.instance_count = _count
+	# fixed seed: sizes, tints and sway phases look the same every time the room loads
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 90210
 	_tints.resize(_count)
@@ -48,12 +53,14 @@ func setup(seats: Array[Transform3D], bust_height: float, bust_lift: float, silh
 		# local to this node (it sits at the origin, but keep it right if it doesn't)
 		var local := global_transform.affine_inverse() * Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sc), t.origin)
 		mm.set_instance_transform(i, local)
+		# custom data x = this person's sway / motion phase in the shader (y is a second random value)
 		mm.set_instance_custom_data(i, Color(rng.randf(), rng.randf(), 0.0, 0.0))
 		_tints[i] = TINTS[rng.randi() % TINTS.size()].lerp(Color(0.5, 0.5, 0.55), rng.randf_range(0.0, 0.3))
 		var head := local.origin + Vector3.UP * (bust_lift + bust_height) * sc
 		box = AABB(local.origin, Vector3.ZERO) if i == 0 else box.expand(local.origin)
 		box = box.expand(head + Vector3.UP * 0.5)
 	multimesh = mm
+	# the shader moves people up and around, so cull with a box a bit bigger than the seats
 	custom_aabb = box.grow(1.0)
 	_mat.shader = SHADER
 	_mat.set_shader_parameter("silhouette", silhouette)
@@ -75,6 +82,7 @@ func set_fill(fill: float) -> void:
 		_apply(i)
 
 
+## Filler people showing now (seats with a filler and no chatter).
 func get_filler_count() -> int:
 	var n := 0
 	for i in _count:
@@ -117,6 +125,7 @@ func play_wave(speed: float, across: Vector3, lo: float, hi: float) -> void:
 	_mat.set_shader_parameter("wave_t", 0.0)
 
 
+## Only does work while a motion or wave plays: advances its clock in the shader.
 func _process(delta: float) -> void:
 	if _motion_t >= 0.0:
 		_motion_t += delta
@@ -130,6 +139,7 @@ func _process(delta: float) -> void:
 		_mat.set_shader_parameter("wave_t", _wave_t)
 
 
+## Shows or hides seat i's filler person (alpha 1 or 0 in the instance colour).
 func _apply(i: int) -> void:
 	var c := _tints[i]
 	c.a = 1.0 if (_filler[i] == 1 and _taken[i] == 0) else 0.0
