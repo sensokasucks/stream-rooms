@@ -9,8 +9,13 @@ extends Node
 ## (RenderingDevice.texture_get_data_async), so the game never stalls waiting for the GPU;
 ## a stall there makes the frame late, and the NDI plugin feeds its sound once per frame.
 ## The Compatibility renderer falls back to a (small) synchronous read.
+## ScreenFeed owns one (child node "GpuFrameSampler") and calls sample() for the file, NDI and
+## Spout sources; the browser capture source is sampled on CaptureServer's thread instead.
 
+## Texture reads per output pixel along each side (TAPS x TAPS reads per pixel).
 const TAPS: int = 6
+## Shader for the tiny viewport: each output pixel averages a grid of reads from its cell of the
+## source picture. Keep the `grid` and `taps` defaults in step with SAMPLE_W/H and TAPS.
 const SHADER_CODE: String = """
 shader_type canvas_item;
 uniform sampler2D src : filter_linear, repeat_disable;
@@ -30,14 +35,16 @@ void fragment() {
 
 var _vp: SubViewport
 var _mat: ShaderMaterial
-var _pending: bool = false
+var _pending: bool = false          # a render was queued last call, so there is something to read
 var _rd: RenderingDevice
 var _async: bool = false
-var _in_flight: bool = false
-var _in_flight_ms: int = 0
-var _latest: Array[Color] = []
+var _in_flight: bool = false        # an async read is waiting for the GPU (only one at a time)
+var _in_flight_ms: int = 0          # when it started (Time.get_ticks_msec), for the 2 s give-up
+var _latest: Array[Color] = []      # result of the last async read, handed out once by sample()
 
 
+## Builds the tiny viewport with one full-size ColorRect running the shader. The viewport only
+## renders when sample() asks for it (UPDATE_ONCE).
 func _ready() -> void:
 	_vp = SubViewport.new()
 	_vp.size = Vector2i(ColorSampler.SAMPLE_W, ColorSampler.SAMPLE_H)
@@ -84,6 +91,8 @@ func sample(tex: Texture2D) -> Array[Color]:
 	return out
 
 
+## Callback of texture_get_data_async: raw pixels of the tiny viewport, as 8-bit or half-float
+## RGBA depending on the viewport's format.
 func _on_data(data: PackedByteArray) -> void:
 	_in_flight = false
 	var w := ColorSampler.SAMPLE_W

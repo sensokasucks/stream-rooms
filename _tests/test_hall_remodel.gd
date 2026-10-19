@@ -1,9 +1,12 @@
 extends Node
 ## Lecture hall remodel: tiers, doors, stained glass + set shaders.
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 func _secs(t): await get_tree().create_timer(t).timeout
 func _shot(path):
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
+# Blender coordinates (Z up) -> Redot coordinates (Y up), for positions taken from the .blend
 func _b2g(v: Vector3) -> Vector3:
 	return Vector3(v.x, v.z, -v.y)
 func _ready():

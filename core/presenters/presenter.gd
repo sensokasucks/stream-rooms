@@ -5,11 +5,18 @@ extends Node3D
 ## together. Settings live in AppState as presenter_<n>_*; the feed comes from ScreenFeed.
 ## Extras: a name tag above the picture ("name") and a picture file on the front of the podium
 ## ("picture": png / jpg / webp / gif, animated GIFs included; see PictureFile).
+## The setting fields (presenter_<n>_on, _source, _key ...) are listed in AppState.PRESENTER_FIELDS;
+## the Presenters tab in ui/control_panel.gd edits them. The picture is drawn by presenter.gdshader.
 
 const SHADER: Shader = preload("res://core/presenters/presenter.gdshader")
 const SILHOUETTE: Texture2D = preload("res://core/presenters/presenter_silhouette.png")
+## "source" setting -> presenter.gdshader `mode`: 0 silhouette picture, 1 plain key colour
+## (green screen), 2 live feed. _apply_all uses 3 (a dim "waiting" panel) while a live source has
+## no picture yet. A new source type must be added here.
 const SOURCE_MODE: Dictionary = {"silhouette": 0, "green": 1, "camera": 2, "tab": 2, "web": 2, "ndi": 2, "spout": 2, "peer": 2}
 
+## Podium lamp (only with a PODIUM_LIGHT_<n> marker): energy at light setting 1.0, range in
+## metres, cone angle in degrees.
 @export var lamp_energy: float = 2.5
 @export var lamp_range: float = 3.5
 @export var lamp_angle: float = 40.0
@@ -17,19 +24,20 @@ const SOURCE_MODE: Dictionary = {"silhouette": 0, "green": 1, "camera": 2, "tab"
 ## Emission brightness when self-lit.
 @export var self_lit_glow: float = 1.2
 
+## Podium number, 1..AppState.PRESENTER_COUNT; picks the presenter_<n>_* settings.
 var number: int = 0
 var _podium: Node3D
 var _plane: MeshInstance3D
 var _mat: ShaderMaterial = ShaderMaterial.new()
 var _lamp: SpotLight3D
-var _label: Label3D
+var _label: Label3D               # "waiting for ..." help text over the picture
 var _tag: Label3D                 # the name tag above the picture
 var _badge: MeshInstance3D        # the podium picture
 var _badge_mat: StandardMaterial3D
 var _badge_path: String = ""      # the picture file the badge shows (so it isn't reloaded for nothing)
 var _podium_faces: PackedVector3Array = []   # the podium's triangles, for sticking the picture to its front
 var _plane_size: Vector2
-var _feed: Texture2D
+var _feed: Texture2D              # live picture from ScreenFeed (EventBus.presenter_texture_changed)
 var _chat_look: bool = false     # the linked chatter's silhouette stands in (AudienceView draws it)
 
 
@@ -86,6 +94,7 @@ func setup(n: int, marker: Node3D, podium: Node3D, lamp_marker: Node3D, plane_si
 	_apply_all()
 
 
+## presenter_look_changed comes from AudienceView (a chatter linked to this podium).
 func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.presenter_texture_changed.connect(_on_texture)
@@ -104,10 +113,13 @@ func get_picture() -> MeshInstance3D:
 
 
 # ── Settings → looks ─────────────────────────────────────────
+## This podium's value for a presenter field ("on", "source", "zoom" ...).
 func _setting(field: String) -> Variant:
 	return AppState.get_setting(AppState.presenter_key(number, field))
 
 
+## Pushes every setting onto the picture, lamp, name tag, podium picture and help label. Called
+## on any presenter_<n>_* change, so it must stay cheap (the badge is only reloaded on a new path).
 func _apply_all() -> void:
 	var on := bool(_setting("on"))
 	visible = on
@@ -179,6 +191,7 @@ func _make_badge() -> void:
 	_place_badge()
 
 
+## The podium's mesh: the PODIUM_<n> node itself, or the first mesh inside it.
 func _podium_mesh() -> MeshInstance3D:
 	if _podium == null:
 		return null
@@ -208,6 +221,7 @@ func _place_badge() -> void:
 	var front_dir := (to_podium * global_transform.basis.z).normalized()
 	var up_dir := (to_podium * global_transform.basis.y).normalized()
 	var right_dir := -(to_podium * global_transform.basis.x).normalized()   # the audience's right
+	# snap those directions to the podium mesh's own axes (front, up and the one left over)
 	var front_axis := front_dir.abs().max_axis_index()
 	var up_axis := up_dir.abs().max_axis_index()
 	if up_axis == front_axis:
@@ -273,6 +287,7 @@ func _fit_badge() -> void:
 	(_badge.mesh as QuadMesh).size = size
 
 
+## Loads a new picture file when the path changed, then lighting, placement and visibility.
 func _apply_badge(on: bool) -> void:
 	var path := String(_setting("picture")).strip_edges()
 	if path != _badge_path:
@@ -298,6 +313,7 @@ func _load_badge(path: String) -> void:
 	_finish_badge.call_deferred(task, path, out)
 
 
+## Main thread, after the decode: show the picture unless the path changed meanwhile.
 func _finish_badge(task: int, path: String, out: Array) -> void:
 	WorkerThreadPool.wait_for_task_completion(task)
 	if not is_inside_tree() or path != _badge_path:
@@ -316,12 +332,15 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_apply_all()
 
 
+## AudienceView: a linked chatter's silhouette stands in for (look = true) or leaves podium n.
 func _on_look(n: int, look: bool) -> void:
 	if n == number and look != _chat_look:
 		_chat_look = look
 		_apply_all()
 
 
+## A new live picture for podium n (or null when the feed stops). Only a feed starting or
+## stopping needs the full _apply_all; a new texture just swaps the shader inputs.
 func _on_texture(n: int, tex: Texture2D) -> void:
 	if n != number:
 		return

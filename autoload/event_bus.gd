@@ -12,11 +12,14 @@ signal webcam_texture_changed(texture: Texture2D)
 signal source_changed(mode: String)
 
 # ── Requests (UI / hotkeys -> systems) ───────────────────────
+## Play a file path or http(s) URL on the big screen (ScreenFeed hands it to VideoLoader).
 signal file_play_requested(input: String)
 ## Streaming together: load a file / URL like file_play_requested, but stop on its first frame
 ## (paused at 0) and announce file_prepared instead of playing, so every PC can start together.
 signal file_prepare_requested(input: String)
+## ScreenFeed -> NetSession: the prepared file is loaded and paused on its first frame.
 signal file_prepared(input: String)
+## ScreenFeed -> NetSession: preparing failed; message is plain words for the streamer.
 signal file_prepare_failed(input: String, message: String)
 ## Streaming together: put the playing file at this position (seconds), playing or paused.
 ## Small differences are left alone (see ScreenFeed.SYNC_TOLERANCE_S).
@@ -28,11 +31,15 @@ signal file_pause_toggle_requested
 ## The video download / convert (File or URL): state "downloading" | "converting" | "ready" |
 ## "failed"; message is plain words for the panel, details the tool's own log (failures only).
 signal video_job_changed(state: String, message: String, details: String)
+## Hotkeys / panel -> CameraRig: jump to camera preset number `index` of the current room.
 signal camera_preset_requested(index: int)
 
 # ── Reaction features ────────────────────────────────────────
+## Pause-to-react started or ended (AppState.set_react_paused): lights up, Reaction camera, ducking.
 signal react_pause_changed(paused: bool)
+## Focus view (the video flat and full-frame, ui/focus_view.gd) was switched on / off.
 signal focus_view_changed(on: bool)
+## Clean feed (F10): the panel and on-picture messages hide so the capture shows only the room.
 signal clean_feed_changed(on: bool)
 ## The stage curtain in front of the main screen: closed or open.
 ## style: "normal" | "instant" (no animation, e.g. a room change) | "reveal" (the lights-down,
@@ -40,12 +47,17 @@ signal clean_feed_changed(on: bool)
 signal curtain_changed(closed: bool, style: String)
 ## The curtain started / stopped hiding the screen (sound mute, focus view, screen light).
 signal curtain_covering_changed(covering: bool)
+## AudioManager: the microphone's current level in dB (the control panel's mic meter).
 signal mic_level_changed(db: float)
+## AudioManager: the stream sound started / stopped ducking because the mic is above the threshold.
 signal ducking_changed(ducking: bool)
 
 # ── Rooms ────────────────────────────────────────────────────
+## AppState.request_room -> RoomHost: load this room (an id from RoomCatalog).
 signal room_requested(room_id: String)
+## RoomHost: the new room is loaded and set up (audience, reactions, camera presets).
 signal room_changed(room_id: String)
+## RoomHost: the current room's camera preset names, in order (the first is key 1).
 signal camera_presets_changed(names: PackedStringArray)
 ## Room-specific controls for the Room tab: an Array of Dictionaries (see Room.get_controls()).
 signal room_controls_changed(controls: Array)
@@ -77,7 +89,10 @@ signal spout_connect_requested(sender_name: String)
 signal spout_stop_requested
 
 # ── Settings / messages ──────────────────────────────────────
+## AppState.set_setting changed a value (key from AppState.DEFAULTS). SaveManager saves on it.
 signal setting_changed(key: String, value: Variant)
+## A message for the streamer on the panel's message line (only on the picture when
+## messages_on_picture is on), so never put addresses or keys in it.
 signal status_message(text: String, is_error: bool)
 ## The app is about to quit (AppState.request_quit): hide the room now, the quit follows shortly.
 signal quit_requested
@@ -94,12 +109,14 @@ signal chat_user_hidden(info: Dictionary)
 ## reply_to_user, source, timestamp, history}). Shown on the reply screen.
 signal core_reply_received(reply: Dictionary)
 ## Audience roster (AudienceManager). Views look members up with AudienceManager.get_seat_member().
+## slot = the seat number in the current room's seat list.
 signal audience_seated(slot: int)
 signal audience_left(slot: int)
 ## parts: Strings and emote Dictionaries {"url": String, "name": String}, in order.
 signal audience_spoke(slot: int, parts: Array)
 ## EmoteCache finished downloading an emote image.
 signal emote_ready(url: String)
+## How many chatters sit in the room right now, and how many seats it has.
 signal audience_count_changed(seated: int, capacity: int)
 ## Something about the person in a seat changed (e.g. their picture arrived).
 signal audience_updated(slot: int)

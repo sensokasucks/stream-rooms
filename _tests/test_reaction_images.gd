@@ -1,6 +1,8 @@
 extends Node
 ## Reaction pictures: a thrown "img:boot" becomes a Sprite3D with Core's picture.
 ## Needs `python3 -m http.server 3898 --directory /tmp/imgsrv` (stands in for Core's /reactions/images/).
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 func _secs(t): await get_tree().create_timer(t).timeout
 func _shot(path):
 	await RenderingServer.frame_post_draw

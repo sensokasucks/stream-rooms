@@ -13,6 +13,8 @@ extends Room
 const MIX_RATE: float = 22050.0
 
 @export_group("Light groups")
+## Energy and range (metres) per light group; _tune_lights() picks the group from the LAMP_ name
+## (contains "Chandelier", "Gallery" or "Stage").
 @export var chandelier_energy: float = 9.0
 @export var chandelier_range: float = 34.0
 @export var gallery_energy: float = 1.6
@@ -21,6 +23,7 @@ const MIX_RATE: float = 22050.0
 @export var stage_range: float = 16.0
 
 @export_group("Set shaders")
+## Use stained_glass.gdshader on the GLASS_MATERIALS (off = the plain imported materials).
 @export var fancy_glass: bool = true
 @export var glass_emission: float = 2.2
 ## The way sunlight travels through the room (world space). Lancets facing it get beams.
@@ -31,6 +34,8 @@ const MIX_RATE: float = 22050.0
 ## How squarely a lancet must face the sun to cast a beam (0..1).
 @export_range(0.0, 1.0) var shaft_min_facing: float = 0.6
 @export var lancet_size: Vector2 = Vector2(1.1, 2.2)   # must match lecture_hall_gen.py
+## Clear coat on the VARNISHED woods and leather, velvet rim on the carpet, glossy brass and
+## subsurface marble (_replacement_for).
 @export var polish_materials: bool = true
 
 @export_group("Sound")
@@ -39,14 +44,17 @@ const MIX_RATE: float = 22050.0
 
 var _amb_playback: AudioStreamGeneratorPlayback
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
+# low-pass filter states for the generated room tone
 var _lp: float = 0.0
 var _lp2: float = 0.0
 var _set_shaders: Array[ShaderMaterial] = []    # take light_level from the house lights
+## The sun beam mesh (null when no lancet faces the sun); the "sun_rays" setting scales it.
 var _shafts: MeshInstance3D
 var _shaft_mat: ShaderMaterial
 
 const GLASS_SHADER := preload("res://rooms/lecture_hall/stained_glass.gdshader")
 const SHAFT_SHADER := preload("res://rooms/lecture_hall/sun_shaft.gdshader")
+## Imported material names (from blender/lecture_hall_gen.py) that the set shaders replace.
 const GLASS_MATERIALS := ["Glass_Lancet", "Glass_Rondel", "Glass_Fan"]
 const VARNISHED := ["Oak", "Oak_Dark", "Oak_Gothic", "Door_Leaf", "Stage_Floor"]
 
@@ -62,6 +70,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_lh_setting_changed)
 
 
+## The room is freed on a room swap: drop the EventBus connection with it.
 func _exit_tree() -> void:
 	if EventBus.setting_changed.is_connected(_on_lh_setting_changed):
 		EventBus.setting_changed.disconnect(_on_lh_setting_changed)
@@ -83,6 +92,7 @@ func _on_lh_setting_changed(key: String, _value: Variant) -> void:
 		_apply_sun_rays()
 
 
+## "sun_rays" (AppState.DEFAULTS, 0..2) times shaft_intensity; 0 hides the beams.
 func _apply_sun_rays() -> void:
 	if _shafts == null:
 		return
@@ -91,6 +101,7 @@ func _apply_sun_rays() -> void:
 	_shaft_mat.set_shader_parameter("intensity", shaft_intensity * amount)
 
 
+## Set shaders (glass, beams) follow the house light level.
 func _process(delta: float) -> void:
 	super._process(delta)
 	for m in _set_shaders:
@@ -99,6 +110,7 @@ func _process(delta: float) -> void:
 
 
 # ── Set shaders ──────────────────────────────────────────────
+## Swaps every imported material that has a replacement (see _replacement_for).
 func _apply_set_shaders() -> void:
 	var made: Dictionary = {}     # original material -> replacement (shared stays shared)
 	for n in find_children("*", "MeshInstance3D", true, false):
@@ -117,6 +129,7 @@ func _apply_set_shaders() -> void:
 				mi.set_surface_override_material(s, made[m])
 
 
+## The material to use in place of m (by its imported name), or null to keep it.
 func _replacement_for(m: BaseMaterial3D) -> Material:
 	var n := m.resource_name
 	if fancy_glass and GLASS_MATERIALS.has(n):
@@ -224,6 +237,7 @@ func _build_sun_shafts() -> void:
 	if screen:
 		var box := screen.get_aabb()
 		var xf := screen.global_transform
+		# the main screen's rectangle, so the shader can keep the beams from washing over the picture
 		mat.set_shader_parameter("screen_c", xf * box.get_center())
 		mat.set_shader_parameter("screen_x", xf.basis * Vector3(box.size.x * 0.5, 0.0, 0.0))
 		mat.set_shader_parameter("screen_y", xf.basis * Vector3(0.0, box.size.y * 0.5, 0.0))
@@ -239,6 +253,8 @@ func _build_sun_shafts() -> void:
 	_apply_sun_rays()
 
 
+## Sets each house light from its group's energy / range (LAMP_ lights are children named
+## "Light", so the group comes from the parent's name) and records the new base energy.
 func _tune_lights() -> void:
 	for l in _house_lights:
 		var owner_name := String(l.get_parent().name) if l.name == &"Light" else String(l.name)
@@ -261,6 +277,7 @@ func _tune_lights() -> void:
 		o.light_energy = _base_energy[l] * _level
 
 
+## Called every frame: tops the generator buffer up with filtered noise (air rush and rumble).
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return

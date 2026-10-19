@@ -3,14 +3,19 @@ extends Node3D
 ## Streaming together: a small floating camera with a name for everyone else in the session, so
 ## each streamer can see where the others are looking. Moves smoothly toward the latest position
 ## (updates arrive about 10 times a second) and only does work while a marker is moving.
-## Together tab > Show the others' cameras turns them off.
+## Together tab > Show the others' cameras turns them off (setting "together_show_cameras").
+## main.gd adds it at start-up. Positions come from NetSession (autoload/net_session.gd) as
+## EventBus.net_camera_moved; EventBus.net_peer_left removes a marker.
 
+## Size of the marker's camera body in metres (width, height, depth).
 const BODY_SIZE := Vector3(0.28, 0.2, 0.36)
+## Marker colours, picked by peer id so each person keeps the same colour.
 const COLORS: Array[Color] = [Color(1.0, 0.55, 0.2), Color(0.3, 0.75, 1.0), Color(0.6, 1.0, 0.4), Color(1.0, 0.45, 0.8)]
 
 ## A marker this close to your own camera hides, so it never fills your view (everyone starts
 ## at the same camera spot, for example).
 const HIDE_NEAR_M: float = 1.5
+## Seconds between checks of the distance to your own camera.
 const NEAR_CHECK_S: float = 0.2
 
 var _markers: Dictionary = {}     # peer id -> {node: Node3D, label: Label3D, target: Transform3D}
@@ -32,6 +37,8 @@ func _ready() -> void:
 	add_child(_near_timer)
 
 
+## Glides each marker toward its latest target; processing switches itself off once all have
+## arrived.
 func _process(delta: float) -> void:
 	var moving := false
 	for id: int in _markers:
@@ -44,6 +51,7 @@ func _process(delta: float) -> void:
 	set_process(moving)
 
 
+## Hides markers within HIDE_NEAR_M of the camera you are looking through.
 func _hide_near() -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -54,14 +62,18 @@ func _hide_near() -> void:
 		node.visible = node.global_position.distance_to(me) > HIDE_NEAR_M
 
 
+## Number of markers shown (one per other streamer). Used by test_together.
 func get_marker_count() -> int:
 	return _markers.size()
 
 
+## The marker node for a peer id, or null. Used by test_together.
 func get_marker(peer_id: int) -> Node3D:
 	return _markers[peer_id]["node"] if _markers.has(peer_id) else null
 
 
+## A camera position from the session: makes the peer's marker on first sight (placed straight
+## at the spot), afterwards only moves its target.
 func _on_moved(peer_id: int, peer_name: String, xform: Transform3D) -> void:
 	var x := xform.orthonormalized()
 	if not _markers.has(peer_id):
@@ -85,6 +97,7 @@ func _on_left(peer_id: int) -> void:
 			_near_timer.stop()
 
 
+## Builds one marker: a dark box with a glowing lens and a floating name label (child "Name").
 func _build(color: Color) -> Node3D:
 	var root := Node3D.new()
 	var mat := StandardMaterial3D.new()

@@ -1,5 +1,6 @@
 extends Node
 ## Closing / opening the curtain with "mute while closed" on, sound on, chat flowing, in the panel room.
+## Older-style test: prints values to compare between runs (most checks have no PASS / FAIL line).
 func _secs(t): await get_tree().create_timer(t).timeout
 func _ready():
 	AppState.set_setting("curtain_mute", true)

@@ -1,5 +1,6 @@
 extends Node
 ## Without the godot-ndi extension: NDI UI shows "not loaded", requests fail gracefully, the rest runs.
+## Older-style test: prints values to compare between runs (most checks have no PASS / FAIL line).
 func _secs(t): await get_tree().create_timer(t).timeout
 func _ready():
 	EventBus.ndi_sources_changed.connect(func(n, a): print("NDI sources ", n, " available=", a))

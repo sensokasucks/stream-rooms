@@ -2,6 +2,9 @@
 
     python make_hall_textures.py <out_dir>
 
+The PNGs go into rooms/lecture_hall/textures, where lecture_hall_gen.py (tex_mat) picks them up
+by these names. Needs numpy, scipy and Pillow; it runs in plain Python, not inside Blender.
+
 All designs are original. Each glass picture is built as a label map (one id per piece of
 glass); lead cames are drawn wherever neighbouring pieces differ, then the glass gets streaks,
 seeds and a brighter middle in every piece, as real hand-made glass has.
@@ -18,7 +21,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from scipy import ndimage
 
 OUT = sys.argv[1] if len(sys.argv) > 1 else "."
-RNG = np.random.default_rng(7)
+RNG = np.random.default_rng(7)     # fixed seed: the same textures every run
 
 # jewel palette (sRGB 0..255)
 RUBY = (150, 18, 30)
@@ -38,6 +41,7 @@ LEAD = (34, 31, 30)
 
 
 def smooth_noise(h, w, cells_y, cells_x, seed):
+    """Soft random 0..1 noise of size h x w: a cells_y x cells_x grid of random values, scaled up bicubically."""
     r = np.random.default_rng(seed).random((cells_y, cells_x)).astype(np.float32)
     im = Image.fromarray((r * 255).astype(np.uint8)).resize((w, h), Image.BICUBIC)
     return np.asarray(im, np.float32) / 255.0
@@ -84,17 +88,20 @@ def render_glass(labels, colours, inside, lead_px=3):
 
 
 def polar(x, y, cx, cy):
+    """Distance and angle (radians) of every pixel from the centre (cx, cy)."""
     dx, dy = x - cx, y - cy
     return np.hypot(dx, dy), np.arctan2(dy, dx)
 
 
 class Labeler:
+    """Builds a label map: each put() paints a new piece of glass (a new id) over what is there."""
     def __init__(self, shape):
         self.map = np.zeros(shape, np.int32)
         self.colours = {}
         self.n = 0
 
     def put(self, mask, colour):
+        """Gives the pixels in mask a new label with this colour; returns the label."""
         self.n += 1
         self.map[mask] = self.n
         self.colours[self.n] = colour
@@ -103,6 +110,9 @@ class Labeler:
 
 # ─────────────────────────────── lancet ───────────────────────────────
 def lancet():
+    """Tall lancet: diamond quarries, a quatrefoil, a star medallion, a trefoil in the point and a
+    jewelled border. u runs 0..1 across, v 0..2 up (in window widths).
+    """
     W, H = 512, 1024
     y, x = np.mgrid[0:H, 0:W].astype(np.float32)
     u = (x + 0.5) / W                  # 0..1 across
@@ -198,6 +208,7 @@ def lancet():
 
 # ─────────────────────────────── rondel ───────────────────────────────
 def rondel():
+    """Rose window: a ring of 24 pieces, twelve petals with round tips, a star in the centre boss."""
     S = 512
     y, x = np.mgrid[0:S, 0:S].astype(np.float32)
     u, v = (x + 0.5) / S - 0.5, 0.5 - (y + 0.5) / S
@@ -239,10 +250,11 @@ def rondel():
 
 
 # ──────────────────────────────── fanlight ────────────────────────────
-FAN_RISE = 0.625
+FAN_RISE = 0.625      # fanlight height / width: keep in step with the fanlight in lecture_hall_gen.py
 
 
 def fan():
+    """Fanlight: a sunburst of rays from a half-rondel at the bottom, in a pointed (two-arc) frame."""
     W, H = 512, 320
     y, x = np.mgrid[0:H, 0:W].astype(np.float32)
     u = (x + 0.5) / W
@@ -275,6 +287,7 @@ def fan():
 
 # ─────────────────────────────── door leaf ────────────────────────────
 def wood(h, w, seed, vertical=True):
+    """Oak grain as an RGB float array; vertical=False runs the grain across (for the rails)."""
     if vertical:
         n = smooth_noise(h, w, 5, w // 3, seed)
         fine = smooth_noise(h, w, 40, w, seed + 1)
@@ -289,6 +302,9 @@ def wood(h, w, seed, vertical=True):
 
 
 def door_leaf():
+    """One oak door leaf: stiles and three rails, a pointed upper panel and a linenfold lower panel
+    with bevels lit from the top left, a carved quatrefoil and iron studs.
+    """
     W, H = 384, 1024
     img = wood(H, W, 21, vertical=True)
     rails = wood(H, W, 33, vertical=False)
@@ -363,6 +379,7 @@ def door_leaf():
 
 
 def exit_sign():
+    """A lit red EXIT sign with a glow and a brass frame."""
     W, H = 256, 96
     im = Image.new("RGB", (W, H), (26, 8, 6))
     txt = Image.new("L", (W, H), 0)

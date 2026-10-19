@@ -13,8 +13,11 @@ import os
 import re
 import sys
 
+# run from the project folder, wherever it was started from
 os.chdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
+# Members of the engine classes the scripts extend (a hand-picked list, not the whole API):
+# a local with one of these names hides the member. Add to it when the editor warns about a new one.
 MEMBERS = {
     "Object": {"free", "connect", "disconnect", "emit_signal", "notification", "to_string", "get_class", "set", "get",
                "call", "callv", "set_meta", "get_meta", "has_meta", "get_script", "set_script", "tr",
@@ -54,6 +57,7 @@ MEMBERS = {
     "TextureRect": {"texture", "stretch_mode", "expand_mode"},
     "Timer": {"wait_time", "one_shot", "autostart", "paused", "start", "stop"},
 }
+# Engine class -> its parent, so members() also collects what the parent classes have.
 INHERIT = {"Node": ["Object"], "Node3D": ["Node"], "CanvasItem": ["Node"], "Control": ["CanvasItem"],
            "Viewport": ["Node"], "Window": ["Viewport"], "SubViewport": ["Viewport"], "Resource": ["RefCounted"],
            "RefCounted": ["Object"], "Label": ["Control"], "RichTextLabel": ["Control"], "BaseButton": ["Control"],
@@ -63,6 +67,7 @@ INHERIT = {"Node": ["Object"], "Node3D": ["Node"], "CanvasItem": ["Node"], "Cont
            "Sprite3D": ["Node3D"], "Label3D": ["Node3D"], "Camera3D": ["Node3D"], "Light3D": ["Node3D"],
            "OmniLight3D": ["Light3D"], "SpotLight3D": ["Light3D"], "Marker3D": ["Node3D"], "Timer": ["Node"],
            "SceneTree": ["Object"], "EditorScript": ["RefCounted"], "AudioStreamPlayer": ["Node"]}
+# GDScript's global functions: a local, loop variable or parameter with one of these names hides it.
 GLOBALS = {"abs", "absf", "absi", "acos", "asin", "atan", "atan2", "ceil", "ceilf", "ceili", "clamp", "clampf", "clampi",
            "cos", "deg_to_rad", "ease", "exp", "floor", "floorf", "floori", "fmod", "fposmod", "hash", "inst_to_dict",
            "is_equal_approx", "is_zero_approx", "lerp", "lerpf", "log", "max", "maxf", "maxi", "min", "minf", "mini",
@@ -76,6 +81,7 @@ GLOBALS = {"abs", "absf", "absi", "acos", "asin", "atan", "atan2", "ceil", "ceil
 
 
 def members(cls, seen=None):
+    """Every listed member of cls and the classes it inherits from."""
     seen = seen or set()
     if cls in seen:
         return set()
@@ -86,8 +92,10 @@ def members(cls, seen=None):
     return out
 
 
+# every project script except the plugins, backups, built copies and temporary files
 files = [f for f in glob.glob("**/*.gd", recursive=True)
          if not f.replace("\\", "/").startswith(("addons/", "_backup/", "exported/")) and "_tmp_" not in f]
+# class_name -> what it extends, so a script that extends one of our classes finds its engine base
 classes = {}
 for f in files:
     s = open(f, encoding="utf-8", errors="replace").read()
@@ -98,6 +106,7 @@ for f in files:
 
 
 def base_of(cls):
+    """The engine class at the bottom of a chain of our own class_names (10 steps at most)."""
     for _ in range(10):
         if cls not in classes:
             break
@@ -105,6 +114,7 @@ def base_of(cls):
     return cls
 
 
+# "something whole-number-like / something": sizes, lengths, int(...), number literals.
 INT_ISH = re.compile(r"(\.size\(\)|\.length\(\)|\bint\([^()]*\)|\blen\([^()]*\)|\b\d+)\s*/\s*(\(|\bint\(|\d+\b|\w+\.size\(\)|[A-Z_]{3,}\b|\w+)")
 found = 0
 for f in files:
@@ -112,18 +122,22 @@ for f in files:
     e = re.search(r"^extends\s+([\w.]+)", s, re.M)
     base = base_of(e.group(1)) if e else "RefCounted"
     mem = members(base)
+    # names declared at the script's top level (members of this script)
     toplevel = set(re.findall(r"^(?:static\s+)?(?:var|func|signal|const)\s+(\w+)", s, re.M))
     lines = s.split("\n")
     for i, line in enumerate(lines, 1):
+        # drop comments (rough: a "#" inside a string cuts the line short too)
         code = line.split("#")[0]
         if not code.strip():
             continue
+        # names this line declares: locals, loop variables and, on a func line, its parameters
         names = re.findall(r"\bvar\s+(\w+)", code) + re.findall(r"\bfor\s+(\w+)\s*(?::|in\b)", code)
         fm = re.match(r"^\s*(?:static\s+)?func\s+\w+\(([^)]*)\)", code)
         if fm:
             names += [p.strip().split(":")[0].split("=")[0].strip() for p in fm.group(1).split(",") if p.strip()]
         is_top = not code.startswith(("\t", " "))
         for name in names:
+            # a leading "_" is the usual way to say "unused / private", so those are left alone
             if not name or name.startswith("_"):
                 continue
             if not is_top and name in mem:
@@ -132,8 +146,10 @@ for f in files:
                 print(f"{f}:{i}: '{name}' shadows the global {name}()"); found += 1
             elif not is_top and name in toplevel:
                 print(f"{f}:{i}: '{name}' shadows a script-level name"); found += 1
+        # lines[i - 2] is the line above (i counts from 1)
         if i >= 2 and 'warning_ignore("integer_division")' in lines[i - 2]:
             continue
+        # skip lines with any sign of floats (or strings, where "/" is usually a path)
         if "/" in code and not re.search(r"\d\.\d|float\(|\.[xyz]\b|randf|delta|lerp|\bfloat\b|\"|'", code):
             m = INT_ISH.search(code)
             if m and not re.search(r"^\d+\.\d", m.group(2)):

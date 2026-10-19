@@ -10,6 +10,7 @@ extends Room
 ## (screen_film_amount, screen_matte, speaker_lofi).
 
 const DUST_SHADER: Shader = preload("res://rooms/classroom/beam_dust.gdshader")
+## Sample rate (Hz) of the generated ambience; low is fine for whirr and clicks and costs less.
 const MIX_RATE: float = 22050.0
 
 @export_group("Projector")
@@ -22,6 +23,7 @@ const MIX_RATE: float = 22050.0
 
 @export_group("Beam dust")
 @export var dust_enabled: bool = true
+## Number of dust specks in the beam.
 @export var dust_amount: int = 500
 @export var dust_color: Color = Color(1.0, 0.95, 0.85, 0.35)
 
@@ -34,6 +36,7 @@ const MIX_RATE: float = 22050.0
 
 @export_group("Sound")
 @export var ambience_enabled: bool = true
+## Loudness of each generated sound (0..1).
 @export_range(0.0, 1.0) var projector_loudness: float = 0.35
 @export_range(0.0, 1.0) var room_tone_loudness: float = 0.06
 @export_range(0.0, 1.0) var clock_tick_loudness: float = 0.12
@@ -74,6 +77,7 @@ func _ready() -> void:
 		_amb_playback = _start_generated_ambience(MIX_RATE, 0.3)
 
 
+## Reels run while a video plays (not during a react pause); the lamps follow the house lights.
 func _process(delta: float) -> void:
 	super._process(delta)
 	var running := AppState.is_playback_active() and not AppState.is_react_paused()
@@ -88,6 +92,7 @@ func _process(delta: float) -> void:
 
 
 # ── Reels + clock ────────────────────────────────────────────
+## Turns each REEL_ node about its local X; names containing "take" use the take-up speed.
 func _spin_reels(delta: float) -> void:
 	if _spin <= 0.0:
 		return
@@ -96,6 +101,7 @@ func _spin_reels(delta: float) -> void:
 		r.rotate_object_local(Vector3.RIGHT, -TAU * rps * _spin * delta)
 
 
+## Sets the CLOCK_ hands from the PC's clock (rotation about local Z) and starts a tick each second.
 func _update_clock() -> void:
 	var t := Time.get_time_dict_from_system()
 	var sec := float(t["second"])
@@ -114,6 +120,7 @@ func _update_clock() -> void:
 
 
 # ── Lamp globes ──────────────────────────────────────────────
+## Keeps a private copy of the globes' material so _process can scale its glow.
 func _setup_lamp_globes() -> void:
 	var mi := find_child(lamp_mesh_name, true, false) as MeshInstance3D
 	if mi == null or mi.mesh == null:
@@ -127,6 +134,8 @@ func _setup_lamp_globes() -> void:
 
 
 # ── Dust in the beam ─────────────────────────────────────────
+## A box of drifting particles from BEAM_Projector to the screen. beam_dust.gdshader gets the
+## beam's origin, direction and spread, and hides specks that fall outside the light cone.
 func _build_dust() -> void:
 	var marker := get_projector_marker()
 	var screen := find_screen()
@@ -173,6 +182,8 @@ func _build_dust() -> void:
 
 
 # ── Sound: projector + room tone + clock ─────────────────────
+## Called every frame: tops the generator buffer up with as many samples as it has room for.
+## Everything is made from white noise and sine waves (stereo: left, right a little different).
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return

@@ -46,6 +46,8 @@ extends Node3D
 ## Crowd seats (a JSON file written by the room's Blender generator: {"seats": [{"p": [x, y, z]}, ...]},
 ## positions in the room's own space, on the seat surface). The filler crowd sits here, and
 ## chatters overflow into them once the main seats are full. Empty = no crowd.
+## Each seat may also carry "s" (section: "orch" lower tier, "bal" balcony, "gal" gallery) and
+## "n" ([x, z] the way it faces); see get_crowd_seat_info(). blender/lecture_hall_gen.py writes it.
 @export_file("*.json") var crowd_seats_file: String = ""
 ## Chat windows beside the main screen (SideChats): extra room between them and the screen,
 ## and their height as a share of the screen's, on top of the Chat tab's settings (e.g. to
@@ -61,6 +63,7 @@ extends Node3D
 @export var audience_camera_clearance: float = 0.45
 ## House light level while a video plays (0..1 of their original energy).
 @export_range(0.0, 1.0) var dimmed_level: float = 0.08
+## How fast the house lights fade between levels (share of full brightness per second).
 @export var fade_speed: float = 0.6
 
 ## Swap imported materials by name, e.g. "Win_Concrete" (from Blender) -> a ShaderMaterial.
@@ -77,12 +80,15 @@ extends Node3D
 @export var lamp_range: float = 14.0
 @export var lamp_shadows: bool = false
 
+## Every Light3D under LIGHTS_House, with its original energy in _base_energy (light -> float).
 var _house_lights: Array[Light3D] = []
 var _base_energy: Dictionary = {}
+## Current house light level 0..1 (AudienceView reads it to dim the filler crowd).
 var _level: float = 1.0
 var _glow: Array[Dictionary] = []    # {mat: BaseMaterial3D, energy: float}
 
 
+## Subclasses that override _ready() must call super._ready() so these steps still run.
 func _ready() -> void:
 	if absf(presenter_forward) > 0.001:
 		_move_presenters_forward()
@@ -99,6 +105,8 @@ func _ready() -> void:
 			_base_energy[l] = l.light_energy
 
 
+## Fades the house lights (and glowing materials) towards _target_level(); nothing to do once
+## there. Subclasses call super._process(delta).
 func _process(delta: float) -> void:
 	var target := _target_level()
 	if is_equal_approx(_level, target):
@@ -116,6 +124,7 @@ func find_screen() -> MeshInstance3D:
 	return find_child(screen_mesh_name, true, false) as MeshInstance3D
 
 
+## CAM_* presets, sorted by name: the name sets their order in the app.
 func get_camera_markers() -> Array[Node3D]:
 	var out: Array[Node3D] = []
 	for n in find_children(camera_prefix + "*", "Node3D", true, false):
@@ -124,6 +133,7 @@ func get_camera_markers() -> Array[Node3D]:
 	return out
 
 
+## Name shown for a camera preset: "CAM_2_Front_Row" -> "Front Row".
 func get_camera_label(marker: Node3D) -> String:
 	var label := String(marker.name).trim_prefix(camera_prefix)
 	# Allow "1_Seat" style names for ordering; show just "Seat".
@@ -293,6 +303,7 @@ func get_crowd_seat_info() -> Array[Dictionary]:
 	return out
 
 
+## SCREEN_Mirror_* meshes that show the same picture as TVScreen.
 func get_mirror_screens() -> Array[MeshInstance3D]:
 	var out: Array[MeshInstance3D] = []
 	for n in find_children(mirror_screen_prefix + "*", "MeshInstance3D", true, false):
@@ -315,6 +326,7 @@ func _start_generated_ambience(mix_rate: float, buffer_length: float) -> AudioSt
 	return amb.get_stream_playback() as AudioStreamGeneratorPlayback
 
 
+## Puts material_overrides in place of the imported materials they name, on every mesh.
 func _apply_material_overrides() -> void:
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
@@ -326,6 +338,8 @@ func _apply_material_overrides() -> void:
 				mi.set_surface_override_material(s, material_overrides[m.resource_name])
 
 
+## Makes room-owned copies of the glow_materials so _process can scale their emission
+## with the house lights without touching the imported resources.
 func _collect_glow_materials() -> void:
 	var done: Dictionary = {}    # original material -> duplicate, so shared materials stay shared
 	for n in find_children("*", "MeshInstance3D", true, false):
@@ -343,6 +357,8 @@ func _collect_glow_materials() -> void:
 			mi.set_surface_override_material(s, done[m])
 
 
+## Gives each LAMP_ empty under LIGHTS_House that has no light of its own an OmniLight3D
+## built from the lamp_* settings.
 func _spawn_lamp_lights(group: Node) -> void:
 	for n in group.find_children(lamp_prefix + "*", "Node3D", true, false):
 		if n is Light3D or not n.find_children("*", "Light3D", false, false).is_empty():

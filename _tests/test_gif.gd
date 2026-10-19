@@ -1,5 +1,7 @@
 extends Node
 ## GifDecoder against GIFs made by Pillow (devtools/emote_srv), frames saved for comparison.
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 func _ready():
 	var out: String = OS.get_cmdline_user_args()[0]
 	for fname in ["anim.gif", "anim_opt.gif", "interlaced.gif"]:

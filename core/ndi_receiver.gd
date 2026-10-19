@@ -5,17 +5,23 @@ extends Node
 ## Everything is looked up by name (ClassDB), so the game still runs, without NDI, when the
 ## extension or the runtime is missing.
 ## Publishes EventBus.ndi_sources_changed(names, available).
+## ScreenFeed creates one as a child (source "ndi"); the control panel lists the names. The
+## extension's changes for this app: addons/godot-ndi/STREAM_ROOMS_PATCH.md.
 
+## Class names the godot-ndi extension registers. Only used through ClassDB, so this script
+## still parses without the extension.
 const FINDER_CLASS: String = "NDIFinder"
 const STREAM_CLASS: String = "VideoStreamNDI"
 
 ## Tests only: a script standing in for NDIFinder (get_sources(), sources_changed signal).
+## Set by _tests/test_ndi.gd (mock in _tests/mock_ndi/) before main.tscn is built.
 static var mock_finder: GDScript = null
 
 var _finder: Node
-var _names: PackedStringArray = []
+var _names: PackedStringArray = []     # source names from the last change, sorted
 
 
+## True when NDI can be used: the extension is loaded (or a test mock is set).
 static func is_available() -> bool:
 	return mock_finder != null or (ClassDB.class_exists(FINDER_CLASS) and ClassDB.class_exists(STREAM_CLASS))
 
@@ -69,6 +75,7 @@ func make_player(source_name: String, parent: Node, bus: StringName, external_au
 	return p
 
 
+## The finder's VideoStream for a source name, or null if it isn't on the network now.
 func _find_stream(source_name: String) -> VideoStream:
 	if _finder == null or source_name == "":
 		return null
@@ -86,6 +93,7 @@ static func _stream_name(s: Variant) -> String:
 	return String(n)
 
 
+## The finder's sources_changed signal: rebuild the name list and publish it if it changed.
 func _on_sources_changed() -> void:
 	var names := PackedStringArray()
 	for s: Variant in _finder.call("get_sources"):

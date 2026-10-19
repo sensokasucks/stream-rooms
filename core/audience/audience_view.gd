@@ -19,11 +19,14 @@ extends Node3D
 ## bubbles redraw at a lower rate.
 
 const SILHOUETTE: Texture2D = preload("res://core/audience/silhouette.png")
+## Tint of an empty seat's silhouette (only shown with "audience_show_empty" on).
 const EMPTY_COLOR: Color = Color(0.6, 0.6, 0.66, 0.22)
+## A speaking chatter's colour is multiplied by this while their bubble is up.
 const SPEAKER_COLOR_BOOST: float = 1.25
 ## Where the head is in silhouette.png (pixels): centre and the radius inside the rim.
 const HEAD_CENTER: Vector2 = Vector2(128, 94)
 const HEAD_RADIUS: float = 56.0
+## Size (pixels) of the round profile picture asked from EmoteCache.get_circle_texture.
 const AVATAR_PX: int = 128
 ## How often bubbles check whether the camera can see them (seconds).
 const BUBBLE_CHECK: float = 0.2
@@ -43,6 +46,7 @@ const NUDGE_MAX_HEIGHTS: float = 2.5
 @export var bubble_gap: float = 0.12
 ## Bubble size in metres per pixel at 100% bubble size.
 @export var bubble_pixel_size: float = 0.0021
+## Seconds a seat takes to fade to its new colour when someone sits down or leaves.
 @export var fade_time: float = 0.35
 ## Silhouettes closer to the camera than this fade out, so heads in the front row
 ## don't block the view (they're fully visible again at near_fade_end).
@@ -60,19 +64,26 @@ const NUDGE_MAX_HEIGHTS: float = 2.5
 ## render target of its own, so this bounds the graphics work however fast chat goes.
 @export var max_bubbles: int = 16
 
+## One Dictionary per slot (main seats, then crowd seats, then presenter spots); the slot index
+## is the same one AudienceManager uses. Keys are listed in _new_seat().
 var _seats: Array[Dictionary] = []
 var _rich: Array[int] = []          # seats with nodes: main seats, presenter spots, chatters in crowd seats
 var _bubbling: Array[int] = []      # seats with a message up (drawn, or waiting until the camera sees it)
 ## Finished bubbles kept for reuse instead of a new viewport per message: [{vp, bubble, spr}],
 ## out of the tree. Freed with the view.
 var _bubble_pool: Array[Dictionary] = []
+## The filler crowd (null when the room has no crowd seats).
 var _crowd: CrowdLayer
 var _presenter_slots: Dictionary = {}   # presenter n -> slot
 var _presenter_nodes: Dictionary = {}   # presenter n -> Presenter
+## Cached get_seats_bounds() result, computed once in setup().
 var _bounds: AABB = AABB()
+## Camera transform at the last seat update; _dirty forces one more update (seat changes).
 var _last_cam: Transform3D = Transform3D()
 var _dirty: bool = true
+## Counts down to the next bubble visibility check (BUBBLE_CHECK).
 var _vis_clock: float = 0.0
+## Room light level last handed to the crowd (Room._level), so it is only set when it changes.
 var _light: float = -1.0
 
 
@@ -128,6 +139,7 @@ func setup(seats: Array[Transform3D], stage_point: Variant = null, crowd: Array[
 	_apply_visibility()
 
 
+## Everything that changes the audience arrives as EventBus signals from AudienceManager / AppState.
 func _ready() -> void:
 	EventBus.audience_seated.connect(_on_seated)
 	EventBus.audience_left.connect(_on_left)
@@ -159,6 +171,9 @@ func retire() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 
 
+## Per frame: seat fades and tag sizes only when the camera moved (or a seat changed), the crowd
+## follows the room's light level, bubble timers count down, and every BUBBLE_CHECK seconds the
+## bubbles check whether the camera can see them (and get un-overlapped).
 func _process(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -217,6 +232,7 @@ func _update_view(i: int, cam_pos: Vector3, names_on: bool) -> void:
 	(s["holder"] as Node3D).scale = Vector3.ONE * grow
 
 
+## Applies the seat's colour times its near-camera fade to the silhouette and picture.
 func _paint(i: int) -> void:
 	var s: Dictionary = _seats[i]
 	if not bool(s["rich"]):
@@ -429,9 +445,11 @@ func hold_sign(slot: int, text: String, color: Color, seconds: float) -> void:
 	play_motion(slot, "jump", 0.5)
 
 
+## Sign board textures, one per rim colour (html string -> texture), shared by all views.
 static var _sign_textures: Dictionary = {}
 
 
+## Draws (once per colour) a 128x64 rounded white board with a rim in that colour.
 static func _sign_texture(rim: Color) -> Texture2D:
 	var key := rim.to_html(false)
 	if _sign_textures.has(key):
@@ -561,6 +579,9 @@ func shout(slot: int, text: String, color: Color, seconds: float) -> void:
 
 
 # ── Building ─────────────────────────────────────────────────
+## A fresh seat record. kind: "seat", "crowd" or "presenter"; xf: its global transform. Nodes
+## (root, sprite, head, label, holder, bubble...) stay null until _make_rich(). Bubble state:
+## queue (waiting messages), timer (seconds left), active / pending / vis / vp_off / throttle.
 func _new_seat(kind: String, t: Transform3D) -> Dictionary:
 	return {"kind": kind, "xf": t, "scale": t.basis.get_scale().x, "rich": false, "n": 0, "crowd_i": -1,
 		"root": null, "base": Vector3.ZERO, "motion": null, "shout": null, "sprite": null, "head": null,
@@ -757,6 +778,7 @@ func _compute_sections(spots: Array[Vector3], kinds: PackedByteArray, stage_poin
 	AudienceManager.set_slot_sections(sections, info)
 
 
+## Box around the heads of every main and crowd seat (presenter spots left out).
 func _compute_bounds() -> AABB:
 	var box := AABB()
 	var first := true
@@ -769,6 +791,8 @@ func _compute_bounds() -> AABB:
 	return box
 
 
+## Brings one seat in line with AudienceManager: who sits there, colour, tag, picture and
+## visibility. A crowd seat gets its nodes when a chatter arrives and loses them when they go.
 func _refresh_seat(i: int, animate: bool) -> void:
 	var s: Dictionary = _seats[i]
 	var m := AudienceManager.get_seat_member(i)
@@ -819,6 +843,8 @@ func _refresh_seat(i: int, animate: bool) -> void:
 	_dirty = true
 
 
+## Whether the seat's silhouette shows: presenters only with "chat look", crowd seats only
+## when taken, main seats when taken, a filler, or when empty seats are set to show.
 func _seat_visible(i: int) -> bool:
 	var s: Dictionary = _seats[i]
 	match String(s["kind"]):
@@ -834,9 +860,11 @@ func _seat_visible(i: int) -> bool:
 func _main_filler(i: int) -> bool:
 	if not bool(AppState.get_setting("audience_fill_main")):
 		return false
+	# a hash of the slot number (0..1) rather than randf(), so the same seats fill on every refresh
 	return float(absi(hash(i * 104729 + 3)) % 10000) / 10000.0 < float(AppState.get_setting("audience_crowd_fill"))
 
 
+## A filler person's colour, from the crowd's palette (stable per slot).
 func _filler_tint(i: int) -> Color:
 	var c: Color = CrowdLayer.TINTS[absi(hash(i * 31 + 7)) % CrowdLayer.TINTS.size()]
 	return Color(c.r * 0.85, c.g * 0.85, c.b * 0.85, 0.95)
@@ -859,6 +887,8 @@ func _update_presenter_look(i: int) -> void:
 		(s["head"] as Sprite3D).visible = false
 
 
+## Settings audience_enabled / audience_crowd / audience_show_empty: show or hide the view,
+## the crowd and the seats.
 func _apply_visibility() -> void:
 	visible = bool(AppState.get_setting("audience_enabled"))
 	if _crowd:
@@ -869,6 +899,9 @@ func _apply_visibility() -> void:
 
 
 # ── Speech bubbles ───────────────────────────────────────────
+## EventBus.audience_spoke: a chatter's message (parts: text strings, {url, name} emotes and
+## optional {reply_to} / {tint} entries; see AudienceManager.message_parts) joins the seat's queue
+## (3 at most); the first one shows straight away.
 func _on_spoke(slot: int, parts: Array) -> void:
 	if slot < 0 or slot >= _seats.size() or not bool(_seats[slot]["rich"]):
 		return
@@ -892,6 +925,7 @@ func _on_spoke(slot: int, parts: Array) -> void:
 		s["timer"] = 1.2        # someone is typing fast: move the current bubble along
 
 
+## Moves the seat on to its next queued message, or ends the bubble when the queue is empty.
 func _next_bubble(i: int) -> void:
 	var s: Dictionary = _seats[i]
 	var q: Array = s["queue"]
@@ -1105,6 +1139,7 @@ func _refresh_head(i: int, m: Dictionary) -> void:
 	head.visible = tex != null and bool(s["show"])
 
 
+## EventBus.audience_updated: a seated chatter's colour, name, title or picture changed.
 func _on_updated(slot: int) -> void:
 	if slot >= 0 and slot < _seats.size() and bool(_seats[slot]["rich"]):
 		var m := AudienceManager.get_seat_member(slot)
@@ -1131,6 +1166,7 @@ func _tag_text(m: Dictionary) -> String:
 	return String(m["name"])
 
 
+## EmoteCache finished a download: redraw pictures and bubbles that were waiting for it.
 func _on_emote_ready(url: String) -> void:
 	for i in _rich:
 		var s: Dictionary = _seats[i]
@@ -1143,6 +1179,8 @@ func _on_emote_ready(url: String) -> void:
 				s["vp_off"] = true
 
 
+## Gives the seat a bubble: a SubViewport drawing a SpeechBubble (2D) shown by a Sprite3D on
+## the holder. Reuses one from _bubble_pool when it can.
 func _make_bubble(i: int) -> void:
 	var s: Dictionary = _seats[i]
 	while not _bubble_pool.is_empty():
@@ -1232,6 +1270,7 @@ func _recycle_bubble(b: Dictionary) -> void:
 	_bubble_pool.append(b)
 
 
+## Drops the seat's queued messages and ends its bubble.
 func _clear_bubbles(i: int) -> void:
 	(_seats[i]["queue"] as Array).clear()
 	_end_bubble(i)
@@ -1248,6 +1287,7 @@ func _on_left(slot: int) -> void:
 		_refresh_seat(slot, true)
 
 
+## Audience tab and Presenters tab settings that change what this view shows.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key in ["audience_enabled", "audience_names", "audience_show_empty", "audience_crowd"]:
 		_apply_visibility()

@@ -6,18 +6,23 @@ extends Node3D
 ## looks come from its own settings; this node only places them and rebuilds them when their
 ## size or position settings change.
 
+## The two windows' setting prefixes; the settings themselves (chat_left_width ...) are in
+## AppState.DEFAULTS.
 const WINDOWS: PackedStringArray = ["chat_left", "chat_right"]
 ## Metres the windows stay in front of the stage curtain (its pelmet, folds and tassels).
 const CURTAIN_CLEARANCE: float = 0.4
+## Setting suffixes that change a window's size or place (width m, height as a share of the
+## screen's height, gap m from the screen's edge, lift m). Only these rebuild a window; the
+## ChatScreen follows its other settings itself.
 const GEOMETRY: PackedStringArray = ["_width", "_height", "_gap", "_lift"]
 
 var _screen: MeshInstance3D
 var _towards: Vector3 = Vector3.BACK      # from the screen toward the audience (flat)
 var _windows: Dictionary = {}             # window key -> ChatScreen
 var _pending: Dictionary = {}             # window key -> seconds until it's rebuilt (slider drags)
-var _extra_gap: float = 0.0
-var _height_scale: float = 1.0
-var _forward: float = 0.0
+var _extra_gap: float = 0.0               # the room's own extra gap, metres
+var _height_scale: float = 1.0            # the room's height multiplier
+var _forward: float = 0.0                 # metres toward the audience (clear of the curtain)
 
 
 ## screen: the room's main screen. audience_point: somewhere in the audience (a camera).
@@ -55,6 +60,8 @@ func get_chat_window(key: String) -> ChatScreen:
 	return _windows.get(key)
 
 
+## (Re)builds one window: frees the old ChatScreen and makes a new one beside the screen, its
+## top edge level with the screen's top plus the lift.
 func _build(key: String) -> void:
 	var old: Variant = _windows.get(key)
 	if old != null and is_instance_valid(old):
@@ -70,6 +77,7 @@ func _build(key: String) -> void:
 	var gap := float(AppState.get_setting(key + "_gap")) + _extra_gap
 	var lift := float(AppState.get_setting(key + "_lift"))
 	var side := -1.0 if key == "chat_left" else 1.0
+	# `top` is the window's top centre (a ChatScreen's origin is its top centre)
 	var top := c + right * side * (screen_w * 0.5 + gap + w * 0.5) + Vector3.UP * (screen_h * 0.5 + lift) + n * (0.03 + _forward)
 	var win := ChatScreen.new()
 	win.name = "SideChat_" + key.trim_prefix("chat_")

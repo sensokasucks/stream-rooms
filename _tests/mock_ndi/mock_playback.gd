@@ -1,4 +1,7 @@
 extends VideoStreamPlayback
+## Playback made by mock_stream.gd (stands in for VideoStreamNDI's playback in test_ndi): a 640x360
+## picture with a yellow square sliding side to side on a pulsing background, or on a transparent
+## one when alpha is set (tests a presenter with alpha). It sends no sound samples.
 var alpha: bool = false
 var _t: float = 0.0
 var _playing: bool = false

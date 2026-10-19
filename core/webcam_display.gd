@@ -3,9 +3,14 @@ extends Node3D
 ## In-room picture frame for the webcam feed from the browser sender.
 ## RoomHost places it at the room's WEBCAM_Frame marker. Hidden when there is no
 ## webcam feed or when the "webcam_in_room" setting is off.
+## The picture arrives as EventBus.webcam_texture_changed (sent by ScreenFeed when the sender page
+## shares a webcam). The quad keeps the webcam's aspect ratio; only the width is fixed.
 
+## Width of the picture in metres; the height follows the webcam's aspect ratio.
 @export var width_m: float = 1.2
+## Thickness of the dark frame around the picture, in metres.
 @export var border_m: float = 0.06
+## Multiplies the picture's colour (unshaded, so room lighting doesn't change it). 1.0 = as sent.
 @export var brightness: float = 1.0
 
 var _quad: MeshInstance3D
@@ -57,6 +62,7 @@ func _refresh_visibility() -> void:
 	visible = _texture != null and bool(AppState.get_setting("webcam_in_room"))
 
 
+## Sizes the picture and frame for a width / height ratio. The frame box sits just behind the quad.
 func _resize(aspect: float) -> void:
 	var h := width_m / maxf(aspect, 0.1)
 	(_quad.mesh as QuadMesh).size = Vector2(width_m, h)

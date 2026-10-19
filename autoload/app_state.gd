@@ -3,6 +3,10 @@ extends Node
 ## Other systems read with get_setting() / the getters and change things only
 ## through the methods here, which emit EventBus signals.
 
+## Every app-wide setting and its default. The type of each default matters: a saved value of
+## another type is ignored on load (see apply_saved_settings), so write 60 for an int, 1.0 for a float.
+## Add new settings here with a short comment; react to changes with EventBus.setting_changed.
+## Presenter settings are not listed here: they come from PRESENTER_FIELDS below.
 const BASE_DEFAULTS: Dictionary = {
 	"room_id": "theater",
 	"volume": 0.8,               # 0..1, video/stream audio
@@ -258,6 +262,7 @@ const PRESENTER_FIELDS: Dictionary = {
 ## Every setting and its default (base settings + one set per presenter).
 var DEFAULTS: Dictionary = _build_defaults()
 var _settings: Dictionary = DEFAULTS.duplicate(true)
+# Runtime state (not saved). Each has a getter / setter below; most setters emit an EventBus signal.
 var _source_mode: String = "none"
 var _playback_active: bool = false
 var _react_paused: bool = false
@@ -266,6 +271,7 @@ var _clean_feed: bool = false
 var _curtain_closed: bool = false
 var _curtain_covering: bool = false
 var _curtain_present: bool = false
+# instance id of the StageCurtain that registered last (see set_curtain_present)
 var _curtain_owner: int = 0
 var _show_dimmed: bool = false
 var _room_has_webcam_frame: bool = false
@@ -300,6 +306,7 @@ static func _parse_profile(args: PackedStringArray) -> String:
 	return ""
 
 
+## The launch profile name ("" = the normal app).
 func get_profile() -> String:
 	return _profile
 
@@ -339,15 +346,18 @@ static func _build_defaults() -> Dictionary:
 	return d
 
 
-## Shortcut for presenter settings: presenter(2, "source") -> "presenter_2_source".
+## Shortcut for presenter settings: presenter_key(2, "source") -> "presenter_2_source".
 func presenter_key(n: int, field: String) -> String:
 	return "presenter_%d_%s" % [n, field]
 
 
+## The current value of a setting (its default if it was never changed).
 func get_setting(key: String) -> Variant:
 	return _settings.get(key, DEFAULTS.get(key))
 
 
+## The only way to change a setting. Emits EventBus.setting_changed (SaveManager saves on it).
+## During a Together session net_gate may refuse it (guests can't change shared keys).
 func set_setting(key: String, value: Variant) -> void:
 	if not DEFAULTS.has(key):
 		push_warning("Unknown setting: %s" % key)
@@ -360,6 +370,7 @@ func set_setting(key: String, value: Variant) -> void:
 	EventBus.setting_changed.emit(key, value)
 
 
+## A copy of every setting (SaveManager writes this to the settings file).
 func get_all_settings() -> Dictionary:
 	return _settings.duplicate(true)
 
@@ -380,6 +391,7 @@ func get_source_mode() -> String:
 	return _source_mode
 
 
+## Called by ScreenFeed: "none" | "file" | "capture" | "ndi" | "spout".
 func set_source_mode(mode: String) -> void:
 	if mode == _source_mode:
 		return
@@ -391,6 +403,8 @@ func is_playback_active() -> bool:
 	return _playback_active
 
 
+## ScreenFeed sets this each frame: true while the screen shows a moving picture (not paused).
+## Rooms dim their house lights while it is true (auto_dim_house). No signal: callers poll it.
 func set_playback_active(active: bool) -> void:
 	if active == _playback_active:
 		return
@@ -406,6 +420,7 @@ func toggle_react_pause() -> void:
 	set_react_paused(not _react_paused)
 
 
+## Pause-to-react on / off. Emits EventBus.react_pause_changed (camera, lights, overlay react to it).
 func set_react_paused(paused: bool) -> void:
 	if paused == _react_paused:
 		return
@@ -453,6 +468,7 @@ func is_curtain_covering() -> bool:
 	return _curtain_covering
 
 
+## Called by the room's StageCurtain when it starts / stops hiding the screen.
 func set_curtain_covering(on: bool) -> void:
 	if on == _curtain_covering:
 		return
@@ -486,6 +502,7 @@ func is_show_dimmed() -> bool:
 	return _show_dimmed
 
 
+## Called by StageCurtain at the start and end of a reveal.
 func set_show_dimmed(on: bool) -> void:
 	_show_dimmed = on
 
@@ -502,6 +519,7 @@ func room_has_webcam_frame() -> bool:
 	return _room_has_webcam_frame
 
 
+## Called by RoomHost after loading a room.
 func set_room_has_webcam_frame(on: bool) -> void:
 	_room_has_webcam_frame = on
 
@@ -518,6 +536,7 @@ func set_room_has_reply_screen(on: bool) -> void:
 		EventBus.setting_changed.emit("reply_screen", get_setting("reply_screen"))   # windows re-check their fallback
 
 
+## Change the room (panel, hotkeys, NetSession). Saves the choice and asks RoomHost to load it.
 func request_room(room_id: String) -> void:
 	if RoomCatalog.get_info(room_id) == null:
 		EventBus.status_message.emit("Unknown room: %s" % room_id, true)
@@ -547,6 +566,7 @@ func request_quit(code: int = 0) -> void:
 	get_tree().quit(code)
 
 
+## Next (+1) / previous (-1) room in RoomCatalog order, wrapping around (hotkeys).
 func cycle_room(step: int) -> void:
 	var ids := RoomCatalog.get_ids()
 	if ids.is_empty():

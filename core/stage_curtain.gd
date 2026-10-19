@@ -7,9 +7,14 @@ extends Node3D
 ## the Room tab, Stream Core's !curtain); this node animates it and reports when the screen
 ## is actually hidden (AppState.set_curtain_covering).
 ## Placement: in front of the screen, or on a CURTAIN_Main marker if the room has one
-## (bottom centre of the opening, +Z towards the audience; its X scale = opening width).
+## (bottom centre of the opening, +Z towards the audience). The width always comes from the
+## screen: _frame() reads only the marker's position and direction, not its scale.
+## Settings: curtain_enabled / _color / _speed / _sound / _sign / _show_lights in AppState.DEFAULTS.
+## Sounds come from CurtainSounds; the house lights dim through AppState.set_show_dimmed.
 
 const SHADER: Shader = preload("res://core/stage_curtain.gdshader")
+## Share of each panel's width left when fully open (bunched at the side), 0..1. The shader
+## gets it too; _frame widens the curtain so the gathered panels still clear the picture.
 const GATHER: float = 0.14
 const GOLD: Color = Color(0.85, 0.66, 0.25)
 ## Spotlight energy: a soft wash while the curtain is closed, full for the reveal.
@@ -18,18 +23,19 @@ const SHOW: float = 14.0
 
 ## Distance in front of the screen (metres).
 @export var offset: float = 0.3
+## Seconds to close / open fully at curtain_speed 1.0, and the drum roll's length before a reveal.
 @export var close_time: float = 1.6
 @export var open_time: float = 2.4
 @export var roll_time: float = 2.4
 
 var _panels: Array[ShaderMaterial] = []
-var _open: float = 1.0
+var _open: float = 1.0             # 0 = closed, 1 = open; tweened, read by the shader
 var _last_open: float = 1.0
-var _motion: float = 0.0
-var _tween: Tween
-var _show: Tween
-var _half: float = 4.0
-var _height: float = 5.0
+var _motion: float = 0.0           # 0..1, how fast it is moving (the shader sways the cloth)
+var _tween: Tween                  # the open / close move
+var _show: Tween                   # the whole reveal sequence (Shift+B)
+var _half: float = 4.0             # half the curtain's width, metres
+var _height: float = 5.0           # hem to top of the panels, metres
 var _sign: Node3D
 var _sign_label: Label3D
 var _sign_board: MeshInstance3D
@@ -39,6 +45,8 @@ var _pelmet_mat: StandardMaterial3D
 
 
 ## screen: the room's main screen. room: for markers (CURTAIN_Main, REPLY / CHAT screens).
+## Called once by RoomHost. Starts in the state AppState already has (closed stays closed
+## across room changes).
 func setup(room: Room, screen: MeshInstance3D) -> void:
 	var f := _frame(room, screen)
 	global_transform = Transform3D(Basis(f["across"], Vector3.UP, f["normal"]), f["origin"])
@@ -61,6 +69,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
+## Leaving with the room: undo a reveal's dimmed lights and tell AppState there's no curtain.
 func _exit_tree() -> void:
 	EventBus.curtain_changed.disconnect(_on_curtain)
 	EventBus.setting_changed.disconnect(_on_setting_changed)
@@ -69,6 +78,7 @@ func _exit_tree() -> void:
 	AppState.set_curtain_present(self, false)
 
 
+## Feeds the shader every frame; _motion rises with the speed and dies away slowly after a move.
 func _process(delta: float) -> void:
 	var speed := absf(_open - _last_open) / maxf(delta, 0.0001)
 	_last_open = _open
@@ -84,6 +94,9 @@ func get_open_amount() -> float:
 
 
 # ── Moving ───────────────────────────────────────────────────
+## EventBus.curtain_changed from AppState. style: "instant" (no animation), "reveal" (the full
+## show, opening only) or anything else for a normal move. A new request cancels a running reveal.
+## "Covering" is set as soon as a close starts and cleared as soon as an open starts.
 func _on_curtain(closed: bool, style: String) -> void:
 	if not visible:
 		return
@@ -110,6 +123,8 @@ func _on_curtain(closed: bool, style: String) -> void:
 	_spot_to(0.0, 1.5)
 
 
+## Tweens _open to target. seconds is the time for a full move: it is divided by curtain_speed
+## and shortened for a partial move. Returns the tween, or null when already there.
 func _move_to(target: float, seconds: float) -> Tween:
 	_stop_tween()
 	var speed := clampf(float(AppState.get_setting("curtain_speed")), 0.25, 4.0)
@@ -156,6 +171,7 @@ func _reveal() -> void:
 		AppState.set_show_dimmed(false))
 
 
+## Fades the curtain spotlight to an energy (WASH / SHOW / 0); hidden again at 0.
 func _spot_to(energy: float, seconds: float) -> void:
 	if _spot == null:
 		return
@@ -166,6 +182,7 @@ func _spot_to(energy: float, seconds: float) -> void:
 		tw.tween_callback(func() -> void: _spot.visible = false)
 
 
+## Plays a curtain sound at the curtain_sound volume (0..1). _delay is not used.
 func _play(stream: AudioStream, _delay: float) -> void:
 	var vol := clampf(float(AppState.get_setting("curtain_sound")), 0.0, 1.0)
 	if vol <= 0.001 or _audio == null:
@@ -207,6 +224,8 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 			_update_sign()
 
 
+## curtain_enabled: show / hide the whole curtain. Turning it off opens a closed curtain at once,
+## so the screen can't stay hidden by a curtain nobody sees.
 func _refresh_enabled() -> void:
 	var on := bool(AppState.get_setting("curtain_enabled"))
 	visible = on
@@ -215,6 +234,7 @@ func _refresh_enabled() -> void:
 		AppState.set_curtain(false, "instant")
 
 
+## The sign shows the curtain_sign text; empty text hides it.
 func _update_sign() -> void:
 	if _sign == null:
 		return
@@ -225,6 +245,8 @@ func _update_sign() -> void:
 
 # ── Building ─────────────────────────────────────────────────
 ## Where the curtain goes: origin = bottom centre of the curtain, in front of the screen.
+## Returns {origin, normal, across, half, height, pelmet, drop} (metres; global directions).
+## The pelmet shrinks to fit under a reply screen, and the hem stops above a chat screen below.
 func _frame(room: Room, screen: MeshInstance3D) -> Dictionary:
 	var aabb := screen.get_aabb()
 	var xf := screen.global_transform
@@ -280,6 +302,7 @@ func _frame(room: Room, screen: MeshInstance3D) -> Dictionary:
 		"height": curtain_top - floor_y, "pelmet": pelmet, "drop": drop}
 
 
+## Height of the first physics surface up to `reach` metres below `from`, or null.
 func _floor_below(from: Vector3, reach: float) -> Variant:
 	if not is_inside_tree():
 		return null
@@ -292,12 +315,15 @@ func _floor_below(from: Vector3, reach: float) -> Variant:
 	return (hit["position"] as Vector3).y
 
 
+## Builds the two panels (stage_curtain.gdshader), the pelmet, the sign, the spotlight (in front
+## of and above the curtain, aimed at its middle) and the audio player.
 func _build(pelmet: float, drop: float) -> void:
 	var c: Color = AppState.get_setting("curtain_color")
 	for side in [-1.0, 1.0]:
 		var mi := MeshInstance3D.new()
 		mi.name = "PanelLeft" if side < 0.0 else "PanelRight"
 		mi.mesh = _grid(56, 28, side > 0.0)
+		# the shader moves the vertices, so give the panel bounds that cover every position
 		mi.custom_aabb = AABB(Vector3(-_half * 1.1, -0.5, -1.0), Vector3(_half * 2.2, _height + 1.0, 2.0))
 		mi.position.z = 0.0 if side > 0.0 else 0.03       # the panels overlap a little in the middle
 		var m := ShaderMaterial.new()
@@ -479,6 +505,7 @@ func _build_pelmet(h: float, drop: float) -> void:
 static var _fringe_tex: Texture2D
 
 
+## A small strand texture for the fringe, made once and shared by every curtain.
 static func _fringe_texture() -> Texture2D:
 	if _fringe_tex:
 		return _fringe_tex
@@ -545,6 +572,7 @@ func _build_sign() -> void:
 	_sign.add_child(_sign_label)
 
 
+## Shrinks the sign away as the curtain opens (gone by 25% open).
 func _physics_process(_delta: float) -> void:
 	# the sign is only up while the curtain is (nearly) closed
 	if _sign and _sign.visible:

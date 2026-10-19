@@ -24,11 +24,21 @@ extends Node
 ##     "DNS rebinding", where a web page renames itself to read the page and its key), and
 ##     other sites can't frame it. Other origins can't read the page or /key (no CORS headers).
 ##   - A sender page left open from the last run reads the new key from /key and reconnects.
+##
+## The CaptureServer node under ScreenFeed in core/main.tscn. ScreenFeed starts it with the
+## ports from AppState.get_capture_port (the capture_http_port / capture_ws_port settings,
+## 8765 / 8766 by default, plus the --mp-profile offset) and turns the signals below into the
+## screen's picture, the webcam frame, podium feeds and stream audio.
+## The packet types must match what web/sender.html sends.
 
+## A decoded screen frame (RGBA8) and its [left, centre, right] colours (ColorSampler).
 signal video_frame_ready(image: Image, colors: Array[Color])
 signal webcam_frame_ready(image: Image)
+## A presenter's camera frame; slot 0..3 (podium number - 1).
 signal presenter_frame_ready(slot: int, image: Image)
+## One packet of sender audio: stereo frames at 48 kHz, -1..1.
 signal audio_received(frames: PackedVector2Array)
+## The sender page's latest status JSON, or {} once it disconnects.
 signal sender_status_changed(info: Dictionary)
 
 const PKT_VIDEO: int = 1
@@ -38,6 +48,7 @@ const PKT_PRESENTER: int = 4
 const MAX_PRESENTERS: int = 4
 ## Decode channel ids for presenter feeds (PRESENTER_CHANNEL + slot).
 const PRESENTER_CHANNEL: int = 100
+## Socket receive buffer (8 MB), room for a large JPEG frame plus audio.
 const WS_BUFFER_BYTES: int = 8 * 1024 * 1024
 ## Close code for a socket with a wrong or missing key (the sender page then fetches /key).
 const CLOSE_BAD_KEY: int = 4001
@@ -58,15 +69,17 @@ var _ws_listener: TCPServer = TCPServer.new()
 var _http_clients: Array[Dictionary] = []
 var _pending_ws: Array[Dictionary] = []    # {ws: WebSocketPeer, t: msec}
 var _closing_ws: Array[WebSocketPeer] = []   # refused sockets finishing their close handshake
-var _ws: WebSocketPeer
+var _ws: WebSocketPeer                       # the one accepted sender (newest wins)
 var _http_port: int = 0
 var _ws_port: int = 0
 
-var _last_packet_time: float = -1000.0
+var _last_packet_time: float = -1000.0       # seconds (ticks), for the timeout_s check
 var _connected: bool = false
 var _sender_info: Dictionary = {}
 
-# Decode bookkeeping, per channel (PKT_VIDEO / PKT_WEBCAM)
+# Decode bookkeeping, per channel (PKT_VIDEO / PKT_WEBCAM, plus PRESENTER_CHANNEL + slot added
+# on first use). _busy: a decode task runs; _pending: newest JPEG waiting (empty = none);
+# _task_ids: the running task. Shared with the worker threads, so guarded by _mutex.
 var _busy: Dictionary = {PKT_VIDEO: false, PKT_WEBCAM: false}
 var _pending: Dictionary = {PKT_VIDEO: PackedByteArray(), PKT_WEBCAM: PackedByteArray()}
 var _task_ids: Dictionary = {PKT_VIDEO: -1, PKT_WEBCAM: -1}
@@ -85,6 +98,8 @@ static func get_run_key() -> String:
 	return run_key
 
 
+## Opens both ports on 127.0.0.1 only (never the network). False if either port is taken; the
+## reason goes to the panel's message line.
 func start(http_port: int, ws_port: int) -> bool:
 	stop()
 	_http_port = http_port
@@ -111,6 +126,7 @@ func stop() -> void:
 	_set_connected(false)
 
 
+## Address of the sender page (ScreenFeed puts it in the source status for the panel).
 func get_sender_url() -> String:
 	return "http://127.0.0.1:%d/" % _http_port
 
@@ -126,6 +142,7 @@ func is_connected_to_sender() -> bool:
 	return _connected
 
 
+## Screen frames received per second (measured once a second).
 func get_fps() -> float:
 	return _fps
 
@@ -144,6 +161,7 @@ func _process(delta: float) -> void:
 		_set_connected(false)
 
 
+## Waits for running decode tasks first: they call back into this node.
 func _exit_tree() -> void:
 	for ch in _task_ids.keys():
 		if int(_task_ids[ch]) != -1:
@@ -153,6 +171,8 @@ func _exit_tree() -> void:
 
 
 # ── HTTP (tiny, GET only) ────────────────────────────────────
+## Takes new HTTP connections, collects each request until its headers end, answers it and
+## closes it. A client that takes over 5 s is dropped.
 func _poll_http() -> void:
 	while _http.is_listening() and _http.is_connection_available():
 		_http_clients.append({"peer": _http.take_connection(), "buf": "", "t": Time.get_ticks_msec()})
@@ -171,6 +191,8 @@ func _poll_http() -> void:
 			_http_clients.erase(c)
 
 
+## Routes one GET request (see the file header for the paths). The sender page gets this run's
+## stream port and key filled in ({{WS_PORT}}, {{WS_KEY}}).
 func _respond_http(peer: StreamPeerTCP, request: String) -> void:
 	var first_line := request.get_slice("\r\n", 0)
 	var path := first_line.get_slice(" ", 1)
@@ -244,6 +266,8 @@ static func key_ok(requested_url: String) -> bool:
 
 
 # ── WebSocket ────────────────────────────────────────────────
+## New stream sockets: they wait in _pending_ws until the handshake finishes, then the key is
+## checked. A good one replaces the current sender.
 func _poll_ws_accept() -> void:
 	while _ws_listener.is_listening() and _ws_listener.is_connection_available():
 		var conn := _ws_listener.take_connection()
@@ -281,6 +305,7 @@ func _poll_ws_accept() -> void:
 			_closing_ws.erase(ws)
 
 
+## Reads every waiting packet from the current sender. Any packet counts as a sign of life.
 func _poll_ws() -> void:
 	if _ws == null:
 		return
@@ -300,6 +325,7 @@ func _poll_ws() -> void:
 			_handle_binary(pkt)
 
 
+## Text packets: only {"type": "status", ...} from the sender is used (passed on as is).
 func _handle_text(text: String) -> void:
 	var data: Variant = JSON.parse_string(text)
 	if typeof(data) != TYPE_DICTIONARY:
@@ -309,6 +335,7 @@ func _handle_text(text: String) -> void:
 		sender_status_changed.emit(data)
 
 
+## Binary packets by their first byte (see the file header). Audio is decoded right here.
 func _handle_binary(pkt: PackedByteArray) -> void:
 	var kind := pkt[0]
 	match kind:
@@ -330,6 +357,9 @@ func _handle_binary(pkt: PackedByteArray) -> void:
 
 
 # ── Threaded JPEG decode ─────────────────────────────────────
+# One decode per channel at a time. While it runs, newer frames overwrite _pending, so a slow
+# decode skips frames instead of building a queue (the screen stays live, not delayed).
+## Main thread: store the newest JPEG for the channel and start a decode if none is running.
 func _queue_decode(channel: int, jpeg: PackedByteArray) -> void:
 	_mutex.lock()
 	if not _busy.has(channel):
@@ -356,6 +386,8 @@ func _start_task(channel: int) -> void:
 	_mutex.unlock()
 
 
+## Worker thread: decode the JPEG (and sample colours for the screen), then hand the result to
+## the main thread.
 func _decode_task(channel: int, data: PackedByteArray) -> void:
 	var img := Image.new()
 	var colors: Array[Color] = []
@@ -371,6 +403,7 @@ func _decode_task(channel: int, data: PackedByteArray) -> void:
 	_on_decoded.call_deferred(channel, img, colors)
 
 
+## Main thread: emit the decoded frame, then decode the next pending JPEG if one arrived meanwhile.
 func _on_decoded(channel: int, img: Image, colors: Array[Color]) -> void:
 	# only one decode per channel runs at a time (_busy), so the stored id is this task's own
 	_mutex.lock()
@@ -396,6 +429,7 @@ func _on_decoded(channel: int, img: Image, colors: Array[Color]) -> void:
 
 
 # ── Private ──────────────────────────────────────────────────
+## Tracks whether a sender is connected; a disconnect clears the status (sends {}).
 func _set_connected(on: bool) -> void:
 	if on == _connected:
 		return

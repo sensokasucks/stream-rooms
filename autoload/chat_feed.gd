@@ -9,12 +9,15 @@ extends Node
 ## Chat messages handled per frame at most (and only for this long): the rest wait a frame.
 const MAX_PACKETS_PER_FRAME: int = 40
 const FRAME_BUDGET_USEC: int = 4000
+## Seconds between "ping" texts that keep the connection alive.
 const PING_INTERVAL: float = 20.0
+## Reconnect wait in seconds: starts at BACKOFF_MIN and grows x1.5 per failed try up to BACKOFF_MAX.
 const BACKOFF_MIN: float = 2.0
 const BACKOFF_MAX: float = 20.0
 ## Message styles the app draws (see _tint). Twitch's "animated" Message Effects look ordinary here.
 const TINTS: PackedStringArray = ["highlighted", "gigantified"]
 
+## Made-up chatters and lines for the panel's "Test chat" button (Reactions.play_test uses the names too).
 const TEST_NAMES: PackedStringArray = ["PixelPanda", "moss_wizard", "Sgt_Crumpet", "neonNomad", "LadyLumen",
 	"tater_tot_42", "QuietFox", "BrickTamland", "Zephyrine", "captain_kettle", "OrbitOtter", "MangoTango"]
 const TEST_LINES: PackedStringArray = ["hello from the back row!", "LUL", "wait, rewind that", "this part is so good",
@@ -30,6 +33,7 @@ const TEST_EMOTE_LINES: Array = [
 ]
 
 var _ws: WebSocketPeer
+# seconds until the next connect try while _ws is null
 var _retry_in: float = 0.0
 var _backoff: float = BACKOFF_MIN
 var _ping_in: float = PING_INTERVAL
@@ -44,6 +48,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
+## Polls the socket each frame: connect / reconnect with backoff, keep-alive pings, read packets.
 func _process(delta: float) -> void:
 	if not bool(AppState.get_setting("chat_enabled")):
 		return
@@ -82,6 +87,7 @@ func _process(delta: float) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
+## True while the WebSocket to Stream Core is open.
 func is_connected_to_core() -> bool:
 	return _connected
 
@@ -91,6 +97,7 @@ func get_boards() -> Array:
 	return _boards.values()
 
 
+## Same shape as EventBus.chat_status_changed: {connected, url, error}.
 func get_status() -> Dictionary:
 	return {"connected": _connected, "url": String(AppState.get_setting("chat_core_url")), "error": _error}
 
@@ -135,6 +142,7 @@ func send_test_chat(count: int = 6) -> void:
 
 
 # ── Private ──────────────────────────────────────────────────
+## Starts a connection to the chat_core_url setting (normally ws://127.0.0.1:3850/ws).
 func _open() -> void:
 	var url := String(AppState.get_setting("chat_core_url")).strip_edges()
 	_ws = WebSocketPeer.new()
@@ -149,6 +157,7 @@ func _open() -> void:
 		_set_status(false, "Bad Stream Core address: %s" % url)
 
 
+## Drops the connection and the boards it brought (views are told with board_cleared).
 func _close() -> void:
 	if _ws:
 		_ws.close()
@@ -160,6 +169,7 @@ func _close() -> void:
 		_set_status(false, "")
 
 
+## Emits EventBus.chat_status_changed only when something actually changed.
 func _set_status(on: bool, error: String) -> void:
 	var changed := on != _connected or error != _error
 	_connected = on
@@ -168,6 +178,8 @@ func _set_status(on: bool, error: String) -> void:
 		EventBus.chat_status_changed.emit(get_status())
 
 
+## One JSON packet from Core: {"type": ..., "data": ...}. Unknown types are ignored.
+## The packet types are Core's (fridge-stream-core); keep in sync with what it sends.
 func _handle(text: String) -> void:
 	var msg: Variant = JSON.parse_string(text)
 	if not msg is Dictionary:
@@ -199,6 +211,7 @@ func _handle(text: String) -> void:
 			if c is Dictionary:
 				_boards.erase(String((c as Dictionary).get("id", "")))
 				EventBus.board_cleared.emit(String((c as Dictionary).get("id", "")))
+		# the full list of boards that are up right now: it replaces ours
 		"board_history":
 			for id: String in _boards.keys():
 				EventBus.board_cleared.emit(id)
@@ -254,6 +267,7 @@ func _handle(text: String) -> void:
 					})
 
 
+## history = true for the backlog Core sends on connect ("chat_history"), not live chat.
 func _emit(data: Variant, history: bool) -> void:
 	if not data is Dictionary:
 		return
@@ -367,6 +381,7 @@ func _send_hidden_avatars() -> void:
 		send_message({"type": "avatars_hide_import", "data": {"names": names}})
 
 
+## Reconnects when the address changes or chat is switched back on; closes when it's switched off.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "audience_hide_avatars":
 		_send_hidden_avatars()

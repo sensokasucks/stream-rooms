@@ -12,6 +12,8 @@ extends Node
 ## the game finds the marker at the next start, the last start hung there, and auto-duck is
 ## switched off instead of hanging again. "-- --no-mic" on the command line switches it off too.
 
+## Bus names. ScreenFeed's video player and stream audio use VIDEO_BUS; rooms put their own
+## ambience players on AMBIENCE_BUS (rooms/room.gd).
 const VIDEO_BUS: String = "Video"
 const AMBIENCE_BUS: String = "Ambience"
 const MIC_BUS: String = "Mic"
@@ -20,6 +22,7 @@ const MIC_OK_AFTER_S: float = 3.0
 
 ## How long talking must stop before the video comes back up.
 @export var duck_hold_s: float = 0.45
+## How fast the video audio drops when talking starts, and comes back up after (dB per second).
 @export var duck_attack_db_per_s: float = 120.0
 @export var duck_release_db_per_s: float = 30.0
 
@@ -34,12 +37,14 @@ var _speaker_fx: Array[AudioEffect] = []
 var _room_info: RoomInfo
 var _mic_capture: AudioEffectCapture
 var _mic_player: AudioStreamPlayer
+# The "the mic is starting" marker (see the top of the file); one per launch profile.
 var _mic_marker: String = "user://mic_starting" + ("" if AppState.get_profile().is_empty() else "_" + AppState.get_profile())
 var _ambience_player: AudioStreamPlayer
 
 var _duck_gain_db: float = 0.0     # current ducking offset (0 or negative)
 var _talking: bool = false
 var _hold_timer: float = 0.0
+# latest mic level in dB (-80 = silence / no mic); sent as EventBus.mic_level_changed every 0.1 s
 var _level_db: float = -80.0
 var _level_emit_timer: float = 0.0
 ## Curtain mute as a fade of the Video bus volume (0 = full, 1 = silent). Done with the bus
@@ -47,6 +52,7 @@ var _level_emit_timer: float = 0.0
 ## and effects on it is one of the few things that runs into the audio driver mid-mix.
 var _curtain_gain: float = 0.0
 var _curtain_target: float = 0.0
+## Seconds the curtain mute takes to fade the stream sound out or back in.
 const CURTAIN_FADE_S: float = 0.5
 
 
@@ -73,6 +79,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.curtain_covering_changed.connect(func(_c: bool) -> void: _apply_curtain_mute())
 	_apply_volumes()
+	# The marker is still there: the last start never got past starting the mic (see the top of the file).
 	var hung := FileAccess.file_exists(_mic_marker)
 	if hung or OS.get_cmdline_user_args().has("--no-mic"):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(_mic_marker))
@@ -108,6 +115,7 @@ func _process(delta: float) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
+## Called by RoomHost when a room loads: its speaker character, reverb and ambience loop.
 func apply_room(info: RoomInfo) -> void:
 	_room_info = info
 	_apply_speaker()
@@ -156,6 +164,7 @@ func _apply_speaker() -> void:
 	_flutter.set_voice_depth_ms(0, 0.35 * amount)
 
 
+## Adds the old-speaker effects to the Video bus once, all switched off; _apply_speaker sets them.
 func _build_speaker_chain(bus: int) -> void:
 	_hp = AudioEffectHighPassFilter.new()
 	_lp = AudioEffectLowPassFilter.new()
@@ -178,6 +187,7 @@ func _build_speaker_chain(bus: int) -> void:
 		_set_effect_enabled(fx, false)
 
 
+## Effects are switched by index on the bus, so look up where this effect sits.
 func _set_effect_enabled(fx: AudioEffect, on: bool) -> void:
 	var bus := AudioServer.get_bus_index(VIDEO_BUS)
 	for i in AudioServer.get_bus_effect_count(bus):
@@ -186,6 +196,7 @@ func _set_effect_enabled(fx: AudioEffect, on: bool) -> void:
 			return
 
 
+## Creates the bus (sending to Master) unless the project's bus layout already has it.
 func _ensure_bus(bus_name: String) -> void:
 	if AudioServer.get_bus_index(bus_name) != -1:
 		return
@@ -195,6 +206,7 @@ func _ensure_bus(bus_name: String) -> void:
 	AudioServer.set_bus_send(idx, "Master")
 
 
+## Starts the microphone when auto-duck is on (and the project allows audio input), stops it when off.
 func _update_mic_input() -> void:
 	var want: bool = AppState.get_setting("duck_enabled")
 	var input_on: bool = ProjectSettings.get_setting("audio/driver/enable_input", false)
@@ -204,6 +216,7 @@ func _update_mic_input() -> void:
 			EventBus.status_message.emit("No sound device here, so auto-duck can't hear you.", true)
 			return
 		var devices := AudioServer.get_input_device_list()
+		# Only the "Default" entry means no real input device is plugged in.
 		if devices.size() <= 1 and (devices.is_empty() or devices[0] == "Default"):
 			print("[audio] no microphone found: auto-duck can't listen")
 			EventBus.status_message.emit("No microphone found, so auto-duck can't hear you.", true)
@@ -243,6 +256,7 @@ func get_mic_problem() -> String:
 	return ""
 
 
+## RMS level of the mic samples captured since the last frame, in dB (keeps the old value if none came).
 func _read_mic_level_db() -> float:
 	var n := _mic_capture.get_frames_available()
 	if n <= 0:
@@ -263,6 +277,8 @@ func _update_duck(level_db: float, delta: float) -> void:
 		_hold_timer = duck_hold_s
 	else:
 		_hold_timer = maxf(0.0, _hold_timer - delta)
+	# Above the threshold = talking; talking lasts duck_hold_s past the last loud moment, so the
+	# video doesn't pump up and down between words.
 	var talking := above or _hold_timer > 0.0
 	if talking != _talking:
 		_talking = talking
@@ -275,6 +291,7 @@ func _update_duck(level_db: float, delta: float) -> void:
 		_apply_volumes()
 
 
+## Sets the Video bus from the volume setting, curtain fade and ducking, and the Ambience bus.
 func _apply_volumes() -> void:
 	var vol: float = AppState.get_setting("volume")
 	var lin := maxf(vol * (1.0 - _curtain_gain), 0.0001)

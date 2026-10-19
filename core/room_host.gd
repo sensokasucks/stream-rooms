@@ -3,12 +3,18 @@ extends Node3D
 ## Loads and swaps rooms. Listens for EventBus.room_requested, loads the room
 ## scene on a background thread, fades to black, swaps, attaches the screen
 ## lights / webcam frame, applies the room's environment and audio, fades back in.
+## Also attaches everything else that lives in a room: stage curtain, chat / reply screens, side
+## chat windows, presenters, the chat audience and the reaction layer (see _swap_to).
+## The RoomHost node in core/main.tscn; rooms come from RoomCatalog (rooms/<id>/room_info.tres).
 
+## A new room is in the tree with everything attached (main.gd hands its cameras to CameraRig).
+## Emitted before the fade back in.
 signal room_ready(room: Room, info: RoomInfo)
 
 @export var screen_feed: ScreenFeed
 @export var world_environment: WorldEnvironment
 @export var fade_rect: ColorRect
+## Seconds for each fade to / from black.
 @export var fade_time: float = 0.35
 ## Extra time black after the swap, so GI can settle before fading in.
 @export var settle_time: float = 0.25
@@ -20,12 +26,12 @@ const OLD_ROOM_FREE_DELAY: float = 3.0
 
 var _room: Room
 var _room_id: String = ""
-var _loading_id: String = ""
-var _queued_id: String = ""
-var _faded_out: bool = false
-var _default_env: Environment
+var _loading_id: String = ""       # room being loaded on the thread ("" = none)
+var _queued_id: String = ""        # room asked for while another was loading; loaded after it
+var _faded_out: bool = false       # the fade to black has finished, so the swap may happen
+var _default_env: Environment      # the WorldEnvironment's own, for rooms without one
 var _room_env: Environment         # the room's own Environment (before graphics quality)
-var _gfx_syncing: bool = false
+var _gfx_syncing: bool = false     # guards against the preset <-> switch settings feeding back
 var _reload_wait: float = -1.0     # seconds until the room reloads for a new seat spacing (-1 = no)
 
 
@@ -40,6 +46,8 @@ func _ready() -> void:
 	GraphicsQuality.apply_viewport(get_viewport())
 
 
+## Waits for the threaded load (only swaps once the screen is black), and runs the delayed
+## reload after a seat spacing change.
 func _process(delta: float) -> void:
 	if _reload_wait >= 0.0:
 		_reload_wait -= delta
@@ -61,6 +69,8 @@ func _process(delta: float) -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
+## Starts loading a room (EventBus.room_requested, sent by AppState.request_room). Asking for the
+## room that is already up does nothing; asking during a load queues it (the last ask wins).
 func load_room(room_id: String) -> void:
 	if room_id == _room_id and _loading_id == "":
 		return
@@ -76,6 +86,7 @@ func load_room(room_id: String) -> void:
 	_loading_id = room_id
 	_faded_out = false
 	var tw := create_tween()
+	# (the first room at start-up needs no fade: the screen starts black)
 	tw.tween_property(fade_rect, "color:a", 1.0, fade_time if _room else 0.0)
 	tw.tween_callback(func() -> void: _faded_out = true)
 
@@ -89,6 +100,8 @@ func get_room_environment() -> Environment:
 	return _room_env if _room_env else _default_env
 
 
+## Frame-rate settings, seat spacing (needs a room reload, since seats are picked when the room
+## loads) and the graphics quality switches (see GraphicsQuality).
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "fps_cap" or key == "vsync":
 		GraphicsQuality.apply_fps()
@@ -109,12 +122,16 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 	_apply_graphics()
 
 
+## Re-applies graphics quality to the current room's Environment and the viewport.
 func _apply_graphics() -> void:
 	world_environment.environment = GraphicsQuality.environment_for(get_room_environment())
 	GraphicsQuality.apply_viewport(get_viewport())
 
 
 # ── Private ──────────────────────────────────────────────────
+## The loaded room goes in (screen is black at this point): retire the old one, add the new one,
+## then build what each room gets, in order. Several later steps use earlier ones: the side
+## chats sit in front of the curtain, and the audience and reactions use the presenters.
 func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 	_loading_id = ""
 	if _room:
@@ -220,6 +237,7 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 	_room.add_child(reactions)
 	reactions.setup(_room, audience, presenters, _room.presenter_size)
 
+	# tell the rest of the app (control panel: camera list, Room tab controls, room picker)
 	var labels := PackedStringArray()
 	for m in _room.get_camera_markers():
 		labels.append(_room.get_camera_label(m))
@@ -263,7 +281,8 @@ func _stage_point(screen: MeshInstance3D) -> Variant:
 	return screen.global_transform * screen.mesh.get_aabb().get_center()
 
 
-## Controls for the screen looks this room uses (see RoomInfo).
+## Controls for the screen looks this room uses (see RoomInfo). Same format as
+## Room.get_controls(); the control panel builds them on the Room tab.
 func _screen_controls(info: RoomInfo) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
 	if info.screen_film_amount > 0.0:
@@ -284,6 +303,7 @@ func _screen_controls(info: RoomInfo) -> Array[Dictionary]:
 	return out
 
 
+## Fades back from black; then loads a room that was asked for during the load, if any.
 func _fade_in() -> void:
 	var tw := create_tween()
 	tw.tween_property(fade_rect, "color:a", 0.0, fade_time)

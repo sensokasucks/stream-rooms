@@ -14,10 +14,14 @@ extends Node3D
 ##   @someone anyone seated in the audience.
 
 ## Max reaction objects alive at once; extra ones are skipped.
+## Every effect node counts itself in _live while it exists (tree_exiting takes it off again).
 const MAX_LIVE: int = 260
+## Size (pixels) of the generated splat texture.
 const SPLAT_PX: int = 128
+## Confetti colours when the reaction's params.colors doesn't give any.
 const CONFETTI: PackedColorArray = [Color("ff3b6b"), Color("ffb400"), Color("53fc18"), Color("28c8ff"), Color("a55bff"), Color("ffffff")]
 
+## Seconds a thrown object flies over about 8 m (shorter and longer throws scale from this).
 @export var throw_time: float = 0.9
 ## Size of an emoji object in metres at 100% "Reaction size".
 @export var object_size: float = 0.45
@@ -29,10 +33,13 @@ var _presenter_size: Vector2 = Vector2.ONE
 var _screen: Dictionary = {}          # {pos, normal, right, up, size: Vector2}
 var _targets: Dictionary = {}         # id -> {id, label, aliases, pos, normal, right, up, size}
 var _guests: Dictionary = {}          # id -> same, plus n
+## pile_up objects heaped in front of the screen; _pile_timer clears them after clear_after_sec.
 var _pile: Array[Node3D] = []
 var _pile_timer: SceneTreeTimer
+## Reaction nodes alive right now (see MAX_LIVE).
 var _live: int = 0
 var _meters: Dictionary = {}          # meter id -> Label3D
+## Splat texture, made once by _splat_texture() and shared by every room.
 static var _splat_tex: Texture2D
 
 
@@ -67,11 +74,15 @@ func retire() -> void:
 
 
 # ── Public API ───────────────────────────────────────────────
+## How many reaction objects are on screen (tests use it).
 func get_live_count() -> int:
 	return _live
 
 
 ## Where a target is: {pos, normal, kind, slot, fallback}. Used by effects and tests.
+## target is the reaction's "target": {type: "user", name} for a chatter, else {type, name} naming
+## a spot (screen, webcam, TARGET_ name, podium<n>, presenter<n>...). Spots get a small random
+## spread. fallback = true when the named target isn't here and the screen is used instead.
 func resolve_target(target: Variant) -> Dictionary:
 	var out := {"pos": _screen_point(true), "normal": _screen.get("normal", Vector3.BACK), "kind": "stage",
 		"slot": -1, "fallback": false}
@@ -98,6 +109,8 @@ func resolve_target(target: Variant) -> Dictionary:
 
 
 # ── Targets ──────────────────────────────────────────────────
+## Builds _targets: the screen (facing the audience), webcam, chat screen and TARGET_* markers,
+## then the presenter spots. Rooms without a TVScreen get a made-up spot in front of the audience.
 func _collect_targets() -> void:
 	_targets.clear()
 	var tv := _room.find_screen()
@@ -201,6 +214,7 @@ func _find_spot(spot_name: String) -> Dictionary:
 	return {}
 
 
+## Name in the form _find_spot compares: lower case, no spaces, _ - . or tabs.
 static func _target_key(s: String) -> String:
 	var out := ""
 	for c in s.strip_edges().to_lower():
@@ -209,6 +223,7 @@ static func _target_key(s: String) -> String:
 	return out
 
 
+## Tells Reactions (and through it Stream Core) which targets and guests this room has.
 func _register() -> void:
 	var targets: Array = []
 	for d: Dictionary in _targets.values():
@@ -219,6 +234,7 @@ func _register() -> void:
 	Reactions.set_room_targets(self, targets, guests)
 
 
+## Middle of the audience (or the first camera): decides which way the screen and its spot face.
 func _audience_center() -> Vector3:
 	if _audience and _audience.get_seat_count() > 0:
 		return _audience.get_seats_bounds().get_center()
@@ -226,6 +242,7 @@ func _audience_center() -> Vector3:
 	return cams[0].global_position if not cams.is_empty() else Vector3(0, 1.2, 6)
 
 
+## A point just in front of the screen, spread over its middle when jitter is on.
 func _screen_point(jitter: bool) -> Vector3:
 	var p: Vector3 = _screen.get("pos", Vector3.ZERO)
 	if jitter and not _screen.is_empty():
@@ -234,6 +251,7 @@ func _screen_point(jitter: bool) -> Vector3:
 	return p + (_screen.get("normal", Vector3.BACK) as Vector3) * 0.03
 
 
+## Direction from p to the current camera (splats on people face the viewer).
 func _towards_camera(p: Vector3) -> Vector3:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null:
@@ -253,6 +271,8 @@ func _origin(from: Variant) -> Dictionary:
 	return {"pos": (_screen["pos"] as Vector3) + (_screen["normal"] as Vector3) * 8.0, "slot": -1}
 
 
+## Seat of the chatter who sent the reaction (from: {platform, id, username, display_name}),
+## or -1 when they have no seat taken here.
 func _sender_slot(from: Variant) -> int:
 	if _audience == null or not from is Dictionary:
 		return -1
@@ -266,6 +286,8 @@ func _sender_slot(from: Variant) -> int:
 
 
 # ── Playing ──────────────────────────────────────────────────
+## EventBus.reaction_play from Reactions. d: {id, effect, params, count, from, target, crowd,
+## message, seed}. The outcome goes back with EventBus.reaction_finished so Core knows how it went.
 func _on_play(d: Dictionary) -> void:
 	var id := String(d.get("id", ""))
 	if d.has("seed"):
@@ -275,6 +297,8 @@ func _on_play(d: Dictionary) -> void:
 
 
 ## Starts the effect; returns "hit", "fallback" (target gone, played on the stage) or "dropped".
+## One branch per effect id; the ids and their params are listed in Reactions.EFFECTS
+## (autoload/reactions.gd), keep the two in sync.
 func _play(d: Dictionary) -> String:
 	var p: Dictionary = d.get("params", {}) if d.get("params") is Dictionary else {}
 	var count := clampi(int(d.get("count", 1)), 1, 50)
@@ -420,10 +444,12 @@ func _crowd_slots(d: Dictionary) -> Array[int]:
 
 
 # ── Effects ──────────────────────────────────────────────────
+## Size of a reaction object in metres (object_size times the "reaction_size" setting).
 func _size() -> float:
 	return object_size * clampf(float(AppState.get_setting("reaction_size")), 0.3, 3.0)
 
 
+## An emoji / text object (Label3D, 12 characters at most), counted in _live.
 func _object(text: String, scale_by: float = 1.0) -> Label3D:
 	var l := Label3D.new()
 	l.text = SafeText.clean(text.strip_edges().left(12)) if text.strip_edges() != "" else "🍅"
@@ -510,6 +536,7 @@ static func _core_url(path: String) -> String:
 	return base + path
 
 
+## Flies one object along a curved arc from origin to the target, then plays the impact.
 func _throw(p: Dictionary, origin: Dictionary, tgt: Dictionary) -> void:
 	var obj = _thing(p, "🍅", 1.0)
 	var a: Vector3 = origin["pos"]
@@ -530,6 +557,8 @@ func _throw(p: Dictionary, origin: Dictionary, tgt: Dictionary) -> void:
 		_impact(p, at, tgt))
 
 
+## What happens on arrival (params.impact): splat (default), bounce, stick or shatter.
+## A chatter who gets hit flinches.
 func _impact(p: Dictionary, at: Vector3, tgt: Dictionary) -> void:
 	var kind := String(p.get("impact", "splat"))
 	var stick := clampf(float(p.get("stick_sec", 6.0)), 0.0, 60.0)
@@ -565,6 +594,8 @@ func _impact(p: Dictionary, at: Vector3, tgt: Dictionary) -> void:
 			_burst(at, PackedColorArray([col, col.darkened(0.25)]), 14, 1.6, 0.04)
 
 
+## A splat decal: flat on the target surface, or facing the camera on a person; it slides
+## down a little for stick seconds, then fades.
 func _splat(at: Vector3, tgt: Dictionary, col: Color, stick: float) -> void:
 	var s := Sprite3D.new()
 	s.texture = _splat_texture()
@@ -596,6 +627,8 @@ func _splat(at: Vector3, tgt: Dictionary, col: Color, stick: float) -> void:
 	tw.tween_callback(s.queue_free)
 
 
+## Lobs one object onto the heap in front of the screen. The heap keeps at most max_pile objects
+## (oldest go first) and clears clear_after_sec after the last one landed.
 func _pile_one(p: Dictionary, origin: Dictionary) -> void:
 	var sz: Vector2 = _screen["size"]
 	var base: Vector3 = (_screen["pos"] as Vector3) + (_screen["normal"] as Vector3) * 0.9 \
@@ -632,6 +665,7 @@ func _clear_pile() -> void:
 	_pile.clear()
 
 
+## Objects (hearts by default) drifting up from a point and fading out.
 func _float_up(p: Dictionary, at: Vector3) -> void:
 	var n := clampi(int(p.get("count", 5)), 1, 40)
 	var dur := clampf(float(p.get("duration_sec", 3.0)), 0.5, 20.0)
@@ -649,6 +683,7 @@ func _float_up(p: Dictionary, at: Vector3) -> void:
 		tw.tween_callback(obj.queue_free)
 
 
+## Objects (roses by default) falling and swaying down around a point.
 func _fall(p: Dictionary, at: Vector3, radius: float, default_count: int) -> void:
 	var n := clampi(int(p.get("count", default_count)), 1, 80)
 	var dur := clampf(float(p.get("duration_sec", 4.0)), 0.5, 20.0)
@@ -670,6 +705,7 @@ func _fall(p: Dictionary, at: Vector3, radius: float, default_count: int) -> voi
 		tw.tween_callback(obj.queue_free)
 
 
+## Objects falling over the whole audience and stage (capped by MAX_LIVE).
 func _rain(p: Dictionary) -> void:
 	var box := AABB(_screen["pos"] as Vector3, Vector3.ZERO)
 	if _audience and _audience.get_seat_count() > 0:
@@ -695,6 +731,7 @@ func _rain(p: Dictionary) -> void:
 		tw.tween_callback(obj.queue_free)
 
 
+## params.colors: comma separated html colours ("#ff0000,#00ff00"); empty = CONFETTI.
 func _confetti(p: Dictionary, at: Vector3) -> void:
 	var cols := PackedColorArray()
 	for part in String(p.get("colors", "")).split(",", false):
@@ -746,6 +783,8 @@ func _burst(at: Vector3, colors: PackedColorArray, amount: int, speed: float, pi
 	get_tree().create_timer(parts.lifetime + 0.4).timeout.connect(parts.queue_free)
 
 
+## Big text: params.text with {message} (the chat message minus its !command) and {user}.
+## Shown over the sender's seat, or in front of the screen ("fallback") when they have no seat.
 func _shout(p: Dictionary, d: Dictionary) -> String:
 	var from: Dictionary = d.get("from", {}) if d.get("from") is Dictionary else {}
 	var who := String(from.get("display_name", from.get("username", "")))
@@ -914,6 +953,7 @@ func _fireworks(count: int, secs: float) -> void:
 			tw.tween_callback(flash.queue_free))
 
 
+## A narrow spotlight from above and in front, on a target or the sender's seat.
 func _spotlight(p: Dictionary, at: Vector3) -> void:
 	var light := SpotLight3D.new()
 	light.light_color = _color(p.get("color", ""), Color("fff6d0"))
@@ -934,6 +974,8 @@ func _spotlight(p: Dictionary, at: Vector3) -> void:
 	tw.tween_callback(light.queue_free)
 
 
+## Room-wide light change (params.mode): flicker (default), dim, tint, flash or police.
+## Every bright or fast change goes through _flash_k() / _strobe_step() for photosensitive safety.
 func _lights(p: Dictionary) -> void:
 	var mode := String(p.get("mode", "flicker"))
 	var col := _color(p.get("color", ""), Color("ff3b6b"))
@@ -1002,6 +1044,8 @@ func _lights(p: Dictionary) -> void:
 
 
 # ── Meters ───────────────────────────────────────────────────
+## EventBus.reaction_meter_changed: a progress bar of text above the screen (e.g. a hype meter).
+## Value 0 fades it out.
 func _on_meter(meter_id: String, label: String, value: float, goal: float) -> void:
 	var existing: Variant = _meters.get(meter_id)
 	var l: Label3D = existing as Label3D if is_instance_valid(existing) else null
@@ -1035,6 +1079,7 @@ func _on_meter(meter_id: String, label: String, value: float, goal: float) -> vo
 
 
 # ── Helpers ──────────────────────────────────────────────────
+## Height of the floor below a point (physics ray); a guess below the screen if nothing is hit.
 func _floor_y(near: Vector3) -> float:
 	var space := get_world_3d().direct_space_state if is_inside_tree() else null
 	if space:
@@ -1046,6 +1091,7 @@ func _floor_y(near: Vector3) -> float:
 	return (_screen.get("pos", near) as Vector3).y - sz.y * 0.5 - 0.6
 
 
+## A colour from a param ("#rrggbb" string or Color), or fallback when it isn't one.
 func _color(v: Variant, fallback: Color) -> Color:
 	if v is String and Color.html_is_valid(String(v)):
 		return Color.html(String(v))
@@ -1089,6 +1135,7 @@ static func _soft_dot() -> Texture2D:
 	return _dot_tex
 
 
+## Draws a white splat with wavy edges and droplets once; _splat tints it with modulate.
 static func _splat_texture() -> Texture2D:
 	if _splat_tex:
 		return _splat_tex
@@ -1119,6 +1166,7 @@ static func _splat_texture() -> Texture2D:
 	return _splat_tex
 
 
+## A presenter switched on or off (presenter_<n>_on): the guest and podium targets change.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key.begins_with("presenter_") and key.ends_with("_on"):
 		_collect_guests()
@@ -1132,15 +1180,17 @@ func _flash_k() -> float:
 	return minf(k, SAFE_FLASH_CAP) if _safe() else k
 
 
+## The "photosensitive_safe" setting.
 func _safe() -> bool:
 	return bool(AppState.get_setting("photosensitive_safe"))
 
 
 ## Time between light changes. Safe mode keeps it to under 3 flashes a second (each flash is an
-## on + off, so steps of at least 1/6 s ... we use 0.35 s for a margin).
+## on + off, so steps of at least 1/6 s; SAFE_STROBE_STEP = 0.35 s leaves a margin).
 func _strobe_step(normal: float) -> float:
 	return maxf(normal, SAFE_STROBE_STEP) if _safe() else normal
 
 
+## Safe-mode limits: brightest flash (share of full) and shortest light step (seconds).
 const SAFE_FLASH_CAP: float = 0.3
 const SAFE_STROBE_STEP: float = 0.35

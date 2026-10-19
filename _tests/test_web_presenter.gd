@@ -1,5 +1,7 @@
 extends Node
 ## "Web page (transparent)" presenter source, end-to-end with devtools/web_presenter_browser.mjs.
+## Older-style test: prints values to compare between runs and saves screenshots into the
+## output folder given as the first user argument (look at them; most checks have no PASS / FAIL line).
 var saved := false
 func _secs(t): await get_tree().create_timer(t).timeout
 func _ready():

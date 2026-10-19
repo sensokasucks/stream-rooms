@@ -17,6 +17,10 @@ lancets high on the walls with rose rondels under the gallery. Textures for the 
 door leaves and the EXIT sign come from make_hall_textures.py (rooms/lecture_hall/textures).
 GLASS_n markers (one per lancet) feed the room's sunbeams.
 
+Output: the room's .glb (GLB below; the lecture_hall or, with PANEL, the lecture_hall_panel folder)
+and crowd_seats.json next to it, which Room.crowd_seats_file reads for the filler crowd. The
+paths below are the owner's PC: change TEX and GLB on another machine.
+
 Blender axes: origin = stage-front centre on the hall floor. -Y = toward the audience,
 +Y = toward the stage wall (y = 9), Z = up. Markers follow the Stream Rooms contract.
 """
@@ -35,6 +39,7 @@ GLB = (r"C:\Users\jonza\Documents\RedotHomeTheater\stream_rooms\rooms\lecture_ha
 #  Generic helpers
 # ════════════════════════════════════════════════════════════════
 def col(name):
+    """The collection with this name, made and linked to the scene if it isn't there yet."""
     c = bpy.data.collections.get(name)
     if c is None:
         c = bpy.data.collections.new(name)
@@ -44,6 +49,7 @@ def col(name):
 
 
 def mat(name, color, rough=0.7, metal=0.0, emit=None, estr=0.0):
+    """A plain Principled material (reused by name). color / emit: linear RGB 0..1; estr = emission strength."""
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     m.use_nodes = True
     b = m.node_tree.nodes.get("Principled BSDF")
@@ -58,6 +64,9 @@ def mat(name, color, rough=0.7, metal=0.0, emit=None, estr=0.0):
 
 
 def tex_mat(name, image, rough=0.7, metal=0.0, emit=0.0):
+    """A material using a texture from TEX as its colour (and as emission when emit > 0).
+    The name is what the room's script and material_overrides look for after import.
+    """
     m = bpy.data.materials.get(name) or bpy.data.materials.new(name)
     m.use_nodes = True
     nt = m.node_tree
@@ -76,6 +85,9 @@ def tex_mat(name, image, rough=0.7, metal=0.0, emit=0.0):
 
 
 class MB:
+    """Mesh builder: collects faces in a bmesh, then done() turns them into one object
+    (replacing an old object of the same name) in the given collection.
+    """
     def __init__(self, name, collection="Hall"):
         self.name, self.col = name, collection
         self.bm = bmesh.new()
@@ -83,11 +95,15 @@ class MB:
         self.mats = []
 
     def mi(self, m):
+        """Material slot index for material name m (added on first use)."""
         if m not in self.mats:
             self.mats.append(m)
         return self.mats.index(m)
 
     def done(self, origin=None):
+        """Writes the mesh and links the object. origin: optional object origin (the mesh is moved
+        so the object can sit there, e.g. to be rotated in place later).
+        """
         old = bpy.data.objects.get(self.name)
         if old:
             bpy.data.objects.remove(old, do_unlink=True)
@@ -110,6 +126,7 @@ class MB:
 
 
 def _face(mb, pts, m, uvs):
+    """One face from 3D points, with material m and one UV per point."""
     vs = [mb.bm.verts.new(p) for p in pts]
     f = mb.bm.faces.new(vs)
     f.material_index = mb.mi(m)
@@ -160,6 +177,7 @@ def wall_quad(mb, axis, pos, a0, a1, z0, z1, m, facing, u=(0, 1), v=(0, 1)):
 
 
 def cyl(mb, center, r, depth, m, axis="z", segs=16, r2=None):
+    """Capped cylinder (or cone when r2 differs) along axis "x", "y" or "z"."""
     res = bmesh.ops.create_cone(mb.bm, cap_ends=True, cap_tris=False, segments=segs, radius1=r,
                                 radius2=r if r2 is None else r2, depth=depth)
     rot = {"z": Matrix.Identity(3), "x": Matrix.Rotation(math.pi / 2, 3, 'Y'), "y": Matrix.Rotation(-math.pi / 2, 3, 'X')}[axis]
@@ -170,6 +188,7 @@ def cyl(mb, center, r, depth, m, axis="z", segs=16, r2=None):
 
 
 def sphere(mb, center, r, m, subdiv=2, scale=(1, 1, 1)):
+    """Smooth icosphere, optionally squashed by scale."""
     res = bmesh.ops.create_icosphere(mb.bm, subdivisions=subdiv, radius=r)
     mtx = Matrix.Translation(Vector(center)) @ Matrix.Diagonal((*scale, 1))
     bmesh.ops.transform(mb.bm, matrix=mtx, verts=res["verts"])
@@ -179,6 +198,7 @@ def sphere(mb, center, r, m, subdiv=2, scale=(1, 1, 1)):
 
 
 def torus(mb, center, R, r, m, axis="z", segs=24, rsegs=6):
+    """Smooth ring: R = ring radius, r = tube radius, around the given axis."""
     rot = {"z": Matrix.Identity(3), "x": Matrix.Rotation(math.pi / 2, 3, 'Y'), "y": Matrix.Rotation(math.pi / 2, 3, 'X')}[axis]
     ring = []
     for i in range(segs):
@@ -208,6 +228,9 @@ def bar(mb, a, b, t, m):
 
 
 def empty(name, loc, parent=None, collection="Hall_Markers", size=0.2):
+    """A marker empty (replaces one of the same name). Names follow the Stream Rooms contract
+    (CAM_, LAMP_, GLASS_, PRESENTER_ ... see rooms/room.gd).
+    """
     o = bpy.data.objects.get(name)
     if o:
         bpy.data.objects.remove(o, do_unlink=True)
@@ -222,6 +245,7 @@ def empty(name, loc, parent=None, collection="Hall_Markers", size=0.2):
 
 
 def aim(o, target, forward='Y'):
+    """Turns o so its forward axis points at target (Z kept up)."""
     d = Vector(target) - o.location
     o.rotation_euler = d.to_track_quat(forward, 'Z').to_euler()
 
@@ -270,10 +294,12 @@ CHAND = Vector((0.0, -2.0, 14.6))
 
 
 def v2(x, y):
+    """2D vector shorthand for plan positions."""
     return Vector((x, y))
 
 
 def inward_normal(a, b):
+    """Unit normal of the wall segment a->b pointing into the hall (toward a point mid-audience)."""
     d = (b - a).normalized()
     n = v2(-d.y, d.x)
     mid = (a + b) / 2
@@ -351,6 +377,9 @@ CROWD_PITCH = 0.6       # metres per person along a pew
 
 
 def pew_piece(mb, a, b, n, z, leather=False, shelf=True, end_a=False, end_b=False):
+    """One straight pew from a to b facing n, at floor height z: seat, back, optional leather cushion,
+    book shelf and end panels. While CROWD_TAG is set it also records the seats for the filler crowd.
+    """
     if CROWD_TAG:
         L = (b - a).length
         k = max(1, int(round(L / CROWD_PITCH)))
@@ -420,10 +449,12 @@ def orch_z(j):
 
 
 def bal_z(k):
+    """Floor height of balcony row k (0 = at the wall, the highest)."""
     return BAL_Z0 + (BAL_ROWS - 1 - k) * BAL_RISE
 
 
 def gal_z(k):
+    """Floor height of gallery row k (0 = at the wall, the highest)."""
     return GAL_Z0 + (GAL_ROWS - 1 - k) * GAL_RISE
 
 
@@ -441,6 +472,9 @@ def orch_spans(fi, a, b):
 #  Materials
 # ════════════════════════════════════════════════════════════════
 def setup_materials():
+    """Every material the hall uses. Names must stay in step with lecture_hall_room.gd
+    (GLASS_MATERIALS, VARNISHED and the other replacements) and the room's glow_materials.
+    """
     tex_mat("Oak", "oak.png", 0.45)
     tex_mat("Oak_Gothic", "gothic_panel.png", 0.5)
     tex_mat("Stage_Floor", "wood_light.png", 0.35)
@@ -475,6 +509,7 @@ def setup_materials():
 #  Seating
 # ════════════════════════════════════════════════════════════════
 def build_pit_and_orchestra():
+    """The carpeted floor, the pit pews in front of the stage and the four stepped rows round the U."""
     global CROWD_TAG, CROWD_ROW
     CROWD_SEATS.clear()
     CROWD_TAG = None
@@ -569,6 +604,7 @@ def orch_pews(mb, fi, a, b, cut_a, cut_b, z, shelf):
 
 
 def build_balcony_and_gallery():
+    """The balcony (rows, soffit, balustrade, posts) and the top gallery with its arcade."""
     global CROWD_TAG, CROWD_ROW
     mb = MB("Seating_Balcony")
     for k in range(BAL_ROWS):
@@ -687,6 +723,7 @@ class Frame:
 
 
 def _facing_face(mb, pts, m, uvs, n):
+    """A face whose normal is flipped, if needed, to point along the 2D direction n."""
     f = _face(mb, pts, m, uvs)
     f.normal_update()
     if f.normal.to_2d().dot(n) < 0:
@@ -849,6 +886,9 @@ def grand_door(mb, c, n, W=2.0, Hs=3.0, sign=True):
 
 
 def build_walls():
+    """Wall bands round the U, pilasters, exit doors, and the stage wall with its panelling,
+    sounding canopy, side doors, tympanum and corner columns.
+    """
     mb = MB("Hall_Walls")
     wall_band(mb, 0.0, 3.6, "Oak_Gothic", uvs=1.8)
     wall_band(mb, 3.6, BAL_SOFFIT, "Red_Wall")
@@ -922,6 +962,7 @@ def build_walls():
 
 
 def build_ceiling():
+    """Two sloped rings of ceiling panels with ribs, a flat top, and the hammer-beam trusses."""
     mb = MB("Hall_Ceiling")
     outer = [v2(*p) for p in WALL] + [v2(*WALL[0])]
     outer_closed = [v2(*p) for p in WALL]
@@ -972,6 +1013,9 @@ def build_ceiling():
 #  Stage, screen, chandelier, statues, booth
 # ════════════════════════════════════════════════════════════════
 def build_stage():
+    """The raised stage with chamfered corners and steps, and its furniture (the panel copy gets
+    podiums instead). Returns the webcam monitor's position, or None in the panel copy.
+    """
     mb = MB("Stage")
     hw, c = STAGE_W / 2, 1.3
     poly = [(-hw, BACK_Y), (-hw, c), (-hw + c, 0.0), (hw - c, 0.0), (hw, c), (hw, BACK_Y)]
@@ -1023,6 +1067,7 @@ def build_stage():
 
 
 def _webcam_stand(mb):
+    """Finishes the stage mesh and adds the webcam monitor on a stand; returns the monitor's position."""
     mx, my, mz = -3.4, 1.4, STAGE_Z + 1.7
     cyl(mb, (mx, my, STAGE_Z + 0.03), 0.32, 0.06, "Black_Metal", segs=16)
     cyl(mb, (mx, my, STAGE_Z + 0.82), 0.04, 1.55, "Black_Metal", segs=8)
@@ -1079,6 +1124,7 @@ def podium_markers():
 
 
 def build_screen():
+    """The screen frame and the TVScreen mesh the app shows the video on (its own object, by contract)."""
     mb = MB("Screen_Frame")
     x0, x1 = -SCREEN_W / 2, SCREEN_W / 2
     z0, z1 = STAGE_Z + SCREEN_LIFT, STAGE_Z + SCREEN_LIFT + SCREEN_H
@@ -1102,6 +1148,7 @@ def build_screen():
 
 
 def build_chandelier():
+    """The big brass ring chandelier at CHAND and small pendant lamps under the balcony."""
     mb = MB("Chandelier")
     c = CHAND
     cyl(mb, (c.x, c.y, (c.z + CEIL_TOP) / 2), 0.05, CEIL_TOP - c.z, "Brass", segs=8)
@@ -1144,6 +1191,7 @@ def build_chandelier():
 
 
 def build_statues():
+    """Two simple marble statues on plinths either side of the stage (original stand-ins)."""
     mb = MB("Statues")
     for s in (-1, 1):
         x, y = s * (STAGE_W / 2 + 1.6), 1.5
@@ -1158,6 +1206,9 @@ def build_statues():
 
 
 def build_booth_and_speakers():
+    """The projection booth at the back of the gallery and speaker boxes high up near the stage wall.
+    Returns the booth window position (BEAM_Projector).
+    """
     mb = MB("Booth_Speakers")
     # projection booth at the back of the upper gallery
     y = WALL[2][1] + 0.4
@@ -1171,6 +1222,9 @@ def build_booth_and_speakers():
 
 
 def seat_eye(kind, row, facet, t, lift=1.22):
+    """Eye position of someone sitting in a row: kind "pit" (facet = x, t unused) or "orch" /
+    "bal" / "gal" (facet = wall facet index, t = 0..1 along it). lift = eye height above the row.
+    """
     if kind == "pit":
         y = -1.35 - row * 0.95
         return Vector((facet, y - 0.05, lift))
@@ -1192,6 +1246,10 @@ def rail_eye(facet, frac, back=0.45, lift=1.7):
 
 
 def build_markers(mon_pos, beam_pos):
+    """The Stream Rooms markers: BEAM_Projector, LIGHTS_House with its LAMP_ empties, the CAM_
+    presets (aimed at the screen unless noted), the panel copy's presenter / chat / reply screen
+    markers, and WEBCAM_Frame on the monitor.
+    """
     screen_c = Vector((0, SCREEN_Y, STAGE_Z + SCREEN_LIFT + SCREEN_H / 2))
     empty("BEAM_Projector", beam_pos)
     lh = empty("LIGHTS_House", (0, 0, 0))
@@ -1243,6 +1301,9 @@ def build_markers(mon_pos, beam_pos):
 
 
 def build_all():
+    """Builds the whole hall from scratch (clearing the Hall collections first) and writes
+    crowd_seats.json. Returns the polygon count per mesh object.
+    """
     setup_materials()
     for cname in ("Hall", "Hall_Markers"):
         c = bpy.data.collections.get(cname)
@@ -1278,6 +1339,7 @@ def export_crowd_seats(path=None):
 
 
 def export_glb(path=None):
+    """Exports the Hall and Hall_Markers collections as a GLB (Y up, as Redot expects); path defaults to GLB."""
     path = path or GLB
     for o in bpy.context.view_layer.objects:
         o.select_set(False)

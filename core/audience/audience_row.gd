@@ -7,7 +7,9 @@ extends Marker3D
 ## sits are skipped automatically, so the audience never blocks a camera.
 ## Single seats can also come from Blender as empties named AUDIENCE_<anything>.
 
+## Number of seats when `offsets` is empty.
 @export var count: int = 6
+## Metres between neighbouring seats when `offsets` is empty.
 @export var spacing: float = 0.6
 ## If not empty, one seat per value (metres along local X); count/spacing are ignored.
 @export var offsets: PackedFloat32Array = []
@@ -15,6 +17,8 @@ extends Marker3D
 @export var seat_scale: float = 1.0
 
 
+## Global seat transforms (basis scaled by seat_scale). Called by Room.get_audience_seats(),
+## which is where seats next to a camera, or too close to a neighbour, are dropped.
 func get_seat_transforms() -> Array[Transform3D]:
 	var out: Array[Transform3D] = []
 	var xs: Array[float] = []

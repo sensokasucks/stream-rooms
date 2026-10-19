@@ -11,7 +11,12 @@ extends RefCounted
 ##   custom  whatever the individual switches say (changing one switch picks "custom").
 ## Glow, emissive materials and lights that are part of a room's look are never touched.
 ## Settings are per machine (settings.cfg), not per room.
+## RoomHost calls environment_for / apply_viewport / apply_fps when a room loads and when a gfx_
+## setting changes, and keeps "graphics_quality" in step with the switches. The setting keys and
+## their defaults live in AppState.DEFAULTS.
 
+## The switch values each preset writes. gfx_fog: "off" / "low" / "full"; gfx_msaa: 0, 2, 4 or 8
+## samples; gfx_shadows: "low" / "medium" / "high"; gfx_render_scale: 0.5..1.0 of full size.
 const PRESETS: Dictionary = {
 	"low": {"gfx_gi": false, "gfx_fog": "off", "gfx_ssao": false, "gfx_ssr": false, "gfx_msaa": 0,
 		"gfx_shadows": "low", "gfx_render_scale": 0.75},
@@ -20,6 +25,7 @@ const PRESETS: Dictionary = {
 	"high": {"gfx_gi": true, "gfx_fog": "full", "gfx_ssao": true, "gfx_ssr": true, "gfx_msaa": 2,
 		"gfx_shadows": "high", "gfx_render_scale": 1.0},
 }
+## Every setting a preset controls. A new switch must be added here and to each preset.
 const KEYS: PackedStringArray = ["gfx_gi", "gfx_fog", "gfx_ssao", "gfx_ssr", "gfx_msaa", "gfx_shadows", "gfx_render_scale"]
 ## Ambient light added per unit of the room's SDFGI energy when SDFGI is switched off, so
 ## rooms lit mostly by bounce light don't go murky.
@@ -64,6 +70,7 @@ static func environment_for(src: Environment) -> Environment:
 	var fog := String(AppState.get_setting("gfx_fog"))
 	var ssao := bool(AppState.get_setting("gfx_ssao"))
 	var ssr := bool(AppState.get_setting("gfx_ssr"))
+	# only copy the Environment when a switch actually turns off something this room uses
 	var change := (src.sdfgi_enabled and not gi) or (src.volumetric_fog_enabled and fog == "off") \
 		or (src.ssao_enabled and not ssao) or (src.ssr_enabled and not ssr)
 	if not change:
@@ -105,6 +112,7 @@ static func apply_viewport(vp: Viewport) -> void:
 			dir_q = 1
 			atlas = 2048
 			dir_size = 2048
+		# "high" keeps the project settings as they are
 		"medium":
 			pos_q = mini(pos_q, 2)
 			dir_q = mini(dir_q, 2)
@@ -124,7 +132,7 @@ static func apply_fps() -> void:
 		DisplayServer.window_set_vsync_mode(mode)
 
 
-## Rough cost hint for the panel.
+## Rough cost hint for the panel (shown under the preset picker on the Room tab).
 static func describe(level: String) -> String:
 	match level:
 		"low":

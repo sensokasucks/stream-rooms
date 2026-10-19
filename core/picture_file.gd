@@ -4,7 +4,10 @@ extends RefCounted
 ## Used for the podium pictures (Presenters tab) and for pictures a host sends to guests.
 ## Only these formats, checked by their first bytes, and nothing over MAX_BYTES: the bytes may
 ## have come over the network.
+## Callers: Presenter (podium picture files), NetSession (pictures sent between host and guests)
+## and EmoteCache (too_big check on downloaded emotes).
 
+## Largest file accepted, in bytes (3 MB). Presenter's error message quotes it in MB.
 const MAX_BYTES: int = 3 * 1024 * 1024
 ## Widest / tallest picture decoded. A small file can claim a huge size (a 2 MB PNG of
 ## 16000 x 16000 pixels needs 1 GB once decoded), so the size is read from the header first.
@@ -38,6 +41,9 @@ static func declared_size(bytes: PackedByteArray) -> Vector2i:
 			if bytes[i] != 0xFF:
 				i += 1              # stray byte (some profile pictures have them)
 				continue
+			# m is the marker type. Fill bytes (FF), TEM and restart markers (D0-D7) have no length
+			# field; C0-CF are the frame headers except C4 (Huffman tables), C8 and CC; DA starts the
+			# image data, after which no header can follow.
 			var m := bytes[i + 1]
 			if m == 0xFF or m == 0x01 or (m >= 0xD0 and m <= 0xD7):
 				i += 1 if m == 0xFF else 2
@@ -49,6 +55,7 @@ static func declared_size(bytes: PackedByteArray) -> Vector2i:
 			i += 2 + ((bytes[i + 2] << 8) | bytes[i + 3])
 		return Vector2i(-1, -1)
 	if n >= 32 and bytes.slice(0, 4).get_string_from_ascii() == "RIFF" and bytes.slice(8, 12).get_string_from_ascii() == "WEBP":
+		# the three WebP flavours store the size differently: lossy, lossless, extended
 		match bytes.slice(12, 16).get_string_from_ascii():
 			"VP8 ":
 				return Vector2i(bytes.decode_u16(26) & 0x3FFF, bytes.decode_u16(28) & 0x3FFF)
@@ -66,6 +73,7 @@ static func too_big(bytes: PackedByteArray) -> bool:
 	return sz.x > MAX_SIDE or sz.y > MAX_SIDE
 
 
+## Big-endian 32-bit number at byte `at` (PNG stores its sizes this way).
 static func _be32(b: PackedByteArray, at: int) -> int:
 	return (b[at] << 24) | (b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3]
 
@@ -76,6 +84,7 @@ static func texture_from_bytes(bytes: PackedByteArray) -> Texture2D:
 	if bytes.size() > MAX_BYTES:
 		return null
 	var kind := kind_of(bytes)
+	# GifDecoder has its own size limits, so the header check below is only for the others
 	if kind == "gif":
 		return _gif_texture(GifDecoder.decode(bytes))
 	if too_big(bytes):
@@ -88,6 +97,7 @@ static func texture_from_bytes(bytes: PackedByteArray) -> Texture2D:
 		"webp": err = img.load_webp_from_buffer(bytes)
 	if err != OK or img.is_empty():
 		return null
+	# (RGBA for every picture, so they all use the same texture format)
 	if img.get_format() == Image.FORMAT_RGB8:
 		img.convert(Image.FORMAT_RGBA8)
 	img.generate_mipmaps()
@@ -103,6 +113,7 @@ static func _gif_texture(decoded: Dictionary) -> Texture2D:
 		return ImageTexture.create_from_image(frames[0] as Image)
 	var delays: PackedFloat32Array = decoded["delays"]
 	var anim := AnimatedTexture.new()
+	# AnimatedTexture holds at most 256 frames; longer GIFs are cut short
 	anim.frames = mini(frames.size(), AnimatedTexture.MAX_FRAMES)
 	for i in anim.frames:
 		anim.set_frame_texture(i, ImageTexture.create_from_image(frames[i] as Image))

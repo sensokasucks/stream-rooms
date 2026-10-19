@@ -5,7 +5,9 @@ extends CanvasLayer
 ## Status toasts only show when "messages_on_picture" is on: this is the window OBS captures, so
 ## by default messages go to the control panel's message line instead (ControlPanel).
 
+## Seconds a status toast stays up (errors stay 1.5 times as long).
 @export var toast_time: float = 4.0
+## Width of the corner webcam picture in pixels; the height follows the webcam's shape.
 @export var pip_width: float = 360.0
 
 var _toast: Label
@@ -63,6 +65,7 @@ func _ready() -> void:
 		elif k == "messages_on_picture" and not bool(v): _toast.visible = false)
 
 
+## Counts the toast down; it fades out over its last half second.
 func _process(delta: float) -> void:
 	if _toast.visible:
 		_toast_timer -= delta
@@ -71,6 +74,7 @@ func _process(delta: float) -> void:
 			_toast.visible = false
 
 
+## EventBus.status_message: show it as a toast, only with "messages_on_picture" on and not in clean feed.
 func _on_status(text: String, is_error: bool) -> void:
 	_toast.text = text
 	_toast.add_theme_color_override("font_color", Color(1, 0.55, 0.5) if is_error else Color(0.92, 0.94, 1))
@@ -78,6 +82,8 @@ func _on_status(text: String, is_error: bool) -> void:
 	_toast.visible = bool(AppState.get_setting("messages_on_picture")) and not AppState.is_clean_feed()
 
 
+## EventBus.webcam_texture_changed: size the corner picture to the webcam's aspect ratio,
+## 16 px from the bottom-right corner.
 func _on_webcam(tex: Texture2D) -> void:
 	_webcam_texture = tex
 	_pip.texture = tex
@@ -90,6 +96,8 @@ func _on_webcam(tex: Texture2D) -> void:
 	_refresh()
 
 
+## The badge shows while paused to react; the corner webcam shows only when the room has no
+## in-room webcam frame (or "webcam_in_room" is off). Clean feed hides the badge and toast.
 func _refresh() -> void:
 	var clean := AppState.is_clean_feed()
 	_badge.visible = AppState.is_react_paused() and not clean

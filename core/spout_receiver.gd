@@ -6,14 +6,20 @@ extends Node
 ## Everything is looked up by name (ClassDB), so the game still runs without the extension.
 ## Publishes EventBus.spout_senders_changed(names, available); the list is checked every
 ## POLL_S seconds (a quick read of Spout's shared list).
+## ScreenFeed creates one as a child (source "spout"); the control panel lists the names it
+## publishes. The extension's own docs: addons/godot-spout/STREAM_ROOMS_PATCH.md.
 
+## Class name the godot-spout extension registers. Never referenced directly, so the script
+## still parses when the extension is missing.
 const TEXTURE_CLASS: String = "SpoutTexture"
+## Seconds between checks of the sender list.
 const POLL_S: float = 2.0
 
 var _names: PackedStringArray = []
 var _wait: float = 0.0
 
 
+## True when the godot-spout extension is loaded (and new enough to list senders).
 static func is_available() -> bool:
 	return ClassDB.class_exists(TEXTURE_CLASS) and ClassDB.class_has_method(TEXTURE_CLASS, "get_sender_names")
 
@@ -46,6 +52,7 @@ func refresh() -> void:
 	EventBus.spout_senders_changed.emit(_names, true)
 
 
+## The sender names from the last check, sorted.
 func get_sender_names() -> PackedStringArray:
 	return _names
 
