@@ -1,6 +1,6 @@
 # Stream Rooms and Stream Core: user manual
 
-*October 2026 (updated 10 October). Stream Rooms 2026.10.4 and Fridge Stream Core.*
+*October 2026 (updated 22 October). Stream Rooms 2026.10.5 and Fridge Stream Core.*
 
 Stream Rooms puts your stream in a 3D room: a big screen shows a browser tab, a video or another program, the screen lights the room, and your chat sits in the seats as an audience. Fridge Stream Core is the companion program that reads your Kick, Twitch and YouTube chat and decides what chat is allowed to do (points, reactions, games). You capture the Stream Rooms window in OBS and stream it.
 
@@ -121,7 +121,7 @@ Pick a room in the **Room** tab, or press **PgUp / PgDn** to step through them. 
 
 ![Old Classroom](images/sr-room-classroom.png)
 
-**Lecture Hall.** A Victorian Gothic university theatre in dark oak with stained glass, sunbeams, a ring chandelier, two balconies and a crowd of about 680 extra seats. **Light rays** (Room tab ▸ Advanced) sets how visible the sunbeams are. It has 12 cameras.
+**Lecture Hall.** A Victorian Gothic university theatre in dark oak with stained glass, sunbeams, one ring chandelier high in the middle of the ceiling, two balconies and a crowd of about 680 extra seats. **Light rays** (Room tab ▸ Advanced) sets how visible the sunbeams are. It has 12 cameras.
 
 ![Lecture Hall](images/sr-room-lecture-hall.png)
 
