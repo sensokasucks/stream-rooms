@@ -867,18 +867,28 @@ func platform_color(platform: String) -> Color:
 
 
 ## The seating group of a member: "streamer<n>" while streamer areas are on, else their platform group.
+## For seating only: colours always use _platform_of, whether or not streamer areas are on.
 func _group_of(m: Dictionary) -> String:
 	if _area_count > 1:
 		return "streamer%d" % int(m.get("streamer", 0))
+	return _platform_of(m)
+
+
+## The platform group of a member (kick, twitch, youtube or other), never "streamer<n>".
+## Members keep it in "platform"; older ones without it fall back to the "platform:user_id" key.
+## Used by _group_of and _recolor_all.
+func _platform_of(m: Dictionary) -> String:
 	if m.has("platform"):
 		return String(m["platform"])
 	return platform_group(String(m.get("key", "")).get_slice(":", 0))
 
 
-## Every member's colour again (after a colour setting changes).
+## Every member's colour again (after a colour setting changes, see _on_setting_changed).
+## Uses the platform group, not the seating group: with streamer areas on, the seating group is
+## "streamer<n>", which platform_color would turn into the "other" colour for everyone.
 func _recolor_all() -> void:
 	for m: Dictionary in _members.values():
-		m["color"] = color_for(String(m["name"]), String(m.get("hex", "")), _group_of(m))
+		m["color"] = color_for(String(m["name"]), String(m.get("hex", "")), _platform_of(m))
 		if int(m["slot"]) >= 0:
 			EventBus.audience_updated.emit(int(m["slot"]))
 
