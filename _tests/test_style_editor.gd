@@ -3,7 +3,8 @@ extends Node
 ## Light / Dark bubbles look as before, a custom bubble style reaches the room's bubbles, every
 ## built-in silhouette draws, a silhouette style reaches the seats and the filler crowd, a picture
 ## from the PC imports as a silhouette, and presets save and delete. Saves screenshots to look at.
-## Group looks (mods, a platform) reach the right seats and bubbles.
+## Group looks (mods, a platform) reach the right seats and bubbles; many pictures import at once
+## and a random mix spreads them over the chatters.
 ##   <redot console exe> --path . _tests/test_style_editor.tscn -- C:/temp/sr_tests --mp-profile=test
 
 var _fails: int = 0
@@ -162,6 +163,25 @@ func _ready() -> void:
 				dark_i = i
 		ed._on_bubble_preset(dark_i)
 		_check(String(AppState.get_setting("audience_bubble_theme")) == "dark", "the Dark preset goes back to the Audience tab's Dark")
+		# many pictures at once, then a random mix of them for everyone
+		var src2 := out + "/style_test_picture_b.png"
+		pic.resize(200, 400)
+		pic.save_png(src2)
+		ed._on_many_picked(PackedStringArray([src, src2]))
+		var mine := AudienceStyle.figure_preset_names()
+		_check(mine.has("style_test_picture") and mine.has("style_test_picture_b"), "many pictures become saved looks (%s)" % str(mine))
+		AudienceStyle.set_group_look("all", "silhouette", "style_test_picture|style_test_picture_b|bot")
+		var got := {}
+		for who in ["Ann", "Bo", "Cy", "Di", "Ed", "Flo", "Gus", "Hal", "Ivy", "Jo"]:
+			var f := AudienceStyle.figure_for({"name": who, "platform": "twitch", "roles": ""})
+			got[String(f["shape"]) + String(f["file"])] = true
+			if who == "Ann":
+				_check(f == AudienceStyle.figure_for({"name": "ann", "platform": "kick", "roles": ""}), "a chatter keeps the same pick")
+		_check(got.size() >= 2, "a random mix gives different chatters different silhouettes (%d kinds)" % got.size())
+		ed._fill_group_picks()
+		var all_pick: OptionButton = (ed._group_picks["all"] as Array)[1]
+		_check(all_pick.get_item_text(all_pick.selected) == "Mix of 3", "the Groups tab shows the mix")
+		AppState.set_setting("audience_style_groups", "")
 		AudienceStyle.save_preset("bubble", "My comic", {})
 		_check(not AudienceStyle.bubble_preset_names().has("My comic"), "and a saved preset deletes")
 		await _secs(0.5)

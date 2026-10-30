@@ -487,9 +487,14 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     colour*, *One colour for everyone* (**Colour**) or *The picture's own colours*. You also get
     **Brightness**, **Size** (name tags and bubbles move up with it) and **The filler crowd uses
     it too**. With your own picture, **Across**, **Down** and **Picture size** place the chatter's
-    profile picture. **Save as...** and **Delete** work like on the Bubbles tab.
+    profile picture. **Save as...** and **Delete** work like on the Bubbles tab. **Add many
+    pictures...** takes several pictures at once and saves each one as a look of yours (named
+    after its file), ready for a random mix on the Groups tab.
   - **Groups** tab: a **Bubble** and a **Silhouette** look for **Mods**, **VIPs**,
-    **Subscribers**, **Kick**, **Twitch**, **YouTube** and **Other chat**. *Main style* means the
+    **Subscribers**, **Kick**, **Twitch**, **YouTube**, **Other chat** and **Everyone else**
+    (whoever is left). **Random mix...** in a Silhouette list lets you tick several silhouettes:
+    each chatter in that group gets one of them, picked from their name, so they keep it every
+    time they chat. *Main style* means the
     same as everyone else. Bubble looks are the presets (save your own first with **Save
     as...**). Silhouette looks are the built-in shapes or your saved ones. Someone in more than
     one group gets the first one in the list that has a look set, so a mod who subscribes gets

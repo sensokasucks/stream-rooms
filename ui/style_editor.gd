@@ -17,6 +17,8 @@ const SAMPLES: Array = [
 	["Pixel_Pete", Color(0.35, 0.7, 1.0), [{"tint": "paid"}, "Super Chat: keep it up!"]],
 	["Mia", Color(0.5, 0.95, 0.45), [{"tint": "highlighted"}, {"reply_to": "Nova", "quote": "Hi chat!"}, "Hello hello"]],
 ]
+## Metadata of the Groups tab's "Random mix..." item (never a look name: those can't hold MIX_SEP).
+const MIX_ITEM: String = "|mix|"
 ## Preview scale of the bubbles and silhouettes (they're drawn at full bubble / picture size).
 const PREVIEW_BUBBLE_SCALE: float = 0.55
 const PREVIEW_FIGURE_SCALE: float = 0.5
@@ -38,6 +40,7 @@ var _custom_rows: Array[Control] = []    # the picture-spot sliders (only for yo
 ## Groups tab: group -> [bubble OptionButton, silhouette OptionButton] (refilled when presets change).
 var _group_picks: Dictionary = {}
 var _file_dialog: FileDialog
+var _many_dialog: FileDialog        # "Add many pictures..." (several files at once)
 var _confirm: ConfirmationDialog
 
 
@@ -134,6 +137,7 @@ func _build_figure_page() -> Control:
 	v.add_child(own)
 	own.add_child(_label(""))
 	own.add_child(_tip(_btn("Use my own picture...", _pick_picture), "Pick a picture (PNG, JPG or WebP) from your PC. A see-through PNG works best; a picture with no see-through parts is read as a dark shape on a light background. It's cut to size and saved with Stream Rooms' settings."))
+	own.add_child(_tip(_btn("Add many pictures...", _pick_many), "Pick several pictures at once. Each one is saved as a look of your own (named after its file), ready for the Groups tab's Random mix... The audience doesn't change until you use them."))
 	own.add_child(_tip(_btn("Back to classic", func() -> void:
 		_fig = AudienceStyle.merge_figure({})
 		_apply_figure(true)), "The original head-and-shoulders silhouette, in the chatter's colour."))
@@ -160,7 +164,7 @@ func _build_figure_page() -> Control:
 ## gets what the Bubbles and Silhouettes tabs set.
 func _build_groups_page() -> Control:
 	var v := _page("Groups")
-	v.add_child(_hint("Give mods, VIPs, subscribers or one platform their own look. Save a look in the Bubbles or Silhouettes tab first (Save as...), then pick it here. Someone in more than one group gets the first one in this list that has a look set (a mod who subscribes gets the Mods look)."))
+	v.add_child(_hint("Give mods, VIPs, subscribers or one platform their own look. Save a look in the Bubbles or Silhouettes tab first (Save as..., or Add many pictures...), then pick it here. Someone in more than one group gets the first one in this list that has a look set (a mod who subscribes gets the Mods look). Everyone else covers whoever is left. Random mix... gives each chatter in the group one of several silhouettes, and they keep it every time they chat."))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 8)
@@ -179,8 +183,14 @@ func _build_groups_page() -> Control:
 			ob.fit_to_longest_item = false
 			ob.tooltip_text = "The %s look for %s. Main style = the same as everyone else." % [kind, String(AudienceStyle.GROUPS[g])]
 			ob.item_selected.connect(func(i: int) -> void:
-				if not _filling:
-					AudienceStyle.set_group_look(g, kind, String(ob.get_item_metadata(i))))
+				if _filling:
+					return
+				var look := String(ob.get_item_metadata(i))
+				if look == MIX_ITEM:
+					_fill_group_picks()           # (shows the group's current look until the mix is picked)
+					_ask_mix(g)
+					return
+				AudienceStyle.set_group_look(g, kind, look))
 			grid.add_child(ob)
 			picks.append(ob)
 		_group_picks[g] = picks
@@ -211,9 +221,57 @@ func _fill_group_picks() -> void:
 				ob.set_item_metadata(ob.item_count - 1, n)
 				if String(now.get(kind, "")) == n:
 					ob.select(ob.item_count - 1)
+			if kind == "silhouette":
+				var cur := String(now.get(kind, ""))
+				if cur.contains(AudienceStyle.MIX_SEP):
+					ob.add_item("Mix of %d" % cur.split(AudienceStyle.MIX_SEP, false).size())
+					ob.set_item_metadata(ob.item_count - 1, cur)
+					ob.select(ob.item_count - 1)
+				ob.add_item("Random mix...")
+				ob.set_item_metadata(ob.item_count - 1, MIX_ITEM)
 			if String(now.get(kind, "")) == "":
 				ob.select(0)
 	_filling = false
+
+
+## "Random mix...": ticks for every silhouette look; the group's chatters each get one of the ticked
+## ones (AudienceStyle.figure_for picks it from their name). Fewer than two ticked = no mix.
+func _ask_mix(group: String) -> void:
+	var looks := AudienceStyle.group_looks()
+	var cur := String((looks.get(group, {}) as Dictionary).get("silhouette", "")) if looks.get(group) is Dictionary else ""
+	var ticked := cur.split(AudienceStyle.MIX_SEP, false)
+	var d := ConfirmationDialog.new()
+	d.title = "Random mix for %s" % String(AudienceStyle.GROUPS[group])
+	d.ok_button_text = "Use this mix"
+	d.exclusive = false
+	var sc := ScrollContainer.new()
+	sc.custom_minimum_size = Vector2(320, 300)
+	var box := VBoxContainer.new()
+	sc.add_child(box)
+	box.add_child(_hint("Tick the silhouettes to mix. Each chatter gets one of them and keeps it."))
+	var checks: Dictionary = {}       # look name -> CheckBox
+	for n in AudienceStyle.figure_look_names():
+		var c := CheckBox.new()
+		c.text = String(AudienceStyle.FIGURE_SHAPES.get(n, n))
+		c.tooltip_text = "Put this silhouette in the mix."
+		c.button_pressed = ticked.has(n)
+		box.add_child(c)
+		checks[n] = c
+	d.add_child(sc)
+	d.confirmed.connect(func() -> void:
+		var picked := PackedStringArray()
+		for n: String in checks.keys():
+			if (checks[n] as CheckBox).button_pressed:
+				picked.append(n)
+		if picked.size() == 1:
+			AudienceStyle.set_group_look(group, "silhouette", picked[0])
+		elif picked.size() > 1:
+			AudienceStyle.set_group_look(group, "silhouette", AudienceStyle.MIX_SEP.join(picked))
+		_fill_group_picks()
+		d.queue_free())
+	d.canceled.connect(d.queue_free)
+	add_child(d)
+	d.popup_centered()
 
 
 # ── Preview ─────────────────────────────────────────────────
@@ -451,6 +509,50 @@ func _pick_picture() -> void:
 		_file_dialog.file_selected.connect(_on_picture_picked)
 		add_child(_file_dialog)
 	_file_dialog.popup_centered_ratio(0.6)
+
+
+## "Add many pictures...": a file dialog that takes several pictures at once.
+func _pick_many() -> void:
+	if _many_dialog == null:
+		_many_dialog = FileDialog.new()
+		_many_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
+		_many_dialog.access = FileDialog.ACCESS_FILESYSTEM
+		_many_dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp ; Pictures"])
+		_many_dialog.use_native_dialog = true
+		_many_dialog.title = "Pick silhouette pictures"
+		_many_dialog.files_selected.connect(_on_many_picked)
+		add_child(_many_dialog)
+	_many_dialog.popup_centered_ratio(0.6)
+
+
+## Called by the many-pictures dialog (and tests): imports each picture and saves it as a look of
+## your own named after its file (the main silhouette's colour, brightness and size, the picture's
+## head spot guessed). They show in the Saved list and the Groups tab, ready for a random mix.
+func _on_many_picked(paths: PackedStringArray) -> void:
+	var added := 0
+	var all := AudienceStyle._parse(String(AppState.get_setting("audience_saved_styles")))
+	var mine: Dictionary = all.get("silhouette", {}) if all.get("silhouette") is Dictionary else {}
+	for path in paths:
+		var file := AudienceStyle.import_picture(path)
+		if file == "":
+			continue
+		var f := _jsonable(_fig)
+		var head := AudienceStyle.guess_head(file)
+		f["shape"] = "custom"
+		f["file"] = file
+		f["head_x"] = head.x
+		f["head_y"] = head.y
+		f["head_r"] = head.z
+		mine[path.get_file().get_basename().replace(AudienceStyle.MIX_SEP, " ").strip_edges().left(40)] = f
+		added += 1
+	all["silhouette"] = mine
+	AppState.set_setting("audience_saved_styles", JSON.stringify(all))      # (one save for the lot)
+	_fill_fig_presets()
+	_fill_group_picks()
+	if added < paths.size():
+		EventBus.status_message.emit("Added %d of %d pictures (the others couldn't be read)." % [added, paths.size()], true)
+	else:
+		EventBus.status_message.emit("Added %d pictures as saved looks. Use them in the Groups tab (Random mix...)." % added, false)
 
 
 ## Called by the file dialog (and tests): imports the picture and switches the silhouettes to it.

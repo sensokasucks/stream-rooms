@@ -97,8 +97,12 @@ const PICTURE_DIR: String = "user://silhouettes/"
 ## Groups that can have their own look, in the order they win: a mod who is also a sub gets the
 ## mods' look (for each of bubble / silhouette, the first of their groups that has one set).
 ## Roles come from AudienceManager.roles_of, platforms from AudienceManager.platform_group.
+## "all" matches everyone, so it is the last stop before the main style.
 const GROUPS: Dictionary = {"mod": "Mods", "vip": "VIPs", "sub": "Subscribers", "kick": "Kick",
-	"twitch": "Twitch", "youtube": "YouTube", "other": "Other chat"}
+	"twitch": "Twitch", "youtube": "YouTube", "other": "Other chat", "all": "Everyone else"}
+## Separates the looks of a random mix in a group's silhouette value ("ears|bot|My cat").
+## Saved look names can't contain it (save_preset takes it out).
+const MIX_SEP: String = "|"
 
 # Caches: the merged style for the raw setting text it came from, and textures by id.
 static var _bubble_key: String = "(none yet)"
@@ -331,7 +335,7 @@ static func group_look(member: Dictionary, kind: String) -> String:
 	var roles := String(member.get("roles", "")).split(",", false)
 	var platform := String(member.get("platform", "other"))
 	for g: String in GROUPS.keys():
-		if not (roles.has(g) or g == platform):
+		if not (roles.has(g) or g == platform or g == "all"):
 			continue
 		var looks: Variant = all.get(g)
 		if looks is Dictionary and String((looks as Dictionary).get(kind, "")) != "":
@@ -349,11 +353,17 @@ static func bubble_for(member: Dictionary) -> Dictionary:
 
 
 ## A seated chatter's silhouette style: their group's saved look, a built-in shape (the main style
-## with that shape), or the main style.
+## with that shape), or the main style. A random mix (looks joined by MIX_SEP) gives each chatter
+## one of its looks, picked from their name so they keep it every time they chat.
 static func figure_for(member: Dictionary) -> Dictionary:
 	var look := group_look(member, "silhouette")
 	if look == "":
 		return figure()
+	if look.contains(MIX_SEP):
+		var mix := look.split(MIX_SEP, false)
+		if mix.is_empty():
+			return figure()
+		look = mix[absi(hash(String(member.get("name", "")).to_lower())) % mix.size()]
 	return _cached("silhouette|" + look, func() -> Dictionary:
 		var own := saved("silhouette")
 		if own.get(look) is Dictionary:
@@ -392,6 +402,7 @@ static func saved(kind: String) -> Dictionary:
 
 ## Saves (or with style = {} deletes) one of the streamer's own presets.
 static func save_preset(kind: String, preset_name: String, style: Dictionary) -> void:
+	preset_name = preset_name.replace(MIX_SEP, " ").strip_edges()
 	var all := _parse(String(AppState.get_setting("audience_saved_styles")))
 	var mine: Dictionary = all.get(kind, {}) if all.get(kind) is Dictionary else {}
 	if style.is_empty():
