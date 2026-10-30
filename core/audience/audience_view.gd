@@ -18,14 +18,12 @@ extends Node3D
 ## the camera can't see (off-screen or behind the balcony) aren't drawn, and far-away animated
 ## bubbles redraw at a lower rate.
 
-const SILHOUETTE: Texture2D = preload("res://core/audience/silhouette.png")
+## The silhouette picture, where its head is and how it's painted come from AudienceStyle.figure()
+## (the Style editor; "audience_silhouette"), kept in _fig / _fig_tex / _fig_head below.
 ## Tint of an empty seat's silhouette (only shown with "audience_show_empty" on).
 const EMPTY_COLOR: Color = Color(0.6, 0.6, 0.66, 0.22)
 ## A speaking chatter's colour is multiplied by this while their bubble is up.
 const SPEAKER_COLOR_BOOST: float = 1.25
-## Where the head is in silhouette.png (pixels): centre and the radius inside the rim.
-const HEAD_CENTER: Vector2 = Vector2(128, 94)
-const HEAD_RADIUS: float = 56.0
 ## Size (pixels) of the round profile picture asked from EmoteCache.get_circle_texture.
 const AVATAR_PX: int = 128
 ## How often bubbles check whether the camera can see them (seconds).
@@ -38,7 +36,8 @@ const NUDGE_MAX_HEIGHTS: float = 2.5
 @export var tag_fade_start: float = 16.0
 @export var tag_fade_end: float = 28.0
 
-## Height of the silhouette (head-and-shoulders bust), metres.
+## Height of the silhouette (head-and-shoulders bust), metres, before the silhouette style's
+## "size" (use _bust() / _seat_bust(i) for the height people are drawn at).
 @export var bust_height: float = 0.78
 ## How far the bust's bottom sits above the seat surface.
 @export var bust_lift: float = 0.18
@@ -85,6 +84,11 @@ var _dirty: bool = true
 var _vis_clock: float = 0.0
 ## Room light level last handed to the crowd (Room._level), so it is only set when it changes.
 var _light: float = -1.0
+## The silhouette style in use (AudienceStyle.figure()), its picture and its head (x, y, radius
+## in picture pixels). Set by _load_figure() in setup() and when "audience_silhouette" changes.
+var _fig: Dictionary = {}
+var _fig_tex: Texture2D
+var _fig_head: Vector3 = Vector3(128, 94, 56)
 
 
 ## Called by RoomHost. seats: main seat transforms (global); stage_point: middle of the main
@@ -94,6 +98,7 @@ var _light: float = -1.0
 func setup(seats: Array[Transform3D], stage_point: Variant = null, crowd: Array[Transform3D] = [],
 		presenters: Array[Dictionary] = [], presenter_size: Vector2 = Vector2.ONE, presenter_nodes: Dictionary = {},
 		crowd_info: Array[Dictionary] = []) -> void:
+	_load_figure()
 	var spots: Array[Vector3] = []
 	var kinds := PackedByteArray()
 	for t in seats:
@@ -106,7 +111,8 @@ func setup(seats: Array[Transform3D], stage_point: Variant = null, crowd: Array[
 		_crowd = CrowdLayer.new()
 		_crowd.name = "Crowd"
 		add_child(_crowd)
-		_crowd.setup(crowd, bust_height, bust_lift, SILHOUETTE)
+		_crowd.setup(crowd, bust_height, bust_lift, AudienceStyle.CLASSIC_TEX)
+		_apply_crowd_figure()
 		for i in crowd.size():
 			var c := _new_seat("crowd", crowd[i])
 			c["crowd_i"] = i
@@ -217,7 +223,7 @@ func _update_view(i: int, cam_pos: Vector3, names_on: bool) -> void:
 	var s: Dictionary = _seats[i]
 	var root: Node3D = s["root"]
 	var sc: float = s["scale"]
-	var head := root.global_position + Vector3.UP * (bust_lift + bust_height) * sc
+	var head := root.global_position + Vector3.UP * (bust_lift + _seat_bust(i)) * sc
 	var d := head.distance_to(cam_pos)
 	var near := smoothstep(near_fade_start * sc, near_fade_end * sc, d)
 	s["fade"] = lerpf(0.08, 1.0, near)
@@ -262,7 +268,7 @@ func get_seat_head(slot: int) -> Vector3:
 	if slot < 0 or slot >= _seats.size():
 		return global_position
 	var s: Dictionary = _seats[slot]
-	var up := Vector3(0, (bust_lift + bust_height * 0.82) * float(s["scale"]), 0)
+	var up := Vector3(0, (bust_lift + _seat_bust(slot) * 0.82) * float(s["scale"]), 0)
 	if bool(s["rich"]):
 		return (s["root"] as Node3D).global_transform * up
 	return (s["xf"] as Transform3D).origin + up
@@ -588,7 +594,7 @@ func _new_seat(kind: String, t: Transform3D) -> Dictionary:
 		"avatar": "", "label": null, "holder": null, "bubble_sprite": null, "viewport": null, "bubble": null,
 		"queue": [], "timer": 0.0, "seated": false, "filler": false, "show": true, "look": false, "color": EMPTY_COLOR,
 		"fade": 1.0, "parts": [], "waiting": [], "active": false, "pending": false, "animated": false,
-		"vis": true, "vp_off": false, "throttle": false, "anim_clock": 0.0}
+		"vis": true, "vp_off": false, "throttle": false, "anim_clock": 0.0, "fig": {}}
 
 
 ## Gives a seat its nodes: silhouette, picture, name tag and bubble anchor.
@@ -603,13 +609,10 @@ func _make_rich(i: int) -> void:
 	add_child(root)
 	root.global_position = t.origin
 	var spr := Sprite3D.new()
-	spr.texture = SILHOUETTE
-	spr.pixel_size = bust_height * sc / float(SILHOUETTE.get_height())
 	spr.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
 	spr.shaded = false
 	spr.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
 	spr.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	spr.position.y = (bust_lift + bust_height * 0.5) * sc
 	spr.modulate = EMPTY_COLOR
 	root.add_child(spr)
 	# the chatter's profile picture, laid over the silhouette's head (inside its coloured rim)
@@ -619,10 +622,6 @@ func _make_rich(i: int) -> void:
 	head.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
 	head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	head.render_priority = 1
-	head.pixel_size = spr.pixel_size * (HEAD_RADIUS * 2.0) / float(AVATAR_PX)
-	var sil_center := Vector2(SILHOUETTE.get_width(), SILHOUETTE.get_height()) * 0.5
-	head.position.y = spr.position.y + (sil_center.y - HEAD_CENTER.y) * spr.pixel_size
-	head.position.x = (HEAD_CENTER.x - sil_center.x) * spr.pixel_size
 	head.visible = false
 	root.add_child(head)
 	var label := Label3D.new()
@@ -631,12 +630,10 @@ func _make_rich(i: int) -> void:
 	label.pixel_size = 0.0022 * sc
 	label.outline_size = 12
 	label.outline_modulate = Color(0, 0, 0, 0.85)
-	label.position.y = (bust_lift + bust_height + 0.07) * sc
 	label.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	label.visible = false
 	root.add_child(label)
 	var holder := Node3D.new()      # bubble anchor (tail tip); scaled with camera distance
-	holder.position.y = (bust_lift + bust_height + bubble_gap) * sc
 	root.add_child(holder)
 	s["root"] = root
 	s["base"] = root.position
@@ -647,8 +644,88 @@ func _make_rich(i: int) -> void:
 	s["rich"] = true
 	s["color"] = EMPTY_COLOR
 	s["fade"] = 1.0
+	_place_figure(i)
 	_rich.append(i)
 	_dirty = true
+
+
+## Sizes a rich seat's silhouette, picture, name tag and bubble anchor for its silhouette style:
+## the seated chatter's group look (AudienceStyle.figure_for), or the main style (_fig) for an
+## empty seat. From _make_rich(), _refresh_seat() / _on_updated() when the look a seat needs
+## changes, and for every rich seat when a style setting changes (_load_figure()).
+func _place_figure(i: int) -> void:
+	var s: Dictionary = _seats[i]
+	var m := AudienceManager.get_seat_member(i)
+	var f: Dictionary = _fig if m.is_empty() else AudienceStyle.figure_for(m)
+	s["fig"] = f
+	var tex := _fig_tex if f == _fig else AudienceStyle.figure_texture(f)
+	var fig_head := _fig_head if f == _fig else AudienceStyle.figure_head(f)
+	var sc: float = s["scale"]
+	var bust := bust_height * float(f.get("size", 1.0))
+	var spr: Sprite3D = s["sprite"]
+	spr.texture = tex
+	spr.pixel_size = bust * sc / float(tex.get_height())
+	spr.position.y = (bust_lift + bust * 0.5) * sc
+	# the chatter's picture sits inside the rim of the silhouette's head
+	var head: Sprite3D = s["head"]
+	head.pixel_size = spr.pixel_size * (fig_head.z * 2.0) / float(AVATAR_PX)
+	var sil_center := Vector2(tex.get_width(), tex.get_height()) * 0.5
+	head.position.y = spr.position.y + (sil_center.y - fig_head.y) * spr.pixel_size
+	head.position.x = (fig_head.x - sil_center.x) * spr.pixel_size
+	(s["label"] as Label3D).position.y = (bust_lift + bust + 0.07) * sc
+	(s["holder"] as Node3D).position.y = (bust_lift + bust + bubble_gap) * sc
+
+
+## Height people are drawn at with the main silhouette style: bust_height times its "size".
+func _bust() -> float:
+	return bust_height * float(_fig.get("size", 1.0))
+
+
+## Height of the person in seat i: their own look's size for a rich seat, else the main style's.
+func _seat_bust(i: int) -> float:
+	var f: Dictionary = _seats[i].get("fig", {})
+	return bust_height * float(f.get("size", 1.0)) if bool(_seats[i]["rich"]) and not f.is_empty() else _bust()
+
+
+## A seated chatter's silhouette colour: their colour, a fixed one or white (a picture's own
+## colours), times the brightness of their look (AudienceStyle.figure_tint / figure_for).
+func _figure_color(m: Dictionary) -> Color:
+	return AudienceStyle.figure_tint(m["color"] as Color, AudienceStyle.figure_for(m))
+
+
+## Re-places seat i when the look it needs (group look / main style) isn't the one it has.
+func _refit_figure(i: int) -> void:
+	if not bool(_seats[i]["rich"]):
+		return
+	var m := AudienceManager.get_seat_member(i)
+	var want: Dictionary = _fig if m.is_empty() else AudienceStyle.figure_for(m)
+	if want != _seats[i]["fig"]:
+		_place_figure(i)
+		_dirty = true
+
+
+## Reads the silhouette style ("audience_silhouette") and, when called again after setup,
+## redraws every seat and the filler crowd with it.
+func _load_figure() -> void:
+	_fig = AudienceStyle.figure()
+	_fig_tex = AudienceStyle.figure_texture(_fig)
+	_fig_head = AudienceStyle.figure_head(_fig)
+	for i in _rich:
+		_place_figure(i)
+		_refresh_seat(i, false)
+	_apply_crowd_figure()
+	_dirty = true
+
+
+## The filler crowd takes the silhouette style's picture and size, or keeps the classic bust
+## when the style's "crowd" is off.
+func _apply_crowd_figure() -> void:
+	if _crowd == null:
+		return
+	if bool(_fig.get("crowd", true)):
+		_crowd.set_silhouette(_fig_tex, _bust())
+	else:
+		_crowd.set_silhouette(AudienceStyle.CLASSIC_TEX, bust_height)
 
 
 ## A chatter left a crowd seat: their nodes go (the filler person comes back).
@@ -805,6 +882,7 @@ func _refresh_seat(i: int, animate: bool) -> void:
 		if not bool(s["rich"]):
 			_make_rich(i)
 			s = _seats[i]
+	_refit_figure(i)
 	var spr: Sprite3D = s["sprite"]
 	var label: Label3D = s["label"]
 	s["seated"] = not m.is_empty()
@@ -813,7 +891,7 @@ func _refresh_seat(i: int, animate: bool) -> void:
 	if bool(s["filler"]):
 		target = _filler_tint(i)
 	if s["seated"]:
-		target = (m["color"] as Color)
+		target = _figure_color(m)
 		label.text = _tag_text(m)
 		label.modulate = m["color"]
 	else:
@@ -949,7 +1027,7 @@ func _next_bubble(i: int) -> void:
 		seconds *= 0.6
 	s["timer"] = seconds
 	# the speaker's silhouette brightens while they talk
-	var boosted := (m["color"] as Color) * SPEAKER_COLOR_BOOST
+	var boosted := _figure_color(m) * SPEAKER_COLOR_BOOST
 	_set_color(i, Color(boosted.r, boosted.g, boosted.b, 1.0))
 	_dirty = true
 	var cam := get_viewport().get_camera_3d()
@@ -1107,6 +1185,7 @@ func _render_bubble(i: int) -> void:
 	s["waiting"] = waiting
 	var vp: SubViewport = s["viewport"]
 	var bubble: SpeechBubble = s["bubble"]
+	bubble.style_override = AudienceStyle.bubble_for(m)     # their group's bubble look, or {} = the main one
 	var px := bubble.set_content(String(m["name"]), s["parts"], m["color"], int(m["style"]), textures)
 	vp.size = px
 	var animated := false
@@ -1144,6 +1223,7 @@ func _on_updated(slot: int) -> void:
 	if slot >= 0 and slot < _seats.size() and bool(_seats[slot]["rich"]):
 		var m := AudienceManager.get_seat_member(slot)
 		_refresh_head(slot, m)
+		_refit_figure(slot)          # (their roles may have changed their group look)
 		if not m.is_empty():
 			var label: Label3D = _seats[slot]["label"]
 			label.text = _tag_text(m)
@@ -1152,10 +1232,10 @@ func _on_updated(slot: int) -> void:
 			if tw is Tween and (tw as Tween).is_valid():
 				(tw as Tween).kill()        # a recolour wins over a seat-in fade
 			if bool(_seats[slot]["active"]):       # a speaker keeps their brighter colour
-				var boosted := (m["color"] as Color) * SPEAKER_COLOR_BOOST
+				var boosted := _figure_color(m) * SPEAKER_COLOR_BOOST
 				_set_color(slot, Color(boosted.r, boosted.g, boosted.b, 1.0))
 			else:
-				_set_color(slot, m["color"])
+				_set_color(slot, _figure_color(m))
 
 
 ## Name tag: the name, plus a regular's title from Stream Core ("PixelPanda · Regular").
@@ -1247,7 +1327,7 @@ func _end_bubble(i: int, fade: bool = true) -> void:
 		return
 	var m := AudienceManager.get_seat_member(i)
 	if not m.is_empty():
-		_set_color(i, m["color"])
+		_set_color(i, _figure_color(m))
 
 
 ## A finished bubble goes back to the pool (taken out of its seat), or is freed when the pool is full.
@@ -1300,8 +1380,14 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 	elif key == "audience_titles":
 		for i in _rich:
 			_on_updated(i)
-	elif key == "audience_bubble_theme":
-		for i in _rich:            # bubbles showing now take the new colours at once
+	elif key == "audience_silhouette" or key == "audience_style_groups" or key == "audience_saved_styles":
+		_load_figure()
+		if key != "audience_silhouette":
+			for i in _rich:        # group bubble looks may have changed too
+				if _seats[i]["bubble"] != null and bool(_seats[i]["active"]):
+					_render_bubble(i)
+	elif key == "audience_bubble_theme" or key == "audience_bubble_style":
+		for i in _rich:            # bubbles showing now take the new look at once
 			if _seats[i]["bubble"] != null and bool(_seats[i]["active"]):
 				_render_bubble(i)
 	elif key.begins_with("presenter_"):

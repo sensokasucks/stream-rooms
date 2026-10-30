@@ -99,6 +99,19 @@ func set_taken(i: int, taken: bool) -> void:
 	_apply(i)
 
 
+## The Style editor's silhouette for the crowd (AudienceView._apply_crowd_figure, at setup and when
+## "audience_silhouette" changes): a new picture and bust height. The shader places every vertex
+## from quad_size and lift, so this is two shader values and the quad's size, nothing per person.
+func set_silhouette(silhouette: Texture2D, bust_height: float) -> void:
+	if multimesh == null:
+		return
+	var aspect := float(silhouette.get_width()) / float(silhouette.get_height())
+	var quad_size := Vector2(bust_height * aspect, bust_height)
+	(multimesh.mesh as QuadMesh).size = quad_size
+	_mat.set_shader_parameter("silhouette", silhouette)
+	_mat.set_shader_parameter("quad_size", quad_size)
+
+
 ## House light level 0..1: filler people dim with the room (chatters don't).
 func set_light_level(level: float) -> void:
 	_mat.set_shader_parameter("brightness", lerpf(0.4, 1.0, clampf(level, 0.0, 1.0)))

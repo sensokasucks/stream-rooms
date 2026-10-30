@@ -122,6 +122,7 @@ var _video_started_ms: int = 0
 var _video_tick: float = 0.0
 var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
 var _confirm: ConfirmationDialog        # "Empty all seats?" and the other ask-first questions
+var _style_editor: StyleEditor           # Audience tab > "Style editor..." (ui/style_editor.gd), null while closed
 var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's picture
 var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 
@@ -1073,6 +1074,7 @@ func _build_audience_tab() -> Control:
 		["front_random", "Front row first, random seat in the row"],
 	]), "Where someone who starts chatting sits down. The Seating tab can keep platforms apart on top of this."))
 	v.add_child(_tip(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0), "How big the speech bubbles over the audience are."))
+	v.add_child(_tip(_button("Style editor...", _open_style_editor), "Change how the speech bubbles and the silhouettes look (shapes, colours, outline, text; built-in silhouettes or your own picture), with a preview. Changes show in the room straight away."))
 	# a busy chat: pick which messages get a bubble (the chatter still sits down either way)
 	v.add_child(_heading("Bubbles show"))
 	var bf := HFlowContainer.new()
@@ -1126,8 +1128,9 @@ func _build_audience_tab() -> Control:
 	var bubble_colours := _option("audience_bubble_theme", "Bubble colours", [
 		["light", "Light (white bubbles, dark text)"],
 		["dark", "Dark (dark bubbles, light text)"],
+		["custom", "Custom (Style editor)"],
 	])
-	bubble_colours.tooltip_text = "The colour of the audience's speech bubbles. The outline keeps each chatter's colour either way."
+	bubble_colours.tooltip_text = "The colour of the audience's speech bubbles. Light and Dark keep each chatter's colour on the outline. Custom is the look made in the Style editor (button above, near Bubble size)."
 	v.add_child(bubble_colours)
 	var tints := _check("audience_bubble_tints", "Colour paid and highlighted messages")
 	tints.tooltip_text = "Super Chats, Kicks and Bits get a gold bubble and chat-window card; Twitch messages highlighted with channel points get a purple one; a gigantified emote is drawn big. This also changes the chat windows' cards. Off: they look like any other message."
@@ -1192,6 +1195,19 @@ func _build_audience_tab() -> Control:
 	fm.tooltip_text = "Empty main seats show filler people too (the same share as Crowd fullness). Chatters take their places as they arrive."
 	crowd_opts.add_child(fm)
 	return adv.get_parent() as Control
+
+
+## Audience tab > "Style editor...": opens the bubble and silhouette editor (one at a time). Like
+## _ask(), it opens as its own OS window while the panel is docked, so it never shows on stream.
+func _open_style_editor() -> void:
+	if _style_editor != null and is_instance_valid(_style_editor):
+		_style_editor.grab_focus()
+		return
+	_style_editor = StyleEditor.new()
+	if _window == null and DisplayServer.has_feature(DisplayServer.FEATURE_SUBWINDOWS):
+		_style_editor.force_native = true
+	add_child(_style_editor)
+	_style_editor.popup_centered()
 
 
 ## Audience tab > Bubbles show: everything (true), or only paid and highlighted with still emotes.

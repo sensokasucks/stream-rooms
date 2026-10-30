@@ -261,7 +261,18 @@ func get_seat_member(slot: int) -> Dictionary:
 	if not bool(AppState.get_setting("audience_avatars")) or is_picture_hidden(String(m.get("key", "")).get_slice(":", 0), String(m["name"]), String(m.get("username", ""))):
 		avatar = ""
 	return {"name": m["name"], "color": m["color"], "style": m["style"], "avatar": avatar,
-		"title": String(m.get("title", ""))}
+		"title": String(m.get("title", "")), "platform": String(m.get("platform", "other")),
+		"roles": String(m.get("roles", ""))}
+
+
+## A chat message's roles as "mod,vip,sub" (any of them, in that order; "" for none), from
+## ChatFeed's is_mod / is_vip / is_subscriber. Stored on the member as "roles".
+func roles_of(msg: Dictionary) -> String:
+	var out := PackedStringArray()
+	for pair: Array in [["is_mod", "mod"], ["is_vip", "vip"], ["is_subscriber", "sub"]]:
+		if bool(msg.get(pair[0], false)):
+			out.append(String(pair[1]))
+	return ",".join(out)
 
 
 ## Seat of a chatter by platform + user id (as Stream Core sends them), or -1.
@@ -419,6 +430,12 @@ func add_chat(msg: Dictionary) -> void:
 	if login != "":
 		m["username"] = login
 	m["streamer"] = int(msg.get("streamer", 0))
+	# mod / VIP / sub, for the Style editor's group looks (AudienceStyle.group_of)
+	var roles := roles_of(msg)
+	if roles != String(m.get("roles", "")):
+		m["roles"] = roles
+		if int(m["slot"]) >= 0:
+			EventBus.audience_updated.emit(int(m["slot"]))
 	var title := String(msg.get("title", ""))
 	if title != String(m.get("title", "")):
 		m["title"] = title
@@ -1411,7 +1428,8 @@ func wire_member(slot: int) -> Dictionary:
 	var m: Dictionary = _members[_slots[slot]]
 	return {"key": String(m["key"]), "name": String(m["name"]), "username": String(m.get("username", "")),
 		"platform": String(m.get("platform", "other")), "hex": String(m.get("hex", "")), "style": int(m["style"]),
-		"color": m["color"], "avatar": _web_avatar(m), "title": String(m.get("title", ""))}
+		"color": m["color"], "avatar": _web_avatar(m), "title": String(m.get("title", "")),
+		"roles": String(m.get("roles", ""))}
 
 
 ## Mirror: the host's whole roster for a room (it waits if this PC hasn't loaded that room yet).
@@ -1519,3 +1537,5 @@ func _apply_wire(m: Dictionary, wm: Dictionary) -> void:
 	var avatar := String(wm.get("avatar", ""))
 	m["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""
 	m["title"] = String(wm.get("title", "")).left(40)
+	m["roles"] = roles_of({"is_mod": String(wm.get("roles", "")).contains("mod"),
+		"is_vip": String(wm.get("roles", "")).contains("vip"), "is_subscriber": String(wm.get("roles", "")).contains("sub")})
