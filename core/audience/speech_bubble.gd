@@ -1,8 +1,8 @@
 class_name SpeechBubble
 extends Control
-## A comic speech bubble drawn in 2D (rendered into a SubViewport by AudienceView, and shown
-## directly in the Style editor's preview).
-## Its look comes from AudienceStyle.bubble() (Light / Dark / the Style editor's custom style):
+## A comic speech bubble drawn in 2D (rendered into a SubViewport by AudienceView).
+## Its look comes from AudienceStyle.bubble() (Light / Dark / the custom style from Stream Core's
+## Audience looks page; that page's preview copies the drawing below, so keep them alike):
 ## fill, text and name colours, outline in the speaker's colour (or a fixed one), the speaker's
 ## name on top, a tail. A Super Chat / Bits message is gold, a Twitch highlighted one purple.
 ## Shapes: 0 rounded box, 1 oval, 2 slanted box, 3 pinched box, 4 cloud (AudienceStyle.BUBBLE_SHAPES).
@@ -42,8 +42,8 @@ const EMOJI_FONTS: PackedStringArray = ["Segoe UI Emoji", "Apple Color Emoji", "
 static var _font: Font
 static var _bold_font: Font
 
-## The Style editor's preview sets a style here to draw with it instead of the one in use
-## ({} = AudienceStyle.bubble()). Must be a full style (AudienceStyle.merge_bubble).
+## A style to draw with instead of the one in use ({} = AudienceStyle.bubble()). AudienceView sets
+## a chatter's group look here (AudienceStyle.bubble_for). Must be a full style (AudienceStyle.merge_bubble).
 var style_override: Dictionary = {}
 
 var _color: Color = Color.WHITE

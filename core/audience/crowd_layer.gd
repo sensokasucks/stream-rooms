@@ -99,7 +99,7 @@ func set_taken(i: int, taken: bool) -> void:
 	_apply(i)
 
 
-## The Style editor's silhouette for the crowd (AudienceView._apply_crowd_figure, at setup and when
+## The audience's silhouette (from Core's Audience looks page) for the crowd (AudienceView._apply_crowd_figure, at setup and when
 ## "audience_silhouette" changes): a new picture and bust height. The shader places every vertex
 ## from quad_size and lift, so this is two shader values and the quad's size, nothing per person.
 func set_silhouette(silhouette: Texture2D, bust_height: float) -> void:

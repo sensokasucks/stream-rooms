@@ -19,7 +19,7 @@ extends Node3D
 ## bubbles redraw at a lower rate.
 
 ## The silhouette picture, where its head is and how it's painted come from AudienceStyle.figure()
-## (the Style editor; "audience_silhouette"), kept in _fig / _fig_tex / _fig_head below.
+## (Stream Core's Audience looks page via CoreLooks; "audience_silhouette"), kept in _fig / _fig_tex / _fig_head below.
 ## Tint of an empty seat's silhouette (only shown with "audience_show_empty" on).
 const EMPTY_COLOR: Color = Color(0.6, 0.6, 0.66, 0.22)
 ## A speaking chatter's colour is multiplied by this while their bubble is up.

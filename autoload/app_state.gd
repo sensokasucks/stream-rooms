@@ -45,7 +45,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_seat_gap": 1.0,    # metres between seated chatters along a row (seats closer than this are skipped; 0.5 = every seat)
 	"audience_bubble_size": 1.0, # speech bubble size multiplier
 	"audience_bubble_theme": "light",  # speech bubble look: light (white), dark, or custom (audience_bubble_style)
-	# the Style editor (ui/style_editor.gd; read through core/audience/audience_style.gd)
+	# looks from Stream Core's Audience looks page (written by core/audience/core_looks.gd when Core
+	# sends them; read through core/audience/audience_style.gd). Core overwrites these, so don't edit here.
 	"audience_bubble_style": "",  # JSON bubble style used when audience_bubble_theme is "custom"
 	"audience_silhouette": "",    # JSON silhouette style ("" = the classic bust)
 	"audience_saved_styles": "",  # JSON {"bubble": {name: style}, "silhouette": {name: style}}: the streamer's own presets

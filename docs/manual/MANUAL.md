@@ -18,7 +18,7 @@ Since the 7 October manual. Some pictures were taken before these changes, so a 
 - **Status strip** above the tabs: three dots for **Core**, **Big screen** and **Together**, so you see straight away when Stream Core drops or the browser tab stops. The Source tab also says what is **On the big screen now**.
 - **Video downloads** show a running clock, say why they failed in plain words and have a **Try again** button.
 - **Busy chat:** the **Bubbles show** filter on the Audience tab (text, emote-only, paid, highlighted, replies), an **Animated emotes** switch and a **Busy chat: paid and highlighted** button. **Most chatters in crowd** starts at 300 for new installs.
-- **Highlighted and paid messages stand out:** Twitch highlighted messages get a purple bubble, Super Chats, Kicks and Bits a gold one. **Bubble colours** can be dark.
+- **Highlighted and paid messages stand out:** Twitch highlighted messages get a purple bubble, Super Chats, Kicks and Bits a gold one. Bubble colours and silhouettes are set in Stream Core's **Audience looks** page.
 - **Chatter pictures** come from Stream Core now (Kick, Twitch and YouTube), with one hide list shared with Core and a quick **Hide a picture...** picker.
 - **Animated emotes** from Twitch, 7TV and FrankerFaceZ move in the bubbles and chat windows.
 - **Red-flagged chatters** (set up in Stream Core) leave their seat and the chat windows.
@@ -380,7 +380,7 @@ Under **Advanced ▸**:
 
 - **Idle timeout**: minutes without chatting before someone leaves. When every seat is taken, the quietest person makes room.
 - **Seat spacing**: how much room there is between seated chatters along a row, 1 m by default. Seats closer than that to a taken one stay empty, so nobody sits shoulder to shoulder. That means fewer seats than places: the Lecture Hall's front pews seat every other place (38 instead of 79), and the crowd tiers thin out the same way. 0.5 m uses every seat. The room reloads when you change it, and the "*x* / *N* seats taken" line shows the new number.
-- **Bubble time**, and **Bubble colours**: *Light (white bubbles, dark text)* (the default) or *Dark (dark bubbles, light text)*. The outline keeps each chatter's colour either way.
+- **Bubble time**. Bubble colours, shapes and silhouettes are set in Stream Core's dashboard (**Audience looks**, under Overlays); **Audience looks in Stream Core...** opens that page.
 - **Colour paid and highlighted messages** (on by default): Super Chats, Kicks and Bits get a gold bubble, and Twitch messages highlighted with channel points ("Highlight My Message") a purple one, like on Twitch. A "Gigantify an Emote" message shows its emote big. The chat windows' boxes follow this tick too.
 - **Show empty seats**, **Hide !commands in bubbles**, **Regulars' titles on name tags**.
 - **Ignore names**: bots that never get a seat or show in the chat windows.
