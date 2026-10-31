@@ -44,7 +44,12 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_bubble_s": 8.0,    # seconds a speech bubble stays up
 	"audience_seat_gap": 1.0,    # metres between seated chatters along a row (seats closer than this are skipped; 0.5 = every seat)
 	"audience_bubble_size": 1.0, # speech bubble size multiplier
-	"audience_bubble_theme": "light",  # speech bubble colours: light (white) or dark
+	"audience_bubble_theme": "light",  # speech bubble look: light (white), dark, or custom (audience_bubble_style)
+	# the Style editor (ui/style_editor.gd; read through core/audience/audience_style.gd)
+	"audience_bubble_style": "",  # JSON bubble style used when audience_bubble_theme is "custom"
+	"audience_silhouette": "",    # JSON silhouette style ("" = the classic bust)
+	"audience_saved_styles": "",  # JSON {"bubble": {name: style}, "silhouette": {name: style}}: the streamer's own presets
+	"audience_style_groups": "",  # JSON {group: {"bubble": name, "silhouette": name}}: looks for mods, VIPs, subs, each platform
 	"audience_bubble_tints": true,     # Super Chats / Bits and Twitch highlighted messages get a coloured bubble and chat card
 	# which messages get a speech bubble (for a busy chat; see AudienceManager.bubble_kind)
 	"audience_bubble_text": true,         # ordinary messages with words in them
