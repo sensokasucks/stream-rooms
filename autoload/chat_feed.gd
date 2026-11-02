@@ -5,6 +5,8 @@ extends Node
 ## EventBus.chat_message_received. Reconnects on its own while Core is closed.
 ## It also carries the chat-reactions link: Core's "reaction" packets go out as
 ## EventBus.reaction_received, and Reactions talks back through send_message().
+## Core's "audience_looks" packets (bubble and silhouette looks from its dashboard) go to the
+## CoreLooks child (core/audience/core_looks.gd), which turns them into settings.
 
 ## Chat messages handled per frame at most (and only for this long): the rest wait a frame.
 const MAX_PACKETS_PER_FRAME: int = 40
@@ -41,10 +43,14 @@ var _connected: bool = false
 var _error: String = ""
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _boards: Dictionary = {}      # board id -> latest board from Stream Core (chat games)
+var _looks: CoreLooks             # audience looks edited in Core's dashboard ("audience_looks" packets)
 
 
 func _ready() -> void:
 	_rng.randomize()
+	_looks = CoreLooks.new()
+	_looks.name = "CoreLooks"
+	add_child(_looks)
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
@@ -235,6 +241,11 @@ func _handle(text: String) -> void:
 						AppState.reveal_curtain()
 					"toggle":
 						AppState.toggle_curtain()
+		"audience_looks":
+			# bubble and silhouette looks from Core's dashboard (Overlays > Audience looks)
+			var lk: Variant = (msg as Dictionary).get("data")
+			if lk is Dictionary:
+				_looks.apply(lk as Dictionary)
 		"chat_user_hidden":
 			# Stream Core red-flagged someone (Chat history > Red flags on its dashboard)
 			var h: Variant = (msg as Dictionary).get("data")
@@ -356,6 +367,12 @@ func _tint(d: Dictionary) -> String:
 ## Core sends nulls for missing values.
 func _str(v: Variant) -> String:
 	return String(v) if v is String else ""
+
+
+## A path on Core ("/media/...", "/admin/#looks") -> a full http address on the Core this app
+## talks to (from the chat_core_url setting). Used by CoreLooks and the Audience tab's button.
+func core_url(path: String) -> String:
+	return _core_file_url(path)
 
 
 ## Core's "/avatars/..." path -> a full http address on the Core this app talks to.

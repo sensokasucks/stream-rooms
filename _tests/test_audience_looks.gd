@@ -1,11 +1,13 @@
 extends Node
-## The Style editor (ui/style_editor.gd) and the styles it saves (core/audience/audience_style.gd):
+## Audience looks: the bubble and silhouette looks (core/audience/audience_style.gd) and how they
+## arrive from Stream Core's Audience looks page ("audience_looks" packets, core/audience/core_looks.gd).
 ## Light / Dark bubbles look as before, a custom bubble style reaches the room's bubbles, every
 ## built-in silhouette draws, a silhouette style reaches the seats and the filler crowd, a picture
-## from the PC imports as a silhouette, and presets save and delete. Saves screenshots to look at.
-## Group looks (mods, a platform) reach the right seats and bubbles; many pictures import at once
-## and a random mix spreads them over the chatters.
-##   <redot console exe> --path . _tests/test_style_editor.tscn -- C:/temp/sr_tests --mp-profile=test
+## imports as a silhouette. A packet from Core sets the looks (not before Core's looks were ever
+## saved), a Core stored picture is used once it's here (classic until then), group looks (mods,
+## a platform) reach the right seats and bubbles, and a random mix spreads looks over the chatters.
+## No Core runs: packets go straight into ChatFeed._handle. Saves screenshots to look at.
+##   <redot console exe> --path . _tests/test_audience_looks.tscn -- C:/temp/sr_tests --mp-profile=test
 
 var _fails: int = 0
 
@@ -132,76 +134,60 @@ func _ready() -> void:
 		var img := shape_tex.get_image()
 		var mid := img.get_pixel(128, 280)
 		_check(mid.a > 0.9 and mid.r < 0.3, "its body is dark (%s)" % str(mid))
-	var guess := AudienceStyle.guess_head(saved)
-	_check(guess.y > 0.1 and guess.y < 0.5, "its head is guessed near the top (%s)" % str(guess))
 	_check(AudienceStyle.merge_figure({"shape": "custom", "file": "C:/somewhere/else.png"})["shape"] == "classic",
 		"a custom silhouette only reads pictures it imported")
 
-	# the editor window: presets and saving
-	var panel: Node = main.find_child("ControlPanel", true, false)
-	panel._open_style_editor()
-	await _secs(1.0)
-	var ed: StyleEditor = panel._style_editor
-	_check(ed != null and is_instance_valid(ed), "the Style editor opens")
-	if ed != null:
-		ed._on_picture_picked(src)
-		await _secs(0.3)
-		_check(AudienceStyle.figure()["shape"] == "custom", "picking a picture in the editor switches the audience to it")
-		var comic := -1
-		for i in ed._bubble_presets.item_count:
-			if String(ed._bubble_presets.get_item_metadata(i)) == "Comic":
-				comic = i
-		ed._on_bubble_preset(comic)
-		_check(String(AppState.get_setting("audience_bubble_theme")) == "custom" and float(AudienceStyle.bubble()["outline"]) == 8.0,
-			"the Comic preset becomes the custom style")
-		AudienceStyle.save_preset("bubble", "My comic", ed._jsonable(ed._bubble))
-		ed._fill_bubble_presets()
-		_check(AudienceStyle.bubble_preset_names().has("My comic") and not AudienceStyle.bubble_preset("My comic").is_empty(), "a look saves as a preset")
-		var dark_i := -1
-		for i in ed._bubble_presets.item_count:
-			if String(ed._bubble_presets.get_item_metadata(i)) == "Dark":
-				dark_i = i
-		ed._on_bubble_preset(dark_i)
-		_check(String(AppState.get_setting("audience_bubble_theme")) == "dark", "the Dark preset goes back to the Audience tab's Dark")
-		# many pictures at once, then a random mix of them for everyone
-		var src2 := out + "/style_test_picture_b.png"
-		pic.resize(200, 400)
-		pic.save_png(src2)
-		ed._on_many_picked(PackedStringArray([src, src2]))
-		var mine := AudienceStyle.figure_preset_names()
-		_check(mine.has("style_test_picture") and mine.has("style_test_picture_b"), "many pictures become saved looks (%s)" % str(mine))
-		AudienceStyle.set_group_look("all", "silhouette", "style_test_picture|style_test_picture_b|bot")
-		var got := {}
-		for who in ["Ann", "Bo", "Cy", "Di", "Ed", "Flo", "Gus", "Hal", "Ivy", "Jo"]:
-			var f := AudienceStyle.figure_for({"name": who, "platform": "twitch", "roles": ""})
-			got[String(f["shape"]) + String(f["file"])] = true
-			if who == "Ann":
-				_check(f == AudienceStyle.figure_for({"name": "ann", "platform": "kick", "roles": ""}), "a chatter keeps the same pick")
-		_check(got.size() >= 2, "a random mix gives different chatters different silhouettes (%d kinds)" % got.size())
-		ed._fill_group_picks()
-		var all_pick: OptionButton = (ed._group_picks["all"] as Array)[1]
-		_check(all_pick.get_item_text(all_pick.selected) == "Mix of 3", "the Groups tab shows the mix")
-		AppState.set_setting("audience_style_groups", "")
-		AudienceStyle.save_preset("bubble", "My comic", {})
-		_check(not AudienceStyle.bubble_preset_names().has("My comic"), "and a saved preset deletes")
-		await _secs(0.5)
-		await RenderingServer.frame_post_draw
-		ed.get_texture().get_image().save_png(out + "/style_editor_window.png")
-		var tabs: TabContainer = ed.find_children("*", "TabContainer", true, false)[0]
-		for t in [1, 2]:
-			tabs.current_tab = t
-			await _secs(0.3)
-			await RenderingServer.frame_post_draw
-			ed.get_texture().get_image().save_png(out + "/style_editor_tab%d.png" % t)
-		ed.queue_free()
+	# looks from Stream Core: nothing changes until Core's looks were saved once ("edited")
+	var feed: Node = ChatFeed
+	var looks: CoreLooks = feed._looks
+	_check(looks != null, "ChatFeed has the Core looks handler")
+	AppState.set_setting("audience_bubble_theme", "light")
+	AppState.set_setting("audience_silhouette", "")
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": {"edited": false, "bubble_theme": "dark"}}))
+	_check(String(AppState.get_setting("audience_bubble_theme")) == "light", "looks Core never saved don't reset the room's")
+	var packet := {"edited": true, "bubble_theme": "custom",
+		"bubble": {"outline": 8.0, "outline_mode": "fixed", "outline_color": "111111ff", "bold": true},
+		"silhouette": {"shape": "custom", "file": "media:fox", "paint": "chatter"},
+		"saved": {"bubble": {"My comic": {"outline": 8.0, "shape": 4}},
+			"silhouette": {"Fox": {"shape": "custom", "file": "media:fox"}, "Robo": {"shape": "bot"}}},
+		"groups": {"all": {"silhouette": "Fox|Robo|ears"}},
+		"pictures": {}}
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": packet}))
+	_check(String(AppState.get_setting("audience_bubble_theme")) == "custom" and float(AudienceStyle.bubble()["outline"]) == 8.0,
+		"Core's custom bubble style reaches the room")
+	_check(AudienceStyle.figure()["shape"] == "classic", "a Core picture that isn't here yet shows the classic silhouette")
+	_check(not AudienceStyle.bubble_preset("My comic").is_empty(), "Core's saved bubble looks arrive")
+	# the picture arrives (as a download would hand it over), then the same packet uses it
+	var fox := pic.save_png_to_buffer()
+	var fox_file := looks.save_picture("fox", 7, "/media/fox.png?v=7", fox)
+	_check(fox_file.begins_with(AudienceStyle.PICTURE_DIR + "core_") and FileAccess.file_exists(fox_file),
+		"a Core picture imports as %s" % fox_file)
+	packet["pictures"] = {"fox": {"url": "/media/fox.png?v=7", "version": 7}}
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": packet}))
+	_check(not looks.is_busy(), "a picture already here isn't downloaded again")
+	var fig := AudienceStyle.figure()
+	_check(fig["shape"] == "custom" and String(fig["file"]) == fox_file, "and everyone sits as the Core picture now")
+	var own: Dictionary = AudienceStyle.saved("silhouette")
+	_check(own.get("Fox") is Dictionary and String((own["Fox"] as Dictionary).get("file", "")) == fox_file,
+		"saved silhouette looks point at the picture here too")
+	# a random mix spreads Core's looks over the chatters
+	var got := {}
+	for who in ["Ann", "Bo", "Cy", "Di", "Ed", "Flo", "Gus", "Hal", "Ivy", "Jo"]:
+		var f := AudienceStyle.figure_for({"name": who, "platform": "twitch", "roles": ""})
+		got[String(f["shape"]) + String(f["file"])] = true
+		if who == "Ann":
+			_check(f == AudienceStyle.figure_for({"name": "ann", "platform": "kick", "roles": ""}), "a chatter keeps the same pick")
+	_check(got.size() >= 2, "a random mix gives different chatters different silhouettes (%d kinds)" % got.size())
+	await _secs(0.5)
+	await _shot(out + "/looks_from_core.png")
+	# the Audience tab's button opens Core's page: check the address it builds
+	_check(ChatFeed.core_url("/admin/#looks") == "http://127.0.0.1:9/admin/#looks", "the Audience looks button points at Core's page")
 
 	# group looks: mods get the Comic bubble and cat ears, other Twitch chatters a hair bun
-	AppState.set_setting("audience_silhouette", "")
-	AppState.set_setting("audience_bubble_theme", "light")
-	AudienceStyle.set_group_look("mod", "bubble", "Comic")
-	AudienceStyle.set_group_look("mod", "silhouette", "ears")
-	AudienceStyle.set_group_look("twitch", "silhouette", "bun")
-	var feed: Node = ChatFeed
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": {"edited": true, "bubble_theme": "light",
+		"groups": {"mod": {"bubble": "Comic", "silhouette": "ears"}, "twitch": {"silhouette": "bun"}}}}))
+	_check(String(AppState.get_setting("audience_silhouette")) == "" and AudienceStyle.saved("silhouette").is_empty(),
+		"a new packet replaces the old looks")
 	EventBus.chat_message_received.emit(feed._normalize({"platform": "twitch", "message": "mod here",
 		"user": {"id": "modmo", "username": "modmo", "display_name": "ModMo", "is_mod": true}}, false))
 	EventBus.chat_message_received.emit(feed._normalize({"platform": "twitch", "message": "just a viewer",
@@ -227,7 +213,8 @@ func _ready() -> void:
 		_check(vb != null and vb._outline == 5.0, "and the main bubble")
 	if kick_slot >= 0 and bool(view._seats[kick_slot]["rich"]):
 		_check((view._seats[kick_slot]["sprite"] as Sprite3D).texture == AudienceStyle.CLASSIC_TEX, "a Kick viewer keeps the main silhouette")
-	AudienceStyle.set_group_look("twitch", "silhouette", "")
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": {"edited": true, "bubble_theme": "light",
+		"groups": {"mod": {"bubble": "Comic", "silhouette": "ears"}}}}))
 	await _secs(0.3)
 	if viewer_slot >= 0 and bool(view._seats[viewer_slot]["rich"]):
 		_check((view._seats[viewer_slot]["sprite"] as Sprite3D).texture == AudienceStyle.CLASSIC_TEX, "taking the Twitch look away puts them back")

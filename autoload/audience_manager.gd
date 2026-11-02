@@ -430,7 +430,7 @@ func add_chat(msg: Dictionary) -> void:
 	if login != "":
 		m["username"] = login
 	m["streamer"] = int(msg.get("streamer", 0))
-	# mod / VIP / sub, for the Style editor's group looks (AudienceStyle.group_of)
+	# mod / VIP / sub, for the group looks set in Core's Audience looks page (AudienceStyle.group_look)
 	var roles := roles_of(msg)
 	if roles != String(m.get("roles", "")):
 		m["roles"] = roles

@@ -1,12 +1,15 @@
 class_name AudienceStyle
 extends RefCounted
 ## The look of the chat audience: how speech bubbles are drawn and which silhouette people
-## sit as. The Style editor (ui/style_editor.gd) edits these; SpeechBubble, AudienceView and
-## CrowdLayer read them. Static only, nothing to instance.
+## sit as. The looks are edited on Stream Core's dashboard (Overlays > Audience looks) and arrive
+## as the settings below through CoreLooks (core/audience/core_looks.gd); SpeechBubble,
+## AudienceView and CrowdLayer read them here. Static only, nothing to instance.
+## Core's page (admin/audience-looks.js in fridge-stream-core) copies the keys, presets, shapes and
+## groups below for its controls and preview: keep the two in sync.
 ##
 ## Settings (AppState):
 ##   - audience_bubble_theme: "light" / "dark" use the built-in Light / Dark bubble presets,
-##     "custom" uses the JSON in audience_bubble_style (what the Style editor saves).
+##     "custom" uses the JSON in audience_bubble_style (the streamer's own style from Core).
 ##   - audience_silhouette: JSON of the silhouette style ("" = the classic bust).
 ##   - audience_saved_styles: JSON {"bubble": {name: style}, "silhouette": {name: style}},
 ##     the streamer's own presets.
@@ -41,7 +44,8 @@ const BUBBLE_SHAPES: Dictionary = {0: "Rounded box", 1: "Oval", 2: "Slanted box"
 const TAIL_SPOTS: Dictionary = {"left": 0.2, "middle": 0.5, "right": 0.8}
 
 ## Built-in bubble presets (only the keys that differ from BUBBLE_DEFAULTS). Light and Dark are
-## what the Audience tab's "Bubble colours" picks; keep their fills in sync with SpeechBubble.TINT_FILLS.
+## the plain "light" / "dark" themes; keep their fills in sync with SpeechBubble.TINT_FILLS.
+## Group looks can name any of these (or a saved one) as their bubble.
 const BUBBLE_PRESETS: Dictionary = {
 	# (Light and Dark as exact colours, the same values the bubbles had before the editor)
 	"Light": {"fill": Color(1, 1, 1, 0.97), "text": Color(0.08, 0.08, 0.1),
@@ -65,7 +69,7 @@ const BUBBLE_PRESETS: Dictionary = {
 ## Every silhouette style key, with the classic look's value.
 const FIGURE_DEFAULTS: Dictionary = {
 	"shape": "classic",       # one of FIGURE_SHAPES, or "custom" (a picture from the streamer's PC)
-	"file": "",               # custom: the imported picture in user://silhouettes/ (see import_picture)
+	"file": "",               # custom: the imported picture in user://silhouettes/ (see import_picture; Core sends "media:<name>", CoreLooks swaps in the file)
 	"paint": "chatter",       # "chatter": dark body, rim in the chatter's colour | "fixed": the same in "color"
 	                          # | "picture": a custom picture's own colours
 	"color": "8fa3c8ff",      # body colour when paint is "fixed"
@@ -152,15 +156,6 @@ static func merge_bubble(over: Dictionary) -> Dictionary:
 	if not TAIL_SPOTS.has(String(s["tail"])) and String(s["tail"]) != "none":
 		s["tail"] = "left"
 	return s
-
-
-## The bubble preset names the Style editor lists: built-in ones, then the streamer's own.
-static func bubble_preset_names() -> PackedStringArray:
-	var out := PackedStringArray(BUBBLE_PRESETS.keys())
-	for n: String in saved("bubble").keys():
-		if not out.has(n):
-			out.append(n)
-	return out
 
 
 ## A preset by name as a full style (built-in or saved; {} if there is none by that name).
@@ -252,18 +247,12 @@ static func figure_tint(chatter: Color, f: Dictionary) -> Color:
 	return Color(c.r * b, c.g * b, c.b * b, c.a)
 
 
-## The silhouette preset names: built-in shapes are not presets (they're picked by shape), so this
-## is only the streamer's own saved ones.
-static func figure_preset_names() -> PackedStringArray:
-	return PackedStringArray(saved("silhouette").keys())
-
-
 ## Imports a picture from the PC as a custom silhouette. It's cut to its visible part, fitted into
 ## 256 x 320 standing on the bottom edge, and saved twice in user://silhouettes/: as it is, and as a
 ## silhouette (dark body + white rim, so it takes the chatter's colour like the built-in ones).
 ## A picture without any see-through pixels is read as dark shape on a light background.
 ## Returns the saved path to put in the style's "file", or "" when it couldn't be read.
-## Called by the Style editor's "Use my own picture..." file dialog. Takes about a second.
+## Called by CoreLooks for each picture downloaded from Core's stored files. Takes about a second.
 static func import_picture(path: String) -> String:
 	var img := Image.load_from_file(path)
 	if img == null or img.is_empty():
@@ -293,37 +282,10 @@ static func import_picture(path: String) -> String:
 	return dest
 
 
-## Where an imported picture's head probably is: the middle of its top part. The Style editor
-## sets head_x / head_y / head_r from this right after an import; the streamer can move it.
-static func guess_head(file: String) -> Vector3:
-	var img := Image.load_from_file(file)
-	if img == null or img.is_empty():
-		return Vector3(0.5, 0.3, 0.2)
-	var top := img.get_used_rect().position.y
-	var r := 0.19 * FIGURE_W
-	return Vector3(0.5, (top + r * 1.15) / FIGURE_H, 0.19)
-
-
 # ── Group looks ─────────────────────────────────────────────
 ## The group looks setting: group -> {"bubble": name, "silhouette": name} (blank / missing = main style).
 static func group_looks() -> Dictionary:
 	return _parse(String(AppState.get_setting("audience_style_groups")))
-
-
-## Sets one group's look of one kind ("bubble" / "silhouette"); "" = back to the main style.
-## Called by the Style editor's Groups tab.
-static func set_group_look(group: String, kind: String, look: String) -> void:
-	var all := group_looks()
-	var g: Dictionary = all.get(group, {}) if all.get(group) is Dictionary else {}
-	if look == "":
-		g.erase(kind)
-	else:
-		g[kind] = look
-	if g.is_empty():
-		all.erase(group)
-	else:
-		all[group] = g
-	AppState.set_setting("audience_style_groups", JSON.stringify(all))
 
 
 ## The look name a seated chatter gets for one kind, or "" for the main style. member: as
@@ -375,13 +337,6 @@ static func figure_for(member: Dictionary) -> Dictionary:
 		return figure())
 
 
-## The silhouette choices for a group: built-in shapes (by id) and saved looks (by name).
-static func figure_look_names() -> PackedStringArray:
-	var out := PackedStringArray(FIGURE_SHAPES.keys())
-	out.append_array(figure_preset_names())
-	return out
-
-
 static func _cached(key: String, make: Callable) -> Dictionary:
 	var stamp := "%s|%s|%s|%s|%s" % [AppState.get_setting("audience_style_groups"), AppState.get_setting("audience_saved_styles"),
 		AppState.get_setting("audience_silhouette"), AppState.get_setting("audience_bubble_theme"), AppState.get_setting("audience_bubble_style")]
@@ -398,19 +353,6 @@ static func _cached(key: String, make: Callable) -> Dictionary:
 static func saved(kind: String) -> Dictionary:
 	var all := _parse(String(AppState.get_setting("audience_saved_styles")))
 	return all.get(kind, {}) if all.get(kind) is Dictionary else {}
-
-
-## Saves (or with style = {} deletes) one of the streamer's own presets.
-static func save_preset(kind: String, preset_name: String, style: Dictionary) -> void:
-	preset_name = preset_name.replace(MIX_SEP, " ").strip_edges()
-	var all := _parse(String(AppState.get_setting("audience_saved_styles")))
-	var mine: Dictionary = all.get(kind, {}) if all.get(kind) is Dictionary else {}
-	if style.is_empty():
-		mine.erase(preset_name)
-	else:
-		mine[preset_name] = style
-	all[kind] = mine
-	AppState.set_setting("audience_saved_styles", JSON.stringify(all))
 
 
 # ── Helpers ─────────────────────────────────────────────────

@@ -464,41 +464,38 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   couple of bubble heights fades out early instead. At most 16 bubbles are up at once: in busy
   chat a new one ends the oldest, so the graphics card's work stays the same however fast chat
   goes. Finished bubbles are reused rather than built again for every message.
-- **Bubble colours** (Audience tab): *Light* (white bubbles with dark text, the default),
-  *Dark* (dark bubbles with light text) or *Custom (Style editor)*. Light and Dark keep each
-  chatter's colour on the outline.
-- **Style editor...** (Audience tab, under **Bubble size**): a window with a live preview for how
-  the audience looks. It opens as its own window, so it never shows on stream, and every change
-  shows in the room straight away.
-  - **Bubbles** tab: **Shape** (*Each chatter's own*, or one of rounded box, oval, slanted box,
-    pinched box, cloud for everyone), **Corner roundness**, **Tail** (left, middle, right, none),
-    **Fill** (lower the picker's A slider to make it see-through), **Chatter colour in fill**,
-    **Text**, **Name** and **Outline** colours (the chatter's colour or one colour),
-    **Outline width**, the **Paid** and **Highlighted** colours, **Text size**, **Bold letters**
-    and **Text width**. **Preset** has ready-made looks (Light, Dark, Comic, Neon, Glass, Paper,
-    Minimal, Thought cloud) and your own. **Save as...** keeps a look under a name, and
-    **Delete** removes one of yours (it asks first). Changing anything switches **Bubble
-    colours** to *Custom*; picking Light or Dark switches it back.
-  - **Silhouettes** tab: **Shape** (*Classic*, *Big head*, *Broad shoulders*, *Hoodie*,
-    *Cat ears*, *Hair bun*, *Robot*, or *My own picture*). **Use my own picture...** takes a PNG,
-    JPG or WebP from your PC. A see-through PNG works best; a picture without see-through parts
-    is read as a dark shape on a light background. It's cut to size, given a coloured rim like
-    the built-in ones and saved with the app's settings. **Painted** can be *In the chatter's
-    colour*, *One colour for everyone* (**Colour**) or *The picture's own colours*. You also get
-    **Brightness**, **Size** (name tags and bubbles move up with it) and **The filler crowd uses
-    it too**. With your own picture, **Across**, **Down** and **Picture size** place the chatter's
-    profile picture. **Save as...** and **Delete** work like on the Bubbles tab. **Add many
-    pictures...** takes several pictures at once and saves each one as a look of yours (named
-    after its file), ready for a random mix on the Groups tab.
-  - **Groups** tab: a **Bubble** and a **Silhouette** look for **Mods**, **VIPs**,
-    **Subscribers**, **Kick**, **Twitch**, **YouTube**, **Other chat** and **Everyone else**
-    (whoever is left). **Random mix...** in a Silhouette list lets you tick several silhouettes:
-    each chatter in that group gets one of them, picked from their name, so they keep it every
-    time they chat. *Main style* means the
-    same as everyone else. Bubble looks are the presets (save your own first with **Save
-    as...**). Silhouette looks are the built-in shapes or your saved ones. Someone in more than
+- **Audience looks in Stream Core...** (Audience tab, under **Bubble size**): the bubble colours,
+  bubble shapes, silhouettes and group looks are set in Stream Core's dashboard, on the
+  **Audience looks** page (under Overlays). This button opens that page in your browser. Every
+  change saves on its own and shows in the room straight away while Stream Rooms is connected
+  to Core; Stream Rooms remembers the last looks it got, so they stay when Core is closed.
+  The page has a live preview and three parts:
+  - **Bubbles**: **Bubble colours** (*Light*, the default white bubbles with dark text; *Dark*;
+    or *My own style*, the settings below). **Start from** has ready-made looks (Light, Dark,
+    Comic, Neon, Glass, Paper, Minimal, Thought cloud) and your own; **Save as...** keeps a
+    look under a name and **Delete** removes one of yours. Then **Shape** (*Each chatter's own*,
+    or one of rounded box, oval, slanted box, pinched box, cloud for everyone), **Corner
+    roundness**, **Tail**, **Fill** (with a see-through slider), **Chatter colour in fill**,
+    **Text**, **Name** and **Outline** colours (the chatter's colour or one colour), **Outline
+    width**, the **Paid** and **Highlighted** colours, **Text size**, **Bold letters** and
+    **Text width**.
+  - **Silhouettes**: **Shape** (*Classic*, *Big head*, *Broad shoulders*, *Hoodie*, *Cat ears*,
+    *Hair bun*, *Robot*, or *My own picture*). Your own pictures are kept in Core's **Stored
+    files**: pick one under **Picture**, or **Upload a picture...** (PNG, JPG or WebP; a
+    see-through PNG works best, a picture without see-through parts is read as a dark shape on
+    a light background). **Add many pictures...** uploads several at once and saves each as a
+    look of yours, ready for a random mix. **Painted**, **Colour**, **Brightness**, **Size**,
+    **The filler crowd uses it too**, and **Across** / **Down** / **Picture size** for where the
+    chatter's profile picture sits on your own picture. Stream Rooms downloads each picture from
+    Core once (again only when it's replaced in Stored files).
+  - **Groups**: a **Bubble** and a **Silhouette** look for **Mods**, **VIPs**, **Subscribers**,
+    **Kick**, **Twitch**, **YouTube**, **Other chat** and **Everyone else** (whoever is left).
+    *Random mix...* lets you tick several silhouettes: each chatter in that group gets one of
+    them, picked from their name, so they keep it every time they chat. Someone in more than
     one group gets the first one in the list that has a look set, so a mod who subscribes gets
-    the Mods look. In a Together session, each PC uses its own looks.
+    the Mods look. In a Together session, each PC uses the looks from its own Core.
+  Needs a Stream Core with the Audience looks page. Until you change something there, Stream
+  Rooms keeps the looks it had.
 - **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
   Bits get a gold bubble and a gold box on the chat windows; Twitch messages highlighted with
   channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an
@@ -588,11 +585,11 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
 - **Settings:** all in the **Audience** tab. The ones you use while live are on top:
   - **Show audience**, **Test chat** (fills seats with made-up chatters) and **Empty all seats**
     (everyone leaves their seat; it asks first)
-  - **New chatters sit**, **Bubble size**, **Style editor...**, **Bubbles show** (with **Show everything** and
+  - **New chatters sit**, **Bubble size**, **Audience looks in Stream Core...**, **Bubbles show** (with **Show everything** and
     **Busy chat: paid and highlighted**), **Name tags**, **Chatter pictures (everywhere)**,
     **Hide pictures of** and **Hide a picture...**
   - **Advanced ▸** holds the rest: **Idle timeout**, **Seat spacing**, **Bubble time**,
-    **Bubble colours**, **Colour paid and highlighted messages** (the chat windows' cards too),
+    **Colour paid and highlighted messages** (the chat windows' cards too),
     **Show empty seats** (dim placeholders on empty seats), **Hide !commands in bubbles**,
     **Regulars' titles on name tags**, **Ignore names** (bots), the **Colours** block and the
     **Crowd** block

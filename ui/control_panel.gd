@@ -122,7 +122,6 @@ var _video_started_ms: int = 0
 var _video_tick: float = 0.0
 var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
 var _confirm: ConfirmationDialog        # "Empty all seats?" and the other ask-first questions
-var _style_editor: StyleEditor           # Audience tab > "Style editor..." (ui/style_editor.gd), null while closed
 var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's picture
 var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 
@@ -1074,7 +1073,7 @@ func _build_audience_tab() -> Control:
 		["front_random", "Front row first, random seat in the row"],
 	]), "Where someone who starts chatting sits down. The Seating tab can keep platforms apart on top of this."))
 	v.add_child(_tip(_slider("audience_bubble_size", "Bubble size", 0.4, 2.5, 0.05, "%d%%", 100.0), "How big the speech bubbles over the audience are."))
-	v.add_child(_tip(_button("Style editor...", _open_style_editor), "Change how the speech bubbles and the silhouettes look (shapes, colours, outline, text; built-in silhouettes or your own picture), with a preview. Changes show in the room straight away."))
+	v.add_child(_tip(_button("Audience looks in Stream Core...", _open_core_looks), "Opens Stream Core's Audience looks page in your browser: bubble colours and shapes, silhouettes (built-in or your own pictures) and a look per group (mods, VIPs, subs, each platform). Changes show in the room straight away while Stream Rooms is connected to Core."))
 	# a busy chat: pick which messages get a bubble (the chatter still sits down either way)
 	v.add_child(_heading("Bubbles show"))
 	var bf := HFlowContainer.new()
@@ -1125,13 +1124,7 @@ func _build_audience_tab() -> Control:
 	gap.tooltip_text = "Room between seated chatters along a row. Seats closer than this to a taken one stay empty, so people don't sit shoulder to shoulder; the room has fewer seats then. 0.50 m uses every seat. The room reloads when you change it."
 	v.add_child(gap)
 	v.add_child(_tip(_slider("audience_bubble_s", "Bubble time", 2.0, 20.0, 0.5, "%.1f s"), "How long a speech bubble stays up (a newer message from the same person replaces it)."))
-	var bubble_colours := _option("audience_bubble_theme", "Bubble colours", [
-		["light", "Light (white bubbles, dark text)"],
-		["dark", "Dark (dark bubbles, light text)"],
-		["custom", "Custom (Style editor)"],
-	])
-	bubble_colours.tooltip_text = "The colour of the audience's speech bubbles. Light and Dark keep each chatter's colour on the outline. Custom is the look made in the Style editor (button above, near Bubble size)."
-	v.add_child(bubble_colours)
+	# (Bubble colours moved to Stream Core's Audience looks page: button near Bubble size)
 	var tints := _check("audience_bubble_tints", "Colour paid and highlighted messages")
 	tints.tooltip_text = "Super Chats, Kicks and Bits get a gold bubble and chat-window card; Twitch messages highlighted with channel points get a purple one; a gigantified emote is drawn big. This also changes the chat windows' cards. Off: they look like any other message."
 	v.add_child(tints)
@@ -1197,17 +1190,13 @@ func _build_audience_tab() -> Control:
 	return adv.get_parent() as Control
 
 
-## Audience tab > "Style editor...": opens the bubble and silhouette editor (one at a time). Like
-## _ask(), it opens as its own OS window while the panel is docked, so it never shows on stream.
-func _open_style_editor() -> void:
-	if _style_editor != null and is_instance_valid(_style_editor):
-		_style_editor.grab_focus()
-		return
-	_style_editor = StyleEditor.new()
-	if _window == null and DisplayServer.has_feature(DisplayServer.FEATURE_SUBWINDOWS):
-		_style_editor.force_native = true
-	add_child(_style_editor)
-	_style_editor.popup_centered()
+## Audience tab > "Audience looks in Stream Core...": opens Core's dashboard page for the bubble and
+## silhouette looks in the browser (the address follows the chat_core_url setting). The looks come
+## back over the Core link (ChatFeed -> CoreLooks), so nothing here changes them.
+func _open_core_looks() -> void:
+	OS.shell_open(ChatFeed.core_url("/admin/#looks"))
+	if not ChatFeed.is_connected_to_core():
+		EventBus.status_message.emit("Stream Core isn't connected: start it, then the page opens and the looks reach the room.", true)
 
 
 ## Audience tab > Bubbles show: everything (true), or only paid and highlighted with still emotes.
