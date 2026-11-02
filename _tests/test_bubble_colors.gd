@@ -1,7 +1,8 @@
 extends Node
 ## Bubble colours: the dark bubble theme, gold Super Chat / Bits and purple Twitch-highlight
 ## bubbles and chat-window cards (Stream Core's is_paid / highlight fields), the setting that turns
-## the colours off, and the {tint} marker surviving the shared-audience mirror copy.
+## the colours off, the {tint} marker surviving the shared-audience mirror copy, and "colour by
+## platform" keeping the platform colours when streamer areas are on (Together).
 ##   <redot console exe> --path . _tests/test_bubble_colors.tscn -- C:/temp/sr_tests --mp-profile=test
 
 var _fails: int = 0
@@ -134,6 +135,26 @@ func _ready() -> void:
 		_check(m1.size() == 3 and m1[0].get("tint") == "paid" and String(m1[1].get("reply_to", "")) == "Sen" and m1[2] == "text",
 			"the mirror copy keeps the tint and the reply marker (%s)" % str(m1))
 		_check(m2 == ["text"], "and drops a tint it doesn't know (%s)" % str(m2))
+
+	# colour by platform with streamer areas on: changing a platform colour recolours everyone by
+	# their platform, not their streamer area (which used to turn them all the "other" colour).
+	# The test profile keeps settings between runs, so each setting is first set to something else
+	# (set_setting does nothing when the value is unchanged), and put back at the end.
+	if a_slot >= 0:
+		AudienceManager.set_streamer_areas(2)
+		AppState.set_setting("audience_color_by", "name")
+		AppState.set_setting("audience_color_by", "platform")
+		var pink := Color(1.0, 0.2, 0.6)
+		AppState.set_setting("platform_color_twitch", Color.WHITE)
+		AppState.set_setting("platform_color_twitch", pink)
+		var ann: Dictionary = AudienceManager._members.get("twitch:ann", {})
+		var ann_col: Color = ann.get("color", Color.BLACK)
+		_check(ann_col.is_equal_approx(pink),
+			"with streamer areas on, a Twitch chatter takes the Twitch colour (%s)" % str(ann_col))
+		_check(not ann_col.is_equal_approx(AudienceManager.platform_color("other")), "and not the \"other\" colour")
+		AudienceManager.set_streamer_areas(0)
+		AppState.set_setting("platform_color_twitch", AppState.DEFAULTS["platform_color_twitch"])
+		AppState.set_setting("audience_color_by", AppState.DEFAULTS["audience_color_by"])
 
 	print("DONE fails=", _fails)
 	AppState.request_quit(1 if _fails > 0 else 0)
