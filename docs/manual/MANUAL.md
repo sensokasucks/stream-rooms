@@ -1,6 +1,6 @@
 # Stream Rooms and Stream Core: user manual
 
-*November 2026 (updated 2 November). Stream Rooms 2026.11.1 and Fridge Stream Core.*
+*November 2026 (updated 3 November). Stream Rooms 2026.11.2 and Fridge Stream Core.*
 
 Stream Rooms puts your stream in a 3D room: a big screen shows a browser tab, a video or another program, the screen lights the room, and your chat sits in the seats as an audience. Fridge Stream Core is the companion program that reads your Kick, Twitch and YouTube chat and decides what chat is allowed to do (points, reactions, games). You capture the Stream Rooms window in OBS and stream it.
 
@@ -373,6 +373,7 @@ On top, what you use while live:
 - **New chatters sit**: *Anywhere (random)*, *Front row first, from the middle*, or *Front row first, random seat in the row*.
 - **Bubble size**.
 - **Bubbles show**: for a very busy chat, pick which messages get a speech bubble. Tick any mix of **Text messages** (ordinary messages with words in them), **Emote-only**, **Paid** (Super Chats, Kicks and Bits), **Highlighted** (Twitch highlighted messages and gigantified emotes) and **Replies** (messages that answer someone). Untick **Animated emotes** to show every emote as a still picture, which is lighter on the PC. A chatter whose message gets no bubble still sits down, and the chat windows always show every message. Two buttons set it in one click: **Busy chat: paid and highlighted** (only those two, with still emotes) and **Show everything** (every box ticked again).
+- **Glow for highlighted chatter** (on by default): when you highlight a chat message in Stream Core (★ on a chat line; the **Highlighted message** lower third), that chatter's seat glows purple while it is on screen, steady in photosensitive-safe mode. Only chatters with a seat glow.
 - **Name tags** and **Chatter pictures (everywhere)**: turning pictures off here turns them off everywhere, the chat windows included. (The Chat tab's **Pictures in chat windows** only turns them off in the chat windows.)
 - **Hide pictures of**: names whose picture is never shown. A name matches the display name or the login; write `kick:name` (or `twitch:` / `youtube:`) for one platform only. Mid-stream it's quicker to use **Hide a picture...** under it: it lists the people seated now, newest first, and adds them for you. This is the same list as Stream Core's **Never show a picture for**: names you add here are added there too, so Core's chat overlay hides them as well. To show someone again, take the name off in both places.
 
