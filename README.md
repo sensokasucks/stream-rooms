@@ -496,6 +496,11 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     the Mods look. In a Together session, each PC uses the looks from its own Core.
   Needs a Stream Core with the Audience looks page. Until you change something there, Stream
   Rooms keeps the looks it had.
+- **Glow for highlighted chatter** (Audience tab, on by default): when you highlight a chat
+  message in Stream Core (the **Highlighted message** lower third, ★ on a chat line), that
+  chatter's seat gets a slow purple glow while their message is on screen. It moves to the next
+  highlight and goes away when Core clears it. In photosensitive-safe mode the glow is steady.
+  Only chatters with a seat glow. Needs Stream Core v2026.11.2 or newer.
 - **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
   Bits get a gold bubble and a gold box on the chat windows; Twitch messages highlighted with
   channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an
