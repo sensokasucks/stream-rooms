@@ -80,6 +80,14 @@ var _bounds: AABB = AABB()
 ## Camera transform at the last seat update; _dirty forces one more update (seat changes).
 var _last_cam: Transform3D = Transform3D()
 var _dirty: bool = true
+## Highlighted message glow: the chatter on Stream Core's lower third (EventBus.chat_highlight_changed,
+## {} = nobody), the seat glowing now (-1 = none) and its light (a child of that seat's root, so it
+## goes when the seat's nodes are dropped). See _update_highlight_glow().
+var _hl_info: Dictionary = {}
+var _hl_slot: int = -1
+var _hl_light: OmniLight3D = null
+## Colour of the highlight glow (matches the stripe on Core's highlight overlay).
+const HIGHLIGHT_COLOR := Color(0.65, 0.36, 1.0)
 ## Counts down to the next bubble visibility check (BUBBLE_CHECK).
 var _vis_clock: float = 0.0
 ## Room light level last handed to the crowd (Room._level), so it is only set when it changes.
@@ -153,6 +161,7 @@ func _ready() -> void:
 	EventBus.emote_ready.connect(_on_emote_ready)
 	EventBus.audience_updated.connect(_on_updated)
 	EventBus.setting_changed.connect(_on_setting_changed)
+	EventBus.chat_highlight_changed.connect(_on_highlight_changed)
 
 
 func _exit_tree() -> void:
@@ -175,6 +184,7 @@ func retire() -> void:
 	EventBus.audience_left.disconnect(_on_left)
 	EventBus.audience_spoke.disconnect(_on_spoke)
 	EventBus.setting_changed.disconnect(_on_setting_changed)
+	EventBus.chat_highlight_changed.disconnect(_on_highlight_changed)
 
 
 ## Per frame: seat fades and tag sizes only when the camera moved (or a seat changed), the crowd
@@ -1360,11 +1370,71 @@ func _clear_bubbles(i: int) -> void:
 func _on_seated(slot: int) -> void:
 	if slot >= 0 and slot < _seats.size():
 		_refresh_seat(slot, true)
+		if not _hl_info.is_empty():
+			_update_highlight_glow()     # the highlighted chatter may just have sat down
 
 
 func _on_left(slot: int) -> void:
 	if slot >= 0 and slot < _seats.size():
 		_refresh_seat(slot, true)
+		if slot == _hl_slot:
+			_update_highlight_glow()     # they moved or left: follow them, or stop glowing
+
+
+## EventBus.chat_highlight_changed: Stream Core put a new chat line on its Highlighted message
+## overlay (or took it off: info is {}).
+func _on_highlight_changed(info: Dictionary) -> void:
+	_hl_info = info
+	_update_highlight_glow()
+
+
+## Seat of the highlighted chatter: by platform + user id first, then by login / display name.
+func _highlight_slot() -> int:
+	if _hl_info.is_empty():
+		return -1
+	var slot := AudienceManager.find_slot_for_user(String(_hl_info.get("platform", "")), String(_hl_info.get("user_id", "")))
+	if slot < 0:
+		for n: String in _hl_info.get("names", PackedStringArray()):
+			slot = AudienceManager.find_slot_by_name(n)
+			if slot >= 0:
+				break
+	return slot
+
+
+## Puts the glow on the highlighted chatter's seat (or takes it away). Called when the highlight
+## changes, when someone sits down or leaves, and when "audience_highlight_glow" changes. Only seats
+## with their own nodes (main seats, presenter spots, chatters in crowd seats) can glow. The light
+## pulses slowly, and stays steady with "photosensitive_safe" on.
+func _update_highlight_glow() -> void:
+	var slot := _highlight_slot() if bool(AppState.get_setting("audience_highlight_glow")) else -1
+	if slot >= _seats.size() or (slot >= 0 and not bool(_seats[slot]["rich"])):
+		slot = -1
+	if slot == _hl_slot and (slot < 0 or is_instance_valid(_hl_light)):
+		return
+	if is_instance_valid(_hl_light):
+		_hl_light.queue_free()
+	_hl_light = null
+	_hl_slot = slot
+	if slot < 0:
+		return
+	var s: Dictionary = _seats[slot]
+	var sc := float(s["scale"])
+	var light := OmniLight3D.new()
+	light.light_color = HIGHLIGHT_COLOR
+	light.omni_range = 1.6 * sc
+	light.shadow_enabled = false
+	# in front of the chest, so the silhouette is lit from the stage side
+	light.position = Vector3(0, (bust_lift + _seat_bust(slot) * 0.5) * sc, 0.45 * sc)
+	light.light_energy = 0.0
+	(s["root"] as Node3D).add_child(light)
+	_hl_light = light
+	var tw := light.create_tween()      # belongs to the light: freed together
+	tw.tween_property(light, "light_energy", 1.8, 0.4)
+	if not bool(AppState.get_setting("photosensitive_safe")):
+		var pulse := light.create_tween().set_loops()
+		pulse.tween_interval(0.4)
+		pulse.tween_property(light, "light_energy", 0.9, 1.2).set_trans(Tween.TRANS_SINE)
+		pulse.tween_property(light, "light_energy", 1.8, 1.2).set_trans(Tween.TRANS_SINE)
 
 
 ## Audience tab and Presenters tab settings that change what this view shows.
@@ -1377,6 +1447,8 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		for i in _rich:
 			if String(_seats[i]["kind"]) == "seat" and not bool(_seats[i]["seated"]):
 				_refresh_seat(i, false)
+	elif key == "audience_highlight_glow":
+		_update_highlight_glow()
 	elif key == "audience_titles":
 		for i in _rich:
 			_on_updated(i)

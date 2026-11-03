@@ -1091,6 +1091,7 @@ func _build_audience_tab() -> Control:
 	var r3 := HFlowContainer.new()
 	v.add_child(r3)
 	r3.add_child(_tip(_check("audience_names", "Name tags"), "Each chatter's name over their head."))
+	r3.add_child(_tip(_check("audience_highlight_glow", "Glow for highlighted chatter"), "When you highlight a chat message in Stream Core (the Highlighted message lower third), that chatter's seat glows while it is on screen. Only works when they have a seat."))
 	var pics := _check("audience_avatars", "Chatter pictures (everywhere)")
 	pics.tooltip_text = "Chatters' profile pictures (Kick, Twitch, YouTube) as their heads and in the chat windows. Off: no pictures anywhere (the Chat tab's Pictures in chat windows only turns them off in the chat windows). Stream Core finds and saves the pictures; for Twitch it needs Connect Twitch in Core's dashboard."
 	r3.add_child(pics)

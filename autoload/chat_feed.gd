@@ -246,6 +246,25 @@ func _handle(text: String) -> void:
 			var lk: Variant = (msg as Dictionary).get("data")
 			if lk is Dictionary:
 				_looks.apply(lk as Dictionary)
+		"highlight":
+			# Stream Core's Highlighted message (core/highlights.py there): sent on connect and
+			# whenever the line on screen changes; data.current is null when nothing is up
+			var hd: Variant = (msg as Dictionary).get("data")
+			var cur: Variant = (hd as Dictionary).get("current") if hd is Dictionary else null
+			if cur is Dictionary and (cur as Dictionary).get("user") is Dictionary:
+				var hu := (cur as Dictionary)["user"] as Dictionary
+				var hnames := PackedStringArray()
+				for k: String in ["username", "display_name"]:
+					var n := _str(hu.get(k)).strip_edges().to_lower()
+					if n != "" and not hnames.has(n):
+						hnames.append(n)
+				EventBus.chat_highlight_changed.emit({
+					"platform": _str((cur as Dictionary).get("platform")),
+					"user_id": _str(hu.get("id")),
+					"names": hnames,
+				})
+			else:
+				EventBus.chat_highlight_changed.emit({})
 		"chat_user_hidden":
 			# Stream Core red-flagged someone (Chat history > Red flags on its dashboard)
 			var h: Variant = (msg as Dictionary).get("data")
