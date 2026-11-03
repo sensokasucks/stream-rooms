@@ -105,6 +105,11 @@ signal chat_user_updated(info: Dictionary)
 ## Stream Core red-flagged a chatter: {"platform" ("" = every platform), "user_id", "names"
 ## (lower-case login + display name)}. Their seat and chat lines go; Core sends no more of their chat.
 signal chat_user_hidden(info: Dictionary)
+## Stream Core's Highlighted message changed (its /overlay/highlight.html lower third, picked on
+## Core's dashboard or phone remote): {"platform", "user_id", "names" (lower-case login + display
+## name)} of the chatter on screen, or {} when nothing is highlighted. AudienceView makes that
+## chatter's seat glow ("audience_highlight_glow").
+signal chat_highlight_changed(info: Dictionary)
 ## Stream Core answered a chat command (its API-free reply path: {message, platform,
 ## reply_to_user, source, timestamp, history}). Shown on the reply screen.
 signal core_reply_received(reply: Dictionary)
