@@ -100,13 +100,14 @@ func get_room_environment() -> Environment:
 	return _room_env if _room_env else _default_env
 
 
-## Frame-rate settings, seat spacing (needs a room reload, since seats are picked when the room
-## loads) and the graphics quality switches (see GraphicsQuality).
+## Frame-rate settings, seat spacing and the room's own reload keys (both need a room reload,
+## since seats are picked when the room loads) and the graphics quality switches (see GraphicsQuality).
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "fps_cap" or key == "vsync":
 		GraphicsQuality.apply_fps()
 		return
-	if key == "audience_seat_gap" and _room_id != "" and _loading_id == "":
+	var reloads := key == "audience_seat_gap" or (_room != null and _room.reload_keys().has(key))
+	if reloads and _room_id != "" and _loading_id == "":
 		_reload_wait = 0.8        # (once the slider stops moving)
 		set_process(true)
 		return

@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+
+[sub_resource type="Environment" id="Environment_throne"]
+background_mode = 1
+background_color = Color(0.01, 0.012, 0.025, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.22, 0.28, 0.45, 1)
+ambient_light_energy = 0.14
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_energy = 1.1
+glow_enabled = true
+glow_intensity = 0.6
+glow_bloom = 0.06
+glow_hdr_threshold = 1.1
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.01
+volumetric_fog_albedo = Color(0.72, 0.8, 1, 1)
+volumetric_fog_length = 64.0
+
+[resource]
+script = ExtResource("1_ri")
+id = "throne_hall"
+display_name = "Throne Hall"
+scene_path = "res://rooms/throne_hall/throne_hall_room.tscn"
+sort_order = 8
+environment = SubResource("Environment_throne")
+screen_light_multiplier = 2.5
+screen_light_range = 40.0
+screen_matte = 0.0
+reverb_room_size = 0.9
+reverb_damping = 0.3
+reverb_wet = 0.25

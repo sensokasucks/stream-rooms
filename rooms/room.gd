@@ -191,6 +191,13 @@ func get_controls() -> Array[Dictionary]:
 	return []
 
 
+## Settings (AppState keys) that only take effect when the room is loaded again, because they
+## change what RoomHost reads at load time (where the seats are, for one). RoomHost reloads the
+## room when one of them changes, the same way it does for the seat spacing. Default: none.
+func reload_keys() -> PackedStringArray:
+	return PackedStringArray()
+
+
 ## Slides every presenter spot (marker, podium, podium lamp) presenter_forward metres out from
 ## the screen, towards the audience.
 func _move_presenters_forward() -> void:
