@@ -371,8 +371,9 @@ def build_walls():
     for sx in (-3.6, 3.6):
         box(mb, (sx, BACK_Y + 0.32, 5.0), (0.3, 0.1, 10.4), "Gold")
     box(mb, (0, BACK_Y + 0.32, 10.2), (7.6, 0.1, 0.3), "Gold")
-    # throne wall: ribbed cladding full height, with a dark recess behind the throne
-    wall_quad(mb, "y", WALL_Y, -HALF_W, HALF_W, 0.0, CEIL_Z, "Ribbed_Tower", facing=-1, u=(0, 2 * HALF_W / 4.0), v=(0, CEIL_Z / 16.0))
+    # throne wall: stone blocks full height (Sen's choice over the ribbed cladding: it sits
+    # better behind the throne), with a dark recess behind the throne
+    wall_quad(mb, "y", WALL_Y, -HALF_W, HALF_W, 0.0, CEIL_Z, "Stone_Wall", facing=-1, u=(0, 2 * HALF_W / 8.0), v=(0, CEIL_Z / 8.0))
     box(mb, (0, WALL_Y - 0.2, 8.0), (6.0, 0.4, 16.0), "Ceiling_Dark")
     mb.done()
 
