@@ -74,6 +74,15 @@
       <label><input type="checkbox" id="sendAudio" checked> Send tab audio to the game</label>
     </div>
     <div id="shareStatus" class="status">Not sharing.</div>
+    <!-- Shown when the last Share froze or closed the browser, so the page now shares the safer way
+         (see "Freeze guard" in the script). The button turns that off again. -->
+    <div id="safeNote" class="row hidden">
+      <span class="status warn">Last time you shared, the browser froze or closed before the picture
+        got going. Safe mode is on: sharing now uses a slower but steadier way, at 720p and 30 FPS at most.</span>
+      <button id="safeOffBtn">Turn safe mode off</button>
+    </div>
+    <!-- Warns when the pick films the game itself (whole screen, or the game's own window). -->
+    <div id="surfaceWarn" class="status"></div>
     <div id="audioStatus" class="status"></div>
     <video id="preview" muted playsinline></video>
   </section>
@@ -138,6 +147,45 @@ let cam = null;            // { stream, pump }
 let fps = 0;               // main-video frames sent in the last second
 let workerFps = 0, mainSentFrames = 0;
 let pumpIds = 0;
+
+// ── Freeze guard ──────────────────────────────────────────────
+// On some PCs the browser froze or closed right after Share was pressed. The most likely culprit
+// is handing a copy of the shared video to the worker (startFramePump's "track" mode), which is
+// new in Chrome/Brave and can take the browser down with it - no try/catch can catch that.
+// So: while a share is starting, a "pending" mark sits in localStorage. Once pictures have flowed
+// for SHARE_OK_MS it's cleared (and on Stop, or when the page closes normally). If the page opens
+// and the mark is still there, the last share never got going - the browser froze or was killed -
+// so safe mode turns on: no track hand-over (frames are handed over one by one instead) and the
+// quality is capped. Safe mode stays on (also stored) until the "Turn safe mode off" button.
+// "?safeshare" in the address turns it on for one visit, for testing.
+const FREEZE_KEY = "streamRooms.sender.sharePending";
+const SAFE_KEY = "streamRooms.sender.safeMode";
+const SHARE_OK_MS = 5000;               // how long pictures must flow before a share counts as fine
+const SAFE_MAX_HEIGHT = 720, SAFE_MAX_FPS = 30;
+// localStorage can be missing or blocked (private window, strict settings): then the guard is off.
+function storeSet(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) {} }
+function storeGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
+let safeMode = new URLSearchParams(location.search).has("safeshare") || storeGet(SAFE_KEY) === "1";
+if (storeGet(FREEZE_KEY)) {
+  console.log("sender: the last share didn't finish starting (browser froze or closed?): safe mode on");
+  safeMode = true;
+  storeSet(SAFE_KEY, "1");
+  storeSet(FREEZE_KEY, null);
+}
+let shareOkTimer = 0;
+// Called by startShare just before the picker opens. Checks every SHARE_OK_MS whether any frames
+// went out (fps, from tick()); the first time they did, the share counts as fine.
+function markSharePending() {
+  storeSet(FREEZE_KEY, String(Date.now()));
+  clearInterval(shareOkTimer);
+  shareOkTimer = setInterval(() => {
+    if (!share) { clearSharePending(); return; }
+    if (fps > 0) clearSharePending();
+  }, SHARE_OK_MS);
+}
+function clearSharePending() { clearInterval(shareOkTimer); shareOkTimer = 0; storeSet(FREEZE_KEY, null); }
+// A normal close isn't a freeze (a frozen or killed browser never gets here).
+addEventListener("pagehide", clearSharePending);
 const pumpDone = new Map();   // pump id -> called when the worker has finished a handed-over frame
 
 // ── WebSocket link (auto-reconnects) ─────────────────────────
@@ -230,6 +278,8 @@ function startFramePump(track, type, maxHeight, maxFps, slot, quality) {
   if (link && "MediaStreamTrackProcessor" in window) {
     let copy = null;
     try {
+      // Safe mode (Freeze guard above): skip the track hand-over and go straight to handing over frames.
+      if (safeMode) throw new Error("safe mode");
       copy = track.clone();
       link.postMessage({ ...params, track: copy }, [copy]);
       state.stop = () => { state.stopped = true; link.postMessage({ type: "stopPump", id }); };
@@ -451,9 +501,11 @@ async function startAudioPump(track, shared) {
 async function startShare() {
   if (share) return;          // (already showing something: the host's feed or someone's avatar)
   const wantAudio = $("sendAudio").checked;
-  const h = parseInt($("quality").value, 10), maxFps = parseInt($("fps").value, 10);
+  let h = parseInt($("quality").value, 10), maxFps = parseInt($("fps").value, 10);
+  if (safeMode) { h = Math.min(h, SAFE_MAX_HEIGHT); maxFps = Math.min(maxFps, SAFE_MAX_FPS); }
   const supported = navigator.mediaDevices.getSupportedConstraints();
   let stream;
+  if (!TEST_SHARE) markSharePending();
   try {
     stream = TEST_SHARE ? testPatternStream() : await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: { ideal: maxFps }, height: { ideal: h } },
@@ -463,12 +515,14 @@ async function startShare() {
       systemAudio: "include",
     });
   } catch (e) {
+    clearSharePending();
     $("shareStatus").textContent = "Sharing was cancelled or blocked (" + e.name + ").";
     return;
   }
   const vtrack = stream.getVideoTracks()[0];
   const atrack = stream.getAudioTracks()[0] || null;
   share = { stream, label: vtrack.label, audio: { track: atrack, suppressed: false } };
+  warnSurface(vtrack);
   share.videoPump = startFramePump(vtrack, PKT_VIDEO, h, maxFps);
 
   if (atrack) {
@@ -517,6 +571,25 @@ function testPatternStream() {
   return stream;
 }
 
+// Called by startShare once a pick is made. A whole screen (or the game's own window, whose title
+// starts with "Stream Rooms", see core/main.gd) means the game films itself: the picture repeats
+// inside itself and "system audio" loops the game's own sound back in. That's heavy on the
+// graphics card and a likely cause of the browser freezing, so say so. Cleared by stopShare.
+function warnSurface(vtrack) {
+  const el = $("surfaceWarn");
+  const surface = (vtrack.getSettings && vtrack.getSettings().displaySurface) || "";
+  const label = vtrack.label || "";
+  if (surface === "monitor") {
+    el.innerHTML = '<span class="warn">You\'re sharing a whole screen. If the game is on it, the game films itself ' +
+      "over and over and loops its own sound, which can freeze the browser. Share just the tab instead.</span>";
+  } else if (surface === "window" && /stream rooms/i.test(label)) {
+    el.innerHTML = '<span class="warn">You\'re sharing the game\'s own window (or this page\'s), so it films itself ' +
+      "over and over, which can freeze the browser. Pick the tab you want to show instead.</span>";
+  } else {
+    el.textContent = "";
+  }
+}
+
 function describeAudio(wanted, supported) {
   const el = $("audioStatus");
   const a = share.audio;
@@ -537,6 +610,8 @@ function stopShare() {
   share.audio.pump && share.audio.pump.stop();
   share.stream.getTracks().forEach((t) => t.stop());
   share = null;
+  clearSharePending();
+  $("surfaceWarn").textContent = "";
   $("preview").srcObject = null;
   $("shareStatus").textContent = "Not sharing.";
   $("audioStatus").textContent = "";
@@ -1079,6 +1154,9 @@ if (navigator.mediaDevices) {
 }
 
 $("shareBtn").onclick = startShare;
+// Freeze guard: show the safe-mode note, and let the button turn safe mode off for good.
+$("safeNote").classList.toggle("hidden", !safeMode);
+$("safeOffBtn").onclick = () => { safeMode = false; storeSet(SAFE_KEY, null); $("safeNote").classList.add("hidden"); };
 $("stopBtn").onclick = stopShare;
 $("camBtn").onclick = toggleCam;
 if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
