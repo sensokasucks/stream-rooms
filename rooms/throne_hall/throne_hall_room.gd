@@ -1,10 +1,10 @@
 extends Room
-## Throne Hall (a vast dark hall with a crystal-backed throne; blender/throne_hall_gen.py).
+## Throne Hall (a vast dark hall with a tall throne on a dais; blender/throne_hall_gen.py).
 ##   - The LAMP_* markers from Blender become three kinds of house light, tuned by name: the
-##     cool blue lanterns down the nave ("Chandelier"), the blue wash on the crystal behind the
+##     cool blue lanterns down the nave ("Chandelier"), the blue wash on the wall behind the
 ##     throne ("Throne") and the warm torches on the gallery pilasters ("Gallery").
 ##   - Candle flames, the lantern globes and the ceiling slot glow with the house lights
-##     (glow_materials on the room scene); the crystal keeps its own light.
+##     (glow_materials on the room scene).
 ##   - A shaft of blue light falls from the SHAFT_Throne marker (the slot in the ceiling) onto
 ##     the throne, drawn with the Lecture Hall's sun_shaft.gdshader. The Throne light slider in
 ##     the Room tab ("throne_beam") scales it; 0 hides it.
@@ -213,12 +213,6 @@ func _replacement_for(m: BaseMaterial3D) -> Material:
 			c.rim = 0.3              # velvet pile catching light at grazing angles
 			c.rim_tint = 0.6
 			return c
-		"Crystal":
-			var k := m.duplicate() as BaseMaterial3D
-			k.clearcoat_enabled = true
-			k.clearcoat = 0.8
-			k.clearcoat_roughness = 0.1
-			return k
 	return null
 
 

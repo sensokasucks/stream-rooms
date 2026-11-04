@@ -6,7 +6,7 @@
 A vast dark throne hall: a long carpeted nave between black marble columns, each with a tall
 crimson banner hung from a bracket, two railed galleries along each side wall, pale ribbed
 cladding towering up to a coffered ceiling, three caged lantern chandeliers in a row, and a
-raised dais at the far end with a tall throne backed by fans of glowing crystal. A shaft of
+raised dais at the far end with a tall throne. A shaft of
 blue light falls from a slot in the ceiling onto the throne (the room script builds the beam
 from the SHAFT_Throne marker). The big screen floats in front of the throne, the four presenter
 podiums stand on the dais either side of it, and chat lines the carpet standing up (AUDIENCE_
@@ -251,18 +251,6 @@ def bar(mb, a, b, t, m):
     box(mb, (a + b) / 2, (t, t, L), m, rot=(e.x, e.y, e.z))
 
 
-def spike(mb, base, tip, r, m, segs=6):
-    """A tapered crystal: a cone from base (radius r) to tip (a point), smooth sides."""
-    base, tip = Vector(base), Vector(tip)
-    d = tip - base
-    res = bmesh.ops.create_cone(mb.bm, cap_ends=True, cap_tris=False, segments=segs, radius1=r, radius2=0.02, depth=d.length)
-    q = d.to_track_quat('Z', 'Y')
-    mtx = Matrix.Translation((base + tip) / 2) @ q.to_matrix().to_4x4()
-    bmesh.ops.transform(mb.bm, matrix=mtx, verts=res["verts"])
-    for f in {f for v in res["verts"] for f in v.link_faces}:
-        f.material_index = mb.mi(m)
-
-
 def empty(name, loc, parent=None, collection=MARKERS, size=0.2):
     """A marker empty (replaces one of the same name). Names follow the Stream Rooms contract
     (CAM_, LAMP_, PRESENTER_, TARGET_, AUDIENCE_ ... see rooms/room.gd).
@@ -337,7 +325,6 @@ def setup_materials():
     tex_mat("Banner", "banner.png", 0.9, two_sided=True)
     mat("Gold", (0.85, 0.62, 0.22), 0.3, 1.0)
     mat("Dark_Iron", (0.05, 0.05, 0.06), 0.5, 0.7)
-    mat("Crystal", (0.08, 0.06, 0.28), 0.2, 0.2, (0.3, 0.25, 1.0), 0.9)
     mat("Blue_Glass", (0.25, 0.45, 1.0), 0.15, 0.0, (0.35, 0.55, 1.0), 3.0)
     mat("Candle_Flame", (1.0, 0.9, 0.7), 0.2, 0.0, (1.0, 0.72, 0.38), 6.0)
     mat("Sky_Slot", (0.5, 0.7, 1.0), 0.5, 0.0, (0.45, 0.65, 1.0), 3.0)
@@ -507,7 +494,7 @@ def build_galleries():
 
 
 # ════════════════════════════════════════════════════════════════
-#  Dais, throne, crystal, screen, podiums, benches, chandeliers
+#  Dais, throne, screen, podiums, benches, chandeliers
 # ════════════════════════════════════════════════════════════
 def build_dais():
     """Three marble steps with gold nosings up to the dais, the dais floor and its carpet."""
@@ -556,26 +543,6 @@ def build_throne():
     for sx in (-0.45, 0.45):
         bar(mb, (sx, yb - 0.02, z0 + 0.3), (sx * 0.6, yb - 0.02, z0 + 7.0), 0.05, "Gold")
     bar(mb, (0, yb - 0.02, z0 + 1.6), (0, yb - 0.02, z0 + 8.6), 0.06, "Gold")
-    mb.done()
-
-
-def build_crystal():
-    """Two fans of crystal spikes behind the throne, leaning outwards, lit from inside (Crystal glows)."""
-    mb = MB("Crystal_Wings")
-    y = THRONE_Y + 1.7
-    for s in (-1, 1):
-        for i in range(7):
-            t = i / 6.0
-            bx = s * (0.6 + 1.1 * i)
-            tilt = math.radians(8 + 60 * t)
-            length = 13.0 - 7.0 * t
-            base = Vector((bx, y + 0.15 * i, DAIS_Z + 0.4))
-            tip = base + Vector((s * math.sin(tilt) * length, 0.1 * length, math.cos(tilt) * length))
-            spike(mb, base, tip, 0.55 - 0.03 * i, "Crystal", segs=6)
-            # a smaller companion crystal in front of each big one
-            base2 = base + Vector((s * 0.3, -0.9, 0))
-            tip2 = base2 + Vector((s * math.sin(tilt + 0.15) * length * 0.45, 0, math.cos(tilt + 0.15) * length * 0.45))
-            spike(mb, base2, tip2, 0.28, "Crystal", segs=5)
     mb.done()
 
 
@@ -761,7 +728,6 @@ def build_all():
     build_galleries()
     build_dais()
     build_throne()
-    build_crystal()
     build_screen()
     build_podiums()
     build_benches()

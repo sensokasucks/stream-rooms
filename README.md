@@ -1021,16 +1021,16 @@ Included rooms:
   - A big-room reverb and a faint room tone.
   - Source: `../blender/lecture_hall.blend`, built by `blender/lecture_hall_gen.py`
     (textures for the glass, doors and EXIT sign: `blender/make_hall_textures.py`).
-- **Throne Hall**: a vast dark hall, 60 m long and 30 m high, with a crystal-backed throne.
+- **Throne Hall**: a vast dark hall, 60 m long and 30 m high, with a tall throne on a dais.
   - A crimson runner leads down the nave between black marble columns, each with a tall banner
     hung from a gold bracket. Two railed galleries run along each side wall behind the columns
     (the filler crowd sits there), pale ribbed cladding towers above them, and three caged
     lanterns with candles hang in a row from the coffered ceiling.
-  - The dais at the far end has three steps up to a tall pointed throne flanked by two fans of
-    glowing crystal. A shaft of blue light falls on it from a slot in the ceiling.
+  - The dais at the far end has three steps up to a tall pointed throne. A shaft of blue light
+    falls on it from a slot in the ceiling.
     **Throne light** (Room tab) sets how strong the beam is, 0-200% (0% = off).
   - The screen (the same size as the Lecture Hall (Panel)'s) floats in front of the throne, so
-    the throne's back and the crystal frame the picture. The chat screen hangs under it and
+    the throne's tall back rises behind the picture. The chat screen hangs under it and
     the reply screen above it.
   - A podium room: four stone podiums on the dais, two flanking the screen and two further
     out near the steps, each with a candle lamp (see *Presenters*). No webcam frame: the webcam
