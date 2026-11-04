@@ -1,6 +1,6 @@
 # Stream Rooms and Stream Core: user manual
 
-*November 2026 (updated 4 November). Stream Rooms 2026.11.3 and Fridge Stream Core.*
+*November 2026 (updated 4 November). Stream Rooms 2026.11.4 and Fridge Stream Core.*
 
 Stream Rooms puts your stream in a 3D room: a big screen shows a browser tab, a video or another program, the screen lights the room, and your chat sits in the seats as an audience. Fridge Stream Core is the companion program that reads your Kick, Twitch and YouTube chat and decides what chat is allowed to do (points, reactions, games). You capture the Stream Rooms window in OBS and stream it.
 
@@ -210,6 +210,8 @@ The line under it, **On the big screen now:**, always says what is really showin
 1. Click **Open sender page**. It opens `http://127.0.0.1:8765/` in your browser.
 2. Click **Share a tab or window**, pick the tab (for example YouTube) and leave **Share tab audio** on.
 3. The tab shows on the big screen within a second or two. Keep the sender page open. It can sit behind other tabs, but don't minimise the whole browser window.
+
+**If the browser freezes when you press Share:** pick a single tab, not the whole screen or the Stream Rooms window. Sharing those makes the game film itself over and over, and the page warns you if you do. If the browser froze or closed before the picture got going, the sender page notices the next time you open it and switches on **safe mode**. Safe mode uses a slower but steadier way to pass the picture along, at 720p and 30 FPS at most. Press **Turn safe mode off** to go back to normal.
 
 ![The sender page](images/sr-sender-page.png)
 
