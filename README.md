@@ -315,6 +315,8 @@ and settles when it opens.
 **Lecture Hall (Panel)** is a copy of the lecture hall with four oak podiums, two each side of a
 smaller screen that hangs higher. Each podium has a picture behind it for a presenter and a brass
 reading lamp. It has no webcam monitor on the stage: your webcam uses the corner overlay.
+**Throne Hall** is a podium room too: four stone podiums on the dais either side of the screen,
+each with a candle lamp.
 
 Everything is in the **Presenters** tab:
 - **On set:** which podiums are used (1-4, numbered left to right as the audience sees them).
@@ -913,8 +915,11 @@ Create `rooms/<name>/` with:
     room a small old speaker. A room with a film look gets a **Film look** slider in the Room tab.
   - `screen_hologram` turns on the hologram screen controls in the Room tab (see Neon City).
 - Optional: a room script can add its own controls to the Room tab by overriding
-  `get_controls()` in `room.gd` (headings, sliders and colour pickers bound to AppState settings;
-  see `rooms/neon_city/neon_city_room.gd` for the Rain slider).
+  `get_controls()` in `room.gd` (headings, sliders, tick boxes and colour pickers bound to AppState
+  settings; see `rooms/neon_city/neon_city_room.gd` for the Rain slider and
+  `rooms/throne_hall/throne_hall_room.gd` for the Benches tick box). A setting that moves seats
+  only takes effect when the room loads again: list it in `reload_keys()` and the room reloads
+  when it changes.
 - Optional: `glow_materials` on the room's root node lists imported materials (by name) whose
   glow dims with the house lights, such as chandelier bulbs.
 - Optional: `material_overrides` on the room's root node swaps imported materials by name, for
@@ -1016,6 +1021,33 @@ Included rooms:
   - A big-room reverb and a faint room tone.
   - Source: `../blender/lecture_hall.blend`, built by `blender/lecture_hall_gen.py`
     (textures for the glass, doors and EXIT sign: `blender/make_hall_textures.py`).
+- **Throne Hall**: a vast dark hall, 60 m long and 30 m high, with a tall throne on a dais.
+  - A crimson runner leads down the nave between black marble columns, each with a tall banner
+    hung from a gold bracket. Two railed galleries run along each side wall behind the columns
+    (the filler crowd sits there), pale ribbed cladding towers above them, and three caged
+    lanterns with candles hang in a row from the coffered ceiling.
+  - The dais at the far end has three steps up to a tall pointed throne. A shaft of blue light
+    falls on it from a slot in the ceiling.
+    **Throne light** (Room tab) sets how strong the beam is, 0-200% (0% = off).
+  - The screen (the same size as the Lecture Hall (Panel)'s) floats in front of the throne, so
+    the throne's tall back rises behind the picture. The chat screen hangs under it and
+    the reply screen above it.
+  - A podium room: four stone podiums on the dais, two flanking the screen and two further
+    out near the steps, each with a candle lamp (see *Presenters*). No webcam frame: the webcam
+    uses the corner overlay.
+  - The chat audience stands in two lines along each edge of the carpet, like a court, facing
+    the throne. **Benches** (Room tab) puts stone benches under them: tick it and everyone sits
+    down (the room reloads to re-seat them, as changing the seat spacing does).
+  - Cameras: the carpet at the entrance (the default), beside a column, in front of the dais,
+    the left and right galleries, past a chandelier, three podium views and a Reaction camera
+    looking across the dais at the throne. Press **0** for the 10th.
+  - Reaction targets: `!tomato throne`, `chandelier`, `banner left`, `banner right`.
+  - A big stone-hall reverb and a faint cold draught.
+  - Source: `blender/throne_hall_gen.py` (run inside Blender: see the top of that file; it
+    writes the `.glb` and `crowd_seats.json`). The cloth, marble, carpet, stone and cladding
+    textures come from `blender/make_throne_textures.py`, which paints the crest picture you
+    give it onto the banner (`rooms/throne_hall/textures/crest_source.png`; swap that file and
+    run the script again for another crest).
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

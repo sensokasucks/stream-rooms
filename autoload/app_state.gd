@@ -28,6 +28,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"film_look": 1.0,            # old-film rooms: 0 = clean picture, 1 = the room's look, 2 = extra dirt
 	"sun_rays": 1.0,             # Lecture Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
+	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
+	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
 	"holo_glitch": 0.0,          # hologram screens: glitch strength
