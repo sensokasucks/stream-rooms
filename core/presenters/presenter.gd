@@ -99,9 +99,11 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.presenter_texture_changed.connect(_on_texture)
 	EventBus.presenter_look_changed.connect(_on_look)
+	EventBus.net_state_changed.connect(_on_net_state)
 
 
 func _exit_tree() -> void:
+	EventBus.net_state_changed.disconnect(_on_net_state)
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 	EventBus.presenter_texture_changed.disconnect(_on_texture)
 	EventBus.presenter_look_changed.disconnect(_on_look)
@@ -113,6 +115,13 @@ func get_picture() -> MeshInstance3D:
 
 
 # ── Settings → looks ─────────────────────────────────────────
+## EventBus.net_state_changed: who is in the session (and whose avatar is a see-through web page)
+## changed; a podium showing someone's avatar re-applies its key (see _apply_all).
+func _on_net_state(_info: Dictionary) -> void:
+	if String(_setting("source")) == "peer":
+		_apply_all()
+
+
 ## This podium's value for a presenter field ("on", "source", "zoom" ...).
 func _setting(field: String) -> Variant:
 	return AppState.get_setting(AppState.presenter_key(number, field))
@@ -136,8 +145,11 @@ func _apply_all() -> void:
 	_mat.set_shader_parameter("feed", _feed)
 	if _feed:
 		_mat.set_shader_parameter("feed_aspect", float(_feed.get_width()) / maxf(_feed.get_height(), 1.0))
-	_mat.set_shader_parameter("key_on", bool(_setting("key")))
-	_mat.set_shader_parameter("key_color", _setting("key_color"))
+	# someone's see-through web avatar comes over NetSession.AVATAR_KEY_COLOR: key that on every PC,
+	# whatever this podium's own key colour says (otherwise each PC's guess could differ)
+	var avatar_key := NetSession.avatar_key(String(_setting("peer"))) if source == "peer" else {}
+	_mat.set_shader_parameter("key_on", true if not avatar_key.is_empty() else bool(_setting("key")))
+	_mat.set_shader_parameter("key_color", avatar_key["color"] if not avatar_key.is_empty() else _setting("key_color"))
 	_mat.set_shader_parameter("similarity", float(_setting("key_similarity")))
 	_mat.set_shader_parameter("smoothness", float(_setting("key_smoothness")))
 	_mat.set_shader_parameter("spill", float(_setting("key_spill")))

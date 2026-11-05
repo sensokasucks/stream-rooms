@@ -1064,8 +1064,11 @@ func preset_plan(preset: String) -> Dictionary:
 ## Can a chatter of this platform group sit in this slot under the seating plan?
 func slot_allows(slot: int, group: String) -> bool:
 	if group.begins_with("streamer"):
+		var who := int(group.trim_prefix("streamer"))
+		if who >= _area_count:
+			return true        # (a streamer whose part was freed: NetSession AWAY_KEEP_S) their viewers sit anywhere
 		var area := _area_of_section(get_section(slot))
-		return area < 0 or area == int(group.trim_prefix("streamer"))
+		return area < 0 or area == who
 	if not _plan_on() or group == "":
 		return true
 	var id := get_section(slot)
@@ -1430,6 +1433,25 @@ func get_roster() -> Array:
 		if _slots[i] != "" and _members.has(_slots[i]):
 			out.append({"slot": i, "m": wire_member(i)})
 	return out
+
+
+## A short check of who sits where in the current room (MD5 of "room|slot:key;..."), the same on
+## the host and on a guest that mirrors it correctly. NetSession's audience check compares the
+## host's with the guest's every few seconds (AUD_CHECK_GAP) and resends the whole roster when
+## they differ. "" on a mirror that is still waiting for its room to load (a roster is pending).
+func roster_fingerprint() -> String:
+	if _mirror and not _pending_roster.is_empty():
+		return ""
+	var parts := PackedStringArray([_capacity_room])
+	for i in _slots.size():
+		if _slots[i] != "":
+			parts.append("%d:%s" % [i, _slots[i]])
+	return "|".join(parts).md5_text()
+
+
+## The room this audience's seats belong to right now (a mirror ignores seating for other rooms).
+func seats_room() -> String:
+	return _capacity_room
 
 
 ## Host: what a guest needs to draw the person in a seat ({} = empty seat).

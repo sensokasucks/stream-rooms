@@ -453,7 +453,7 @@ func _sync_presenter_feeds() -> void:
 		if bool(a.get("mine", false)):
 			mine = String(a["id"])
 	var avatar := {"kind": String(AppState.get_setting("together_avatar_source")), "device": String(AppState.get_setting("together_avatar_camera")),
-		"url": String(AppState.get_setting("together_avatar_url")), "publish": mine, "bg": "00ff00"}
+		"url": String(AppState.get_setting("together_avatar_url")), "publish": mine, "bg": NetSession.AVATAR_KEY_COLOR.to_html(false)}   # (podiums key this colour: presenter.gd)
 	# the big screen: someone's avatar instead of a shared tab
 	var screen := {"kind": "off"}
 	var screen_who := String(AppState.get_setting("screen_peer"))
@@ -551,6 +551,10 @@ func _on_react_pause_changed(paused: bool) -> void:
 		"file":
 			video_player.paused = paused
 		"capture", "ndi", "spout":
+			# co-stream: only the PC whose own tab is on everyone's big screen presses Play/Pause
+			# (the others watch that feed; a key press here would pause this PC's own music)
+			if not NetSession.owns_big_screen():
+				return
 			# The game can't confirm the browser obeyed, so report what was sent.
 			if SystemMedia.send_play_pause():
 				EventBus.status_message.emit("Sent Play/Pause to the browser.", false)

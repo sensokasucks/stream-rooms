@@ -756,6 +756,30 @@ Then:
 
 **Leave / stop hosting** ends your part (while you host with guests in, it asks first). A wrong password, or a different Stream Rooms version, is turned away with a message saying why.
 
+### Staying in sync
+
+- **Syncing.** Right after a guest is let in, the host sends everything at once: the room,
+  presenters, podium pictures, the audience, its looks and silhouette pictures. The guest's
+  Together tab shows **Syncing with *Host*** with a progress bar, and the status strip says
+  **Syncing...** until it has all arrived and the room has loaded. Then the status line says
+  **In sync with *Host*'s session**. The host's list shows "syncing 40%" next to that guest until
+  then. These messages only show on the panel, never on your stream (unless you ticked **Show
+  messages on the picture**).
+- **The audience checks itself.** While you share one audience, the host's PC sends a short check
+  of who sits where every 5 seconds. If a guest's seats differ (a lost message, a room that loaded
+  late), that guest gets the whole audience again by itself.
+- **Resync** (Together tab) is for when something still looks different on two PCs: a guest
+  asks the host for everything again, and the host sends everything to every guest again.
+- **Dropped connections.** If a guest's connection drops, their copy tries to get back in by
+  itself (8 tries over about a minute and a half). Meanwhile it keeps showing the shared audience
+  as it was, and its own chat from that time is kept (up to 100 lines) and seated once it's back.
+  The host's PC lets them straight back in without the popup when they return under the same
+  name within 10 minutes, and keeps their part of the audience (**Each streamer's viewers sit
+  together**) and their looks for them in that time. If the tries run out, the guest goes back to
+  its own audience and the status says to click **Join** again. **Leave** stops the tries.
+- **Remove** is final: a removed guest doesn't reconnect by itself, and their part of the audience
+  isn't kept.
+
 **Limits that protect the host:** at most three guests (a fourth is told the session is full).
 After five wrong passwords from one place, joining from there pauses for a minute (through the
 Cloudflare tunnel everyone counts as one place, so a real guest may have to wait that minute too).
@@ -774,7 +798,8 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 ### What's shared
 
 - **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
-- **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead.
+- **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead. The same goes for a web page only the host's PC can open (an avatar app on `localhost`, or an address on the home network). When the host picks one of those while guests are in, the message line says so, and suggests the fix: make it your **My avatar** and show it with **Someone's avatar**.
+- **Pause to react** (Space): the host's pause pauses every PC (lights up, the Reaction camera, the badge), and so does a co-host's. A guest who isn't a co-host pauses only their own PC. Only the PC whose tab is on the big screen sends the Play/Pause key to its browser, so nobody else's music stops.
 - **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture (like the boot for `!boot`) shows that same picture on every PC: the picture is sent along with the reaction the first time it's used in a session. A picture over 3 MB stays on the sender's PC, and the others see a plain emoji (like the 🍅) instead.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
@@ -878,7 +903,10 @@ The host then decides where the avatars show, and every PC follows:
 
 - **On a podium:** Presenters tab, set a podium's **Show** to **Someone's avatar (Together)** and
   pick the person under **Whose avatar** (the list is everyone in the session, you included). The
-  podium's chroma key and other picture settings apply as usual.
+  podium's chroma key and other picture settings apply as usual, with one exception: a
+  **Web page (transparent)** avatar is sent over pure green, and every PC cuts out exactly that
+  green, whatever the podium's own **Key colour** says. So a see-through avatar looks the same on
+  every stream without anyone having to match colours.
 - **On the big screen:** Source tab, **Big screen shows** lists the same people. Pick one and their
   avatar takes the big screen on every PC (at the **Avatars** quality, so choose 720p there for
   this); pick **(nobody)** to go back to your own shared tab.

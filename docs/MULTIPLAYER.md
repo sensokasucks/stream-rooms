@@ -82,6 +82,30 @@ Most shared state is already an `AppState` setting or method, so sync works by k
 - Each guest forwards its chat messages (from its own Stream Core) to the host, tagged with the channel they came from.
 - Use the seating sections to give each streamer's viewers their own area. Sections already exist (Q1–Q4 and the crowd sections), but the seating plan maps sections to *platforms* (kick / twitch / youtube / other); it would need a per-channel group added.
 
+### Staying in sync (built 2026-11, protocol 5)
+
+Sen's first two-PC test (4 Nov 2026) lost the connection several times, and the shared audience
+ended up only half in step. What `autoload/net_session.gd` ("Staying in sync") does now:
+
+- **First sync with progress.** On admit (and on Resync) the host sends `_net_sync_start(total)`,
+  then the snapshot, podium pictures, audience mode, looks with their pictures and the roster, then
+  `_net_sync_done`. RPCs are reliable and ordered, so "done" means everything arrived. The guest
+  counts the things (`_sync_got`), waits for its room to load, then sends `_net_guest_synced`. The
+  host's list shows each guest's percent (`_net_guest_sync_progress`).
+- **Audience fingerprint.** Every `AUD_CHECK_GAP` (5 s) the host sends
+  `AudienceManager.roster_fingerprint()` (MD5 of room + slot:key). A guest that differs asks for the
+  roster (`_net_aud_resync`), at most every `AUD_RESYNC_GAP`.
+- **Streamer areas by name.** `_streamer_index` used to be the guest's position in peer-id order, so
+  a reconnecting guest (new peer id) could swap areas with another. Now `_streamer_slots` keeps
+  name -> number for the session; a dropped person's number (and own looks) is kept `AWAY_KEEP_S`
+  (10 min), and `_streamer_area_count()` counts it. `AudienceManager.slot_allows` lets viewers of a
+  freed number sit anywhere.
+- **Auto-reconnect.** On an unexpected disconnect an admitted guest closes with `keep_audience`
+  (mirror and looks stay on screen), holds its chat (`_chat_held`), and retries `join(true)` on
+  `RECONNECT_DELAYS`. Both popups are skipped for the same host / same name. `remove_peer` sends
+  `_net_removed` first so a removed guest doesn't reconnect, and drops their slot.
+- Test: `_tests/test_costream_resync` (drop, self-repair, rejoin, Remove).
+
 ### Stream Core
 
 Each streamer keeps their own Stream Core, and **mostly nothing changes**. Extras are only needed for cross-channel features: chat games across all four audiences, shared points, feedback on permissions, and an optional channel tag on chat events.

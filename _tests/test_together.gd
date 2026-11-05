@@ -192,7 +192,8 @@ func _host() -> void:
 	# the guests finish after the session ends
 	await _secs(2.0)
 	NetSession.leave()
-	_check(NetSession.get_role() == "off", "stopped hosting")
+	# with guests in, the host tells them first and closes a moment later (NetSession.leave)
+	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "off", 3.0), "stopped hosting")
 	for p in ["testguest", "testbad", "testno"]:
 		var f := _out.path_join("together_%s.txt" % p)
 		await _wait_for(func() -> bool: return FileAccess.file_exists(f), 120.0)
