@@ -60,7 +60,7 @@ const READY_TIMEOUT: float = 120.0
 const CONFIRM_TIMEOUT: float = 120.0
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
-const SHARED_BASE: Array[String] = ["screen_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
+const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
 	"curtain_speed", "curtain_show_lights"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
@@ -129,6 +129,16 @@ var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
 var _live_relay: bool = false           # guest: the host wants the feed relayed (addresses hidden)
 var _live_feed_on: bool = true          # guest: the host sends its shared tab (as opposed to only avatars)
+## Whose shared tab is on everyone's big screen (setting screen_tab_peer, "" = the host's). That
+## person's sender page publishes their own shared tab; everyone else's views it. Each person has
+## their own stream name for it: the host's is _live_id, a guest's is _peers[id]["tab"] (made by
+## the host, and only ever sent out while that guest is the one sharing).
+var _live_from: int = 1                 # guest: the peer id whose tab is on the big screen (1 = host)
+var _live_from_name: String = ""        # guest: their name, for the sender page's messages
+## This PC's sender page is sharing its OWN tab right now (not someone else's feed it's showing).
+## From the sender page's status ("own"), via EventBus.capture_status_changed. A guest tells the
+## host (_net_tab_sharing) so the others know whether there's anything to watch.
+var _own_tab: bool = false
 var _host_sources: Dictionary = {}      # guest: presenter source keys -> what the host said (before any silhouette stand-in)
 var _live_quality: Dictionary = {}      # guest: the host's quality settings for the live feed and avatars
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
@@ -171,6 +181,7 @@ func _ready() -> void:
 	EventBus.file_prepare_failed.connect(_on_file_prepare_failed)
 	EventBus.file_progress.connect(_on_file_progress)
 	EventBus.source_changed.connect(_on_source_changed)
+	EventBus.capture_status_changed.connect(_on_capture_status)
 	EventBus.audience_seated.connect(_on_aud_seated)
 	EventBus.audience_left.connect(_on_aud_left)
 	EventBus.audience_spoke.connect(_on_aud_spoke)
@@ -265,7 +276,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room" or what == "screen_peer":
+	if what == "room" or what == "screen_peer" or what == "screen_tab_peer":
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"
@@ -613,7 +624,8 @@ func _maybe_admit(id: int) -> void:
 	var who := String(_pending[id]["name"])
 	_pending.erase(id)
 	EventBus.net_confirm_closed.emit(id)
-	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16)}
+	# tab: the stream name this guest's shared tab goes out under if the host puts it on the big screen
+	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16), "tab": _random_token(20), "sharing": false}
 	_net_snapshot.rpc_id(id, _snapshot())
 	if group_shared("presenters"):
 		for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -697,6 +709,8 @@ func _close(message: String, is_error: bool = false) -> void:
 	_live_id = ""
 	_live_key = ""
 	_live_on = false
+	_live_from = 1
+	_live_from_name = ""
 	_chat_out.clear()
 	_host_sources.clear()
 	_emit_live()
@@ -748,7 +762,8 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		if _role == "host":
 			_emit_live()
 			_to_guests("_net_live", [_live_info_for_guests()])
-	if (key == "together_live_feed" or key == "together_live_relay") and _role == "host":
+	# (screen_tab_peer: whose tab is on the big screen; a co-host can change it too, through the host)
+	if (key == "together_live_feed" or key == "together_live_relay" or key == "screen_tab_peer") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
 
@@ -917,6 +932,7 @@ func _net_roster(list: Array) -> void:
 		_admitted = true
 		EventBus.net_confirm_closed.emit(1)
 		_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
+		_net_tab_sharing.rpc_id(1, _own_tab)    # (in case the host puts this PC's tab on the big screen)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -1371,13 +1387,69 @@ func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
 # ── Live feed ────────────────────────────────────────────────
 ## Host: the sender page publishes its shared tab under _live_id (VDO.Ninja, peer to peer).
 ## Guests: their sender page views it and hands it to their game like their own shared tab.
+## "id" is the stream name of whoever's tab is on the big screen ("from" = their peer id, 1 = the host).
 func _live_info_for_guests() -> Dictionary:
-	var sharing := bool(AppState.get_setting("together_live_feed")) and AppState.get_source_mode() == "capture"
+	var pub := _tab_publisher()
+	var sharing := bool(AppState.get_setting("together_live_feed")) and _is_sharing(pub)
 	# the session's stream name and key always go along (the avatars use the key too); "live" says
 	# whether the big screen is being shared right now
-	return {"id": _live_id, "key": _live_key, "live": sharing and bool(AppState.get_setting("together_live_feed")),
+	return {"id": _tab_token(pub), "key": _live_key, "live": sharing,
+		"from": pub, "from_name": _peer_name(pub),
 		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": bool(AppState.get_setting("together_live_relay")),
 		"quality": _quality()}
+
+
+## Host: the peer id whose shared tab is on the big screen: the guest named in screen_tab_peer
+## (set in the Together tab), or 1 (the host) when it's "" or that person isn't in the session.
+func _tab_publisher() -> int:
+	var want := String(AppState.get_setting("screen_tab_peer"))
+	if want == "":
+		return 1
+	for id: int in _peers:
+		if id != 1 and String(_peers[id]["name"]) == want:
+			return id
+	return 1
+
+
+## Host: the stream name a person's shared tab goes out under (the host's own is _live_id).
+func _tab_token(id: int) -> String:
+	if id == 1 or not _peers.has(id):
+		return _live_id
+	return String(_peers[id].get("tab", ""))
+
+
+## Host: is this person sharing their own tab in their sender page right now?
+func _is_sharing(id: int) -> bool:
+	if id == 1:
+		return _own_tab
+	return _peers.has(id) and bool(_peers[id].get("sharing", false))
+
+
+## The sender page's status (ScreenFeed passes it on): notices when this PC starts / stops sharing
+## its own tab. "own" is missing from an old cached sender page: then any share counts.
+func _on_capture_status(info: Dictionary) -> void:
+	var own := bool(info.get("connected", false)) and bool(info.get("own", info.get("capturing", false)))
+	if own == _own_tab:
+		return
+	_own_tab = own
+	if _role == "host":
+		_emit_live()
+		_to_guests("_net_live", [_live_info_for_guests()])
+	elif _role == "guest" and _admitted:
+		_net_tab_sharing.rpc_id(1, own)
+
+
+## Guest -> host: this guest started / stopped sharing its own tab. Matters while the host has put
+## that guest's tab on the big screen (the others then start or stop watching it).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_tab_sharing(on: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	_peers[id]["sharing"] = on
+	if _tab_publisher() == id:
+		_emit_live()
+		_to_guests("_net_live", [_live_info_for_guests()])
 
 
 ## Guest: the host's live-feed info changed (see _live_info_for_guests).
@@ -1399,6 +1471,8 @@ func _apply_live(info: Dictionary) -> void:
 	_live_on = id != "" and bool(info.get("live", false))
 	_live_relay = bool(info.get("relay", false))
 	_live_feed_on = bool(info.get("feed_on", true))
+	_live_from = int(info.get("from", 1)) if info.get("from") is int else 1
+	_live_from_name = _clean_name(String(info.get("from_name", "")))
 	_live_quality = info.get("quality", {}) if info.get("quality") is Dictionary else {}
 	_refresh_sources()
 	_emit_live()
@@ -1407,12 +1481,26 @@ func _apply_live(info: Dictionary) -> void:
 
 ## Tells ScreenFeed (and through it the sender page) what to do with VDO.Ninja: publish (host),
 ## view (guest) or nothing. Format in EventBus.live_feed_changed.
+## Whoever's tab is on the big screen publishes; everyone else views it. "auto": the sender page
+## starts watching without a "Watch" click (the host picked the guest's tab, so the host's page
+## follows; a guest's page waits for its first click, then keeps following every switch).
+## "from_name": whose tab it is ("" = the host's), for the page's messages.
 func _emit_live() -> void:
 	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
-		info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": bool(AppState.get_setting("together_live_relay"))}
+		var pub := _tab_publisher()
+		var relay := bool(AppState.get_setting("together_live_relay"))
+		if pub == 1:
+			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": relay}
+		else:
+			info = {"role": "view", "id": _tab_token(pub), "key": _live_key, "live": _is_sharing(pub), "relay": relay,
+				"from_name": _peer_name(pub), "auto": true}
 	elif _role == "guest" and _live_id != "" and _live_feed_on:
-		info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay}
+		if _live_from == multiplayer.get_unique_id():
+			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": _live_relay}
+		else:
+			info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay,
+				"from_name": "" if _live_from == 1 else _live_from_name}
 	# the session key, the quality and the podium list go along even when the big screen isn't shared
 	# (the avatars use them)
 	if _role != "off":
@@ -1463,9 +1551,17 @@ func _refresh_sources() -> void:
 			_set_local(key, want)
 
 
-## Guest: the host is sharing a tab that this PC can watch.
+## Guest: the host (or the guest whose tab the host put on the big screen) is sharing a tab that
+## this PC can watch. False while it's this PC's own tab that everyone is watching.
 func is_host_live() -> bool:
-	return _role == "guest" and _live_on
+	return _role == "guest" and _live_on and _live_from != multiplayer.get_unique_id()
+
+
+## Guest: whose tab is on the big screen: "" for the host's, "me" for this PC's own, else a name.
+func live_from() -> String:
+	if _role != "guest" or _live_from == 1:
+		return ""
+	return "me" if _live_from == multiplayer.get_unique_id() else _live_from_name
 
 
 ## n random letters and digits (look-alikes like 0/O and 1/l left out), from a secure random source.
@@ -1756,6 +1852,7 @@ func _send_roster() -> void:
 	_to_guests("_net_roster", [list])
 	_emit_state()
 	_emit_live()            # (the podium list changed)
+	_to_guests("_net_live", [_live_info_for_guests()])   # (the person sharing the big screen may have left)
 
 
 ## Host: call an RPC on every connected guest.
