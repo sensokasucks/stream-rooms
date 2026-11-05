@@ -338,6 +338,23 @@ it:
 
 A plain left click does nothing, so it never fires while you move the camera.
 
+## Run the room from Stream Core's Live page
+
+While Stream Rooms is connected to Stream Core, Core's **Live** page shows a **Stream Rooms** card
+(it is hidden the rest of the time). From there, or from the dashboard on your phone, you can:
+
+- see what the big screen shows and whether the sender page is sharing (with its frame rate and
+  whether it has sound),
+- press **Pause to react**, **Focus view**, **Clean feed** and **Play / pause video** (a lit button
+  is on),
+- open or close the curtain (**Reveal**, **Close**, **Open**),
+- change the **Room**, jump to a camera view (the same list as your number keys),
+- move the **Stream sound** and **Room sound** sliders,
+- put presenters on or off set (podium rooms), and in a co-stream see who has the big screen remote,
+  take it back (host) or ask for it (guest).
+
+Every button does exactly what the same control in the game does, so co-stream rules still apply.
+
 ## The Esc menu
 Press **Esc** in the room for the game menu. It opens in its own window, so an OBS Window Capture
 of the room never shows it. **Esc** or **Resume** goes back.

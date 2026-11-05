@@ -459,6 +459,11 @@ func toggle_focus_view() -> void:
 	EventBus.focus_view_changed.emit(_focus_view)
 
 
+## Focus view on (the big screen fills the picture)? Core's Live card shows it (core/rooms_remote.gd).
+func is_focus_view() -> bool:
+	return _focus_view
+
+
 func is_clean_feed() -> bool:
 	return _clean_feed
 

@@ -6,7 +6,8 @@ extends Node
 ## It also carries the chat-reactions link: Core's "reaction" packets go out as
 ## EventBus.reaction_received, and Reactions talks back through send_message().
 ## Core's "audience_looks" packets (bubble and silhouette looks from its dashboard) go to the
-## CoreLooks child (core/audience/core_looks.gd), which turns them into settings.
+## CoreLooks child (core/audience/core_looks.gd), which turns them into settings. The RoomsRemote
+## child (core/rooms_remote.gd) feeds Core's Live page "Stream Rooms" card and runs its buttons.
 
 ## Chat messages handled per frame at most (and only for this long): the rest wait a frame.
 const MAX_PACKETS_PER_FRAME: int = 40
@@ -44,6 +45,7 @@ var _error: String = ""
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _boards: Dictionary = {}      # board id -> latest board from Stream Core (chat games)
 var _looks: CoreLooks             # audience looks edited in Core's dashboard ("audience_looks" packets)
+var _remote: RoomsRemote          # Core's Live page "Stream Rooms" card: state out, commands in
 
 
 func _ready() -> void:
@@ -51,6 +53,9 @@ func _ready() -> void:
 	_looks = CoreLooks.new()
 	_looks.name = "CoreLooks"
 	add_child(_looks)
+	_remote = RoomsRemote.new()
+	_remote.name = "RoomsRemote"
+	add_child(_remote)
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
@@ -230,8 +235,11 @@ func _handle(text: String) -> void:
 						EventBus.board_changed.emit(b2 as Dictionary)
 		"stage":
 			# Stream Core's !curtain / admin button: {action: "curtain", value: open|close|reveal|toggle}
+			# Every other action comes from Core's Live page "Stream Rooms" card (core/rooms_remote.gd).
 			var st: Variant = (msg as Dictionary).get("data")
-			if st is Dictionary and String((st as Dictionary).get("action", "")) == "curtain":
+			if st is Dictionary and String((st as Dictionary).get("action", "")) != "curtain":
+				_remote.run_command(String((st as Dictionary).get("action", "")), (st as Dictionary).get("value", ""))
+			elif st is Dictionary:
 				match String((st as Dictionary).get("value", "")):
 					"open":
 						AppState.set_curtain(false)
@@ -429,3 +437,8 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		else:
 			_close()
 			_set_status(false, "Off")
+
+
+## The RoomsRemote child (Core's Live page "Stream Rooms" card); tests read its state through it.
+func get_remote() -> RoomsRemote:
+	return _remote
