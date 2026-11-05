@@ -251,7 +251,8 @@ func get_seat_row(slot: int) -> int:
 	return _seat_row[slot] if slot >= 0 and slot < _seat_row.size() else -1
 
 
-## {name, color, style, avatar} for the person in a seat, or {} if it's empty.
+## {name, color, style, avatar, title, platform, roles, streamer} for the person in a seat, or {} if
+## it's empty ("streamer": whose chat they came from in a Together session, 0 = the host or this PC).
 ## avatar is "" when pictures are off, hidden for this person, or unknown.
 func get_seat_member(slot: int) -> Dictionary:
 	if slot < 0 or slot >= _slots.size() or _slots[slot] == "":
@@ -262,7 +263,7 @@ func get_seat_member(slot: int) -> Dictionary:
 		avatar = ""
 	return {"name": m["name"], "color": m["color"], "style": m["style"], "avatar": avatar,
 		"title": String(m.get("title", "")), "platform": String(m.get("platform", "other")),
-		"roles": String(m.get("roles", ""))}
+		"roles": String(m.get("roles", "")), "streamer": int(m.get("streamer", 0))}
 
 
 ## A chat message's roles as "mod,vip,sub" (any of them, in that order; "" for none), from
@@ -1439,7 +1440,7 @@ func wire_member(slot: int) -> Dictionary:
 	return {"key": String(m["key"]), "name": String(m["name"]), "username": String(m.get("username", "")),
 		"platform": String(m.get("platform", "other")), "hex": String(m.get("hex", "")), "style": int(m["style"]),
 		"color": m["color"], "avatar": _web_avatar(m), "title": String(m.get("title", "")),
-		"roles": String(m.get("roles", ""))}
+		"roles": String(m.get("roles", "")), "streamer": int(m.get("streamer", 0))}
 
 
 ## Mirror: the host's whole roster for a room (it waits if this PC hasn't loaded that room yet).
@@ -1547,5 +1548,8 @@ func _apply_wire(m: Dictionary, wm: Dictionary) -> void:
 	var avatar := String(wm.get("avatar", ""))
 	m["avatar"] = avatar.left(500) if avatar.begins_with("https://") else ""
 	m["title"] = String(wm.get("title", "")).left(40)
+	# whose chat they came from (0 = the host): AudienceStyle draws them in that streamer's looks
+	# when "Viewers keep their streamer's looks" is on
+	m["streamer"] = clampi(int(wm.get("streamer", 0)), 0, 8)
 	m["roles"] = roles_of({"is_mod": String(wm.get("roles", "")).contains("mod"),
 		"is_vip": String(wm.get("roles", "")).contains("vip"), "is_subscriber": String(wm.get("roles", "")).contains("sub")})

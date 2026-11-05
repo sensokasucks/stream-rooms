@@ -785,6 +785,12 @@ seats, with the same speech bubbles:
 - Everyone sees the host's **audience looks** too (the speech bubbles, silhouettes and group
   looks from the host's Stream Core), with the host's own silhouette pictures: they're sent to
   each guest's PC. A guest's own looks aren't changed, and come back when they leave.
+- **Viewers keep their streamer's looks** (host) mixes the looks instead: each chatter shows in
+  the bubbles and silhouettes of the streamer whose chat they came from, as set on that
+  streamer's own Stream Core (Audience looks page, custom pictures included). For example, if
+  you make your audience blue and your guest makes theirs red, the room fills with a mix of blue
+  and red chatters, and you can see whose stream each one came from. Every PC shows the same mix.
+  Untick it and everyone shows in the host's looks again.
 - When a guest leaves, their copy goes back to its own audience.
 
 Untick it and each of you has your own audience again.

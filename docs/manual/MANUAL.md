@@ -518,7 +518,7 @@ Every guest draws the whole room while streaming. When a guest joins on High or 
 
 ### One audience for everyone's chat
 
-With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat.
+With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat. **Viewers keep their streamer's looks** (host) shows each chatter in the looks (bubbles and silhouettes) of the streamer whose chat they came from: if your audience is blue and your guest's is red, the room shows a mix of blue and red chatters. Off, everyone shows in the host's looks.
 
 ### Watching a video together
 

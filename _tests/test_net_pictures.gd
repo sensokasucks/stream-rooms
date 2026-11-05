@@ -70,6 +70,7 @@ func _remote_key() -> String:
 func _ready() -> void:
 	NetSession.auto_confirm = true      # (no "let them in" popups in a test)
 	_out = OS.get_cmdline_user_args()[0]
+	DirAccess.make_dir_recursive_absolute(_out)      # (the guest writes its results file here)
 	EventBus.reaction_play.connect(func(d: Dictionary) -> void:
 		if bool(d.get("net_remote", false)):
 			_remote.append(d))
