@@ -57,8 +57,16 @@ signal ducking_changed(ducking: bool)
 signal room_requested(room_id: String)
 ## RoomHost: the new room is loaded and set up (audience, reactions, camera presets).
 signal room_changed(room_id: String)
-## RoomHost: the current room's camera preset names, in order (the first is key 1).
+## CameraRig: the current room's visible camera view names, in key order (the first is key 1).
 signal camera_presets_changed(names: PackedStringArray)
+## CameraRig: every camera view of the current room in its saved order, hidden ones too:
+## [{id, name, hidden, saved, key}] (key 1-10 for the visible ones, 0 = no key). See CameraRig "Saved views".
+signal camera_views_changed(views: Array)
+## Hotkeys / panel / Core -> CameraRig: go to the n-th visible view (0 = key 1, 9 = key 0).
+signal camera_key_requested(n: int)
+## Panel / Core -> CameraRig: change the saved views. action: "save" (arg = name), "update",
+## "rename" (arg = name), "up", "down", "hide", "show", "delete" (saved views only), "go".
+signal camera_view_action(action: String, id: String, arg: String)
 ## Room-specific controls for the Room tab: an Array of Dictionaries (see Room.get_controls()).
 signal room_controls_changed(controls: Array)
 

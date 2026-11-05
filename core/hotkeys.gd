@@ -85,9 +85,9 @@ func _handle(keycode: Key) -> bool:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN)
 		_:
 			if keycode >= KEY_1 and keycode <= KEY_9:
-				EventBus.camera_preset_requested.emit(int(keycode - KEY_1))
+				EventBus.camera_key_requested.emit(int(keycode - KEY_1))     # (the visible views, in their order)
 			elif keycode == KEY_0:
-				EventBus.camera_preset_requested.emit(9)
+				EventBus.camera_key_requested.emit(9)
 			else:
 				return false
 	return true

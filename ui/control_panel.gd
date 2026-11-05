@@ -33,6 +33,7 @@ var _capture_label: Label
 var _capture_url: String = ""
 var _room_select: OptionButton
 var _camera_box: HFlowContainer
+var _views_box: VBoxContainer             # Room tab > Advanced > Camera views: one row per view (CameraRig "Saved views")
 var _react_btn: Button
 var _mic_bar: ProgressBar
 var _duck_label: Label
@@ -140,7 +141,7 @@ func _ready() -> void:
 	_spout_available = SpoutReceiver.is_available()
 	_build()
 	EventBus.capture_status_changed.connect(_on_capture_status)
-	EventBus.camera_presets_changed.connect(_on_camera_presets)
+	EventBus.camera_views_changed.connect(_on_camera_views)
 	EventBus.room_changed.connect(_on_room_changed)
 	EventBus.room_controls_changed.connect(_on_room_controls)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
@@ -669,7 +670,7 @@ func _show_source_section(mode: String) -> void:
 	_fit_height.call_deferred()
 
 
-## Room tab: room picker, house lights, curtain, camera buttons (filled by _on_camera_presets) and
+## Room tab: room picker, house lights, curtain, camera buttons (filled by _on_camera_views) and
 ## field of view. Advanced: curtain options, screen light / glow, this room's own controls (_room_box,
 ## filled by _on_room_controls), see-through cameras and performance.
 func _build_room_tab() -> Control:
@@ -689,6 +690,21 @@ func _build_room_tab() -> Control:
 	v.add_child(_heading("Cameras (keys 1-9, 0 = 10th)"))
 	_camera_box = HFlowContainer.new()
 	v.add_child(_camera_box)
+	var save_row := HBoxContainer.new()
+	v.add_child(save_row)
+	var view_name := LineEdit.new()
+	view_name.placeholder_text = "Name for this view"
+	view_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	view_name.tooltip_text = "A name for the view you're about to save (blank = My view 1, 2 ...)."
+	save_row.add_child(view_name)
+	var save_view := func() -> void:
+		EventBus.camera_view_action.emit("save", "", view_name.text)
+		view_name.clear()
+	view_name.text_submitted.connect(func(_t: String) -> void: save_view.call())
+	save_row.add_child(_tip(_button("Save this view", save_view),
+		"Keep where the camera is now (and its zoom) as a camera of this room, with its own button and number key. Fly there first: hold the right mouse button and use WASD."))
+	v.add_child(_tip(_slider("camera_glide", "Glide time", 0.0, 3.0, 0.1, "%.1f s"),
+		"How long the camera takes to glide to another view. 0 cuts straight to it."))
 	v.add_child(_tip(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"),
 		"How wide the camera sees. Lower zooms in, higher shows more of the room."))
 	# set-up-once settings: curtain options, this room's own looks, the camera's see-through, performance
@@ -702,6 +718,10 @@ func _build_room_tab() -> Control:
 	_room_box = VBoxContainer.new()
 	_room_box.add_theme_constant_override("separation", 6)
 	adv.add_child(_room_box)
+	adv.add_child(_heading("Camera views"))
+	adv.add_child(_hint("Rename, reorder (the number keys follow the order), hide or update this room's views. A room's own cameras can be hidden but not deleted."))
+	_views_box = VBoxContainer.new()
+	adv.add_child(_views_box)
 	adv.add_child(_heading("Camera"))
 	adv.add_child(_tip(_check("camera_see_through", "See into the room from outside (instead of black)"),
 		"When a camera is outside the room's walls, show the room through them instead of a black picture."))
@@ -2476,14 +2496,49 @@ func _on_capture_status(info: Dictionary) -> void:
 	_capture_label.text = text
 
 
-## EventBus.camera_presets_changed: one button per camera of this room (keys 1-9, 0 = the 10th).
-func _on_camera_presets(names: PackedStringArray) -> void:
+## EventBus.camera_views_changed (CameraRig "Saved views"): a button per visible view of this room
+## (keys 1-9, 0 = the 10th), and under Advanced a row per view to rename, move, hide, update or delete.
+func _on_camera_views(views: Array) -> void:
 	for c in _camera_box.get_children():
 		c.queue_free()
-	for i in names.size():
-		var idx := i
-		_camera_box.add_child(_tip(_button("%d  %s" % [i + 1, names[i]], func() -> void:
-			EventBus.camera_preset_requested.emit(idx)), "Switch to this camera (key %d)." % ((i + 1) % 10)))
+	for vw: Dictionary in views:
+		if bool(vw["hidden"]):
+			continue
+		var id := String(vw["id"])
+		var key := int(vw["key"])
+		var label := ("%d  %s" % [key % 10, String(vw["name"])]) if key > 0 else String(vw["name"])
+		_camera_box.add_child(_tip(_button(label, func() -> void: EventBus.camera_view_action.emit("go", id, "")),
+			"Switch to this camera (key %d)." % (key % 10) if key > 0 else "Switch to this camera."))
+	if _views_box == null:
+		return
+	for c in _views_box.get_children():
+		c.queue_free()
+	for vw: Dictionary in views:
+		var id := String(vw["id"])
+		var row := HBoxContainer.new()
+		_views_box.add_child(row)
+		var nm := LineEdit.new()
+		nm.text = String(vw["name"])
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nm.tooltip_text = "This view's name. Type a new one and press Enter."
+		nm.text_submitted.connect(func(t: String) -> void: EventBus.camera_view_action.emit("rename", id, t))
+		row.add_child(nm)
+		row.add_child(_tip(_button("▲", func() -> void: EventBus.camera_view_action.emit("up", id, "")), "Move this view up (it gets the number key before)."))
+		row.add_child(_tip(_button("▼", func() -> void: EventBus.camera_view_action.emit("down", id, "")), "Move this view down."))
+		var shown := CheckBox.new()
+		shown.text = "Shown"
+		shown.button_pressed = not bool(vw["hidden"])
+		shown.tooltip_text = "Untick to hide this view: no button and no number key (it's kept here)."
+		shown.toggled.connect(func(on: bool) -> void: EventBus.camera_view_action.emit("show" if on else "hide", id, ""))
+		row.add_child(shown)
+		if bool(vw["saved"]):
+			row.add_child(_tip(_button("Update", func() -> void: EventBus.camera_view_action.emit("update", id, "")),
+				"Move this saved view to where the camera is now."))
+			var vname := String(vw["name"])
+			row.add_child(_tip(_button("Delete", func() -> void:
+				_ask("Delete this view?", "The saved view \"%s\" is removed from this room." % vname, "Delete",
+					func() -> void: EventBus.camera_view_action.emit("delete", id, ""))),
+				"Remove this saved view (asks first)."))
 
 
 ## EventBus.room_changed: point the room dropdown at the room now loaded (PgUp / PgDn, the host).

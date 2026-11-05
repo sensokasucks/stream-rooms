@@ -238,12 +238,9 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 	_room.add_child(reactions)
 	reactions.setup(_room, audience, presenters, _room.presenter_size)
 
-	# tell the rest of the app (control panel: camera list, Room tab controls, room picker)
-	var labels := PackedStringArray()
-	for m in _room.get_camera_markers():
-		labels.append(_room.get_camera_label(m))
+	# tell the rest of the app (Room tab controls, room picker). The camera list comes from CameraRig
+	# (main.gd hands it the markers on room_ready), which adds the streamer's saved views.
 	room_ready.emit(_room, info)
-	EventBus.camera_presets_changed.emit(labels)
 	EventBus.room_controls_changed.emit(_room.get_controls() + _screen_controls(info))
 	EventBus.room_changed.emit(info.id)
 

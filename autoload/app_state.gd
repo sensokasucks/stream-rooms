@@ -197,6 +197,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"curtain_speed": 1.0,        # open / close speed multiplier
 	"curtain_sound": 0.8,        # swish / drum roll volume (0 = silent)
 	"curtain_show_lights": true, # the reveal dims the house lights and uses a spotlight
+	"camera_views": "",          # JSON {room id: {order: [view ids], hidden: [ids], names: {id: name}, saved: {id: {o: 12 floats, fov}}}} (CameraRig "Saved views")
+	"camera_glide": 0.9,         # seconds a move between camera views takes (0 = cut straight to it)
 	"camera_fov": 65.0,          # camera field of view in degrees (mouse wheel while right-dragging changes it too)
 	"camera_see_through": true,  # outside the room, see in through the walls instead of hitting black
 	# Control panel in its own window (F9), so it never shows up in a window capture

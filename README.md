@@ -112,7 +112,7 @@ broken video in the cache.
 |---|---|
 | **Space** | Pause to react. Pauses a file directly. For a browser tab it sends the Windows Play/Pause media key. Lights come up, the camera moves to the room's *Reaction* camera, and a badge shows. |
 | **F** | Focus view: the video flat and full-frame, so viewers can read it. |
-| **1-9, 0** | Camera presets (smooth moves). **0** is the 10th preset. |
+| **1-9, 0** | Camera views (smooth moves), in the order of the Room tab's camera buttons. **0** is the 10th. |
 | **PgUp / PgDn** | Previous / next room. |
 | **F10** | Clean feed: hides all UI (the webcam overlay stays). |
 | **Tab** | Show/hide the control panel. |
@@ -133,6 +133,15 @@ right-dragging. **See into the room from outside** (Room tab ▸ Advanced, on by
 through a wall and the wall (and anything else between you and the room) is cut away instead of
 the view going black. It kicks in when none of the room's camera markers can see the camera; the
 walls get collision shapes for this (only these rays use them).
+
+**Saved camera views:** fly the camera somewhere you like, type a name next to **Save this view**
+(Room tab, under the camera buttons) and press it. The view gets its own button and number key in
+this room, and keeps its zoom. **Glide time** sets how long the camera takes to glide between views
+(0 cuts straight there). Room tab ▸ Advanced ▸ **Camera views** lists every view of the room: type
+a new name and press Enter to rename it, **▲ / ▼** change the order (the number keys follow it),
+untick **Shown** to hide one (no button, no key), **Update** moves a saved view to where the camera is
+now, and **Delete** removes a saved view (it asks first). The room's own cameras can be renamed,
+moved and hidden, never deleted. Each room keeps its own views.
 
 **Big screen light:** Room tab ▸ Advanced → **Screen light** (how much light the big screen
 throws into the room) and **Screen glow** (how bright the picture itself glows). They used to be
