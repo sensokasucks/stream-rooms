@@ -14,10 +14,10 @@ set -u
 ENGINE="${1:?usage: tools/ci_tests.sh <engine executable> [test names...]}"
 ENGINE="$(realpath "$ENGINE")"
 shift
-# Fast tests that are reliable without a GPU (about 1.5 minutes together on a GitHub machine).
+# Fast tests that are reliable without a GPU (about 2 minutes together on a GitHub machine).
 TESTS=("$@")
 if [ ${#TESTS[@]} -eq 0 ]; then
-	TESTS=(test_odd_text test_emote_urls test_together_limits test_capture_key test_status_line test_panel_tidy)
+	TESTS=(test_odd_text test_emote_urls test_together_limits test_capture_key test_status_line test_panel_tidy test_podium_room_change)
 fi
 TIME_LIMIT="${TIME_LIMIT:-240}"   # seconds per test before it is stopped
 OUT="${OUT:-/tmp/sr_tests}"       # logs and screenshots, outside the project folder
