@@ -25,6 +25,7 @@ driver/enable_input=true
 
 EventBus="*res://autoload/event_bus.gd"
 AppState="*res://autoload/app_state.gd"
+DebugLog="*res://autoload/debug_log.gd"
 RoomCatalog="*res://autoload/room_catalog.gd"
 SaveManager="*res://autoload/save_manager.gd"
 AudioManager="*res://autoload/audio_manager.gd"
