@@ -518,7 +518,7 @@ Every guest draws the whole room while streaming. When a guest joins on High or 
 
 ### One audience for everyone's chat
 
-With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat.
+With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat. **Viewers keep their streamer's looks** (host) shows each chatter in the looks (bubbles and silhouettes) of the streamer whose chat they came from: if your audience is blue and your guest's is red, the room shows a mix of blue and red chatters. Off, everyone shows in the host's looks.
 
 ### Watching a video together
 
@@ -526,7 +526,9 @@ When the host plays a **web link** in **File or URL**, everyone watches it in sy
 
 ### The host's live tab
 
-With **Send my shared tab to the guests** ticked (host), the tab shared in the host's sender page also goes to the guests' big screens with its sound, through VDO.Ninja, straight from browser to browser (about 0.2 to 1 second behind). Guests open their own sender page (the **Open sender page** button in the Together tab) and click **Watch the host's live feed**. **Relay the live feed (hide addresses)** sends it through VDO.Ninja's relay servers instead, so the browsers don't see each other's addresses.
+With **Send my shared tab to the guests** ticked (host), the tab shared in the host's sender page also goes to the guests' big screens with its sound, through VDO.Ninja, straight from browser to browser (about 0.2 to 1 second behind). Guests open their own sender page (the **Open sender page** button in the Together tab) and click **Watch the host's live feed**.
+
+To put a **guest's** tab on everyone's big screen instead, the host picks that person in **Big screen tab** (Together tab). The guest shares a tab in their own sender page as usual, and everyone else sees it with its sound. Pick **The host's tab** to switch back. You can switch any time: each person's own shared tab keeps running in the background, so it comes straight back without picking it again. A guest who clicked **Watch** once follows every switch by itself. **Relay the live feed (hide addresses)** sends it through VDO.Ninja's relay servers instead, so the browsers don't see each other's addresses.
 
 ### Avatars on podiums and the big screen
 

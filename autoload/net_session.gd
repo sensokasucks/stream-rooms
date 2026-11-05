@@ -23,13 +23,15 @@ extends Node
 ##
 ## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
 ## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
-## room, curtain), Podium pictures, Synced video, Shared audience, Live feed (VDO.Ninja), Reactions,
-## Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
+## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Each streamer's own looks, Live feed
+## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
 ## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
 ## Network protocol number, checked in the password step along with the app version. Raise it when
 ## the RPCs change in a way older copies can't follow.
-const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
+## 2: guests send chat in batches (_net_guest_chat_batch); 3: reaction pictures and audience looks travel;
+## 4: guests send their own looks and the host sends each streamer's (_net_guest_looks, _net_streamer_looks).
+const PROTOCOL: int = 4
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -60,7 +62,7 @@ const READY_TIMEOUT: float = 120.0
 const CONFIRM_TIMEOUT: float = 120.0
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
-const SHARED_BASE: Array[String] = ["screen_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
+const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
 	"curtain_speed", "curtain_show_lights"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
@@ -76,11 +78,24 @@ const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]
 const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
 ## Curtain styles accepted from the network (same as EventBus.curtain_changed's style).
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
+## Sender of a reaction with a picture from its own Stream Core: seconds the reaction waits for the
+## picture's first download to finish (it goes to the others along with the reaction). After that
+## it goes without, and the other PCs show its emoji / word.
+const REACTION_PICTURE_WAIT: float = 5.0
+## Longest audience-looks setting accepted from the host, in characters (each is JSON text).
+const LOOKS_MAX_CHARS: int = 200000
+## Guest: where this PC keeps its copies of the host's silhouette pictures (AudienceStyle only takes
+## pictures inside its PICTURE_DIR, user://silhouettes/): NET_LOOK_FILE % md5, plus a "_shape" copy.
+const NET_LOOK_FILE: String = "user://silhouettes/net_%s.png"
 
 # Session state below. Most of it only means something for one role; the comment says which.
+## Host: each guest's own audience looks (peer id -> looks as _looks_from_wire makes them), for
+## "Viewers keep their streamer's looks" (see "Each streamer's own looks").
+var _guest_looks: Dictionary = {}
 var _shared: Dictionary = {}            # setting key -> true
 var _host_shares: Dictionary = {}       # guest: group -> bool, as the host last said (empty = all)
 var _role: String = "off"               # "off" | "host" | "guest"
+var _session_ms: int = 0                # Time.get_ticks_msec() when hosting / joining started (for DebugLog lines)
 var _status: String = ""
 var _error: bool = false
 var _address: String = ""               # host: what guests type in; guest: where it connected
@@ -129,10 +144,26 @@ var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
 var _live_relay: bool = false           # guest: the host wants the feed relayed (addresses hidden)
 var _live_feed_on: bool = true          # guest: the host sends its shared tab (as opposed to only avatars)
+## Whose shared tab is on everyone's big screen (setting screen_tab_peer, "" = the host's). That
+## person's sender page publishes their own shared tab; everyone else's views it. Each person has
+## their own stream name for it: the host's is _live_id, a guest's is _peers[id]["tab"] (made by
+## the host, and only ever sent out while that guest is the one sharing).
+var _live_from: int = 1                 # guest: the peer id whose tab is on the big screen (1 = host)
+var _live_from_name: String = ""        # guest: their name, for the sender page's messages
+## This PC's sender page is sharing its OWN tab right now (not someone else's feed it's showing).
+## From the sender page's status ("own"), via EventBus.capture_status_changed. A guest tells the
+## host (_net_tab_sharing) so the others know whether there's anything to watch.
+var _own_tab: bool = false
 var _host_sources: Dictionary = {}      # guest: presenter source keys -> what the host said (before any silhouette stand-in)
 var _live_quality: Dictionary = {}      # guest: the host's quality settings for the live feed and avatars
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
 var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
+## Pictures already sent, so each goes over once per session. Host: peer id -> {key: true}, where key
+## is a reaction picture's "net:<md5>" or "look:" + a silhouette picture's; guest: {key: true} sent to the host.
+var _pic_sent: Dictionary = {}
+## Sender: reactions waiting for their picture's first download (see REACTION_PICTURE_WAIT):
+## picture address -> {"list": [reaction Dictionaries], "wait": seconds left}.
+var _pic_waiting: Dictionary = {}
 # host: last synced-video id handed out (each new video gets the next number)
 var _video_count: int = 0
 ## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
@@ -167,10 +198,12 @@ func _ready() -> void:
 	EventBus.room_requested.connect(_on_room_requested)
 	EventBus.curtain_changed.connect(_on_curtain_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
+	EventBus.emote_ready.connect(_on_emote_ready)
 	EventBus.file_prepared.connect(_on_file_prepared)
 	EventBus.file_prepare_failed.connect(_on_file_prepare_failed)
 	EventBus.file_progress.connect(_on_file_progress)
 	EventBus.source_changed.connect(_on_source_changed)
+	EventBus.capture_status_changed.connect(_on_capture_status)
 	EventBus.audience_seated.connect(_on_aud_seated)
 	EventBus.audience_left.connect(_on_aud_left)
 	EventBus.audience_spoke.connect(_on_aud_spoke)
@@ -206,6 +239,7 @@ func _process(delta: float) -> void:
 		if _roster_wait < 0.0:
 			_send_roster_to_guests()
 	_pending_timeout(delta)
+	_reaction_picture_timeout(delta)
 	_cam_wait -= delta
 	if _cam_wait > 0.0:
 		return
@@ -265,7 +299,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room" or what == "screen_peer":
+	if what == "room" or what == "screen_peer" or what == "screen_tab_peer":
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"
@@ -326,6 +360,8 @@ func host() -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "host"
+	_session_ms = Time.get_ticks_msec()
+	DebugLog.note("net", "hosting: listen on %s, port %d, %s, version %s" % [bind, port, "Tailscale found" if ts != "" else "no Tailscale", _version()])
 	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16)}}
 	_cams.clear()
 	_video.clear()
@@ -367,6 +403,8 @@ func join() -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "guest"
+	_session_ms = Time.get_ticks_msec()
+	DebugLog.note("net", "joining %s, version %s" % [url, _version()])   # (DebugLog hides the address)
 	_peers.clear()
 	_refused = ""
 	_rtt = 0.0
@@ -521,6 +559,7 @@ func _on_hello(id: int, d: Dictionary) -> void:
 		if why == "Wrong session password.":
 			_note_wrong(_peer_address(id))
 		_sm().send_auth(id, var_to_bytes({"t": "refused", "reason": why}))
+		DebugLog.note("net", "refused peer #%d from %s: %s (their version %s)" % [id, _peer_address(id), why, String(d.get("version", "?"))])
 		EventBus.status_message.emit("Refused someone joining: " + why, true)
 		# a moment for the reason to arrive before the connection closes
 		get_tree().create_timer(0.5).timeout.connect(func() -> void:
@@ -585,6 +624,7 @@ func _on_host_auth(d: Dictionary) -> void:
 
 
 func _on_auth_failed(id: int) -> void:
+	DebugLog.note("net", "password step failed for peer #%d (%s)" % [id, _role])
 	_nonces.erase(id)
 	if _role == "guest" and id == 1:
 		# deferred: closing the connection inside Redot's own network callback crashes it
@@ -595,6 +635,7 @@ func _on_auth_failed(id: int) -> void:
 func _on_peer_connected(id: int) -> void:
 	if _role != "host":
 		return
+	DebugLog.note("net", "peer #%d connected from %s, waiting for both OKs" % [id, _peer_address(id)])
 	var n := String(_hello_names.get(id, "Guest"))
 	_hello_names.erase(id)
 	# the password was right; now both people confirm before anything is shared
@@ -613,7 +654,8 @@ func _maybe_admit(id: int) -> void:
 	var who := String(_pending[id]["name"])
 	_pending.erase(id)
 	EventBus.net_confirm_closed.emit(id)
-	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16)}
+	# tab: the stream name this guest's shared tab goes out under if the host puts it on the big screen
+	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16), "tab": _random_token(20), "sharing": false}
 	_net_snapshot.rpc_id(id, _snapshot())
 	if group_shared("presenters"):
 		for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -628,6 +670,7 @@ func _maybe_admit(id: int) -> void:
 
 ## Host: a guest (or someone still waiting to be let in) left.
 func _on_peer_disconnected(id: int) -> void:
+	DebugLog.note("net", "peer #%d disconnected (%s)" % [id, _peer_name(id) if _peers.has(id) else "not in the session yet"])
 	if _role == "host" and _pending.has(id):
 		var who := String(_pending[id]["name"])
 		_pending.erase(id)
@@ -639,6 +682,8 @@ func _on_peer_disconnected(id: int) -> void:
 	var n := String(_peers[id]["name"])
 	_peers.erase(id)
 	_cams.erase(id)
+	_pic_sent.erase(id)
+	_guest_looks.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
 	_send_roster()
@@ -650,6 +695,7 @@ func _on_peer_disconnected(id: int) -> void:
 func _on_connected() -> void:
 	if _role != "guest":
 		return
+	DebugLog.note("net", "connected to the host, waiting for its hello")
 	AppState.net_gate = _gate
 	_last_cam = Transform3D()
 	_admitted = false
@@ -659,11 +705,14 @@ func _on_connected() -> void:
 
 
 func _on_connection_failed() -> void:
+	DebugLog.note("net", "connection failed (%s)" % _role)
 	if _role == "guest":
 		_close.call_deferred("Couldn't reach the host. Check the address, and that the host is hosting. A new Cloudflare tunnel can need a second try.", true)
 
 
 func _on_server_disconnected() -> void:
+	DebugLog.note("net", "host connection dropped after %s (ping was %d ms)%s" % [_session_age(), roundi(_rtt * 1000.0),
+		", refused: " + _refused if _refused != "" else ""])
 	if _role == "guest":
 		_close.call_deferred(_refused if _refused != "" else "The session ended (the host stopped, or the connection dropped).", _refused != "")
 
@@ -673,6 +722,8 @@ func _on_server_disconnected() -> void:
 func _close(message: String, is_error: bool = false) -> void:
 	# (checked before _role is reset below: a guest's "right host?" popup must close too)
 	var was_waiting_guest := _role == "guest" and not _admitted
+	if _role != "off":
+		DebugLog.note("net", "session closed as %s after %s: %s" % [_role, _session_age(), message if message != "" else "(no message)"])
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -697,11 +748,18 @@ func _close(message: String, is_error: bool = false) -> void:
 	_live_id = ""
 	_live_key = ""
 	_live_on = false
+	_live_from = 1
+	_live_from_name = ""
 	_chat_out.clear()
 	_host_sources.clear()
 	_emit_live()
 	_aud_shared = false
 	_roster_wait = -1.0
+	_pic_sent.clear()
+	_pic_waiting.clear()
+	_clear_net_looks()
+	_guest_looks.clear()
+	_apply_streamer_looks({})
 	AudienceManager.set_mirror(false)
 	AudienceManager.set_streamer_areas(0)
 	_address = ""
@@ -744,11 +802,18 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_emit_state()
 	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
 		_update_audience_sharing()
+	if AudienceStyle.LOOK_KEYS.has(key) and _sharing_audience():
+		_send_looks()          # (the host saved new looks in its Stream Core)
+	elif AudienceStyle.LOOK_KEYS.has(key) and _role == "guest" and _aud_shared:
+		_send_own_looks()      # (this guest saved new looks in its own Stream Core)
+	if key == "together_streamer_looks" and _role == "host":
+		_update_streamer_looks()
 	if key.begins_with("together_screen_") or key in ["together_avatar_height", "together_avatar_fps", "together_avatar_kbps"]:
 		if _role == "host":
 			_emit_live()
 			_to_guests("_net_live", [_live_info_for_guests()])
-	if (key == "together_live_feed" or key == "together_live_relay") and _role == "host":
+	# (screen_tab_peer: whose tab is on the big screen; a co-host can change it too, through the host)
+	if (key == "together_live_feed" or key == "together_live_relay" or key == "screen_tab_peer") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
 
@@ -917,6 +982,7 @@ func _net_roster(list: Array) -> void:
 		_admitted = true
 		EventBus.net_confirm_closed.emit(1)
 		_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
+		_net_tab_sharing.rpc_id(1, _own_tab)    # (in case the host puts this PC's tab on the big screen)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -1158,6 +1224,19 @@ func _rtt_s() -> float:
 	return _rtt
 
 
+## How long this session has run, "3m 12s" (DebugLog lines about drops).
+func _session_age() -> String:
+	@warning_ignore("integer_division")
+	var secs := (Time.get_ticks_msec() - _session_ms) / 1000
+	@warning_ignore("integer_division")
+	return "%dm %02ds" % [secs / 60, secs % 60]
+
+
+## Guest: the same round trip, for DebugLog's "still alive" line (0 = not measured yet).
+func ping_seconds() -> float:
+	return _rtt
+
+
 ## Host: a guest's ping; sent straight back.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_ping(sent_ms: int) -> void:
@@ -1193,6 +1272,8 @@ func _update_audience_sharing() -> void:
 	AudienceManager.set_streamer_areas(areas)
 	if on:
 		_roster_wait = 0.1
+		_send_looks()
+	_update_streamer_looks()
 
 
 ## Whose viewer: 0 = the host, then the guests in the order they joined (peer ids grow).
@@ -1334,6 +1415,11 @@ func _net_aud_mode(shared: bool) -> void:
 	if _from_host():
 		_aud_shared = shared
 		AudienceManager.set_mirror(shared)
+		if not shared:
+			_clear_net_looks()     # (this PC's own audience, with its own looks again)
+			_apply_streamer_looks({})
+		else:
+			_send_own_looks()      # (the host uses them if "Viewers keep their streamer's looks" is on)
 		_emit_state()
 
 
@@ -1368,16 +1454,310 @@ func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
 		AudienceManager.mirror_update(room, slot, wm)
 
 
+# ── Audience looks ───────────────────────────────────────────
+## While the host shares its audience, guests also show the host's looks: its bubbles and
+## silhouettes (Stream Core's Audience looks page, AudienceStyle.LOOK_KEYS), custom silhouette
+## pictures included, so every stream shows the same audience. A guest's own looks settings are
+## never changed (AudienceStyle.net_looks sits on top of them), so they're back after the session.
+## Pictures are named by their bytes' MD5 ("net:<md5>"), each sent once per guest per session.
+
+## Host: its looks to one guest (peer id) or all of them (-1): the silhouette pictures they don't
+## have yet first, then the settings with each picture's file swapped for its "net:<md5>" name.
+## Called when the audience starts being shared, when a guest joins, and when the looks change.
+func _send_looks(to: int = -1) -> void:
+	if not _sharing_audience():
+		return
+	var looks := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		looks[k] = String(AppState.get_setting(k))
+	var pictures := {}          # "net:<md5>" -> [picture png, its "_shape" png]
+	looks = _looks_to_wire(looks, pictures)
+	for id: int in _peers:
+		if id == 1 or (to > 0 and id != to):
+			continue
+		_give_look_pictures(id, pictures)
+		_net_looks.rpc_id(id, looks)
+
+
+## A set of looks (LOOK_KEYS key -> text) made ready to send: each custom silhouette picture file is
+## swapped for its "net:<md5>" name, and its bytes are added to `pictures` ("net:<md5>" -> [png,
+## shape png]) for _give_look_pictures. Used for the host's looks (_send_looks), a guest's own looks
+## going to the host (_send_own_looks) and every streamer's looks (_update_streamer_looks).
+static func _looks_to_wire(looks: Dictionary, pictures: Dictionary) -> Dictionary:
+	return _map_figures(looks, func(f: Dictionary) -> Dictionary:
+		var file := String(f.get("file", ""))
+		if String(f.get("shape", "")) != "custom" or not file.begins_with(AudienceStyle.PICTURE_DIR):
+			return f
+		var png := PictureFile.read_file(file)
+		var shape := PictureFile.read_file(file.replace(".png", "_shape.png"))
+		if png.is_empty() or shape.is_empty():
+			f["file"] = ""
+			f["shape"] = "classic"      # (a picture that's gone here: the classic bust there too)
+			return f
+		var key := _picture_key(png)
+		pictures[key] = [png, shape]
+		f["file"] = key
+		return f)
+
+
+## Sends silhouette pictures (from _looks_to_wire) to one PC unless it has them already: the host
+## to a guest (_net_look_picture), a guest to the host (_net_guest_look_picture, peer 1).
+func _give_look_pictures(id: int, pictures: Dictionary) -> void:
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	for key: String in pictures:
+		if not (_pic_sent[id] as Dictionary).has("look:" + key):
+			_pic_sent[id]["look:" + key] = true
+			if _role == "host":
+				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1])
+			else:
+				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1])
+
+
+## Every silhouette style inside a set of looks (the main one in audience_silhouette and each saved
+## one in audience_saved_styles), passed through fix (a style -> the style to keep), as a new set.
+## The host swaps picture files for "net:<md5>" names with it, a guest swaps them back for its copies.
+static func _map_figures(looks: Dictionary, fix: Callable) -> Dictionary:
+	var out := looks.duplicate()
+	var main: Variant = _parse_json(String(looks.get("audience_silhouette", "")))
+	if main is Dictionary:
+		out["audience_silhouette"] = JSON.stringify(fix.call(main))
+	var saved: Variant = _parse_json(String(looks.get("audience_saved_styles", "")))
+	if saved is Dictionary and (saved as Dictionary).get("silhouette") is Dictionary:
+		var figs: Dictionary = saved["silhouette"]
+		for look_name: Variant in figs.keys():
+			if figs[look_name] is Dictionary:
+				figs[look_name] = fix.call(figs[look_name])
+		out["audience_saved_styles"] = JSON.stringify(saved)
+	return out
+
+
+## JSON text -> its value (null for blank text, without the parser's error line).
+static func _parse_json(text: String) -> Variant:
+	return JSON.parse_string(text) if text.strip_edges() != "" else null
+
+
+## Guest: one of the host's silhouette pictures (a looks message that uses it follows). Kept as
+## NET_LOOK_FILE (and its "_shape" copy), where AudienceStyle reads pictures from.
+@rpc("authority", "call_remote", "reliable")
+func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if _from_host():
+		_save_look_picture(key, png, shape)
+
+
+## Host: one of a guest's own silhouette pictures (for "Viewers keep their streamer's looks"; the
+## guest's looks follow in _net_guest_looks). Kept the same way as the host's pictures on a guest.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if _role == "host" and _peers.has(multiplayer.get_remote_sender_id()):
+		_save_look_picture(key, png, shape)
+
+
+## A silhouette picture from another PC, checked (its name must be its own MD5, both files PNGs
+## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy.
+func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
+			or PictureFile.kind_of(shape) != "png" or shape.size() > PictureFile.MAX_BYTES or PictureFile.too_big(shape):
+		return
+	var path := NET_LOOK_FILE % key.substr(EmoteCache.NET_PREFIX.length())
+	DirAccess.make_dir_recursive_absolute(AudienceStyle.PICTURE_DIR)
+	for pair: Array in [[path, png], [path.replace(".png", "_shape.png"), shape]]:
+		var f := FileAccess.open(String(pair[0]), FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(pair[1] as PackedByteArray)
+			f.close()
+
+
+## Guest: the host's looks (see _send_looks). Shown while this PC mirrors the host's audience.
+@rpc("authority", "call_remote", "reliable")
+func _net_looks(looks: Dictionary) -> void:
+	if not _from_host() or not _aud_shared:
+		return
+	_apply_net_looks(_looks_from_wire(looks))
+
+
+## Looks that came over the network, made safe to show here: only LOOK_KEYS, length-capped, and each
+## "net:<md5>" picture name swapped for this PC's copy (or the classic bust when it didn't come).
+## Never a path from the other PC.
+static func _looks_from_wire(looks: Dictionary) -> Dictionary:
+	var clean := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		clean[k] = String(looks.get(k, "")).left(LOOKS_MAX_CHARS)
+	return _map_figures(clean, func(f: Dictionary) -> Dictionary:
+		var file := String(f.get("file", ""))
+		var here := NET_LOOK_FILE % file.substr(EmoteCache.NET_PREFIX.length()) if _is_picture_key(file) else ""
+		if here != "" and FileAccess.file_exists(here):
+			f["file"] = here
+		elif String(f.get("shape", "")) == "custom" or file != "":
+			f["file"] = ""
+			f["shape"] = "classic"
+		return f)
+
+
+## Guest: shows these looks (AudienceStyle.net_looks; {} = this PC's own again). Tells the audience
+## to redraw with a setting_changed for each look setting that now reads differently (the same
+## signal a change in Stream Core gives; AudienceView and the bubbles read the looks through
+## AudienceStyle, and the values in AppState stay this PC's own).
+func _apply_net_looks(looks: Dictionary) -> void:
+	var before := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		before[k] = AudienceStyle.look_setting(k)
+	AudienceStyle.net_looks = looks
+	for k: String in AudienceStyle.LOOK_KEYS:
+		if AudienceStyle.look_setting(k) != String(before[k]):
+			EventBus.setting_changed.emit(k, AppState.get_setting(k))
+
+
+## Guest: back to this PC's own looks (the session ended, or the host stopped sharing its audience).
+func _clear_net_looks() -> void:
+	if not AudienceStyle.net_looks.is_empty():
+		_apply_net_looks({})
+
+
+# ── Each streamer's own looks ────────────────────────────
+## "Viewers keep their streamer's looks" (together_streamer_looks, host's Together tab): in the one
+## shared audience, each chatter is drawn in the looks of the streamer whose chat they came from. A
+## guest sends its own looks (from its own Stream Core) to the host; the host keeps them per guest
+## and sends every guest the whole table, streamer index -> looks (AudienceStyle.streamer_looks).
+## The host's own viewers (index 0) need no entry: they get the main looks, which are the host's
+## on every PC.
+
+## Guest: this PC's own looks (and their pictures) to the host. Sent when the host starts sharing its
+## audience and each time this PC's Stream Core changes them; the host only uses them while the
+## option is on.
+func _send_own_looks() -> void:
+	if _role != "guest" or not _aud_shared:
+		return
+	var looks := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		looks[k] = String(AppState.get_setting(k))
+	var pictures := {}
+	looks = _looks_to_wire(looks, pictures)
+	_give_look_pictures(1, pictures)
+	_net_guest_looks.rpc_id(1, looks)
+
+
+## Host: a guest's own looks (see _send_own_looks).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_looks(looks: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	_guest_looks[id] = _looks_from_wire(looks)
+	_update_streamer_looks()
+
+
+## Host: works out the table (streamer index -> looks) and shows it here and on every guest; an
+## empty table while the option or the shared audience is off. Called when a guest's looks arrive,
+## someone joins or leaves, and the option or the shared audience is switched.
+func _update_streamer_looks() -> void:
+	if _role != "host":
+		return
+	var table := {}
+	if _sharing_audience() and bool(AppState.get_setting("together_streamer_looks")):
+		for id: int in _guest_looks:
+			if _peers.has(id):
+				table[_streamer_index(id)] = _guest_looks[id]
+	_apply_streamer_looks(table)
+	var wire := {}
+	var pictures := {}
+	for i: int in table:
+		wire[i] = _looks_to_wire(table[i], pictures)
+	for id: int in _peers:
+		if id != 1:
+			_give_look_pictures(id, pictures)
+			_net_streamer_looks.rpc_id(id, wire)
+
+
+## Guest: every streamer's looks from the host (see _update_streamer_looks).
+@rpc("authority", "call_remote", "reliable")
+func _net_streamer_looks(table: Dictionary) -> void:
+	if not _from_host():
+		return
+	var clean := {}
+	if _aud_shared:
+		for i: Variant in table:
+			if i is int and int(i) >= 1 and int(i) <= MAX_GUESTS and table[i] is Dictionary:
+				clean[int(i)] = _looks_from_wire(table[i])
+	_apply_streamer_looks(clean)
+
+
+## Shows a table of streamer looks here (AudienceStyle.streamer_looks; {} = off) and redraws the
+## audience: AudienceView redraws silhouettes and bubbles on an "audience_style_groups" change.
+func _apply_streamer_looks(table: Dictionary) -> void:
+	if table.is_empty() and AudienceStyle.streamer_looks.is_empty():
+		return
+	AudienceStyle.streamer_looks = table
+	AudienceStyle.streamer_looks_version += 1
+	EventBus.setting_changed.emit("audience_style_groups", AppState.get_setting("audience_style_groups"))
+
+
 # ── Live feed ────────────────────────────────────────────────
 ## Host: the sender page publishes its shared tab under _live_id (VDO.Ninja, peer to peer).
 ## Guests: their sender page views it and hands it to their game like their own shared tab.
+## "id" is the stream name of whoever's tab is on the big screen ("from" = their peer id, 1 = the host).
 func _live_info_for_guests() -> Dictionary:
-	var sharing := bool(AppState.get_setting("together_live_feed")) and AppState.get_source_mode() == "capture"
+	var pub := _tab_publisher()
+	var sharing := bool(AppState.get_setting("together_live_feed")) and _is_sharing(pub)
 	# the session's stream name and key always go along (the avatars use the key too); "live" says
 	# whether the big screen is being shared right now
-	return {"id": _live_id, "key": _live_key, "live": sharing and bool(AppState.get_setting("together_live_feed")),
+	return {"id": _tab_token(pub), "key": _live_key, "live": sharing,
+		"from": pub, "from_name": _peer_name(pub),
 		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": bool(AppState.get_setting("together_live_relay")),
 		"quality": _quality()}
+
+
+## Host: the peer id whose shared tab is on the big screen: the guest named in screen_tab_peer
+## (set in the Together tab), or 1 (the host) when it's "" or that person isn't in the session.
+func _tab_publisher() -> int:
+	var want := String(AppState.get_setting("screen_tab_peer"))
+	if want == "":
+		return 1
+	for id: int in _peers:
+		if id != 1 and String(_peers[id]["name"]) == want:
+			return id
+	return 1
+
+
+## Host: the stream name a person's shared tab goes out under (the host's own is _live_id).
+func _tab_token(id: int) -> String:
+	if id == 1 or not _peers.has(id):
+		return _live_id
+	return String(_peers[id].get("tab", ""))
+
+
+## Host: is this person sharing their own tab in their sender page right now?
+func _is_sharing(id: int) -> bool:
+	if id == 1:
+		return _own_tab
+	return _peers.has(id) and bool(_peers[id].get("sharing", false))
+
+
+## The sender page's status (ScreenFeed passes it on): notices when this PC starts / stops sharing
+## its own tab. "own" is missing from an old cached sender page: then any share counts.
+func _on_capture_status(info: Dictionary) -> void:
+	var own := bool(info.get("connected", false)) and bool(info.get("own", info.get("capturing", false)))
+	if own == _own_tab:
+		return
+	_own_tab = own
+	if _role == "host":
+		_emit_live()
+		_to_guests("_net_live", [_live_info_for_guests()])
+	elif _role == "guest" and _admitted:
+		_net_tab_sharing.rpc_id(1, own)
+
+
+## Guest -> host: this guest started / stopped sharing its own tab. Matters while the host has put
+## that guest's tab on the big screen (the others then start or stop watching it).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_tab_sharing(on: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	_peers[id]["sharing"] = on
+	if _tab_publisher() == id:
+		_emit_live()
+		_to_guests("_net_live", [_live_info_for_guests()])
 
 
 ## Guest: the host's live-feed info changed (see _live_info_for_guests).
@@ -1399,6 +1779,8 @@ func _apply_live(info: Dictionary) -> void:
 	_live_on = id != "" and bool(info.get("live", false))
 	_live_relay = bool(info.get("relay", false))
 	_live_feed_on = bool(info.get("feed_on", true))
+	_live_from = int(info.get("from", 1)) if info.get("from") is int else 1
+	_live_from_name = _clean_name(String(info.get("from_name", "")))
 	_live_quality = info.get("quality", {}) if info.get("quality") is Dictionary else {}
 	_refresh_sources()
 	_emit_live()
@@ -1407,12 +1789,26 @@ func _apply_live(info: Dictionary) -> void:
 
 ## Tells ScreenFeed (and through it the sender page) what to do with VDO.Ninja: publish (host),
 ## view (guest) or nothing. Format in EventBus.live_feed_changed.
+## Whoever's tab is on the big screen publishes; everyone else views it. "auto": the sender page
+## starts watching without a "Watch" click (the host picked the guest's tab, so the host's page
+## follows; a guest's page waits for its first click, then keeps following every switch).
+## "from_name": whose tab it is ("" = the host's), for the page's messages.
 func _emit_live() -> void:
 	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
-		info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": bool(AppState.get_setting("together_live_relay"))}
+		var pub := _tab_publisher()
+		var relay := bool(AppState.get_setting("together_live_relay"))
+		if pub == 1:
+			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": relay}
+		else:
+			info = {"role": "view", "id": _tab_token(pub), "key": _live_key, "live": _is_sharing(pub), "relay": relay,
+				"from_name": _peer_name(pub), "auto": true}
 	elif _role == "guest" and _live_id != "" and _live_feed_on:
-		info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay}
+		if _live_from == multiplayer.get_unique_id():
+			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": _live_relay}
+		else:
+			info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay,
+				"from_name": "" if _live_from == 1 else _live_from_name}
 	# the session key, the quality and the podium list go along even when the big screen isn't shared
 	# (the avatars use them)
 	if _role != "off":
@@ -1463,9 +1859,17 @@ func _refresh_sources() -> void:
 			_set_local(key, want)
 
 
-## Guest: the host is sharing a tab that this PC can watch.
+## Guest: the host (or the guest whose tab the host put on the big screen) is sharing a tab that
+## this PC can watch. False while it's this PC's own tab that everyone is watching.
 func is_host_live() -> bool:
-	return _role == "guest" and _live_on
+	return _role == "guest" and _live_on and _live_from != multiplayer.get_unique_id()
+
+
+## Guest: whose tab is on the big screen: "" for the host's, "me" for this PC's own, else a name.
+func live_from() -> String:
+	if _role != "guest" or _live_from == 1:
+		return ""
+	return "me" if _live_from == multiplayer.get_unique_id() else _live_from_name
 
 
 ## n random letters and digits (look-alikes like 0/O and 1/l left out), from a secure random source.
@@ -1486,14 +1890,108 @@ static func _token_ok(t: String) -> bool:
 # ── Reactions ────────────────────────────────────────────────
 ## A reaction played here (from this PC's own Stream Core) plays for everyone: a guest sends it to
 ## the host, the host plays it and passes it on to the other guests.
+## A reaction with its own picture (Core's "img:boot" object, params.object_image) only has an
+## address on the sender's own Stream Core, which the other PCs can't reach. So the picture's bytes
+## go along, once per PC per session (_send_reaction_picture), and the reaction names it as
+## "net:<md5>" (_picture_key). The others keep it in EmoteCache under that name.
 func _on_reaction_play(d: Dictionary) -> void:
 	if _role == "off" or bool(d.get("net_remote", false)):
 		return
+	var url := _reaction_picture_url(d)
+	if url != "" and EmoteCache.get_bytes(url).is_empty() and not EmoteCache.is_failed(url):
+		# the picture's first use: it's still downloading from Core (ReactionLayer asked for it),
+		# so the reaction waits for it (_on_emote_ready), at most REACTION_PICTURE_WAIT seconds
+		if not _pic_waiting.has(url):
+			_pic_waiting[url] = {"list": [], "wait": REACTION_PICTURE_WAIT}
+			EmoteCache.get_texture(url)      # (starts the download if nothing here asked for it yet)
+		(_pic_waiting[url]["list"] as Array).append(d)
+		return
+	_share_reaction(d, url)
+
+
+## Sends one of this PC's reactions to the others, with its picture (url: its address on this PC's
+## Core, "" for none) when that's here and small enough; else they show its emoji / word.
+func _share_reaction(d: Dictionary, url: String) -> void:
+	if _role == "off":
+		return
 	var out := _shareable_reaction(d)
+	var bytes := EmoteCache.get_bytes(url) if url != "" else PackedByteArray()
+	var key := ""
+	if bytes.size() <= PictureFile.MAX_BYTES and PictureFile.kind_of(bytes) != "":
+		key = _picture_key(bytes)
+		(out["params"] as Dictionary)["object_image"] = {"url": key}
 	if _role == "host":
-		_to_guests("_net_reaction", [out])
+		for id: int in _peers:
+			if id != 1:
+				_send_reaction_picture(id, key, bytes)
+				_net_reaction.rpc_id(id, out)
 	else:
+		if key != "" and not _pic_sent.has(key):
+			_pic_sent[key] = true
+			_net_guest_reaction_picture.rpc_id(1, key, bytes)
 		_net_guest_reaction.rpc_id(1, out)
+
+
+## The full address of a reaction's own picture on this PC's Stream Core, or "" when it has none.
+static func _reaction_picture_url(d: Dictionary) -> String:
+	var params: Variant = d.get("params")
+	var pic: Variant = (params as Dictionary).get("object_image") if params is Dictionary else null
+	var path := String((pic as Dictionary).get("url", "")) if pic is Dictionary else ""
+	if path == "" or path.begins_with(EmoteCache.NET_PREFIX):
+		return ""
+	return ReactionLayer._core_url(path)
+
+
+## A picture finished downloading (EmoteCache): reactions waiting for it go out now.
+func _on_emote_ready(url: String) -> void:
+	if _pic_waiting.has(url):
+		var list: Array = _pic_waiting[url]["list"]
+		_pic_waiting.erase(url)
+		for d: Dictionary in list:
+			_share_reaction(d, url)
+
+
+## (from _process) Reactions whose picture didn't arrive in time, or failed, go without it.
+func _reaction_picture_timeout(delta: float) -> void:
+	for url: String in _pic_waiting.keys():
+		_pic_waiting[url]["wait"] = float(_pic_waiting[url]["wait"]) - delta
+		if float(_pic_waiting[url]["wait"]) <= 0.0 or EmoteCache.is_failed(url):
+			var list: Array = _pic_waiting[url]["list"]
+			_pic_waiting.erase(url)
+			for d: Dictionary in list:
+				_share_reaction(d, "")
+
+
+## Host: a reaction picture to guest `id`, unless it has it already. Sent just before the reaction
+## that uses it (same reliable channel, so it arrives first).
+func _send_reaction_picture(id: int, key: String, bytes: PackedByteArray) -> void:
+	if key == "" or bytes.is_empty():
+		return
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	if not (_pic_sent[id] as Dictionary).has(key):
+		_pic_sent[id][key] = true
+		_net_reaction_picture.rpc_id(id, key, bytes)
+
+
+## Guest: a reaction picture from the host (its own, or another guest's that it passes on).
+@rpc("authority", "call_remote", "reliable")
+func _net_reaction_picture(key: String, bytes: PackedByteArray) -> void:
+	if _from_host() and _picture_ok(key, bytes):
+		EmoteCache.put_bytes(key, bytes)
+
+
+## Host: a guest's reaction picture (the reaction that uses it follows). Kept here so it can be
+## shown here and passed on to the other guests.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_reaction_picture(key: String, bytes: PackedByteArray) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or not _picture_ok(key, bytes):
+		return
+	EmoteCache.put_bytes(key, bytes)
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	_pic_sent[id][key] = true          # (the guest that sent it has it)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1509,17 +2007,24 @@ func _net_guest_reaction(d: Dictionary) -> void:
 		return
 	var out := _shareable_reaction(d)
 	_play_remote(out)
+	var key := _reaction_key(out)
+	var bytes := EmoteCache.get_bytes(key) if key != "" else PackedByteArray()
 	for other: int in _peers:
 		if other != 1 and other != id:
+			_send_reaction_picture(other, key, bytes)
 			_net_reaction.rpc_id(other, out)
 
 
 ## Only what the effect needs, as plain values. The id is marked so nobody reports the result to
-## their own Stream Core twice, and a picture from the sender's Stream Core (only reachable on
-## their PC) is dropped: the reaction shows its emoji / word instead.
+## their own Stream Core twice. A picture is only kept as a "net:<md5>" name (its bytes travel
+## separately, see _on_reaction_play); an address on the sender's Stream Core (only reachable on
+## their PC) is dropped, and the reaction shows its emoji / word instead.
 static func _shareable_reaction(d: Dictionary) -> Dictionary:
 	var params: Dictionary = (d.get("params") as Dictionary).duplicate(true) if d.get("params") is Dictionary else {}
+	var pic: Variant = params.get("object_image")
 	params.erase("object_image")
+	if pic is Dictionary and _is_picture_key(String((pic as Dictionary).get("url", ""))):
+		params["object_image"] = {"url": String(pic["url"])}
 	var from: Dictionary = d.get("from") if d.get("from") is Dictionary else {}
 	var target: Variant = null
 	if d.get("target") is Dictionary:
@@ -1537,8 +2042,38 @@ static func _shareable_reaction(d: Dictionary) -> Dictionary:
 func _play_remote(d: Dictionary) -> void:
 	if not bool(AppState.get_setting("reactions_enabled")) or not Reactions.get_effect_ids().has(String(d["effect"])):
 		return
+	var key := _reaction_key(d)
+	if key != "" and EmoteCache.get_bytes(key).is_empty() and EmoteCache.get_texture(key) == null:
+		(d["params"] as Dictionary).erase("object_image")    # (its picture never came: the emoji / word then)
 	d["net_remote"] = true
 	EventBus.reaction_play.emit(d)
+
+
+## The "net:<md5>" picture a shared reaction names, or "".
+static func _reaction_key(d: Dictionary) -> String:
+	var params: Variant = d.get("params")
+	var pic: Variant = (params as Dictionary).get("object_image") if params is Dictionary else null
+	return String((pic as Dictionary).get("url", "")) if pic is Dictionary else ""
+
+
+## A picture's name between the PCs: EmoteCache.NET_PREFIX + the MD5 of its bytes (the same picture
+## gets the same name on every PC, whoever's Core it came from).
+static func _picture_key(bytes: PackedByteArray) -> String:
+	var h := HashingContext.new()
+	h.start(HashingContext.HASH_MD5)
+	h.update(bytes)
+	return EmoteCache.NET_PREFIX + h.finish().hex_encode()
+
+
+## "net:" plus 32 hex digits (a name _picture_key makes), nothing else.
+static func _is_picture_key(key: String) -> bool:
+	return key.length() == 36 and key.begins_with(EmoteCache.NET_PREFIX) and key.substr(4).is_valid_hex_number()
+
+
+## A picture from another PC: a known format, not too big, and its name matches its bytes.
+static func _picture_ok(key: String, bytes: PackedByteArray) -> bool:
+	return _is_picture_key(key) and bytes.size() <= PictureFile.MAX_BYTES and PictureFile.kind_of(bytes) != "" \
+		and not PictureFile.too_big(bytes) and _picture_key(bytes) == key
 
 
 # ── Cameras ──────────────────────────────────────────────────
@@ -1756,6 +2291,7 @@ func _send_roster() -> void:
 	_to_guests("_net_roster", [list])
 	_emit_state()
 	_emit_live()            # (the podium list changed)
+	_to_guests("_net_live", [_live_info_for_guests()])   # (the person sharing the big screen may have left)
 
 
 ## Host: call an RPC on every connected guest.

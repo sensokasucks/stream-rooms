@@ -474,7 +474,10 @@ func _object(text: String, scale_by: float = 1.0) -> Label3D:
 func _thing(p: Dictionary, fallback: String, scale_by: float) -> Node3D:
 	var pic: Variant = p.get("object_image")
 	if not (pic is Dictionary) or String((pic as Dictionary).get("url", "")) == "":
-		return _object(String(p.get("object", fallback)), scale_by)
+		var obj := String(p.get("object", fallback))
+		# a picture object without its picture (Together: it was too big to send) shows the
+		# effect's own emoji, never the "img:name" text
+		return _object(fallback if obj.begins_with("img:") else obj, scale_by)
 	var url := _core_url(String((pic as Dictionary)["url"]))
 	var s := Sprite3D.new()
 	s.billboard = BaseMaterial3D.BILLBOARD_ENABLED
@@ -524,9 +527,10 @@ func _thing(p: Dictionary, fallback: String, scale_by: float) -> Node3D:
 
 
 ## Core's relative picture URL ("/reactions/images/boot.png?v=…") on the Core the game is
-## connected to (Audience tab > Core address, ws://host:port/ws).
+## connected to (Audience tab > Core address, ws://host:port/ws). A "net:<md5>" picture another PC
+## sent in a Together session (EmoteCache.NET_PREFIX) stays as it is: EmoteCache already has it.
 static func _core_url(path: String) -> String:
-	if path.begins_with("http://") or path.begins_with("https://"):
+	if path.begins_with("http://") or path.begins_with("https://") or path.begins_with("net:"):
 		return path
 	var ws := String(AppState.get_setting("chat_core_url")).strip_edges()
 	var base := ws.replace("wss://", "https://").replace("ws://", "http://")

@@ -47,6 +47,21 @@ the window OBS captures. Clean feed (F10) hides them either way.
 Together's "wants to join" and "is this the right host?" popups open as their own small window,
 even while the panel sits inside the main window, so a guest's name never shows on stream.
 
+### Log files for troubleshooting
+**Save a log file for troubleshooting** (under **Messages ▸**, **on by default**) writes what the
+app does to a file each time it runs: errors, the Stream Core connection, Together joins, leaves and
+drops (with the ping), room and source changes, a "still alive" line every minute, and, after a
+crash, the last lines from the run that crashed. **Open log folder** opens the folder
+(`%APPDATA%\Redot\app_userdata\Stream Rooms\logs_to_share`). The last 15 runs are kept, newest
+last in the list.
+
+The files are cleaned before anything is written, so they are safe to send to whoever is helping:
+IP addresses become tags like `<ip-home#1>` or `<ip-tailscale#2>` (the same address keeps the same
+tag, so you can still follow one guest), and your Windows user name, computer name, personal
+folders, Cloudflare tunnel names and any keys or tokens in links are replaced too. Chatter names
+stay. When a friend has trouble connecting or crashing, ask them for the log from that run (and
+send yours from the same time).
+
 ## Showing a browser tab (recommended)
 1. Run the game.
 2. In the panel's **Source** tab, click **Open sender page**. It opens `http://127.0.0.1:8765/`.
@@ -760,7 +775,7 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 
 - **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
 - **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead.
-- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
+- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture (like the boot for `!boot`) shows that same picture on every PC: the picture is sent along with the reaction the first time it's used in a session. A picture over 3 MB stays on the sender's PC, and the others see a plain emoji (like the 🍅) instead.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
 
@@ -782,6 +797,15 @@ seats, with the same speech bubbles:
   big crowd sections are shared out the same way.
 - A viewer of a guest's channel can be thrown at with a reaction from any channel, because
   everyone sees the same seats.
+- Everyone sees the host's **audience looks** too (the speech bubbles, silhouettes and group
+  looks from the host's Stream Core), with the host's own silhouette pictures: they're sent to
+  each guest's PC. A guest's own looks aren't changed, and come back when they leave.
+- **Viewers keep their streamer's looks** (host) mixes the looks instead: each chatter shows in
+  the bubbles and silhouettes of the streamer whose chat they came from, as set on that
+  streamer's own Stream Core (Audience looks page, custom pictures included). For example, if
+  you make your audience blue and your guest makes theirs red, the room fills with a mix of blue
+  and red chatters, and you can see whose stream each one came from. Every PC shows the same mix.
+  Untick it and everyone shows in the host's looks again.
 - When a guest leaves, their copy goes back to its own audience.
 
 Untick it and each of you has your own audience again.
@@ -817,11 +841,18 @@ page**, as usual), the guests can watch it on their big screens too, with its so
 anything live: a game, a stream you're reacting to, a website.
 
 - **Host:** nothing extra to do while **Send my shared tab to the guests** (Together tab) is ticked.
-  The sender page says "Your guests get this tab too."
+  The sender page says "Everyone in the session gets this tab too."
 - **Guest:** the Together tab says when the host is sharing. Open your own sender page (the
   **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
   takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
   again. **Stop watching** lets go.
+- **A guest's tab on the big screen:** the host (or a co-host) picks a person in **Big screen tab**
+  (Together tab). That person shares a tab in their own sender page as usual, and everyone else's
+  big screen shows it, sound included: the host's page follows by itself, a guest's page once
+  they've clicked **Watch** before. Pick **The host's tab** to switch back. Switch any time: everyone's
+  own shared tab keeps running in the background (the sender page says "ready"), so it comes
+  straight back without picking the tab again. You can also press **Share** while watching someone
+  else's tab, to have yours ready for your turn.
   Browsers only let a page's sound through after a click on it, so if the sender page asks,
   click anywhere on it once.
 - It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
@@ -1078,8 +1109,8 @@ driver up to date (an old NVIDIA driver froze it once). NDI needs the free NDI R
 Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\Stream Rooms`).
 
 ## Project layout
-- `autoload/`: EventBus (signals only), AppState (settings and state), SaveManager
-  (`user://settings.cfg`), RoomCatalog, AudioManager (buses, reverb, ducking), SystemMedia
+- `autoload/`: EventBus (signals only), AppState (settings and state), DebugLog (the cleaned
+  troubleshooting log), SaveManager (`user://settings.cfg`), RoomCatalog, AudioManager (buses, reverb, ducking), SystemMedia
   (media key), ChatFeed / AudienceManager / EmoteCache (chat audience), Reactions (chat reactions)
 - `core/reactions/`: ReactionLayer, the per-room effects for chat reactions
 - `core/`: main scene and wiring, RoomHost (threaded load and fade, graphics quality via

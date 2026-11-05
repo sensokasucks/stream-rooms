@@ -147,6 +147,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"fps_cap": 60,               # frames per second cap: 30 | 60 | 0 (unlimited)
 	"vsync": true,               # wait for the display refresh (no tearing)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
+	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
@@ -219,6 +220,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_avatar_camera": "",      # camera device id ("" = default camera)
 	"together_avatar_url": "",         # web page for "web"
 	"screen_peer": "",                 # the big screen shows this person's avatar ("" = no); shared with guests
+	"screen_tab_peer": "",             # whose shared tab is on everyone's big screen ("" = the host's); shared with guests
 	# Quality of what goes between the PCs (the host decides for everyone); kbps caps the bitrate per viewer
 	"together_screen_height": 720,   # 480 | 540 | 720 | 1080
 	"together_screen_fps": 30,       # 15 | 30 | 60
@@ -233,6 +235,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_share_presenters": true,
 	"together_shared_audience": true, # host: everyone's chat sits in one audience, the same on every PC
 	"together_audience_areas": true,  # host: each streamer's viewers get their own part of the audience
+	"together_streamer_looks": false, # host: with one audience, each streamer's viewers keep that streamer's looks (bubbles, silhouettes)
 	"together_live_feed": true,  # host: the tab shared in the sender page also goes to the guests (VDO.Ninja)
 }
 

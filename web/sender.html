@@ -44,8 +44,8 @@
 
   <section id="liveSection" class="hidden">
     <div class="row"><b>Streaming together</b></div>
-    <div id="liveHost" class="hidden"><small>The tab or window you share below also goes to your guests' big
-      screens, with its sound (VDO.Ninja, straight from this browser to theirs).</small></div>
+    <div id="liveHost" class="hidden"><small>The tab or window you share below also goes to everyone else's big
+      screens in the session, with its sound (VDO.Ninja, straight from this browser to theirs).</small></div>
     <div id="liveGuest" class="row hidden">
       <button id="watchBtn" class="primary">Watch the host's live feed</button>
       <button id="unwatchBtn" disabled>Stop watching</button>
@@ -142,7 +142,11 @@ let pumpMode = "";          // how the main video's frames reach the worker: "tr
 let link = null;           // the worker that owns the socket and does the picture work (WORKER_SRC)
 let linkOpen = false;
 let buffered = 0;          // unsent bytes on the socket, as the worker last reported them
-let share = null;          // { stream, videoPump, audio }
+let share = null;          // { stream, videoPump, audio } - what goes to the game now (own tab, or someone's feed: remote)
+// My own shared tab, kept running but not sent while someone else's feed is on the big screen
+// (Streaming together, see parkShare / resumeParked). It comes back by itself when that ends, so
+// the host can switch the big screen between people's tabs without anyone re-picking a tab.
+let parked = null;
 let cam = null;            // { stream, pump }
 let fps = 0;               // main-video frames sent in the last second
 let workerFps = 0, mainSentFrames = 0;
@@ -249,6 +253,9 @@ function sendStatus() {
   link.postMessage({ type: "json", text: JSON.stringify({
     type: "status",
     capturing: !!share,
+    // own: this page is sharing its own tab (now, or parked while someone else's feed shows).
+    // NetSession uses it to tell the others whether this person's tab can go on the big screen.
+    own: !!((share && !share.remote) || parked),
     has_audio: !!(a && a.track),
     suppress_local_audio: !!(a && a.suppressed),
     webcam: !!cam,
@@ -498,8 +505,10 @@ async function startAudioPump(track, shared) {
 }
 
 // ── Share a tab / window ─────────────────────────────────────
+// While someone else's feed is showing (share.remote), the new tab is shared but parked: it goes
+// on the big screen when it's this person's turn (or when they stop watching).
 async function startShare() {
-  if (share) return;          // (already showing something: the host's feed or someone's avatar)
+  if ((share && !share.remote) || parked) return;     // (already sharing my own tab)
   const wantAudio = $("sendAudio").checked;
   let h = parseInt($("quality").value, 10), maxFps = parseInt($("fps").value, 10);
   if (safeMode) { h = Math.min(h, SAFE_MAX_HEIGHT); maxFps = Math.min(maxFps, SAFE_MAX_FPS); }
@@ -521,24 +530,75 @@ async function startShare() {
   }
   const vtrack = stream.getVideoTracks()[0];
   const atrack = stream.getAudioTracks()[0] || null;
-  share = { stream, label: vtrack.label, audio: { track: atrack, suppressed: false } };
+  // h / maxFps / wantAudio / canSilence are kept for resumeParked, which starts the pumps again
+  const s = { stream, label: vtrack.label, h, maxFps, wantAudio, canSilence: !!supported.suppressLocalAudioPlayback,
+    audio: { track: atrack, suppressed: !!(atrack && atrack.getSettings().suppressLocalAudioPlayback) } };
   warnSurface(vtrack);
-  share.videoPump = startFramePump(vtrack, PKT_VIDEO, h, maxFps);
+  // the tab closed or the browser's "Stop sharing" was pressed: end it, whether it's showing or parked
+  vtrack.addEventListener("ended", () => {
+    if (share === s) stopShare();
+    else if (parked === s) { parked = null; stream.getTracks().forEach((t) => t.stop()); clearSharePending(); showShareState(); sendStatus(); }
+  });
+  if (share && share.remote) {          // someone else's feed is on: keep this one ready
+    parked = s;
+    clearSharePending();               // (nothing is pumped yet, so there's nothing that could freeze)
+    showShareState();
+    sendStatus();
+    return;
+  }
+  await showOwnShare(s);
+}
 
-  if (atrack) {
-    share.audio.suppressed = !!(atrack.getSettings().suppressLocalAudioPlayback);
-    try { share.audio.pump = await startAudioPump(atrack); }
+// Puts my own shared tab (s) on: picture and sound pumps to the game, preview, status, and (with
+// Streaming together) publishing it if it's my turn. Used by startShare and resumeParked.
+async function showOwnShare(s) {
+  share = s;
+  share.videoPump = startFramePump(s.stream.getVideoTracks()[0], PKT_VIDEO, s.h, s.maxFps);
+  if (s.audio.track) {
+    try { share.audio.pump = await startAudioPump(s.audio.track); }
     catch (e) { $("audioStatus").innerHTML = '<span class="err">Couldn\'t start audio: ' + e.message + "</span>"; }
   }
-  describeAudio(wantAudio, supported.suppressLocalAudioPlayback);
-
-  vtrack.addEventListener("ended", stopShare);
-  $("preview").srcObject = stream;
+  describeAudio(s.wantAudio, s.canSilence);
+  $("preview").srcObject = s.stream;
   $("preview").play().catch(() => {});
-  $("shareStatus").textContent = "Sharing: " + (vtrack.label || "screen");
-  $("shareBtn").disabled = true; $("stopBtn").disabled = false;
+  showShareState();
   sendStatus();
   syncLive();
+}
+
+// Someone else's feed takes the big screen: stop sending my own tab to the game but keep the
+// browser's capture running, so it can come straight back (resumeParked).
+function parkShare() {
+  if (!share || share.remote) return;
+  share.videoPump && share.videoPump.stop();
+  share.audio.pump && share.audio.pump.stop();
+  share.videoPump = null; share.audio.pump = null;
+  parked = share;
+  share = null;
+  clearSharePending();
+}
+
+// The other feed ended: my parked tab goes back on, if the browser is still capturing it.
+async function resumeParked() {
+  const s = parked;
+  parked = null;
+  if (!s || share) return;
+  const v = s.stream.getVideoTracks()[0];
+  if (!v || v.readyState !== "live") { s.stream.getTracks().forEach((t) => t.stop()); showShareState(); return; }
+  await showOwnShare(s);
+}
+
+// The share line and the Share / Stop buttons, from share and parked. Share works while
+// someone's feed is showing (the new tab waits, parked); Stop ends whatever is on.
+function showShareState() {
+  const own = share && !share.remote;
+  $("shareBtn").disabled = !!(own || parked);
+  $("stopBtn").disabled = !share && !parked;
+  if (own) $("shareStatus").textContent = "Sharing: " + (share.label || "screen");
+  else if (share) $("shareStatus").textContent = "Showing " + share.label + "." +
+    (parked ? " Your own tab (" + (parked.label || "screen") + ") is ready and comes back when this ends." : "");
+  else if (parked) $("shareStatus").textContent = "Your tab (" + (parked.label || "screen") + ") is ready.";
+  else $("shareStatus").textContent = "Not sharing.";
 }
 
 // Tests only: a colour-cycling picture with a 440 Hz tone, standing in for a shared tab. The picture
@@ -603,21 +663,26 @@ function describeAudio(wanted, supported) {
     " the tab, so you'll hear it twice. Mute the tab, or turn the game's volume down.</span>";
 }
 
-function stopShare() {
-  if (!share) return;
+// Stops what's on. Someone's feed (remote) ending brings my parked own tab back unless resume is
+// false (startRemoteShare swapping one feed for another). With nothing on, Stop ends a parked tab.
+function stopShare(resume = true) {
+  if (!share) {
+    if (parked) { parked.stream.getTracks().forEach((t) => t.stop()); parked = null; showShareState(); sendStatus(); }
+    return;
+  }
   const wasRemote = !!share.remote;
   share.videoPump && share.videoPump.stop();
   share.audio.pump && share.audio.pump.stop();
   share.stream.getTracks().forEach((t) => t.stop());
   share = null;
   clearSharePending();
-  $("surfaceWarn").textContent = "";
+  if (!wasRemote) $("surfaceWarn").textContent = "";
   $("preview").srcObject = null;
-  $("shareStatus").textContent = "Not sharing.";
   $("audioStatus").textContent = "";
-  $("shareBtn").disabled = false; $("stopBtn").disabled = true;
+  showShareState();
   sendStatus();
   if (wasRemote) watching = false;
+  if (wasRemote && resume && parked) { resumeParked(); return; }    // (it calls syncLive)
   syncLive();
 }
 
@@ -645,7 +710,11 @@ function mediaFor(q) {
 }
 let vdo = null;              // the VDO.Ninja connection (host: publishing, guest: viewing)
 let vdoPublished = null;     // host: the stream being published
-let watching = false;        // guest: clicked Watch
+let watching = false;        // viewing: watching the feed now (or waiting for it to come back)
+// Clicked Watch (and not Stop watching) - keeps watching through switches between people's tabs.
+// The host's page doesn't need the click: the host picked the tab (live.auto sets it).
+let wantWatch = false;
+let watchConnecting = false; // startWatching is connecting (so a second call doesn't start over)
 let sdkLoading = null;
 // Browsers only let a page play / process sound after a click on it. The host's sound arrives
 // some time after "Watch" is clicked, so the sound engine is started during that click and kept.
@@ -804,7 +873,9 @@ async function vdoOpen() {
 }
 
 function applyLiveFeed(msg) {
+  // from: whose tab is on the big screen ("" = the host's); auto: start watching without a click
   const next = { role: String(msg.role || "off"), id: String(msg.id || ""), key: String(msg.key || ""), live: !!msg.live, relay: !!msg.relay,
+    from: String(msg.from_name || ""), auto: !!msg.auto,
     quality: msg.quality && typeof msg.quality === "object" ? msg.quality : null, avatars: Array.isArray(msg.avatars) ? msg.avatars : [] };
   const changed = next.role !== live.role || next.id !== live.id || next.key !== live.key || next.relay !== live.relay;
   const qualityChanged = JSON.stringify(next.quality) !== JSON.stringify(live.quality);
@@ -815,10 +886,14 @@ function applyLiveFeed(msg) {
   $("avatarSection").classList.toggle("hidden", !live.key && pres[AVATAR].want.kind === "off");
   $("liveHost").classList.toggle("hidden", live.role !== "publish");
   $("liveGuest").classList.toggle("hidden", live.role !== "view");
+  // follow: this page should go straight on to the new person's tab (so don't bring my own back in between)
+  if (changed && live.auto) wantWatch = true;    // (host: picked this tab itself; Stop watching still works)
+  const follow = live.role === "view" && live.live && wantWatch;
   if (changed) {
-    if (share && share.remote) stopShare();
+    if (share && share.remote) stopShare(!follow);
     watching = false;
     vdoClose();
+    if (follow) { startWatching(); return; }
   }
   if (new URLSearchParams(location.search).has("autowatch") && live.role === "view" && live.live && !watching) {
     startWatching();     // (tests: no click needed)
@@ -841,29 +916,33 @@ async function syncLive() {
         const out = new MediaStream([publishedClone, ...stream.getAudioTracks()]);
         await v.publish(out, { streamID: live.id, label: "Stream Rooms host", media: mediaFor(q) });
         vdo = v; vdoPublished = stream;
-        liveSay("Your guests get this tab too.");
+        liveSay("Everyone in the session gets this tab too.");
       } catch (e) { liveSay("Couldn't send the tab to your guests: " + e.message, "err"); }
     } else if (!share) {
       if (vdo) await vdoClose();
-      liveSay("Share a tab or window and your guests get it too.");
+      liveSay("Share a tab or window and everyone in the session gets it too.");
     }
   } else if (live.role === "view") {
+    const who = live.from || "The host";
+    $("watchBtn").textContent = live.from ? "Watch " + live.from + "'s tab" : "Watch the host's live feed";
     $("watchBtn").disabled = watching || !live.live;
-    $("unwatchBtn").disabled = !watching;
-    if (watching && live.live && !share) startWatching();       // the host shares again
-    else if (!watching) liveSay(live.live ? "The host is sharing a tab." : "The host isn't sharing a tab right now.");
+    $("unwatchBtn").disabled = !watching && !wantWatch;
+    // they share again, or (host / clicked Watch before) a new person's tab is up
+    if ((watching || wantWatch) && live.live && !(share && share.remote)) startWatching();
+    else if (!watching) liveSay(live.live ? who + " is sharing a tab." : who + " isn't sharing a tab right now.");
   } else if (vdo) {
     vdoClose();
   }
 }
 
 async function startWatching() {
-  if (live.role !== "view" || !live.id) return;
+  if (live.role !== "view" || !live.id || watchConnecting) return;
   watching = true;
   $("watchBtn").disabled = true; $("unwatchBtn").disabled = false;
-  if (share && !share.remote) stopShare();     // the host's tab takes the place of your own
+  if (share && !share.remote) parkShare();     // their tab takes the place of my own (kept ready, see parked)
   watching = true;
-  liveSay("Connecting to the host's feed...");
+  watchConnecting = true;
+  liveSay("Connecting to " + (live.from ? live.from + "'s tab" : "the host's feed") + "...");
   try {
     await vdoClose();
     const v = await vdoOpen();
@@ -877,9 +956,12 @@ async function startWatching() {
       startRemoteShare(incoming, t);
     });
     await v.view(live.id, { audio: true, video: true, label: "Stream Rooms guest" });
+    watchConnecting = false;
   } catch (e) {
+    watchConnecting = false;
     watching = false;
-    liveSay("Couldn't watch the host's feed: " + e.message, "err");
+    liveSay("Couldn't watch " + (live.from ? live.from + "'s tab" : "the host's feed") + ": " + e.message, "err");
+    if (parked && !share) resumeParked();
     syncLive();
   }
 }
@@ -888,14 +970,14 @@ async function startWatching() {
 // picture and sound pumps as a shared tab. avatarOf: "" for the host's live feed, else the avatar
 // stream it shows ("mine" for my own).
 async function startRemoteShare(stream, track, label, avatarOf) {
-  label = label || "Host's live feed";
+  label = label || (live.from ? live.from + "'s shared tab" : "the host's live feed");
   if (!share || !share.remote || share.stream !== stream) {
-    if (share) stopShare();
+    if (share && !share.remote) parkShare();   // my own tab waits (comes back when this ends)
+    else if (share) stopShare(false);           // another feed: swap it straight for this one
     share = { stream, remote: true, label, avatarOf: avatarOf || "", audio: { track: null, suppressed: true } };
     $("preview").srcObject = stream;           // (muted here; it also keeps the WebRTC sound flowing)
     $("preview").play().catch(() => {});
-    $("shareBtn").disabled = true; $("stopBtn").disabled = false;
-    $("shareStatus").textContent = "Showing " + (avatarOf ? label : "the host's live feed") + ".";
+    showShareState();
   }
   if (track.kind === "video") {
     share.videoPump && share.videoPump.stop();
@@ -916,13 +998,14 @@ async function startRemoteShare(stream, track, label, avatarOf) {
     try { share.audio.pump = await startAudioPump(track, liveAudio); } catch (_) {}
     syncLiveSound();
   }
-  if (!share.avatarOf) liveSay("Watching the host's live feed.");
+  if (!share.avatarOf) liveSay("Watching " + share.label + ".");
   sendStatus();
 }
 
-$("watchBtn").onclick = () => { unlockLiveAudio(); startWatching(); };
+$("watchBtn").onclick = () => { unlockLiveAudio(); wantWatch = true; startWatching(); };
 $("unwatchBtn").onclick = () => {
-  if (share && share.remote) stopShare();
+  wantWatch = false;
+  if (share && share.remote) stopShare();     // (brings my own parked tab back, if there is one)
   watching = false;
   vdoClose();
   syncLive();
@@ -1157,7 +1240,7 @@ $("shareBtn").onclick = startShare;
 // Freeze guard: show the safe-mode note, and let the button turn safe mode off for good.
 $("safeNote").classList.toggle("hidden", !safeMode);
 $("safeOffBtn").onclick = () => { safeMode = false; storeSet(SAFE_KEY, null); $("safeNote").classList.add("hidden"); };
-$("stopBtn").onclick = stopShare;
+$("stopBtn").onclick = () => stopShare();
 $("camBtn").onclick = toggleCam;
 if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
   $("shareStatus").innerHTML = '<span class="err">This browser can\'t share tabs. Use Brave, Chrome or Edge.</span>';

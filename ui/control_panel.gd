@@ -97,6 +97,7 @@ var _pic_target: String = ""              # the presenter_<n>_picture setting th
 var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
+var _peer_menu_none: Dictionary = {}    # setting key -> the label of its "" item (default "(nobody)")
 var _avatar_camera: OptionButton        # Together tab: the camera for my avatar
 var _avatar_rows: Dictionary = {}       # Together tab: "camera" / "url" rows, shown by My avatar's source
 var _size_marks: Dictionary = {}        # chat window key -> small ⚠ Label in the window's summary row
@@ -1848,6 +1849,10 @@ func _build_together_tab() -> Control:
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
+	# whose tab everyone's big screen shows: switch any time, each person's own share keeps running
+	# in their sender page, so switching back is instant (NetSession._tab_publisher, sender.html "parked")
+	v.add_child(_peer_menu("screen_tab_peer", "Big screen tab", "The host's tab",
+		"Whose shared tab is on everyone's big screen, with its sound: the host's, or a guest's. Switch any time. The person picked shares a tab in their own sender page as usual, and everyone else's sender page shows it. Each person's own shared tab keeps running in the background, so switching back is instant."))
 	v.add_child(_heading("Shared with guests"))
 	v.add_child(_hint("Host: untick a part and every PC keeps its own. For example, untick Presenters to let each guest pick their own presenter sources."))
 	var share_row := HFlowContainer.new()
@@ -1867,6 +1872,9 @@ func _build_together_tab() -> Control:
 	var areas := _check("together_audience_areas", "Each streamer's viewers sit together")
 	areas.tooltip_text = "Host: with one audience, each streamer's viewers get their own part of it. Two of you: left and right halves; four: a quarter each. The big crowd sections are shared out the same way."
 	v.add_child(areas)
+	var own_looks := _check("together_streamer_looks", "Viewers keep their streamer's looks")
+	own_looks.tooltip_text = "Host: with one audience, each chatter shows in the bubbles and silhouettes of the streamer whose chat they came from, as set on that streamer's own Stream Core (Audience looks). Off: everyone shows in your looks."
+	v.add_child(own_looks)
 	var cams := _check("together_show_cameras", "Show the others' cameras")
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)
@@ -1932,7 +1940,8 @@ func _on_net_confirm_closed(peer_id: int) -> void:
 
 ## A dropdown bound to a String setting that names a person in the Streaming together session
 ## (whose avatar). It lists everyone in the session and keeps a saved name that isn't there.
-func _peer_menu(key: String, label: String) -> HBoxContainer:
+## none_label names the "" choice; tip replaces the "Whose avatar" tooltip.
+func _peer_menu(key: String, label: String, none_label: String = "(nobody)", tip: String = "") -> HBoxContainer:
 	var h := HBoxContainer.new()
 	var l := Label.new()
 	l.text = label
@@ -1942,12 +1951,13 @@ func _peer_menu(key: String, label: String) -> HBoxContainer:
 	o.focus_mode = Control.FOCUS_ALL
 	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	o.fit_to_longest_item = false
-	o.tooltip_text = "Whose avatar: a person in the session (what they set up under My avatar in their Together tab)."
+	o.tooltip_text = tip if tip != "" else "Whose avatar: a person in the session (what they set up under My avatar in their Together tab)."
 	o.item_selected.connect(func(i: int) -> void:
 		var v: Variant = o.get_item_metadata(i)
 		AppState.set_setting(key, String(v) if v != null else ""))
 	h.add_child(o)
 	_peer_menus[key] = o
+	_peer_menu_none[key] = none_label
 	_options[key] = o          # (locked for guests like the other shared controls)
 	_fill_peer_menu(key)
 	return h
@@ -1961,7 +1971,7 @@ func _fill_peer_menu(key: String) -> void:
 		return
 	var want := String(AppState.get_setting(key))
 	menu.clear()
-	menu.add_item("(nobody)")
+	menu.add_item(String(_peer_menu_none.get(key, "(nobody)")))
 	menu.set_item_metadata(0, null)
 	menu.select(0)
 	var found := want == ""
@@ -2007,8 +2017,13 @@ func _on_net_state(info: Dictionary) -> void:
 	_net_leave_btn.disabled = role == "off"
 	_net_medium.visible = bool(info.get("suggest_medium", false))
 	_net_live.visible = role == "guest"
-	_net_live_label.text = ("The host is sharing a live tab. Open your sender page and click \"Watch the host's live feed\"."
-		if bool(info.get("host_live", false)) else "The host isn't sharing a live tab right now.")
+	var from := NetSession.live_from()     # whose tab is on the big screen ("" host, "me", or a name)
+	if from == "me":
+		_net_live_label.text = "Everyone's big screen shows your tab: share one in your sender page."
+	elif bool(info.get("host_live", false)):
+		_net_live_label.text = "%s is sharing a live tab. Open your sender page and click \"Watch the host's live feed\"." % ("The host" if from == "" else from)
+	else:
+		_net_live_label.text = "%s isn't sharing a live tab right now." % ("The host" if from == "" else from)
 	for c in _net_peers.get_children():
 		c.queue_free()
 	var peers: Array = info.get("peers", [])
@@ -2585,6 +2600,13 @@ func _build_message_line(outer: VBoxContainer) -> void:
 	var on_pic := _check("messages_on_picture", "Show messages on the picture")
 	on_pic.tooltip_text = "Also show each message for a few seconds at the bottom of the room picture. Off by default: that's the window OBS captures, so messages (and errors) would show on your stream. Clean feed (F10) hides them either way."
 	_msg_fold.add_child(on_pic)
+	# troubleshooting log (autoload/debug_log.gd): one cleaned file per run, safe to send to a helper
+	var log_row := HBoxContainer.new()
+	_msg_fold.add_child(log_row)
+	log_row.add_child(_tip(_check("debug_log", "Save a log file for troubleshooting"),
+		"Writes what the app does (errors, connections, co-stream joins and drops, crashes) to a file each run. IP addresses, your Windows user name and your folders are taken out, so the file is safe to send to whoever is helping you. The last %d runs are kept." % DebugLog.KEEP_FILES))
+	log_row.add_child(_tip(_button("Open log folder", func() -> void: OS.shell_open(DebugLog.get_folder())),
+		"Opens the folder with the log files (newest last). Send the one from the run that went wrong."))
 
 
 ## EventBus.status_message: newest first, MESSAGE_HISTORY kept. The footer shows the first line of
