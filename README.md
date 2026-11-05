@@ -135,6 +135,7 @@ broken video in the cache.
 | **F9** | Control panel in its own window / back in the main window. |
 | **F6** | Work the control panel with the keyboard (see *Accessibility*). Esc leaves. |
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
+| **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -316,6 +317,21 @@ there moves to another seat.
   Run plugged in, on Windows' best-performance power mode, and make sure Redot and OBS use the
   NVIDIA GPU (Windows Settings → System → Display → Graphics → High performance). Use NVENC
   in OBS so the encoder doesn't load the CPU.
+
+## Click on people in the room
+Hold **Shift** and left-click a chatter's silhouette, a presenter or the big screen (or press
+**P**, then click without Shift). A small menu opens in its own window, so your stream never shows
+it:
+- **Throw ▸** a tomato, confetti, a spotlight, balloons or a high five at them. In a co-stream it
+  plays on every PC, like a chat reaction.
+- **Highlight / glow** makes their seat glow (the same glow as Stream Core's Highlighted message);
+  pick **Stop the glow** to end it.
+- **Show their last message** puts it on the panel's message line.
+- **Seat ▸** reserve their seat for them (or free it), or move them to the front row.
+- **Read aloud ▸** stop Stream Core reading them aloud: for this stream, for 24 hours or for good.
+- **Copy name** copies their name.
+
+A plain left click does nothing, so it never fires while you move the camera.
 
 ## The Esc menu
 Press **Esc** in the room for the game menu. It opens in its own window, so an OBS Window Capture

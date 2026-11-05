@@ -30,6 +30,8 @@ const KEYS: Array = [
 	["Shift + B", "Curtain reveal (lights and drum roll)"],
 	["C", "Chat screen on / off (rooms that have one)"],
 	["R", "Reply screen on / off (rooms that have one)"],
+	["Shift + click", "On a chatter, presenter or the big screen: their menu (throw, glow, seat...)"],
+	["P, then click", "The same, without holding Shift"],
 ]
 const BG := Color(0.07, 0.075, 0.09)
 const ACCENT := Color(0.96, 0.72, 0.3)

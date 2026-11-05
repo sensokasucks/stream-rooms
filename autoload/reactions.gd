@@ -134,6 +134,19 @@ func play_test(effect: String, target: Dictionary = {}, params: Dictionary = {})
 	_on_reaction(d)
 
 
+## The room's click menu (core/people_picker.gd): plays an effect at a target like a chat reaction
+## from the streamer, so a co-stream plays it on every PC too (NetSession listens to reaction_play).
+## Its id starts with "test-", so nothing is reported to Stream Core and nobody is charged.
+func play_from_menu(effect: String, target: Dictionary, params: Dictionary = {}) -> void:
+	var me := String(AppState.get_setting("together_name")).strip_edges()
+	if me == "":
+		me = "Streamer"
+	_on_reaction({"id": "test-menu-%d" % Time.get_ticks_msec(), "reaction": effect, "label": effect, "effect": effect,
+		"params": params, "count": 1, "target": _or_null(target),
+		"from": {"platform": "streamer", "id": me.to_lower(), "username": me.to_lower(), "display_name": me},
+		"route": "game", "message": ""})
+
+
 # ── Core link ────────────────────────────────────────────────
 ## Each time ChatFeed (re)connects to Core: say hello with our effects, then send the room and stage.
 func _on_chat_status(info: Dictionary) -> void:

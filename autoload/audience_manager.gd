@@ -272,7 +272,7 @@ func get_seat_member(slot: int) -> Dictionary:
 		avatar = ""
 	return {"name": m["name"], "color": m["color"], "style": m["style"], "avatar": avatar,
 		"title": String(m.get("title", "")), "platform": String(m.get("platform", "other")),
-		"roles": String(m.get("roles", "")), "streamer": int(m.get("streamer", 0))}
+		"roles": String(m.get("roles", "")), "streamer": int(m.get("streamer", 0)), "said": String(m.get("said", ""))}
 
 
 ## A chat message's roles as "mod,vip,sub" (any of them, in that order; "" for none), from
@@ -487,6 +487,7 @@ func add_chat(msg: Dictionary) -> void:
 	var raw := String(msg.get("text", "")).strip_edges()
 	if raw == "" or (raw.begins_with("!") and bool(AppState.get_setting("audience_hide_commands"))):
 		return
+	m["said"] = raw.left(MAX_TEXT)        # (the click menu's "Show their last message", people_picker.gd)
 	var parts := message_parts(raw, msg.get("emotes", []) as Array)
 	if parts.is_empty():
 		return
@@ -1772,6 +1773,12 @@ func mirror_speak(room: String, slot: int, parts: Array) -> void:
 				item["still"] = still
 			clean.append(item)
 	if not clean.is_empty():
+		var words := PackedStringArray()
+		for part: Variant in clean:
+			if part is String:
+				words.append(String(part))
+		if not words.is_empty() and _members.has(_slots[slot]):
+			_members[_slots[slot]]["said"] = " ".join(words).left(MAX_TEXT)
 		EventBus.audience_spoke.emit(slot, clean)
 
 
