@@ -479,11 +479,34 @@ func _send_live_feed() -> void:
 
 
 ## A room loaded with `count` podiums: start / stop the presenter feeds to match.
+## Emitted by PresenterStage.setup (or RoomHost with 0) every time a room loads, after the new
+## Presenter nodes exist and listen to presenter_texture_changed.
 func _on_room_presenters(count: int) -> void:
 	_room_presenters = count
 	_sync_presenter_feeds()
 	_sync_ndi_presenters()
 	_sync_spout_presenters()
+	# The new room's Presenter nodes start with no picture. A feed that was already running in the
+	# old room (sender page, NDI or Spout; in Together usually someone's avatar) keeps going and only
+	# announces itself when it starts or changes size, so the new podiums would sit on "waiting for
+	# ..." with only the key colour showing. Hand them the pictures we already have.
+	for n in range(1, count + 1):
+		var tex := _presenter_texture_now(n)
+		if tex:
+			EventBus.presenter_texture_changed.emit(n, tex)
+
+
+## The picture podium n is getting right now (sender page feed, NDI player or Spout texture), or
+## null. Only _on_room_presenters uses it; keep it in step with the three places that emit
+## presenter_texture_changed (_on_presenter_frame, _sync_ndi_presenters, _sync_spout_presenters).
+func _presenter_texture_now(n: int) -> Texture2D:
+	if _presenter_textures.has(n):
+		return _presenter_textures[n]
+	if _ndi_presenters.has(n):
+		return ((_ndi_presenters[n] as Dictionary)["player"] as VideoStreamPlayer).get_video_texture()
+	if _spout_presenters.has(n):
+		return (_spout_presenters[n] as Dictionary)["tex"]
+	return null
 
 
 ## The sender page's status (or {} when it disconnects): passed on to the panel as
