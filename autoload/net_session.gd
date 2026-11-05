@@ -122,6 +122,7 @@ var _guest_looks: Dictionary = {}
 var _shared: Dictionary = {}            # setting key -> true
 var _host_shares: Dictionary = {}       # guest: group -> bool, as the host last said (empty = all)
 var _role: String = "off"               # "off" | "host" | "guest"
+var _session_ms: int = 0                # Time.get_ticks_msec() when hosting / joining started (for DebugLog lines)
 var _status: String = ""
 var _error: bool = false
 var _address: String = ""               # host: what guests type in; guest: where it connected
@@ -415,6 +416,8 @@ func host() -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "host"
+	_session_ms = Time.get_ticks_msec()
+	DebugLog.note("net", "hosting: listen on %s, port %d, %s, version %s" % [bind, port, "Tailscale found" if ts != "" else "no Tailscale", _version()])
 	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16), "keyed": _my_avatar_keyed()}}
 	_streamer_slots.clear()
 	_aud_check_wait = AUD_CHECK_GAP
@@ -461,6 +464,8 @@ func join(rejoining: bool = false) -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "guest"
+	_session_ms = Time.get_ticks_msec()
+	DebugLog.note("net", "joining %s, version %s" % [url, _version()])   # (DebugLog hides the address)
 	_peers.clear()
 	_refused = ""
 	_host_ended = false
@@ -660,6 +665,7 @@ func _on_hello(id: int, d: Dictionary) -> void:
 		if why == "Wrong session password.":
 			_note_wrong(_peer_address(id))
 		_sm().send_auth(id, var_to_bytes({"t": "refused", "reason": why}))
+		DebugLog.note("net", "refused peer #%d from %s: %s (their version %s)" % [id, _peer_address(id), why, String(d.get("version", "?"))])
 		EventBus.status_message.emit("Refused someone joining: " + why, true)
 		# a moment for the reason to arrive before the connection closes
 		get_tree().create_timer(0.5).timeout.connect(func() -> void:
@@ -724,6 +730,7 @@ func _on_host_auth(d: Dictionary) -> void:
 
 
 func _on_auth_failed(id: int) -> void:
+	DebugLog.note("net", "password step failed for peer #%d (%s)" % [id, _role])
 	_nonces.erase(id)
 	if _role == "guest" and id == 1:
 		_rejoin.clear()            # (a wrong password or a full session won't fix itself by retrying)
@@ -735,6 +742,7 @@ func _on_auth_failed(id: int) -> void:
 func _on_peer_connected(id: int) -> void:
 	if _role != "host":
 		return
+	DebugLog.note("net", "peer #%d connected from %s, waiting for both OKs" % [id, _peer_address(id)])
 	var n := String(_hello_names.get(id, "Guest"))
 	_hello_names.erase(id)
 	# the password was right; now both people confirm before anything is shared. Someone the host
@@ -772,6 +780,7 @@ func _maybe_admit(id: int) -> void:
 
 ## Host: a guest (or someone still waiting to be let in) left.
 func _on_peer_disconnected(id: int) -> void:
+	DebugLog.note("net", "peer #%d disconnected (%s)" % [id, _peer_name(id) if _peers.has(id) else "not in the session yet"])
 	if _role == "host" and _pending.has(id):
 		var who := String(_pending[id]["name"])
 		_pending.erase(id)
@@ -798,6 +807,7 @@ func _on_peer_disconnected(id: int) -> void:
 func _on_connected() -> void:
 	if _role != "guest":
 		return
+	DebugLog.note("net", "connected to the host, waiting for its hello")
 	AppState.net_gate = _gate
 	_last_cam = Transform3D()
 	_admitted = false
@@ -807,6 +817,7 @@ func _on_connected() -> void:
 
 
 func _on_connection_failed() -> void:
+	DebugLog.note("net", "connection failed (%s)%s" % [_role, ", while reconnecting" if not _rejoin.is_empty() else ""])
 	if _role == "guest" and not _rejoin.is_empty():
 		_rejoin_failed.call_deferred()
 		return
@@ -815,6 +826,8 @@ func _on_connection_failed() -> void:
 
 
 func _on_server_disconnected() -> void:
+	DebugLog.note("net", "host connection dropped after %s (ping was %d ms)%s" % [_session_age(), roundi(_rtt * 1000.0),
+		", refused: " + _refused if _refused != "" else (", host stopped" if _host_ended else "")])
 	# dropped (not sent away, not leaving): try to get back in, keeping the audience as it was
 	if _role == "guest" and _refused == "" and not _host_ended and (_admitted or not _rejoin.is_empty()):
 		_start_rejoin.call_deferred()
@@ -830,6 +843,8 @@ func _on_server_disconnected() -> void:
 func _close(message: String, is_error: bool = false, keep_audience: bool = false) -> void:
 	# (checked before _role is reset below: a guest's "right host?" popup must close too)
 	var was_waiting_guest := _role == "guest" and not _admitted
+	if _role != "off":
+		DebugLog.note("net", "session closed as %s after %s: %s" % [_role, _session_age(), message if message != "" else "(no message)"])
 	if multiplayer.multiplayer_peer:
 		multiplayer.multiplayer_peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
@@ -1358,6 +1373,19 @@ func _apply_video_state() -> void:
 
 ## Round trip to the host in seconds: a running average of the ping RPCs (see _net_pong).
 func _rtt_s() -> float:
+	return _rtt
+
+
+## How long this session has run, "3m 12s" (DebugLog lines about drops).
+func _session_age() -> String:
+	@warning_ignore("integer_division")
+	var secs := (Time.get_ticks_msec() - _session_ms) / 1000
+	@warning_ignore("integer_division")
+	return "%dm %02ds" % [secs / 60, secs % 60]
+
+
+## Guest: the same round trip, for DebugLog's "still alive" line (0 = not measured yet).
+func ping_seconds() -> float:
 	return _rtt
 
 

@@ -2625,6 +2625,13 @@ func _build_message_line(outer: VBoxContainer) -> void:
 	var on_pic := _check("messages_on_picture", "Show messages on the picture")
 	on_pic.tooltip_text = "Also show each message for a few seconds at the bottom of the room picture. Off by default: that's the window OBS captures, so messages (and errors) would show on your stream. Clean feed (F10) hides them either way."
 	_msg_fold.add_child(on_pic)
+	# troubleshooting log (autoload/debug_log.gd): one cleaned file per run, safe to send to a helper
+	var log_row := HBoxContainer.new()
+	_msg_fold.add_child(log_row)
+	log_row.add_child(_tip(_check("debug_log", "Save a log file for troubleshooting"),
+		"Writes what the app does (errors, connections, co-stream joins and drops, crashes) to a file each run. IP addresses, your Windows user name and your folders are taken out, so the file is safe to send to whoever is helping you. The last %d runs are kept." % DebugLog.KEEP_FILES))
+	log_row.add_child(_tip(_button("Open log folder", func() -> void: OS.shell_open(DebugLog.get_folder())),
+		"Opens the folder with the log files (newest last). Send the one from the run that went wrong."))
 
 
 ## EventBus.status_message: newest first, MESSAGE_HISTORY kept. The footer shows the first line of

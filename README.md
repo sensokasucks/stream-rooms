@@ -47,6 +47,21 @@ the window OBS captures. Clean feed (F10) hides them either way.
 Together's "wants to join" and "is this the right host?" popups open as their own small window,
 even while the panel sits inside the main window, so a guest's name never shows on stream.
 
+### Log files for troubleshooting
+**Save a log file for troubleshooting** (under **Messages ▸**, **on by default**) writes what the
+app does to a file each time it runs: errors, the Stream Core connection, Together joins, leaves and
+drops (with the ping), room and source changes, a "still alive" line every minute, and, after a
+crash, the last lines from the run that crashed. **Open log folder** opens the folder
+(`%APPDATA%\Redot\app_userdata\Stream Rooms\logs_to_share`). The last 15 runs are kept, newest
+last in the list.
+
+The files are cleaned before anything is written, so they are safe to send to whoever is helping:
+IP addresses become tags like `<ip-home#1>` or `<ip-tailscale#2>` (the same address keeps the same
+tag, so you can still follow one guest), and your Windows user name, computer name, personal
+folders, Cloudflare tunnel names and any keys or tokens in links are replaced too. Chatter names
+stay. When a friend has trouble connecting or crashing, ask them for the log from that run (and
+send yours from the same time).
+
 ## Showing a browser tab (recommended)
 1. Run the game.
 2. In the panel's **Source** tab, click **Open sender page**. It opens `http://127.0.0.1:8765/`.
@@ -1122,8 +1137,8 @@ driver up to date (an old NVIDIA driver froze it once). NDI needs the free NDI R
 Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\Stream Rooms`).
 
 ## Project layout
-- `autoload/`: EventBus (signals only), AppState (settings and state), SaveManager
-  (`user://settings.cfg`), RoomCatalog, AudioManager (buses, reverb, ducking), SystemMedia
+- `autoload/`: EventBus (signals only), AppState (settings and state), DebugLog (the cleaned
+  troubleshooting log), SaveManager (`user://settings.cfg`), RoomCatalog, AudioManager (buses, reverb, ducking), SystemMedia
   (media key), ChatFeed / AudienceManager / EmoteCache (chat audience), Reactions (chat reactions)
 - `core/reactions/`: ReactionLayer, the per-room effects for chat reactions
 - `core/`: main scene and wiring, RoomHost (threaded load and fade, graphics quality via
