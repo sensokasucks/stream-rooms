@@ -70,6 +70,11 @@ send yours from the same time).
 4. The tab appears on the screen within a second or two. Keep the sender page open. A small
    separate window works best, because browsers slow down hidden tabs.
 
+The sender page is kept small: the link light, **Share a tab or window** / **Stop**, the preview
+and **Start webcam**. Picture quality, frame rate and the sound switch sit under **Quality and
+sound**. The **Presenter feeds** box only shows while a podium in the game is set to a camera,
+tab or web page, and only the podiums in use get a row.
+
 The sender page can sit behind other tabs: the picture work runs in a background worker, which
 browsers don't slow down the way they slow down a tab that isn't in front. (Keeping it in its own
 small window still works too.) Don't minimise the whole browser window: Windows stops drawing a
