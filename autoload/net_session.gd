@@ -332,7 +332,13 @@ func get_info() -> Dictionary:
 			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100)),
 			"remote": id == _remote_id, "asked": bool(_peers[id].get("asked", false))})
 	var q := String(AppState.get_setting("graphics_quality"))
-	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
+	# host, while a synced video waits to start: who has it ready (Source tab's File section)
+	var vready: Array = []
+	var vwait: Array = []
+	if _role == "host" and not _video.is_empty() and not bool(_video.get("started", true)):
+		for id: int in _peers:
+			(vready if (_video["ready"] as Dictionary).has(id) else vwait).append(_peer_name(id))
+	return {"video_ready": vready, "video_waiting": vwait, "role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
 		"host_live": is_host_live(), "shares": {"room": group_shared("room"), "curtain": group_shared("curtain"),
 		"presenters": group_shared("presenters")}, "peers": peers, "pending": pending_guests(),
@@ -1356,6 +1362,7 @@ func _on_file_prepare_failed(input: String, message: String) -> void:
 ## Host: this PC (peer id; 1 = the host) has the video ready. Starts when everyone has.
 func _mark_ready(peer_id: int) -> void:
 	_video["ready"][peer_id] = true
+	_emit_state()            # (the Source tab shows who's ready)
 	for id: int in _peers:
 		if not _video["ready"].has(id):
 			return

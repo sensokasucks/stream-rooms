@@ -28,9 +28,19 @@ signal file_sync_requested(position: float, playing: bool)
 signal file_progress(position: float, playing: bool)
 signal file_stop_requested
 signal file_pause_toggle_requested
+## Source tab "Just get it ready": download / convert a file or URL into the cache without playing it.
+signal file_ready_requested(input: String)
+## Source tab "Cancel": stop the running download / convert.
+signal file_cancel_requested
 ## The video download / convert (File or URL): state "downloading" | "converting" | "ready" |
-## "failed"; message is plain words for the panel, details the tool's own log (failures only).
+## "prepared" (Just get it ready finished) | "cancelled" | "failed"; message is plain words for the
+## panel, details the tool's own log (failures only).
 signal video_job_changed(state: String, message: String, details: String)
+## How far the download / convert step has got: stage "downloading" | "converting", fraction 0..1
+## (-1 = the tool doesn't say). From VideoLoader through ScreenFeed.
+signal video_progress(stage: String, fraction: float)
+## The list of ready videos (the cache) changed: a video finished or one was deleted.
+signal ready_videos_changed
 ## Hotkeys / panel -> CameraRig: jump to camera preset number `index` of the current room.
 signal camera_preset_requested(index: int)
 

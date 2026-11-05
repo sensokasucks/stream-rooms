@@ -96,8 +96,19 @@ key by itself and reconnects. The page only opens as `127.0.0.1` or `localhost`.
 Type a path or a YouTube URL in the *Source* tab, or click **Browse...**. Non-`.ogv` files and URLs
 need `yt-dlp` and `ffmpeg`: right-click `tools/get_tools.ps1` > *Run with PowerShell*.
 
-While a video downloads or converts, a line under the File controls says so with a running clock
-("Downloading... 1:12", "Converting... 0:40"), then "Ready". If it fails, the line says why in
+A video goes through up to three steps: **Download** (links only), **Convert** (to the format the
+game plays) and **Play**. While it works, a line under the File controls says which step it's on,
+how far it got and for how long ("Step 1 of 2: Downloading 42% · 1:12", "Step 2 of 2: Converting
+80% · 0:40"), with a progress bar and a **Cancel** button (nothing half-done is kept). Then
+"Ready". **Just get it ready** does the download and convert without playing, so the video starts
+at once later.
+
+**Ready videos** (under the File controls) lists every video that's ready on this PC, with its
+name, its size and the disk space they all use. **Play** starts one straight away; **Delete**
+removes it from this PC (it asks first; a link can be downloaded again). In a co-stream, the host's
+File section shows who has the video ready and who is still getting it ready.
+
+If it fails, the line says why in
 plain words (for example "yt-dlp may be out of date: run tools\get_tools.ps1", a private or
 age-restricted video, no internet) with a **Try again** button; what yt-dlp / ffmpeg printed is
 under **Details ▸**.

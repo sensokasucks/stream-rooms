@@ -128,6 +128,14 @@ var _video_details_fold: VBoxContainer
 var _video_state: String = ""           # "", "downloading", "converting", "ready", "failed"
 var _video_started_ms: int = 0
 var _video_tick: float = 0.0
+var _video_fraction: float = -1.0         # how far the step has got (EventBus.video_progress; -1 = unknown)
+var _video_bar: ProgressBar               # File section: the step's progress
+var _video_cancel: Button                 # File section: Cancel while a download / convert runs
+var _ready_list: VBoxContainer            # File section: Ready videos (VideoLoader.list_ready)
+var _ready_total: Label
+var _video_who: Label                     # File section: who's ready in a co-stream (host)
+## The loader script, for its static ready-videos functions (it has no class_name).
+const VIDEO_LOADER := preload("res://core/video_loader.gd")
 var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
 var _confirm: ConfirmationDialog        # "Empty all seats?" and the other ask-first questions
 var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's picture
@@ -160,6 +168,10 @@ func _ready() -> void:
 	EventBus.status_message.connect(_on_status_message)
 	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_now())
 	EventBus.video_job_changed.connect(_on_video_job)
+	EventBus.video_progress.connect(func(_st: String, f: float) -> void:
+		_video_fraction = f
+		_show_video_status())
+	EventBus.ready_videos_changed.connect(_refresh_ready_videos)
 	EventBus.file_play_requested.connect(func(input: String) -> void:
 		if input.strip_edges() != "":
 			_last_video_input = input)
@@ -615,6 +627,8 @@ func _build_source_tab() -> Control:
 	r1.add_child(_url)
 	r1.add_child(_tip(_button("Play", func() -> void: EventBus.file_play_requested.emit(_url.text)),
 		"Play it on the big screen. An address is downloaded and converted first (the status line below shows how far it got)."))
+	r1.add_child(_tip(_button("Just get it ready", func() -> void: EventBus.file_ready_requested.emit(_url.text)),
+		"Download and convert it now without playing it, so it starts at once later (from Ready videos below)."))
 	r1.add_child(_tip(_button("Browse...", func() -> void: _dialog.popup_centered_ratio(0.6)), "Pick a video file on this PC."))
 	var r2 := HBoxContainer.new()
 	v.add_child(r2)
@@ -641,11 +655,31 @@ func _build_source_tab() -> Control:
 	_video_retry.tooltip_text = "Load the same file or link again (for example after updating yt-dlp with tools\\get_tools.ps1)."
 	_video_retry.visible = false
 	r3.add_child(_video_retry)
+	_video_cancel = _button("Cancel", func() -> void: EventBus.file_cancel_requested.emit())
+	_video_cancel.tooltip_text = "Stop the download or convert. Nothing half-done is kept."
+	_video_cancel.visible = false
+	r3.add_child(_video_cancel)
+	_video_bar = ProgressBar.new()
+	_video_bar.min_value = 0.0
+	_video_bar.max_value = 100.0
+	_video_bar.custom_minimum_size = Vector2(0, 14)
+	_video_bar.tooltip_text = "How far this step has got. A video goes through Download (links only), then Convert, then Play."
+	_video_bar.visible = false
+	v.add_child(_video_bar)
+	_video_who = _hint("")
+	_video_who.visible = false
+	v.add_child(_video_who)
 	_video_details_fold = _fold(v, "source_video_details", "Details")
 	(_video_details_fold.get_meta("fold_head") as Control).visible = false
 	_video_details = _hint("")
 	_video_details.tooltip_text = "What yt-dlp / ffmpeg printed last. Useful when asking for help."
 	_video_details_fold.add_child(_video_details)
+	v.add_child(_heading("Ready videos"))
+	_ready_total = _hint("")
+	v.add_child(_ready_total)
+	_ready_list = VBoxContainer.new()
+	v.add_child(_ready_list)
+	_refresh_ready_videos()
 	# start on what plays now, else the last pick, else the browser tab
 	var pick := String(AppState.get_setting("source_tab_pick"))
 	var playing := AppState.get_source_mode()
@@ -2165,6 +2199,13 @@ func _refresh_avatar_rows() -> void:
 ## only dots: the panel can be on stream.
 func _on_net_state(info: Dictionary) -> void:
 	_refresh_strip()
+	if _video_who != null:
+		# co-stream video: who has it ready (host; NetSession "video_ready" / "video_waiting")
+		var ready_names: Array = info.get("video_ready", [])
+		var waiting: Array = info.get("video_waiting", [])
+		_video_who.visible = not ready_names.is_empty() or not waiting.is_empty()
+		_video_who.text = "Ready: %s · Still getting it ready: %s" % [", ".join(ready_names) if not ready_names.is_empty() else "nobody yet",
+			", ".join(waiting) if not waiting.is_empty() else "nobody"]
 	if _net_status == null:
 		return
 	for key: String in _peer_menus:
@@ -2898,6 +2939,8 @@ func _on_video_job(state: String, message: String, details: String) -> void:
 	if state == "downloading" or state == "converting":
 		if _video_state != "downloading" and _video_state != "converting":
 			_video_started_ms = Time.get_ticks_msec()
+		if state != _video_state:
+			_video_fraction = -1.0          # (a new step: no percentage yet)
 	_video_state = state
 	_video_status.set_meta("message", message)
 	_video_details.text = details
@@ -2922,11 +2965,18 @@ func _show_video_status() -> void:
 	var clock := "%d:%02d" % [secs / 60, secs % 60]
 	var text := ""
 	var color := Color(1, 1, 1, 0.78)
+	var pct := " %d%%" % roundi(_video_fraction * 100.0) if _video_fraction >= 0.0 else ""
+	var link := _last_video_input.strip_edges().begins_with("http")
 	match _video_state:
 		"downloading":
-			text = "Downloading... %s" % clock
+			text = "Step 1 of 2: Downloading%s · %s" % [pct, clock]
 		"converting":
-			text = "Converting... %s (long videos take a while)" % clock
+			text = ("Step 2 of 2: Converting%s · %s (long videos take a while)" if link
+				else "Converting%s · %s (long videos take a while)") % [pct, clock]
+		"cancelled":
+			text = "Stopped."
+		"prepared":
+			text = String(_video_status.get_meta("message", "Ready to play."))
 		"ready":
 			text = String(_video_status.get_meta("message", "Ready."))
 		"failed":
@@ -2936,6 +2986,46 @@ func _show_video_status() -> void:
 	_video_status.visible = text != ""
 	_video_status.add_theme_color_override("font_color", color)
 	_video_retry.visible = _video_state == "failed" and _last_video_input != ""
+	var busy := _video_state == "downloading" or _video_state == "converting"
+	_video_cancel.visible = busy
+	_video_bar.visible = busy
+	_video_bar.value = maxf(_video_fraction, 0.0) * 100.0
+	_video_bar.show_percentage = _video_fraction >= 0.0
+
+
+## File section > Ready videos: everything in the video cache (VideoLoader.list_ready) with its size,
+## Play and Delete, and the disk space they use together.
+func _refresh_ready_videos() -> void:
+	if _ready_list == null:
+		return
+	for c in _ready_list.get_children():
+		c.queue_free()
+	var list := VIDEO_LOADER.list_ready()
+	var total := 0
+	for e: Dictionary in list:
+		total += int(e["bytes"])
+		var row := HBoxContainer.new()
+		_ready_list.add_child(row)
+		var l := Label.new()
+		l.text = "%s  (%s)" % [String(e["title"]).left(70), String.humanize_size(int(e["bytes"]))]
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.clip_text = true
+		l.tooltip_text = String(e["source"]) if String(e["source"]) != "" else String(e["title"])
+		l.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(l)
+		var path := String(e["path"])
+		var source := String(e["source"])
+		row.add_child(_tip(_button("Play", func() -> void:
+			# (in a co-stream a link plays through the link, so every PC loads it; otherwise straight from the cache)
+			_last_video_input = source if source.begins_with("http") and NetSession.get_role() != "off" else path
+			EventBus.file_play_requested.emit(_last_video_input)), "Play this video on the big screen. It starts at once: it's ready."))
+		var title := String(e["title"]).left(60)
+		row.add_child(_tip(_button("Delete", func() -> void:
+			_ask("Delete this video?", "\"%s\" is removed from Ready videos. A link can be downloaded again later." % title, "Delete", func() -> void:
+				VIDEO_LOADER.delete_ready(path)
+				_refresh_ready_videos())), "Remove this video from the cache to free disk space (asks first)."))
+	_ready_total.text = "No ready videos yet. Play or Just get it ready keeps a video here." if list.is_empty() \
+		else "%d %s, %s on disk." % [list.size(), "video" if list.size() == 1 else "videos", String.humanize_size(total)]
 
 
 # ── Widget helpers ───────────────────────────────────────────
