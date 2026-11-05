@@ -88,6 +88,8 @@ var _net_peers: VBoxContainer
 var _net_host_btn: Button
 var _net_join_btn: Button
 var _net_leave_btn: Button
+var _net_resync_btn: Button             # Together: ask for (guest) / send (host) everything again
+var _net_sync_bar: ProgressBar          # Together: a guest's "Syncing with <host>" progress
 var _net_medium: HBoxContainer
 var _net_live: HBoxContainer
 var _net_live_label: Label
@@ -1765,10 +1767,21 @@ func _build_together_tab() -> Control:
 			return
 		_ask("Stop hosting?", "This ends the session for your %s. They keep what they see now, but stop following you." % ("guest" if guests == 1 else "%d guests" % guests),
 			"Stop hosting", func() -> void: NetSession.leave()))
-	_net_leave_btn.tooltip_text = "End your part in the session. Everything stays as it is now. While you host with guests in, it asks first."
+	_net_leave_btn.tooltip_text = "End your part in the session. Everything stays as it is now. While you host with guests in, it asks first. While reconnecting it stops trying."
 	v.add_child(_net_leave_btn)
+	_net_resync_btn = _button("Resync", func() -> void: NetSession.resync())
+	_net_resync_btn.tooltip_text = "If something looks different on two PCs (the audience, a podium picture, the room): guests ask the host for everything again; the host sends everything to every guest again. The audience also checks itself every few seconds and fixes itself."
+	v.add_child(_net_resync_btn)
 	_net_status = _hint("")
 	v.add_child(_net_status)
+	# guest: how far the first sync (or a resync) has got (NetSession "Staying in sync")
+	_net_sync_bar = ProgressBar.new()
+	_net_sync_bar.min_value = 0.0
+	_net_sync_bar.max_value = 100.0
+	_net_sync_bar.custom_minimum_size = Vector2(0, 14)
+	_net_sync_bar.tooltip_text = "Syncing: the room, presenters, pictures and audience coming from the host. It goes away once everything is here."
+	_net_sync_bar.visible = false
+	v.add_child(_net_sync_bar)
 	# guest: the host is sharing a tab, watch it through your own sender page
 	_net_live = HBoxContainer.new()
 	_net_live_label = _hint("")
@@ -2014,7 +2027,12 @@ func _on_net_state(info: Dictionary) -> void:
 	_net_copy_btn.visible = has_addr
 	_net_addr_label.text = ("tunnel: ••••••.trycloudflare.com" if NetSession.is_tunnel() else "••••••••") if has_addr else ""
 	_net_join_btn.disabled = role != "off"
-	_net_leave_btn.disabled = role == "off"
+	_net_leave_btn.disabled = role == "off" and not bool(info.get("reconnecting", false))
+	_net_resync_btn.disabled = not (role == "host" and (info.get("peers", []) as Array).size() > 1) \
+		and not (role == "guest" and not bool(info.get("waiting", false)))
+	var prog := float(info.get("sync_progress", -1.0))
+	_net_sync_bar.visible = bool(info.get("syncing", false))
+	_net_sync_bar.value = maxf(prog, 0.0) * 100.0
 	_net_medium.visible = bool(info.get("suggest_medium", false))
 	_net_live.visible = role == "guest"
 	var from := NetSession.live_from()     # whose tab is on the big screen ("" host, "me", or a name)
@@ -2040,6 +2058,8 @@ func _on_net_state(info: Dictionary) -> void:
 			text += " (you)"
 		if id != 1 and bool(p["cohost"]) and role != "host":
 			text += " - co-host"
+		if not bool(p.get("synced", true)):
+			text += " - syncing %d%%" % int(p.get("sync", 0))
 		l.text = text
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(l)
@@ -2569,7 +2589,12 @@ func _refresh_strip() -> void:
 			_set_strip("together", "Hosting (%d guest%s)" % [guests, "" if guests == 1 else "s"], STRIP_GREEN)
 	elif role == "guest":
 		var waiting_me := bool(info.get("waiting", false))
-		_set_strip("together", "Joining..." if waiting_me else "Joined", STRIP_AMBER if waiting_me else STRIP_GREEN)
+		if bool(info.get("syncing", false)):
+			_set_strip("together", "Syncing...", STRIP_AMBER)
+		else:
+			_set_strip("together", "Joining..." if waiting_me else "Joined", STRIP_AMBER if waiting_me else STRIP_GREEN)
+	elif bool(info.get("reconnecting", false)):
+		_set_strip("together", "Reconnecting...", STRIP_AMBER)
 	elif bool(info.get("error", false)):
 		_set_strip("together", "Together: problem", STRIP_RED)
 	else:

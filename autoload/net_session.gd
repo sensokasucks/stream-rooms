@@ -24,14 +24,18 @@ extends Node
 ## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
 ## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
 ## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Each streamer's own looks, Live feed
-## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
+## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Staying in sync
+## (first sync, audience checks, resync, reconnecting), Connection helpers (tunnel), Helpers.
 ## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
 ## Network protocol number, checked in the password step along with the app version. Raise it when
 ## the RPCs change in a way older copies can't follow.
 ## 2: guests send chat in batches (_net_guest_chat_batch); 3: reaction pictures and audience looks travel;
-## 4: guests send their own looks and the host sends each streamer's (_net_guest_looks, _net_streamer_looks).
-const PROTOCOL: int = 4
+## 4: guests send their own looks and the host sends each streamer's (_net_guest_looks, _net_streamer_looks);
+## 5: staying in sync (_net_sync_start / _net_sync_done / _net_guest_synced, _net_aud_check, _net_aud_resync,
+## _net_resync_request, _net_removed), streamer areas kept by name, pause to react for everyone
+## (_net_react_pause), whose avatar is a see-through page (_net_avatar_keyed, roster "keyed").
+const PROTOCOL: int = 5
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -60,6 +64,22 @@ const READY_TIMEOUT: float = 120.0
 ## A guest who passed the password check waits this long for both popups (the host's "let them in"
 ## and the guest's "is this the right host") before the host sends it away.
 const CONFIRM_TIMEOUT: float = 120.0
+## Host: seconds between audience checks. While the audience is shared the host sends each guest a
+## short fingerprint of who sits where (AudienceManager.roster_fingerprint); a guest whose own
+## differs asks for the whole roster again (_net_aud_check -> _net_aud_resync).
+const AUD_CHECK_GAP: float = 5.0
+## Guest: at most one roster request per this many seconds (a room that is still loading can
+## differ for a moment; the next check catches it).
+const AUD_RESYNC_GAP: float = 4.0
+## Guest: seconds to wait before each try to get back in after the connection dropped. After the
+## last one it gives up and goes back to its own audience (see "Staying in sync").
+const RECONNECT_DELAYS: Array[float] = [2.0, 4.0, 8.0, 15.0, 15.0, 15.0, 15.0, 15.0]
+## Host: a guest who dropped keeps their part of the shared audience (their streamer area, their
+## viewers' looks) for this long, and is let back in without the popup if they return by the same
+## name in that time. Seconds.
+const AWAY_KEEP_S: float = 600.0
+## Guest: chat lines kept while reconnecting, sent to the host once back in (older ones are dropped).
+const HELD_CHAT_MAX: int = 100
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
 const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
@@ -76,6 +96,13 @@ const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]
 ## Presenter sources that only exist on the host's PC (its camera, browser tab, NDI, Spout): guests show
 ## a silhouette instead. A "web" page (e.g. a VDO.Ninja link) works for everyone.
 const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
+## A "Web page (transparent)" avatar (My avatar) goes out over this colour (ScreenFeed tells the
+## sender page; web/backdrop.html draws it). A podium showing such an avatar keys this colour on
+## every PC, whatever that podium's own key colour says (presenter.gd, avatar_key).
+const AVATAR_KEY_COLOR: Color = Color(0.0, 1.0, 0.0)
+## Web addresses that only open on the PC that typed them (a local avatar app, the home network):
+## a podium showing one is the host's alone, like a tab (see podium_warnings).
+const LOCAL_URL_HOSTS: Array[String] = ["localhost", "127.", "0.0.0.0", "192.168.", "10.", "[::1]"]
 ## Curtain styles accepted from the network (same as EventBus.curtain_changed's style).
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
 ## Sender of a reaction with a picture from its own Stream Core: seconds the reaction waits for the
@@ -169,6 +196,23 @@ var _video_count: int = 0
 var _video: Dictionary = {}
 ## Guest: the host's video. {id, url, ready, state: [position, playing, time received in ms] or []}
 var _guest_video: Dictionary = {}
+## Host: each streamer's part of the shared audience, kept by name so it doesn't move when someone
+## reconnects (a reconnecting guest gets a new peer id). The host is always 0.
+## name key (_streamer_key) -> {"index": 1..MAX_GUESTS, "id": peer id (0 = away), "away": seconds away}
+var _streamer_slots: Dictionary = {}
+var _aud_check_wait: float = 0.0        # host: seconds until the next audience check
+var _aud_resync_wait: float = 0.0       # guest: seconds until it may ask for the roster again
+var _aud_resyncs: int = 0               # guest: rosters asked for again this session (shown in get_info)
+## Guest: the first sync after joining (or a resync). {"total": things the host is sending,
+## "got": things here so far, "done": the host's last one arrived} ({} = not syncing).
+var _sync: Dictionary = {}
+var _synced: bool = false               # guest: everything from the host has arrived and is shown
+## Guest: getting back into the session after the connection dropped.
+## {"host": the host's name, "try": tries so far, "wait": seconds to the next} ({} = not reconnecting)
+var _rejoin: Dictionary = {}
+var _chat_held: Array = []              # guest: this PC's chat while reconnecting (HELD_CHAT_MAX)
+var _host_ended: bool = false           # guest: the host said it's stopping (_net_session_ended)
+var _applying_pause: bool = false       # guest: applying the host's pause-to-react (see _net_react_pause)
 
 
 ## Builds the shared-key whitelist and hooks up SceneMultiplayer's signals (password step,
@@ -196,6 +240,7 @@ func _ready() -> void:
 		_old_password = saved_pw
 	EventBus.room_requested.connect(_on_room_requested)
 	EventBus.curtain_changed.connect(_on_curtain_changed)
+	EventBus.react_pause_changed.connect(_on_react_pause)
 	EventBus.reaction_play.connect(_on_reaction_play)
 	EventBus.emote_ready.connect(_on_emote_ready)
 	EventBus.file_prepared.connect(_on_file_prepared)
@@ -218,12 +263,15 @@ func _exit_tree() -> void:
 		_close("")
 
 
-## Only runs during a session: timers (video, tunnel, ping, chat batches, roster, popups),
-## then this PC's camera to the others while it moves.
+## Only runs during a session (and while a guest is reconnecting): timers (video, tunnel, ping, chat
+## batches, roster, popups, staying in sync), then this PC's camera to the others while it moves.
 func _process(delta: float) -> void:
+	_sync_tick(delta)
+	if _role == "off":
+		return             # (a guest waiting for its next reconnect try: nothing else to do)
 	_video_timeout(delta)
 	_tunnel_poll(delta)
-	if _role == "guest":
+	if _role == "guest" and _connected():
 		_ping_wait -= delta
 		if _ping_wait <= 0.0:
 			_ping_wait = PING_GAP
@@ -233,6 +281,10 @@ func _process(delta: float) -> void:
 			_chat_wait = CHAT_BATCH_GAP
 			_net_guest_chat_batch.rpc_id(1, _chat_out)
 			_chat_out = []
+		# chat from while the connection was down goes out a batch at a time once back in
+		if _chat_out.is_empty() and not _chat_held.is_empty() and _aud_shared and _admitted:
+			_chat_out = _chat_held.slice(0, CHAT_BATCH_MAX)
+			_chat_held = _chat_held.slice(CHAT_BATCH_MAX)
 	if _roster_wait >= 0.0:
 		_roster_wait -= delta
 		if _roster_wait < 0.0:
@@ -252,7 +304,7 @@ func _process(delta: float) -> void:
 	_cam_wait = CAMERA_SEND_GAP
 	if _role == "host":
 		_to_guests("_net_camera", [1, x])
-	elif _role == "guest":
+	elif _role == "guest" and _connected():
 		_net_guest_camera.rpc_id(1, x)
 
 
@@ -262,13 +314,17 @@ func get_info() -> Dictionary:
 	var me := multiplayer.get_unique_id() if _role != "off" else 0
 	var peers: Array = []
 	for id: int in _peers:
-		peers.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "me": id == me})
+		# synced: the host's view of whether that guest has everything (true for the host itself)
+		peers.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "me": id == me,
+			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100))})
 	var q := String(AppState.get_setting("graphics_quality"))
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
 		"host_live": is_host_live(), "shares": {"room": group_shared("room"), "curtain": group_shared("curtain"),
 		"presenters": group_shared("presenters")}, "peers": peers, "pending": pending_guests(),
-		"waiting": _role == "guest" and not _admitted, "host_name": _host_name}
+		"waiting": _role == "guest" and not _admitted, "host_name": _host_name,
+		"syncing": _role == "guest" and _admitted and not _synced, "sync_progress": sync_progress(),
+		"reconnecting": not _rejoin.is_empty(), "aud_resyncs": _aud_resyncs}
 
 
 ## Host: who is waiting to be let in, [{id, name, host_ok, guest_ok}].
@@ -359,7 +415,9 @@ func host() -> void:
 		return
 	multiplayer.multiplayer_peer = peer
 	_role = "host"
-	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16)}}
+	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16), "keyed": _my_avatar_keyed()}}
+	_streamer_slots.clear()
+	_aud_check_wait = AUD_CHECK_GAP
 	_cams.clear()
 	_video.clear()
 	AppState.net_gate = _gate
@@ -383,9 +441,12 @@ func host() -> void:
 
 
 ## Together tab "Join": connects to together_address. The password step follows in _on_host_auth.
-func join() -> void:
+## A click on Join stops any reconnecting first; the reconnect timer calls it with rejoining = true.
+func join(rejoining: bool = false) -> void:
 	if _role != "off":
 		return
+	if not rejoining:
+		_stop_rejoin(true)
 	var pw := String(AppState.get_setting("together_password")).strip_edges()
 	if pw == "":
 		_set_status("Type the session password first.", true)
@@ -402,17 +463,38 @@ func join() -> void:
 	_role = "guest"
 	_peers.clear()
 	_refused = ""
+	_host_ended = false
 	_rtt = 0.0
 	_ping_wait = 0.5
 	_address = url
-	_set_status("Connecting to the host...")
+	if not rejoining:
+		_set_status("Connecting to the host...")
 
 
 ## Together tab "Leave" / "Stop hosting".
 func leave() -> void:
 	if _role == "off":
+		if not _rejoin.is_empty():
+			_stop_rejoin(true, "Stopped reconnecting.")
+		return
+	_rejoin.clear()
+	if _role == "host" and guest_count() > 0:
+		# tell the guests first, so they don't take it for a dropped connection and try to reconnect;
+		# a moment for the message to go out before the connection closes
+		_to_guests("_net_session_ended", [])
+		set_process(false)
+		get_tree().create_timer(0.3).timeout.connect(func() -> void:
+			if _role == "host":
+				_close("Stopped hosting."))
 		return
 	_close("Left the session." if _role == "guest" else "Stopped hosting.")
+
+
+## Guest: the host stopped hosting on purpose (see leave): no reconnecting when the connection closes.
+@rpc("authority", "call_remote", "reliable")
+func _net_session_ended() -> void:
+	if _from_host():
+		_host_ended = true
 
 
 ## " Your password is short ..." while hosting with an old short password, else "".
@@ -437,10 +519,34 @@ func set_cohost(peer_id: int, on: bool) -> void:
 	_send_roster()
 
 
-## Host: send a guest away.
+## Host: send a guest away. They're told first, so they don't try to reconnect, and their part of
+## the audience isn't kept for them.
 func remove_peer(peer_id: int) -> void:
 	if _role == "host" and peer_id != 1 and _peers.has(peer_id):
-		_sm().disconnect_peer(peer_id)
+		_net_removed.rpc_id(peer_id, "The host removed you from the session.")
+		for k: String in _streamer_slots.keys():
+			if int(_streamer_slots[k]["id"]) == peer_id:
+				_streamer_slots.erase(k)
+		get_tree().create_timer(0.5).timeout.connect(func() -> void:
+			if _role == "host" and _peers.has(peer_id):
+				_sm().disconnect_peer(peer_id)
+				# (disconnecting a peer from this side doesn't always raise peer_disconnected here)
+				if _peers.has(peer_id):
+					_on_peer_disconnected(peer_id))
+
+
+## Guest: the host removed this copy (see remove_peer): the session ends here, no reconnecting.
+@rpc("authority", "call_remote", "reliable")
+func _net_removed(reason: String) -> void:
+	if _from_host():
+		_refused = reason.left(200)
+
+
+## Tests: the connection drops as if the network went away (the guest reconnects on its own).
+func simulate_drop() -> void:
+	if _role == "guest" and multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.close()
+		_on_server_disconnected()
 
 
 ## Guest: hide the "use Medium graphics" suggestion.
@@ -620,6 +726,7 @@ func _on_host_auth(d: Dictionary) -> void:
 func _on_auth_failed(id: int) -> void:
 	_nonces.erase(id)
 	if _role == "guest" and id == 1:
+		_rejoin.clear()            # (a wrong password or a full session won't fix itself by retrying)
 		# deferred: closing the connection inside Redot's own network callback crashes it
 		_close.call_deferred(_refused if _refused != "" else "The host didn't let this copy in. Check the password.", true)
 
@@ -630,9 +737,14 @@ func _on_peer_connected(id: int) -> void:
 		return
 	var n := String(_hello_names.get(id, "Guest"))
 	_hello_names.erase(id)
-	# the password was right; now both people confirm before anything is shared
-	_pending[id] = {"name": n, "host_ok": auto_confirm, "guest_ok": false, "wait": CONFIRM_TIMEOUT}
+	# the password was right; now both people confirm before anything is shared. Someone the host
+	# already let in who dropped and comes back by the same name (AWAY_KEEP_S) needs no new popup.
+	var returning := _is_away(n)
+	_pending[id] = {"name": n, "host_ok": auto_confirm or returning, "guest_ok": false, "wait": CONFIRM_TIMEOUT}
 	_net_welcome.rpc_id(id, display_name())
+	if returning:
+		_set_status("%s is reconnecting." % n)
+		return
 	if not auto_confirm:
 		EventBus.net_confirm_needed.emit("host", id, n)
 	_set_status("%s wants to join. Let them in or decline in the popup." % n)
@@ -647,17 +759,15 @@ func _maybe_admit(id: int) -> void:
 	_pending.erase(id)
 	EventBus.net_confirm_closed.emit(id)
 	# tab: the stream name this guest's shared tab goes out under if the host puts it on the big screen
-	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16), "tab": _random_token(20), "sharing": false}
-	_net_snapshot.rpc_id(id, _snapshot())
-	if group_shared("presenters"):
-		for n in range(1, AppState.PRESENTER_COUNT + 1):
-			_send_picture(n, id)
+	var back := _is_away(who)
+	_peers[id] = {"name": who, "cohost": false, "avatar": _random_token(16), "tab": _random_token(20), "sharing": false,
+		"synced": false}
+	_claim_streamer_slot(id, who)
 	_send_roster()
 	_update_audience_sharing()
-	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
-	for other: int in _cams:
-		_net_camera.rpc_id(id, other, _cams[other])
-	_set_status("%s joined." % _peers[id]["name"])
+	_send_everything(id)
+	_set_status(("%s is back." if back else "%s joined.") % who)
+	_warn_podiums()
 
 
 ## Host: a guest (or someone still waiting to be let in) left.
@@ -674,12 +784,14 @@ func _on_peer_disconnected(id: int) -> void:
 	_peers.erase(id)
 	_cams.erase(id)
 	_pic_sent.erase(id)
+	_release_streamer_slot(id)        # (before _guest_looks goes: their looks stay with their part)
 	_guest_looks.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
 	_send_roster()
 	_update_audience_sharing()
-	_set_status("%s left." % n)
+	_set_status("%s left. If they come back within %d minutes, their part of the audience is still there." % [n, int(AWAY_KEEP_S / 60.0)]
+		if _sharing_audience() or bool(AppState.get_setting("together_shared_audience")) else "%s left." % n)
 
 
 ## Guest: the connection and password step are done; the host's welcome comes next.
@@ -695,18 +807,27 @@ func _on_connected() -> void:
 
 
 func _on_connection_failed() -> void:
+	if _role == "guest" and not _rejoin.is_empty():
+		_rejoin_failed.call_deferred()
+		return
 	if _role == "guest":
 		_close.call_deferred("Couldn't reach the host. Check the address, and that the host is hosting. A new Cloudflare tunnel can need a second try.", true)
 
 
 func _on_server_disconnected() -> void:
+	# dropped (not sent away, not leaving): try to get back in, keeping the audience as it was
+	if _role == "guest" and _refused == "" and not _host_ended and (_admitted or not _rejoin.is_empty()):
+		_start_rejoin.call_deferred()
+		return
 	if _role == "guest":
 		_close.call_deferred(_refused if _refused != "" else "The session ended (the host stopped, or the connection dropped).", _refused != "")
 
 
 ## Ends the session on this PC and resets every bit of session state. Call it deferred from network
 ## signals (see docs/MULTIPLAYER.md: closing inside SceneMultiplayer's poll crashes the engine).
-func _close(message: String, is_error: bool = false) -> void:
+## keep_audience (a guest reconnecting, _start_rejoin): the host's audience and looks stay on
+## screen as they were instead of going back to this PC's own; _stop_rejoin clears them if it gives up.
+func _close(message: String, is_error: bool = false, keep_audience: bool = false) -> void:
 	# (checked before _role is reset below: a guest's "right host?" popup must close too)
 	var was_waiting_guest := _role == "guest" and not _admitted
 	if multiplayer.multiplayer_peer:
@@ -738,15 +859,22 @@ func _close(message: String, is_error: bool = false) -> void:
 	_chat_out.clear()
 	_host_sources.clear()
 	_emit_live()
-	_aud_shared = false
 	_roster_wait = -1.0
 	_pic_sent.clear()
 	_pic_waiting.clear()
-	_clear_net_looks()
 	_guest_looks.clear()
-	_apply_streamer_looks({})
-	AudienceManager.set_mirror(false)
-	AudienceManager.set_streamer_areas(0)
+	_streamer_slots.clear()
+	_sync.clear()
+	_synced = false
+	_aud_resyncs = 0
+	if not keep_audience:
+		_rejoin.clear()
+		_aud_shared = false
+		_chat_held.clear()
+		_clear_net_looks()
+		_apply_streamer_looks({})
+		AudienceManager.set_mirror(false)
+		AudienceManager.set_streamer_areas(0)
 	_address = ""
 	_tunnel_stop()
 	AppState.net_gate = Callable()
@@ -793,6 +921,14 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_send_own_looks()      # (this guest saved new looks in its own Stream Core)
 	if key == "together_streamer_looks" and _role == "host":
 		_update_streamer_looks()
+	if key == "together_avatar_source":
+		if _role == "host" and _peers.has(1):
+			_peers[1]["keyed"] = _my_avatar_keyed()
+			_send_roster()
+		elif _role == "guest" and _admitted and _connected():
+			_net_avatar_keyed.rpc_id(1, _my_avatar_keyed())
+	if _role == "host" and key.begins_with("presenter_") and (key.ends_with("_source") or key.ends_with("_url") or key.ends_with("_on")):
+		_warn_podiums(int(key.get_slice("_", 1)))
 	if key.begins_with("together_screen_") or key in ["together_avatar_height", "together_avatar_fps", "together_avatar_kbps"]:
 		if _role == "host":
 			_emit_live()
@@ -840,6 +976,7 @@ func _snapshot(groups: Array = SHARE_GROUPS) -> Dictionary:
 		snap["curtain"] = AppState.is_curtain_closed()
 	if bool(_video.get("live", false)):
 		snap["video"] = {"id": int(_video["id"]), "url": String(_video["url"])}
+	snap["react_paused"] = AppState.is_react_paused()
 	return snap
 
 
@@ -861,9 +998,12 @@ func _net_snapshot(snap: Dictionary) -> void:
 	var lv: Variant = snap.get("live")
 	if lv is Dictionary:
 		_apply_live(lv)
+	if snap.get("react_paused") is bool:
+		_apply_react_pause(bool(snap["react_paused"]))
 	var v: Variant = snap.get("video")
 	if v is Dictionary and (v as Dictionary).get("id") is int and (v as Dictionary).get("url") is String:
 		_guest_load_video(int(v["id"]), String(v["url"]))      # joined mid-video: catch up once loaded
+	_sync_got()
 	_emit_state()
 
 
@@ -892,18 +1032,20 @@ func _apply_share_flags(flags: Dictionary) -> void:
 ## Host: presenter n's podium picture, as bytes, to one guest (peer id) or all (-1). An empty
 ## picture clears it. Guests keep the bytes in user://podium_pictures and point their own setting
 ## there (never at a path on the host's PC).
-func _send_picture(n: int, to: int) -> void:
+## Returns false when nothing was sent (_send_everything counts what it sends).
+func _send_picture(n: int, to: int) -> bool:
 	if _role != "host":
-		return
+		return false
 	var path := String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges()
 	var bytes := PictureFile.read_file(path) if path != "" else PackedByteArray()
 	if path != "" and bytes.is_empty():
-		return           # unreadable here: say nothing, the guests keep what they had
+		return false     # unreadable here: say nothing, the guests keep what they had
 	var kind := PictureFile.kind_of(bytes) if not bytes.is_empty() else ""
 	if to > 0:
 		_net_picture.rpc_id(to, n, kind, bytes)
 	else:
 		_to_guests("_net_picture", [n, kind, bytes])
+	return true
 
 
 ## Guest: presenter n's podium picture from the host (checked for type and size), or empty to clear it.
@@ -911,6 +1053,7 @@ func _send_picture(n: int, to: int) -> void:
 func _net_picture(n: int, kind: String, bytes: PackedByteArray) -> void:
 	if not _from_host() or n < 1 or n > AppState.PRESENTER_COUNT or not group_shared("presenters"):
 		return
+	_sync_got()
 	var key := AppState.presenter_key(n, "picture")
 	if bytes.is_empty():
 		_set_local(key, "")
@@ -962,12 +1105,17 @@ func _net_roster(list: Array) -> void:
 		if p is Dictionary and (p as Dictionary).get("id") is int:
 			var av := String(p.get("avatar", ""))
 			_peers[int(p["id"])] = {"name": _clean_name(String(p.get("name", ""))), "cohost": bool(p.get("cohost", false)),
-				"avatar": av if _token_ok(av) else ""}
+				"avatar": av if _token_ok(av) else "", "keyed": bool(p.get("keyed", false))}
 	if not _admitted:
 		_admitted = true
 		EventBus.net_confirm_closed.emit(1)
-		_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
+		if not _rejoin.is_empty():
+			_rejoin.clear()
+			_set_status("Reconnected to %s's session." % _host_name)
+		else:
+			_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
 		_net_tab_sharing.rpc_id(1, _own_tab)    # (in case the host puts this PC's tab on the big screen)
+		_net_avatar_keyed.rpc_id(1, _my_avatar_keyed())   # (podiums showing my avatar key it on every PC)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -985,6 +1133,10 @@ func _net_left(peer_id: int) -> void:
 func _net_request(what: String, value: Variant) -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if _role != "host" or not _peers.has(id) or not bool(_peers[id]["cohost"]):
+		return
+	if what == "react_pause":
+		if value is bool:
+			AppState.set_react_paused(value)        # (goes to every guest from _on_react_pause)
 		return
 	if what != "video" and (_group_of(what) == "" or not group_shared(_group_of(what))):
 		return          # not a shared group: the guest changes that on their own PC
@@ -1240,7 +1392,7 @@ func _update_audience_sharing() -> void:
 		return
 	var on := bool(AppState.get_setting("together_shared_audience"))
 	_to_guests("_net_aud_mode", [on])
-	var areas := _peers.size() if on and bool(AppState.get_setting("together_audience_areas")) else 0
+	var areas := _streamer_area_count() if on and bool(AppState.get_setting("together_audience_areas")) else 0
 	AudienceManager.set_streamer_areas(areas)
 	if on:
 		_roster_wait = 0.1
@@ -1248,11 +1400,15 @@ func _update_audience_sharing() -> void:
 	_update_streamer_looks()
 
 
-## Whose viewer: 0 = the host, then the guests in the order they joined (peer ids grow).
+## Whose viewer: 0 = the host, then each guest's own number, kept by name for the whole session
+## (_streamer_slots), so a guest who reconnects (new peer id) keeps their part of the audience.
 func _streamer_index(peer_id: int) -> int:
-	var ids: Array = _peers.keys()
-	ids.sort()
-	return maxi(ids.find(peer_id), 0)
+	if peer_id == 1:
+		return 0
+	for k: String in _streamer_slots:
+		if int(_streamer_slots[k]["id"]) == peer_id:
+			return int(_streamer_slots[k]["index"])
+	return 0
 
 
 ## The current room id (the shared-audience messages carry it: a roster only fits its own room).
@@ -1294,7 +1450,8 @@ func _send_roster_to_guests() -> void:
 
 ## Guest: this PC's chat goes to the host's audience (its own chat windows keep showing it).
 func _on_local_chat(msg: Dictionary) -> void:
-	if _role != "guest" or not _aud_shared or bool(msg.get("system", false)) or bool(msg.get("history", false)):
+	var holding := _role == "off" and not _rejoin.is_empty()      # (reconnecting: keep it for later)
+	if (_role != "guest" and not holding) or not _aud_shared or bool(msg.get("system", false)) or bool(msg.get("history", false)):
 		return
 	var out := {}
 	for k in ["name", "username", "platform", "user_id", "color", "text", "title", "avatar", "reply_to", "reply_quote", "tint"]:
@@ -1303,7 +1460,11 @@ func _on_local_chat(msg: Dictionary) -> void:
 	out["avatar"] = _web_avatar(msg)
 	out["timestamp"] = float(msg.get("timestamp", Time.get_unix_time_from_system()))
 	out["emotes"] = msg.get("emotes", []) if msg.get("emotes") is Array else []
-	if _chat_out.size() < CHAT_BATCH_MAX:
+	if holding:
+		_chat_held.append(out)
+		if _chat_held.size() > HELD_CHAT_MAX:
+			_chat_held.pop_front()
+	elif _chat_out.size() < CHAT_BATCH_MAX:
 		_chat_out.append(out)
 
 
@@ -1400,6 +1561,7 @@ func _net_aud_mode(shared: bool) -> void:
 func _net_aud_roster(room: String, list: Array) -> void:
 	if _from_host() and _aud_shared:
 		AudienceManager.mirror_roster(room, list)
+		_sync_got()
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1515,6 +1677,7 @@ static func _parse_json(text: String) -> Variant:
 func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
 	if _from_host():
 		_save_look_picture(key, png, shape)
+		_sync_got()
 
 
 ## Host: one of a guest's own silhouette pictures (for "Viewers keep their streamer's looks"; the
@@ -1546,6 +1709,7 @@ func _net_looks(looks: Dictionary) -> void:
 	if not _from_host() or not _aud_shared:
 		return
 	_apply_net_looks(_looks_from_wire(looks))
+	_sync_got()
 
 
 ## Looks that came over the network, made safe to show here: only LOOK_KEYS, length-capped, and each
@@ -1627,9 +1791,8 @@ func _update_streamer_looks() -> void:
 		return
 	var table := {}
 	if _sharing_audience() and bool(AppState.get_setting("together_streamer_looks")):
-		for id: int in _guest_looks:
-			if _peers.has(id):
-				table[_streamer_index(id)] = _guest_looks[id]
+		for looks_of: Array in _kept_guest_looks():
+			table[int(looks_of[0])] = looks_of[1]
 	_apply_streamer_looks(table)
 	var wire := {}
 	var pictures := {}
@@ -2081,8 +2244,8 @@ func _net_welcome(host_name: String) -> void:
 	_host_name = _clean_name(host_name)
 	if _host_name == "":
 		_host_name = "the host"
-	if auto_confirm:
-		confirm(true)
+	if auto_confirm or (not _rejoin.is_empty() and _host_name == String(_rejoin["host"])):
+		confirm(true)          # (reconnecting to the same host: it was confirmed before)
 	else:
 		_set_status("Connected to %s. Confirm in the popup that it's who you meant to join." % _host_name)
 		EventBus.net_confirm_needed.emit("guest", 1, _host_name)
@@ -2126,6 +2289,458 @@ func _pending_timeout(delta: float) -> void:
 		if float(_pending[id]["wait"]) <= 0.0:
 			_turn_away(id, "Nobody confirmed the connection in time. Try joining again.",
 				"%s waited too long to be let in." % String(_pending[id]["name"]))
+
+
+# ── Pause to react ───────────────────────────────────────────
+## Pause to react (Space) pauses for everyone in the session: the host's (or a co-host's, through
+## the host) goes to every guest, and a guest joining mid-pause gets it in the snapshot. A plain
+## guest's pause stays on their own PC. Only the PC whose tab is on the big screen sends the
+## Play/Pause key to its browser (ScreenFeed asks owns_big_screen), so nobody else's music stops.
+
+## EventBus.react_pause_changed on this PC.
+func _on_react_pause(paused: bool) -> void:
+	if _applying_pause:
+		return
+	if _role == "host":
+		_to_guests("_net_react_pause", [paused])
+	elif _role == "guest" and _admitted and _connected():
+		if _is_cohost():
+			_net_request.rpc_id(1, "react_pause", paused)
+		else:
+			EventBus.status_message.emit("Paused on your PC only. The host or a co-host pauses for everyone.", false)
+
+
+## Guest: the host paused / unpaused for everyone.
+@rpc("authority", "call_remote", "reliable")
+func _net_react_pause(paused: bool) -> void:
+	if _from_host():
+		_apply_react_pause(paused)
+
+
+func _apply_react_pause(paused: bool) -> void:
+	_applying_pause = true
+	AppState.set_react_paused(paused)
+	_applying_pause = false
+
+
+## True when this PC's own content is what the big screen shows (no session, the host showing its
+## own tab, or a guest whose tab the host put on the big screen). ScreenFeed only sends the
+## Play/Pause key to the browser then.
+func owns_big_screen() -> bool:
+	if _role == "host":
+		return _tab_publisher() == 1
+	if _role == "guest":
+		return live_from() == "me"
+	return true
+
+
+## True when this PC's My avatar is a see-through web page (sent over AVATAR_KEY_COLOR).
+func _my_avatar_keyed() -> bool:
+	return String(AppState.get_setting("together_avatar_source")) == "web"
+
+
+## Host: a guest's My avatar changed between a see-through web page and something else.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_avatar_keyed(keyed: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role == "host" and _peers.has(id) and bool(_peers[id].get("keyed", false)) != keyed:
+		_peers[id]["keyed"] = keyed
+		_send_roster()
+
+
+## How a podium showing `who`'s avatar (presenter source "peer") must key it: {"color": Color} when
+## that avatar is a see-through web page (it travels over AVATAR_KEY_COLOR), {} when the podium's own
+## key settings apply (a camera or tab avatar). Read by presenter.gd on every PC, so all key alike.
+func avatar_key(who: String) -> Dictionary:
+	for id: int in _peers:
+		if String(_peers[id]["name"]) == who and bool(_peers[id].get("keyed", false)):
+			return {"color": AVATAR_KEY_COLOR}
+	return {}
+
+
+## Host, in a session with guests and shared presenters: what's wrong with podium n for the guests
+## ("" = nothing). A camera, tab, NDI or Spout source, or a web page only this PC can open (a local
+## avatar app on localhost, an address on the home network), shows as a silhouette or a blank on
+## their PCs. The fix is My avatar (Together tab), shown with "Someone's avatar".
+func podium_warning(n: int) -> String:
+	if _role != "host" or guest_count() == 0 or not group_shared("presenters"):
+		return ""
+	if not bool(AppState.get_setting(AppState.presenter_key(n, "on"))):
+		return ""
+	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
+	var how := "set it as your My avatar (Together tab) and pick Someone's avatar for the podium"
+	if LOCAL_ONLY_SOURCES.has(src):
+		return "Podium %d shows your %s, which only exists on your PC: guests see a silhouette there. To show it to them, %s." % [
+			n, {"camera": "camera", "tab": "tab / window", "ndi": "NDI source", "spout": "Spout source"}[src], how]
+	if src == "web":
+		var url := String(AppState.get_setting(AppState.presenter_key(n, "url"))).to_lower()
+		var host_part := url.get_slice("://", 1) if url.contains("://") else url
+		for start: String in LOCAL_URL_HOSTS:
+			if host_part.begins_with(start):
+				return "Podium %d's web page is on your PC or home network, so guests' PCs can't open it. To show it to them, %s." % [n, how]
+	return ""
+
+
+## Host: says podium_warning out loud (status line) for podium n, or for every podium (n = 0).
+func _warn_podiums(n: int = 0) -> void:
+	for i in range(1, AppState.PRESENTER_COUNT + 1):
+		if n == 0 or i == n:
+			var why := podium_warning(i)
+			if why != "":
+				EventBus.status_message.emit(why, true)
+
+
+# ── Staying in sync ──────────────────────────────────────────
+## Three things keep every PC showing the same session (work list item 1 and 22, docs/MULTIPLAYER.md):
+##   - The first sync. When a guest is let in (or asks for a resync) the host sends everything in one
+##     go: _net_sync_start(how many things), the state, podium and silhouette pictures, the audience
+##     and its looks, then _net_sync_done. Messages arrive in order, so when "done" is here everything
+##     is. The guest shows "Syncing with <host>" with a progress bar until then (and until its room
+##     has loaded), then tells the host (_net_guest_synced), whose list shows who is still syncing.
+##   - Audience checks. While the audience is shared the host sends a short fingerprint of who sits
+##     where every AUD_CHECK_GAP seconds (_net_aud_check); a guest whose own differs asks for the
+##     whole roster again (_net_aud_resync). Resync on the Together tab asks for everything again.
+##   - Reconnecting. A guest whose connection drops tries to get back in (RECONNECT_DELAYS), keeping
+##     the shared audience on screen meanwhile and holding its chat (_chat_held) to send once back.
+##     The host keeps that person's part of the audience by name (_streamer_slots, AWAY_KEEP_S) and
+##     lets them straight back in without the popup.
+
+## Called every frame from _process (also while a guest waits to reconnect).
+func _sync_tick(delta: float) -> void:
+	if _role == "off":
+		if not _rejoin.is_empty():
+			_rejoin["wait"] = float(_rejoin["wait"]) - delta
+			if float(_rejoin["wait"]) <= 0.0:
+				_rejoin["wait"] = 9999.0          # (until this try ends one way or the other)
+				join(true)
+				if _role == "off":
+					_schedule_rejoin()          # (couldn't even start: the next try)
+		return
+	if _role == "guest":
+		_aud_resync_wait -= delta
+		if not _sync.is_empty() and bool(_sync["done"]):
+			_check_synced()
+		return
+	# host: audience checks, and parts of the audience kept for people who dropped
+	if _sharing_audience():
+		_aud_check_wait -= delta
+		if _aud_check_wait <= 0.0:
+			_aud_check_wait = AUD_CHECK_GAP
+			if _roster_wait < 0.0:          # (a whole roster is about to go anyway)
+				_to_guests("_net_aud_check", [_room(), AudienceManager.roster_fingerprint()])
+	var freed := false
+	for k: String in _streamer_slots.keys():
+		if int(_streamer_slots[k]["id"]) == 0:
+			_streamer_slots[k]["away"] = float(_streamer_slots[k]["away"]) + delta
+			if float(_streamer_slots[k]["away"]) >= AWAY_KEEP_S:
+				_streamer_slots.erase(k)
+				freed = true
+	if freed:
+		_update_audience_sharing()
+
+
+## Host: sends guest `id` everything it needs (see the top of this part), counted first so the
+## guest can show how far along it is. Used when a guest is let in, and for a resync.
+func _send_everything(id: int) -> void:
+	if _role != "host" or not _peers.has(id):
+		return
+	_peers[id]["synced"] = false
+	_peers[id]["sync"] = 0
+	var sharing := _sharing_audience()
+	var total := 1                                   # the state (_snapshot)
+	if group_shared("presenters"):
+		for n in range(1, AppState.PRESENTER_COUNT + 1):
+			var path := String(AppState.get_setting(AppState.presenter_key(n, "picture"))).strip_edges()
+			if path == "" or not PictureFile.read_file(path).is_empty():
+				total += 1                           # (the same test _send_picture makes)
+	if sharing:
+		total += 2 + _unsent_look_pictures(id)       # roster + looks + their pictures
+	_net_sync_start.rpc_id(id, total)
+	_net_snapshot.rpc_id(id, _snapshot())
+	if group_shared("presenters"):
+		for n in range(1, AppState.PRESENTER_COUNT + 1):
+			_send_picture(n, id)
+	if sharing:
+		_net_aud_mode.rpc_id(id, true)
+		_send_looks(id)
+		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
+	for other: int in _cams:
+		if other != id:
+			_net_camera.rpc_id(id, other, _cams[other])
+	_net_sync_done.rpc_id(id)
+	_emit_state()
+
+
+## Host: how many silhouette pictures guest `id` doesn't have yet (the host's looks, and each
+## streamer's while "Viewers keep their streamer's looks" is on). Only counts; _send_looks and
+## _update_streamer_looks send them.
+func _unsent_look_pictures(id: int) -> int:
+	var pictures := {}
+	var looks := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		looks[k] = String(AppState.get_setting(k))
+	_looks_to_wire(looks, pictures)
+	if bool(AppState.get_setting("together_streamer_looks")):
+		for looks_of: Array in _kept_guest_looks():
+			_looks_to_wire(looks_of[1], pictures)
+	var sent: Dictionary = _pic_sent.get(id, {})
+	var count := 0
+	for key: String in pictures:
+		if not sent.has("look:" + key):
+			count += 1
+	return count
+
+
+## Guest: the host is about to send `total` things (see _send_everything).
+@rpc("authority", "call_remote", "reliable")
+func _net_sync_start(total: int) -> void:
+	if not _from_host():
+		return
+	_sync = {"total": clampi(total, 1, 10000), "got": 0, "done": false, "told": 0}
+	_synced = false
+	_set_status("Syncing with %s..." % _host_name)
+
+
+## Guest: one of the things the host sends while syncing arrived.
+func _sync_got() -> void:
+	if _sync.is_empty() or bool(_sync["done"]):
+		return
+	_sync["got"] = int(_sync["got"]) + 1
+	# the host's list shows how far along this PC is: tell it every 10 %
+	var pct := int(sync_progress() * 100.0)
+	if pct >= int(_sync["told"]) + 10:
+		_sync["told"] = pct
+		_net_guest_sync_progress.rpc_id(1, pct)
+	_emit_state()
+
+
+## Guest: the host's last thing of this sync (everything before it has arrived).
+@rpc("authority", "call_remote", "reliable")
+func _net_sync_done() -> void:
+	if _from_host() and not _sync.is_empty():
+		_sync["done"] = true
+		_check_synced()
+
+
+## Guest: once the host's things are all here, waits for the room to load (the audience roster waits
+## for it too) and then counts as synced.
+func _check_synced() -> void:
+	var room_ready := AudienceManager.seats_room() == String(AppState.get_setting("room_id"))
+	if _aud_shared and (AudienceManager.roster_fingerprint() == "" or not room_ready):
+		return                       # (checked again next frame)
+	_sync.clear()
+	_synced = true
+	_net_guest_synced.rpc_id(1)
+	_set_status("In sync with %s's session. The host controls the room, curtain and presenters." % _host_name)
+
+
+## Guest: 0..1 while syncing (0.99 at most until it's done), -1 when not syncing.
+func sync_progress() -> float:
+	if _role != "guest" or _synced or _sync.is_empty():
+		return -1.0
+	return minf(float(_sync["got"]) / float(_sync["total"]), 0.99)
+
+
+## Host: how far along a guest's sync is (percent), for the list on the Together tab.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_sync_progress(pct: int) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role == "host" and _peers.has(id):
+		_peers[id]["sync"] = clampi(pct, 0, 100)
+		_emit_state()
+
+
+## Host: a guest has everything and shows it.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_synced() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role == "host" and _peers.has(id):
+		_peers[id]["synced"] = true
+		_peers[id]["sync"] = 100
+		_emit_state()
+
+
+## Guest: the host's audience fingerprint (see AudienceManager.roster_fingerprint). A different one
+## here means a seat change got lost: ask for the whole roster (at most once per AUD_RESYNC_GAP).
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_check(room: String, fingerprint: String) -> void:
+	if not _from_host() or not _aud_shared or not _synced:
+		return
+	var mine := AudienceManager.roster_fingerprint()
+	if mine == "" or room != AudienceManager.seats_room() or room != String(AppState.get_setting("room_id")):
+		return                       # (this PC is still loading the room: the roster waits for it)
+	if mine != fingerprint and _aud_resync_wait <= 0.0:
+		_aud_resync_wait = AUD_RESYNC_GAP
+		_aud_resyncs += 1
+		print("Together: the audience here differed from the host's; asked for it again (%d this session)." % _aud_resyncs)
+		_net_aud_resync.rpc_id(1)
+		_emit_state()
+
+
+## Host: a guest's audience differed (see _net_aud_check): the whole roster to that guest.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_aud_resync() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role == "host" and _peers.has(id) and _sharing_audience():
+		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+
+
+## Together tab "Resync": a guest asks the host for everything again; the host sends it to every
+## guest. For when something looks different on two PCs.
+func resync() -> void:
+	if _role == "guest" and _admitted:
+		_net_resync_request.rpc_id(1)
+		_set_status("Asked %s to send everything again..." % _host_name)
+	elif _role == "host":
+		for id: int in _peers:
+			if id != 1:
+				_pic_sent.erase(id)
+				_send_everything(id)
+		_update_streamer_looks()
+		_set_status("Sent everything to the guests again.")
+
+
+## Host: a guest's Resync (at most one every few seconds per guest).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_resync_request() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	var now := Time.get_ticks_msec()
+	if now - int(_peers[id].get("resync_ms", -100000)) < int(AUD_RESYNC_GAP * 1000.0):
+		return
+	_peers[id]["resync_ms"] = now
+	_pic_sent.erase(id)            # (pictures go again too, in case one went missing)
+	_send_everything(id)
+	_update_streamer_looks()
+
+
+## Host: the name key a streamer's part of the audience is kept under (_streamer_slots).
+static func _streamer_key(n: String) -> String:
+	return n.strip_edges().to_lower()
+
+
+## Host: true when `n` is someone who dropped and whose part of the audience is still kept.
+func _is_away(n: String) -> bool:
+	var k := _streamer_key(n)
+	return _streamer_slots.has(k) and int(_streamer_slots[k]["id"]) == 0
+
+
+## Host: gives guest `id` (named `n`) their number in the shared audience: the one they had if
+## they're coming back, else the lowest free one (1..MAX_GUESTS). If all are held by people who
+## dropped, the one away longest gives theirs up.
+func _claim_streamer_slot(id: int, n: String) -> void:
+	var k := _streamer_key(n)
+	if _streamer_slots.has(k) and int(_streamer_slots[k]["id"]) == 0:
+		_streamer_slots[k]["id"] = id
+		_streamer_slots[k]["away"] = 0.0
+		return
+	if _streamer_slots.has(k):
+		k = "%s#%d" % [k, id]           # (two people with one name: each gets their own part)
+	var used := {}
+	for s: Dictionary in _streamer_slots.values():
+		used[int(s["index"])] = true
+	var index := -1
+	for i in range(1, MAX_GUESTS + 1):
+		if not used.has(i):
+			index = i
+			break
+	if index < 0:
+		var oldest := ""
+		for kk: String in _streamer_slots:
+			if int(_streamer_slots[kk]["id"]) == 0 and (oldest == "" or
+					float(_streamer_slots[kk]["away"]) > float(_streamer_slots[oldest]["away"])):
+				oldest = kk
+		index = int(_streamer_slots[oldest]["index"]) if oldest != "" else MAX_GUESTS
+		_streamer_slots.erase(oldest)
+	_streamer_slots[k] = {"index": index, "id": id, "away": 0.0}
+
+
+## Host: guest `id` left; their part of the audience (and their own looks, for "Viewers keep their
+## streamer's looks") is kept for AWAY_KEEP_S seconds.
+func _release_streamer_slot(id: int) -> void:
+	for k: String in _streamer_slots:
+		if int(_streamer_slots[k]["id"]) == id:
+			_streamer_slots[k]["id"] = 0
+			_streamer_slots[k]["away"] = 0.0
+			if _guest_looks.has(id):
+				_streamer_slots[k]["looks"] = _guest_looks[id]
+
+
+## Host: [[streamer number, looks], ...] for every guest whose own looks are known: the ones here
+## (_guest_looks) and the ones kept for people who dropped (_streamer_slots "looks").
+func _kept_guest_looks() -> Array:
+	var out: Array = []
+	for id: int in _guest_looks:
+		if _peers.has(id):
+			out.append([_streamer_index(id), _guest_looks[id]])
+	for s: Dictionary in _streamer_slots.values():
+		if int(s["id"]) == 0 and s.get("looks") is Dictionary:
+			out.append([int(s["index"]), s["looks"]])
+	return out
+
+
+## Host: how many streamer areas the audience needs: one more than the highest number in use,
+## counting people who dropped (their area stays theirs while they're away).
+func _streamer_area_count() -> int:
+	var top := 0
+	for s: Dictionary in _streamer_slots.values():
+		top = maxi(top, int(s["index"]))
+	return top + 1
+
+
+## Guest: the connection dropped. Keeps the shared audience on screen and tries to get back in.
+func _start_rejoin() -> void:
+	if _role != "guest":
+		return
+	var host_name := _host_name if _rejoin.is_empty() else String(_rejoin["host"])
+	var tries := 0 if _rejoin.is_empty() else int(_rejoin["try"])
+	_close("", false, true)
+	_rejoin = {"host": host_name if host_name != "" else "the host", "try": tries}
+	_schedule_rejoin()
+
+
+## Guest: the next reconnect try, or giving up after the last one.
+func _schedule_rejoin() -> void:
+	var tries := int(_rejoin.get("try", 0))
+	if tries >= RECONNECT_DELAYS.size():
+		_stop_rejoin(true, "Couldn't get back into %s's session. Click Join to try again." % String(_rejoin.get("host", "the host")))
+		return
+	_rejoin["try"] = tries + 1
+	_rejoin["wait"] = RECONNECT_DELAYS[tries]
+	set_process(true)
+	_set_status("Lost the connection to %s. Trying to get back in (try %d of %d)..." % [
+		String(_rejoin["host"]), tries + 1, RECONNECT_DELAYS.size()], true)
+
+
+## Guest: a reconnect try couldn't reach the host.
+func _rejoin_failed() -> void:
+	if _role == "guest":
+		_close("", false, true)
+	if not _rejoin.is_empty():
+		_schedule_rejoin()
+
+
+## Guest: stops reconnecting. clear_audience: go back to this PC's own audience and looks.
+func _stop_rejoin(clear_audience: bool, message: String = "") -> void:
+	if _rejoin.is_empty() and not clear_audience:
+		return
+	var was := not _rejoin.is_empty()
+	_rejoin.clear()
+	_chat_held.clear()
+	if clear_audience and _role == "off":
+		_aud_shared = false
+		_clear_net_looks()
+		_apply_streamer_looks({})
+		AudienceManager.set_mirror(false)
+		AudienceManager.set_streamer_areas(0)
+	if _role == "off":
+		set_process(false)
+	if message != "":
+		_set_status(message, true)
+	elif was:
+		_emit_state()
 
 
 # ── Connection helpers ───────────────────────────────────────
@@ -2231,6 +2846,13 @@ func is_tunnel() -> bool:
 
 
 # ── Helpers ──────────────────────────────────────────────────
+## True while the connection to the other side is up (a dropped one is still "guest" until the
+## deferred _close runs: nothing may be sent then).
+func _connected() -> bool:
+	var mp := multiplayer.multiplayer_peer
+	return mp != null and mp.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
 ## The scene's multiplayer API (it's SceneMultiplayer, which has the auth step).
 func _sm() -> SceneMultiplayer:
 	return multiplayer as SceneMultiplayer
@@ -2259,7 +2881,8 @@ func _peer_name(id: int) -> String:
 func _send_roster() -> void:
 	var list: Array = []
 	for id: int in _peers:
-		list.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "avatar": String(_peers[id].get("avatar", ""))})
+		list.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "avatar": String(_peers[id].get("avatar", "")),
+			"keyed": bool(_peers[id].get("keyed", false))})
 	_to_guests("_net_roster", [list])
 	_emit_state()
 	_emit_live()            # (the podium list changed)
