@@ -326,6 +326,7 @@ func _build_costream() -> void:
 
 	if role != "off" and peers.size() > 1:
 		_page_box.add_child(_hint("Big screen remote: %s. Whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone." % ("you have it" if bool(info.get("has_remote", false)) else String(info.get("remote", "")) + " has it")))
+	_build_podiums(info, role)
 	if role != "guest":
 		var head := Label.new()
 		head.text = "Everyone follows the host's"
@@ -362,6 +363,52 @@ func _build_keys() -> void:
 		grid.add_child(what)
 	_page_box.add_child(grid)
 	_page_box.add_child(_hint("Keys don't work while you type in a text box. Esc leaves the box first."))
+
+
+## Claimed podiums (NetSession "Claimed podiums"): who has each podium, with Claim / Give up for a
+## guest and Lock / Unlock / Free for the host. Shown while in a session with the podiums shared.
+func _build_podiums(info: Dictionary, role: String) -> void:
+	var list: Array = info.get("podiums", [])
+	if role == "off" or list.is_empty() or not NetSession.group_shared("presenters"):
+		return
+	var head := Label.new()
+	head.text = "Podiums"
+	head.add_theme_font_size_override("font_size", 16)
+	_page_box.add_child(head)
+	var have_one := NetSession.my_podium() > 0
+	for p: Dictionary in list:
+		var n := int(p["n"])
+		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 10)
+		var l := Label.new()
+		var state := "the host's"
+		if bool(p["mine"]):
+			state = "yours"
+		elif String(p["owner"]) != "":
+			state = String(p["owner"]) + "'s"
+		elif bool(p["locked"]):
+			state = "locked by the host"
+		elif role == "guest":
+			state = "free"
+		l.text = "Podium %d: %s" % [n, state]
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		r.add_child(l)
+		if role == "guest" and bool(p["mine"]):
+			r.add_child(_btn("Give up", "Give this podium back to the host.", func() -> void: NetSession.claim_podium(n, false)))
+		elif role == "guest" and bool(p["free"]):
+			var claim := _btn("Claim", "Make this podium yours: it shows your My avatar, and you set its name tag, light, picture and chroma key in your Presenters tab. Everyone sees what you set.",
+				func() -> void: NetSession.claim_podium(n))
+			claim.text = "Move here" if have_one else "Claim"
+			r.add_child(claim)
+		elif role == "host":
+			if String(p["owner"]) != "":
+				r.add_child(_btn("Free", "Take this podium back from them (it goes off set).", func() -> void: NetSession.free_podium(n)))
+			r.add_child(_btn("Unlock" if bool(p["locked"]) else "Lock",
+				"Locked: nobody can claim this podium, it stays yours." if not bool(p["locked"]) else "Let guests claim this podium again.",
+				func() -> void: NetSession.lock_podium(n, not bool(p["locked"]))))
+		_page_box.add_child(r)
+	if role == "guest":
+		_page_box.add_child(_hint("Your podium shows your My avatar (camera, a tab or window, or a see-through web page; Co-stream tab). Set its name tag, light, picture and chroma key in the control panel's Presenters tab."))
 
 
 ## The big screen remote button for one person's row, or null: the host gives it to a guest or takes
