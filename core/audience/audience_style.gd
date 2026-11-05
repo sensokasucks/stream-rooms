@@ -103,6 +103,14 @@ const BODY_GREY: float = 40.0 / 255.0
 const CLASSIC_TEX: Texture2D = preload("res://core/audience/silhouette.png")
 ## Where imported pictures are kept (one normalised copy plus its silhouette version each).
 const PICTURE_DIR: String = "user://silhouettes/"
+## Animated GIF silhouettes (import_picture): at most this many frames are kept (a longer GIF is
+## sampled evenly, each kept frame lasting as long as the ones it stands for). They're saved as
+## one sheet of ANIM_COLUMNS frames per row, "<name>_anim.webp" (lossy WebP keeps it small enough
+## to send to other PCs), with "<name>_anim.json" holding
+## {"frames": n, "delays": [seconds...]}; "<name>.png" stays the first frame, so everything that
+## reads a still picture keeps working. The sheet is what NetSession sends to other PCs.
+const ANIM_MAX_FRAMES: int = 32
+const ANIM_COLUMNS: int = 8
 
 ## Groups that can have their own look, in the order they win: a mod who is also a sub gets the
 ## mods' look (for each of bubble / silhouette, the first of their groups that has one set).
@@ -238,10 +246,13 @@ static func figure_texture(f: Dictionary) -> Texture2D:
 	if _textures.has(id):
 		return _textures[id]
 	var tex: Texture2D = null
+	if shape == "custom" and String(f.get("paint", "")) == "picture":
+		tex = _anim_texture(id)       # an animated GIF moves when the picture itself is shown
 	if shape == "custom":
-		var img := Image.load_from_file(id)
-		if img != null and not img.is_empty():
-			tex = ImageTexture.create_from_image(img)
+		if tex == null:
+			var img := Image.load_from_file(id)
+			if img != null and not img.is_empty():
+				tex = ImageTexture.create_from_image(img)
 	else:
 		tex = ImageTexture.create_from_image(_draw_shape(shape))
 	if tex == null:
@@ -277,33 +288,135 @@ static func figure_tint(chatter: Color, f: Dictionary) -> Color:
 ## A picture without any see-through pixels is read as dark shape on a light background.
 ## Returns the saved path to put in the style's "file", or "" when it couldn't be read.
 ## Called by CoreLooks for each picture downloaded from Core's stored files. Takes about a second.
+## An animated GIF keeps up to ANIM_MAX_FRAMES frames (see ANIM_COLUMNS): they move on seats whose
+## look shows the picture itself (paint "picture"); as a coloured silhouette it uses the first
+## frame's outline (making an outline per frame would take seconds). A one-frame GIF is a still.
 static func import_picture(path: String) -> String:
-	var img := Image.load_from_file(path)
-	if img == null or img.is_empty():
+	var frames: Array = []
+	var delays := PackedFloat32Array()
+	var bytes := FileAccess.get_file_as_bytes(path)
+	if GifDecoder.is_gif(bytes):
+		var decoded := GifDecoder.decode(bytes)     # (pure GDScript: a big GIF takes a second or two)
+		frames = decoded.get("frames", [])
+		delays = decoded.get("delays", PackedFloat32Array())
+	else:
+		var img := Image.load_from_file(path)
+		if img != null and not img.is_empty():
+			frames = [img]
+	if frames.is_empty():
 		return ""
-	img.convert(Image.FORMAT_RGBA8)
-	if img.get_width() > 1024 or img.get_height() > 1024:
-		var k := 1024.0 / maxf(img.get_width(), img.get_height())
-		img.resize(maxi(1, int(img.get_width() * k)), maxi(1, int(img.get_height() * k)), Image.INTERPOLATE_BILINEAR)
-	if not img.detect_alpha():
-		_alpha_from_dark(img)
-	var used := img.get_used_rect()
+	if frames.size() > ANIM_MAX_FRAMES:
+		var picked: Array = []
+		var times := PackedFloat32Array()
+		for i in ANIM_MAX_FRAMES:
+			@warning_ignore("integer_division")
+			var from := i * frames.size() / ANIM_MAX_FRAMES
+			@warning_ignore("integer_division")
+			var to := (i + 1) * frames.size() / ANIM_MAX_FRAMES
+			picked.append(frames[from])
+			var t := 0.0
+			for j in range(from, to):
+				t += delays[j]
+			times.append(t)
+		frames = picked
+		delays = times
+	# every frame gets the same crop and scale (the union of their visible parts), so it doesn't jump
+	var dark := false
+	var used := Rect2i()
+	for i in frames.size():
+		var img: Image = frames[i]
+		img.convert(Image.FORMAT_RGBA8)
+		if img.get_width() > 1024 or img.get_height() > 1024:
+			var k := 1024.0 / maxf(img.get_width(), img.get_height())
+			img.resize(maxi(1, int(img.get_width() * k)), maxi(1, int(img.get_height() * k)), Image.INTERPOLATE_BILINEAR)
+		if i == 0:
+			dark = not img.detect_alpha()
+		if dark:
+			_alpha_from_dark(img)
+		var r := img.get_used_rect()
+		if r.size.x > 0 and r.size.y > 0:
+			used = r if used.size == Vector2i.ZERO else used.merge(r)
 	if used.size.x < 4 or used.size.y < 4:
 		return ""
-	var part := img.get_region(used)
-	var k := minf(float(FIGURE_W) / used.size.x, float(FIGURE_H) / used.size.y)
-	part.resize(maxi(1, int(used.size.x * k)), maxi(1, int(used.size.y * k)), Image.INTERPOLATE_LANCZOS)
-	var out := Image.create_empty(FIGURE_W, FIGURE_H, false, Image.FORMAT_RGBA8)
-	out.blit_rect(part, Rect2i(Vector2i.ZERO, part.get_size()),
-		Vector2i((FIGURE_W - part.get_width()) / 2, FIGURE_H - part.get_height()))
+	var fitted: Array = []
+	for img: Image in frames:
+		fitted.append(_fit_figure(img, used))
+	var out: Image = fitted[0]
 	DirAccess.make_dir_recursive_absolute(PICTURE_DIR)
 	var base := path.get_file().get_basename().to_lower().validate_filename().replace(" ", "_").left(40)
 	var dest := PICTURE_DIR + (base if base != "" else "picture") + ".png"
 	if out.save_png(dest) != OK or _outline_version(out).save_png(dest.replace(".png", "_shape.png")) != OK:
 		return ""
+	DirAccess.remove_absolute(anim_sheet(dest))      # (an older GIF of the same name)
+	DirAccess.remove_absolute(anim_info_file(dest))
+	if fitted.size() > 1:
+		var cols := mini(ANIM_COLUMNS, fitted.size())
+		var rows := ceili(float(fitted.size()) / cols)
+		var sheet := Image.create_empty(FIGURE_W * cols, FIGURE_H * rows, false, Image.FORMAT_RGBA8)
+		for i in fitted.size():
+			@warning_ignore("integer_division")
+			sheet.blit_rect(fitted[i] as Image, Rect2i(0, 0, FIGURE_W, FIGURE_H), Vector2i((i % cols) * FIGURE_W, (i / cols) * FIGURE_H))
+		var info := FileAccess.open(anim_info_file(dest), FileAccess.WRITE)
+		if sheet.save_webp(anim_sheet(dest), true, 0.85) == OK and info != null:
+			info.store_string(JSON.stringify({"frames": fitted.size(), "delays": Array(delays)}))
+		if info != null:
+			info.close()
 	_textures.erase(dest)
 	_textures.erase(dest.replace(".png", "_shape.png"))
 	return dest
+
+
+## One frame cut to `used` (the visible part of all frames), fitted into FIGURE_W x FIGURE_H
+## standing on the bottom edge, centred across.
+static func _fit_figure(img: Image, used: Rect2i) -> Image:
+	var part := img.get_region(used)
+	var k := minf(float(FIGURE_W) / used.size.x, float(FIGURE_H) / used.size.y)
+	part.resize(maxi(1, int(used.size.x * k)), maxi(1, int(used.size.y * k)), Image.INTERPOLATE_LANCZOS)
+	var out := Image.create_empty(FIGURE_W, FIGURE_H, false, Image.FORMAT_RGBA8)
+	@warning_ignore("integer_division")
+	out.blit_rect(part, Rect2i(Vector2i.ZERO, part.get_size()),
+		Vector2i((FIGURE_W - part.get_width()) / 2, FIGURE_H - part.get_height()))
+	return out
+
+
+## An imported picture's animation sheet ("x.png" -> "x_anim.webp"; see ANIM_COLUMNS).
+static func anim_sheet(file: String) -> String:
+	return file.replace(".png", "_anim.webp")
+
+
+## An imported picture's animation info ("x.png" -> "x_anim.json": frames and delays).
+static func anim_info_file(file: String) -> String:
+	return file.replace(".png", "_anim.json")
+
+
+## The animation of an imported picture as an AnimatedTexture, or null for a still one.
+static func _anim_texture(file: String) -> Texture2D:
+	if not FileAccess.file_exists(anim_sheet(file)) or not FileAccess.file_exists(anim_info_file(file)):
+		return null
+	var info: Variant = JSON.parse_string(FileAccess.get_file_as_string(anim_info_file(file)))
+	var sheet := Image.load_from_file(anim_sheet(file))
+	if not info is Dictionary or sheet == null or sheet.is_empty():
+		return null
+	var n := clampi(int((info as Dictionary).get("frames", 0)), 0, ANIM_MAX_FRAMES)
+	var delays: Array = (info as Dictionary).get("delays", [])
+	var cols := mini(ANIM_COLUMNS, n)
+	if n < 2 or sheet.get_width() < cols * FIGURE_W or sheet.get_height() < ceili(float(n) / cols) * FIGURE_H:
+		return null
+	var anim := AnimatedTexture.new()
+	anim.frames = n
+	for i in n:
+		@warning_ignore("integer_division")
+		var at := Vector2i((i % cols) * FIGURE_W, (i / cols) * FIGURE_H)
+		anim.set_frame_texture(i, ImageTexture.create_from_image(sheet.get_region(Rect2i(at, Vector2i(FIGURE_W, FIGURE_H)))))
+		anim.set_frame_duration(i, maxf(float(delays[i]) if i < delays.size() else 0.1, GifDecoder.MIN_DELAY))
+	return anim
+
+
+## A picture to use where nothing should move (the filler crowd): an animation's first frame.
+static func still_of(tex: Texture2D) -> Texture2D:
+	if tex is AnimatedTexture:
+		return (tex as AnimatedTexture).get_frame_texture(0)
+	return tex
 
 
 # ── Group looks ─────────────────────────────────────────────

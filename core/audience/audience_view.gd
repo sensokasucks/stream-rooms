@@ -733,7 +733,7 @@ func _apply_crowd_figure() -> void:
 	if _crowd == null:
 		return
 	if bool(_fig.get("crowd", true)):
-		_crowd.set_silhouette(_fig_tex, _bust())
+		_crowd.set_silhouette(AudienceStyle.still_of(_fig_tex), _bust())     # (an animated look stays still in the far crowd)
 	else:
 		_crowd.set_silhouette(AudienceStyle.CLASSIC_TEX, bust_height)
 

@@ -35,7 +35,9 @@ extends Node
 ## 5: staying in sync (_net_sync_start / _net_sync_done / _net_guest_synced, _net_aud_check, _net_aud_resync,
 ## _net_resync_request, _net_removed), streamer areas kept by name, pause to react for everyone
 ## (_net_react_pause), whose avatar is a see-through page (_net_avatar_keyed, roster "keyed").
-const PROTOCOL: int = 5
+## 6 (Co-stream batch 2): animated silhouettes travel (_net_look_picture / _net_guest_look_picture
+## carry a frame sheet), plus the big screen remote, claimed podiums and reserved seats.
+const PROTOCOL: int = 6
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -1657,7 +1659,10 @@ static func _looks_to_wire(looks: Dictionary, pictures: Dictionary) -> Dictionar
 			f["shape"] = "classic"      # (a picture that's gone here: the classic bust there too)
 			return f
 		var key := _picture_key(png)
-		pictures[key] = [png, shape]
+		# an animated GIF's frames go along (AudienceStyle.anim_sheet / anim_info_file), else empty
+		var sheet := PictureFile.read_file(AudienceStyle.anim_sheet(file))
+		var info := FileAccess.get_file_as_string(AudienceStyle.anim_info_file(file)) if not sheet.is_empty() else ""
+		pictures[key] = [png, shape, sheet if info != "" else PackedByteArray(), info]
 		f["file"] = key
 		return f)
 
@@ -1671,9 +1676,9 @@ func _give_look_pictures(id: int, pictures: Dictionary) -> void:
 		if not (_pic_sent[id] as Dictionary).has("look:" + key):
 			_pic_sent[id]["look:" + key] = true
 			if _role == "host":
-				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1])
+				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1], pictures[key][2], pictures[key][3])
 			else:
-				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1])
+				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1], pictures[key][2], pictures[key][3])
 
 
 ## Every silhouette style inside a set of looks (the main one in audience_silhouette and each saved
@@ -1702,33 +1707,60 @@ static func _parse_json(text: String) -> Variant:
 ## Guest: one of the host's silhouette pictures (a looks message that uses it follows). Kept as
 ## NET_LOOK_FILE (and its "_shape" copy), where AudienceStyle reads pictures from.
 @rpc("authority", "call_remote", "reliable")
-func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray, info: String) -> void:
 	if _from_host():
-		_save_look_picture(key, png, shape)
+		_save_look_picture(key, png, shape, sheet, info)
 		_sync_got()
 
 
 ## Host: one of a guest's own silhouette pictures (for "Viewers keep their streamer's looks"; the
 ## guest's looks follow in _net_guest_looks). Kept the same way as the host's pictures on a guest.
 @rpc("any_peer", "call_remote", "reliable")
-func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray, info: String) -> void:
 	if _role == "host" and _peers.has(multiplayer.get_remote_sender_id()):
-		_save_look_picture(key, png, shape)
+		_save_look_picture(key, png, shape, sheet, info)
 
 
 ## A silhouette picture from another PC, checked (its name must be its own MD5, both files PNGs
-## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy.
-func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy. sheet / info:
+## an animated GIF's frames (a WebP sheet and its {"frames", "delays"} JSON, AudienceStyle.anim_sheet),
+## or empty for a still picture; a sheet that fails the checks is dropped and the first frame stays.
+func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray = PackedByteArray(), info: String = "") -> void:
 	if not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
 			or PictureFile.kind_of(shape) != "png" or shape.size() > PictureFile.MAX_BYTES or PictureFile.too_big(shape):
 		return
 	var path := NET_LOOK_FILE % key.substr(EmoteCache.NET_PREFIX.length())
 	DirAccess.make_dir_recursive_absolute(AudienceStyle.PICTURE_DIR)
-	for pair: Array in [[path, png], [path.replace(".png", "_shape.png"), shape]]:
+	var files: Array = [[path, png], [path.replace(".png", "_shape.png"), shape]]
+	DirAccess.remove_absolute(AudienceStyle.anim_sheet(path))
+	DirAccess.remove_absolute(AudienceStyle.anim_info_file(path))
+	if _anim_ok(sheet, info):
+		files.append([AudienceStyle.anim_sheet(path), sheet])
+		files.append([AudienceStyle.anim_info_file(path), info.to_utf8_buffer()])
+	for pair: Array in files:
 		var f := FileAccess.open(String(pair[0]), FileAccess.WRITE)
 		if f != null:
 			f.store_buffer(pair[1] as PackedByteArray)
 			f.close()
+
+
+## An animated silhouette from another PC is usable: a WebP sheet within PictureFile's limits and
+## info naming 2..ANIM_MAX_FRAMES frames with a number for each delay.
+static func _anim_ok(sheet: PackedByteArray, info: String) -> bool:
+	if sheet.is_empty() or info.length() > 4000 or sheet.size() > PictureFile.MAX_BYTES \
+			or PictureFile.kind_of(sheet) != "webp" or PictureFile.too_big(sheet):
+		return false
+	var v: Variant = JSON.parse_string(info)
+	if not v is Dictionary or not (v as Dictionary).get("delays") is Array:
+		return false
+	var n := int((v as Dictionary).get("frames", 0))
+	var delays: Array = (v as Dictionary)["delays"]
+	if n < 2 or n > AudienceStyle.ANIM_MAX_FRAMES or delays.size() != n:
+		return false
+	for d: Variant in delays:
+		if not (d is float or d is int):
+			return false
+	return true
 
 
 ## Guest: the host's looks (see _send_looks). Shown while this PC mirrors the host's audience.

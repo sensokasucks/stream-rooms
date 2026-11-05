@@ -93,16 +93,16 @@ func _ready() -> void:
 
 # ── Host ─────────────────────────────────────────────────────
 func _host() -> void:
-	# a custom silhouette picture of the host's own (a round blob), imported like CoreLooks does
-	var blob := Image.create_empty(64, 80, false, Image.FORMAT_RGBA8)
-	for y in 80:
-		for x in 64:
-			if Vector2(x - 32, y - 40).length() < 28.0:
-				blob.set_pixel(x, y, Color(0.9, 0.4, 0.1))
-	var src := ProjectSettings.globalize_path("user://np_host_blob.png")
-	blob.save_png(src)
+	# a custom silhouette picture of the host's own (an animated GIF), imported like CoreLooks does
+	var src := ProjectSettings.globalize_path("user://np_host_anim.gif")
+	var gif := FileAccess.open(src, FileAccess.WRITE)
+	gif.store_buffer(FileAccess.get_file_as_bytes("res://_tests/assets/badge_anim.gif"))
+	gif.close()
 	var file := AudienceStyle.import_picture(src)
 	_check(file != "", "imported the host's silhouette picture")
+	_check(FileAccess.file_exists(AudienceStyle.anim_sheet(file)), "an animated GIF keeps its frames (%s)" % AudienceStyle.anim_sheet(file))
+	_check(AudienceStyle.figure_texture({"shape": "custom", "file": file, "paint": "picture"}) is AnimatedTexture, "and moves when the look shows the picture itself")
+	_check(not AudienceStyle.figure_texture({"shape": "custom", "file": file, "paint": "chatter"}) is AnimatedTexture, "as a coloured silhouette it's the first frame's outline")
 	AppState.set_setting("audience_silhouette", JSON.stringify({"shape": "custom", "file": file, "paint": "picture"}))
 	EmoteCache.put_bytes(ReactionLayer._core_url(HOST_PIC), _png(32, Color.RED))
 
@@ -157,6 +157,7 @@ func _guest() -> void:
 			and FileAccess.file_exists(String(fig["file"]))
 	_check(await _wait_for(host_look, 20.0), "shows the host's custom silhouette picture (%s)" % AudienceStyle.figure()["file"])
 	_check(AudienceStyle.figure_texture(AudienceStyle.figure()) != AudienceStyle.CLASSIC_TEX, "and the picture loads")
+	_check(AudienceStyle.figure_texture(AudienceStyle.figure()) is AnimatedTexture, "and it moves here too (the GIF's frames came along)")
 	_check(String(AppState.get_setting("audience_silhouette")) == "", "while this PC's own setting stays as it was")
 
 	_check(await _wait_for(func() -> bool: return _remote_key() != "", 30.0), "the host's reaction arrived with a picture name")
