@@ -760,7 +760,7 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 
 - **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
 - **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead.
-- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
+- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture (like the boot for `!boot`) shows that same picture on every PC: the picture is sent along with the reaction the first time it's used in a session. A picture over 3 MB stays on the sender's PC, and the others see a plain emoji (like the 🍅) instead.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
 
@@ -782,6 +782,9 @@ seats, with the same speech bubbles:
   big crowd sections are shared out the same way.
 - A viewer of a guest's channel can be thrown at with a reaction from any channel, because
   everyone sees the same seats.
+- Everyone sees the host's **audience looks** too (the speech bubbles, silhouettes and group
+  looks from the host's Stream Core), with the host's own silhouette pictures: they're sent to
+  each guest's PC. A guest's own looks aren't changed, and come back when they leave.
 - When a guest leaves, their copy goes back to its own audience.
 
 Untick it and each of you has your own audience again.

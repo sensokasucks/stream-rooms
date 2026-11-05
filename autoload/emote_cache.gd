@@ -8,6 +8,8 @@ extends Node
 ## Animated WebP can't be decoded, so those stay as their text name.
 ##   is_animated(tex): viewports showing it must redraw every frame to play it.
 ##   set_fallback(url, still): if url can't be shown (e.g. animated WebP), load still in its place.
+##   put_bytes(url, body) / get_bytes(url): pictures that came over the network (Together: a
+##   reaction picture from another PC, "net:<md5>" addresses, see NET_PREFIX) instead of a download.
 ## Busy chat: the round profile pictures are made on worker threads from the picture's bytes (no
 ## read-back from the graphics card, no per-pixel work on the main thread), a few finished ones
 ## per frame; and both caches have a size budget (MAX_CACHE_BYTES): the pictures used longest ago
@@ -25,6 +27,10 @@ const TRIM_TO: float = 0.8
 const CIRCLES_PER_FRAME: int = 6
 ## Forget failed addresses after this many (they'd be retried, which is fine).
 const MAX_FAILED: int = 5000
+## Start of the address of a picture sent by another PC in a Together session ("net:" + the MD5 of
+## its bytes, made by NetSession._picture_key). Never downloaded: NetSession hands the bytes in with
+## put_bytes. ReactionLayer._core_url leaves these addresses alone (it spells the prefix out too).
+const NET_PREFIX: String = "net:"
 
 var _textures: Dictionary = {}     # url -> Texture2D
 var _failed: Dictionary = {}       # url -> true (don't retry this session)
@@ -73,6 +79,8 @@ func get_texture(url: String) -> Texture2D:
 			if disk:
 				_store(url, disk)
 				return disk
+		if url.begins_with(NET_PREFIX):
+			return null         # (comes from the session through put_bytes, never downloaded)
 		_queue.append(url)
 		_pump()
 	return null
@@ -185,6 +193,34 @@ func set_fallback(url: String, still: String) -> void:
 ## True when url couldn't be downloaded or decoded (the caller shows the emote's name instead).
 func is_failed(url: String) -> bool:
 	return _failed.has(url)
+
+
+## A picture's bytes handed in instead of downloaded (NetSession: a reaction picture another PC in
+## the session sent), kept under url like a download, on disk too. EventBus.emote_ready(url) fires
+## once it's ready (a GIF decodes on a worker thread first). False when the bytes aren't a picture
+## this cache can show.
+func put_bytes(url: String, body: PackedByteArray) -> bool:
+	if _textures.has(url) or _decoding.has(url):
+		return true
+	_failed.erase(url)
+	if GifDecoder.is_gif(body):
+		_save(url, body)       # (saved now, not after the decode: get_bytes must find it straight away)
+		_decode_gif(url, body, false)
+		return true
+	var tex := _decode(body)
+	if tex == null:
+		return false
+	_store(url, tex)
+	_save(url, body)
+	EventBus.emote_ready.emit(url)
+	return true
+
+
+## The picture's bytes as kept on disk (empty while it isn't downloaded yet). NetSession sends a
+## reaction picture on to the other PCs with these.
+func get_bytes(url: String) -> PackedByteArray:
+	var path := _disk_path(url)
+	return FileAccess.get_file_as_bytes(path) if url != "" and FileAccess.file_exists(path) else PackedByteArray()
 
 
 # ── Private ──────────────────────────────────────────────────

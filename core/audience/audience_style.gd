@@ -17,6 +17,9 @@ extends RefCounted
 ##     group looks (mods, VIPs, subs, each platform; GROUPS) on top of the main style.
 ## A style is a Dictionary of JSON-friendly values (colours are "rrggbbaa" strings); missing keys
 ## take the defaults below, so older or hand-written styles still work.
+## Together: a guest showing the host's shared audience uses the host's looks instead (net_looks,
+## set by NetSession), so every stream shows the same silhouettes and bubbles. Read the settings
+## above only through look_setting(), never AppState directly, or that stops working.
 
 ## Every bubble style key, with the Light look's value (the bubbles as they were before the editor).
 ## Sizes are bubble pixels (AudienceView turns pixels into metres).
@@ -107,6 +110,16 @@ const GROUPS: Dictionary = {"mod": "Mods", "vip": "VIPs", "sub": "Subscribers", 
 ## Separates the looks of a random mix in a group's silhouette value ("ears|bot|My cat").
 ## Saved look names can't contain it (save_preset takes it out).
 const MIX_SEP: String = "|"
+## The settings that make up the audience's looks (the ones listed at the top). NetSession sends
+## these from the host to its guests.
+const LOOK_KEYS: Array[String] = ["audience_bubble_theme", "audience_bubble_style", "audience_silhouette",
+	"audience_saved_styles", "audience_style_groups"]
+
+## Guest in a Together session that mirrors the host's audience: the host's looks, LOOK_KEYS key ->
+## text, used in place of this PC's own settings. Its silhouette pictures are this PC's copies of the
+## host's (user://silhouettes/net_<md5>.png). Set and cleared by NetSession (_apply_net_looks); empty =
+## this PC's own looks. This PC's own settings are never changed, so they're back after the session.
+static var net_looks: Dictionary = {}
 
 # Caches: the merged style for the raw setting text it came from, and textures by id.
 static var _bubble_key: String = "(none yet)"
@@ -123,8 +136,8 @@ static var _group_stamp: String = "(none yet)"
 ## The bubble style in use now (a merged copy; don't change it). Called by SpeechBubble for every
 ## bubble it lays out, so it's cached until audience_bubble_theme / audience_bubble_style change.
 static func bubble() -> Dictionary:
-	var theme := String(AppState.get_setting("audience_bubble_theme"))
-	var raw := String(AppState.get_setting("audience_bubble_style")) if theme == "custom" else ""
+	var theme := look_setting("audience_bubble_theme")
+	var raw := look_setting("audience_bubble_style") if theme == "custom" else ""
 	var key := theme + "|" + raw
 	if key != _bubble_key:
 		_bubble_key = key
@@ -172,7 +185,7 @@ static func bubble_preset(preset_name: String) -> Dictionary:
 ## The silhouette style in use now (a merged copy; don't change it). Cached until
 ## audience_silhouette changes.
 static func figure() -> Dictionary:
-	var raw := String(AppState.get_setting("audience_silhouette"))
+	var raw := look_setting("audience_silhouette")
 	if raw != _figure_key:
 		_figure_key = raw
 		_figure = merge_figure(_parse(raw))
@@ -285,7 +298,7 @@ static func import_picture(path: String) -> String:
 # ── Group looks ─────────────────────────────────────────────
 ## The group looks setting: group -> {"bubble": name, "silhouette": name} (blank / missing = main style).
 static func group_looks() -> Dictionary:
-	return _parse(String(AppState.get_setting("audience_style_groups")))
+	return _parse(look_setting("audience_style_groups"))
 
 
 ## The look name a seated chatter gets for one kind, or "" for the main style. member: as
@@ -338,8 +351,8 @@ static func figure_for(member: Dictionary) -> Dictionary:
 
 
 static func _cached(key: String, make: Callable) -> Dictionary:
-	var stamp := "%s|%s|%s|%s|%s" % [AppState.get_setting("audience_style_groups"), AppState.get_setting("audience_saved_styles"),
-		AppState.get_setting("audience_silhouette"), AppState.get_setting("audience_bubble_theme"), AppState.get_setting("audience_bubble_style")]
+	var stamp := "%s|%s|%s|%s|%s" % [look_setting("audience_style_groups"), look_setting("audience_saved_styles"),
+		look_setting("audience_silhouette"), look_setting("audience_bubble_theme"), look_setting("audience_bubble_style")]
 	if stamp != _group_stamp:
 		_group_stamp = stamp
 		_group_cache.clear()
@@ -351,11 +364,17 @@ static func _cached(key: String, make: Callable) -> Dictionary:
 # ── Saved presets ───────────────────────────────────────────
 ## The streamer's own presets of one kind ("bubble" or "silhouette"): name -> style.
 static func saved(kind: String) -> Dictionary:
-	var all := _parse(String(AppState.get_setting("audience_saved_styles")))
+	var all := _parse(look_setting("audience_saved_styles"))
 	return all.get(kind, {}) if all.get(kind) is Dictionary else {}
 
 
 # ── Helpers ─────────────────────────────────────────────────
+## One of LOOK_KEYS as text: the host's value while net_looks holds one (Together guest), else
+## this PC's own setting.
+static func look_setting(key: String) -> String:
+	return String(net_looks[key]) if net_looks.has(key) else String(AppState.get_setting(key))
+
+
 ## A colour value from a style ("rrggbbaa" text or a Color); black when it isn't a colour.
 static func color_of(style: Dictionary, key: String) -> Color:
 	return _color(style, key)
