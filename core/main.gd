@@ -12,6 +12,7 @@ extends Node3D
 func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
 	add_child(NetMarkers.new())     # the others' cameras while streaming together
+	add_child(EscMenu.new())        # the Esc menu; it also puts the window where Display says
 	get_tree().auto_accept_quit = false     # closing the window goes through AppState.request_quit
 
 	var start_id: String = AppState.get_setting("room_id")
