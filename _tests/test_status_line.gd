@@ -51,13 +51,13 @@ func _ready() -> void:
 
 	# the status strip, on every tab
 	var strip: Dictionary = panel._strip
-	_check(strip.has("core") and strip.has("screen") and strip.has("together"), "the status strip has Core, Big screen and Together")
+	_check(strip.has("core") and strip.has("screen") and strip.has("together"), "the status strip has Core, Big screen and Co-stream")
 	_check(not (panel._tabs as TabContainer).is_ancestor_of(strip["core"]), "the strip sits outside the tabs (visible on every tab)")
 	_check(String((strip["core"] as Button).text).contains("not connected"), "Core shows as not connected (%s)" % (strip["core"] as Button).text)
 	_check(String((strip["screen"] as Button).text).contains("empty"), "the big screen shows as empty (%s)" % (strip["screen"] as Button).text)
-	_check(String((strip["together"] as Button).text).contains("off"), "Together shows as off (%s)" % (strip["together"] as Button).text)
+	_check(String((strip["together"] as Button).text).contains("off"), "Co-stream shows as off (%s)" % (strip["together"] as Button).text)
 	(strip["together"] as Button).pressed.emit()
-	_check((panel._tabs as TabContainer).get_current_tab_control().name == "Together", "clicking Together jumps to its tab")
+	_check((panel._tabs as TabContainer).get_current_tab_control().name == "Co-stream", "clicking Co-stream jumps to its tab")
 
 	# Core dropping mid-stream is announced
 	EventBus.chat_status_changed.emit({"connected": true, "url": "", "error": ""})

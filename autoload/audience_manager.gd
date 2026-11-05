@@ -85,6 +85,11 @@ var _capacity_room: String = ""          # the room the slots belong to (mirror:
 var _pending_roster: Dictionary = {}     # mirror: {room, list} that arrived before its room was ready
 var _area_count: int = 0                 # host: streamers sharing the audience (0 = no areas)
 var _area_cache: Dictionary = {}         # section id -> streamer index
+## Reserved seats of the room shown (see "Reserved seats"): slot -> {platform, name, by}. On a
+## mirror (a guest showing the host's audience) these are the host's, sent by NetSession.
+var _reserved: Dictionary = {}
+var _reserved_room: String = ""          # the room _reserved belongs to
+var _reserved_by_who: Dictionary = {}    # "platform:name" (lower case, no "@") -> slot, for add_chat
 
 
 func _ready() -> void:
@@ -114,6 +119,8 @@ func _process(delta: float) -> void:
 func set_capacity(count: int) -> void:
 	count = maxi(count, 0)
 	_capacity_room = String(AppState.get_setting("room_id"))
+	if not _mirror:
+		_parse_reserved()        # (a mirror keeps the host's list: it names its own room)
 	if _mirror:
 		for i in _slots.size():
 			if _slots[i] != "":
@@ -145,6 +152,8 @@ func set_capacity(count: int) -> void:
 		if ps >= 0:
 			if _slots[ps] == "":
 				_seat(m, ps, false)
+			continue
+		if _take_reserved(m):
 			continue
 		var s := _free_slot(_group_of(m))
 		if s < 0:
@@ -465,6 +474,8 @@ func add_chat(msg: Dictionary) -> void:
 			_fill_from_crowd()
 	elif ps < 0 and int(m["slot"]) >= 0 and get_slot_kind(int(m["slot"])) == KIND_PRESENTER:
 		_unseat(int(m["slot"]), false)      # no longer linked to that presenter
+	if ps < 0 and not _reserved_by_who.is_empty():
+		_take_reserved(m)                   # a regular with a reserved seat goes straight to it
 	if int(m["slot"]) < 0 and not _slots.is_empty():
 		var s := _free_slot(_group_of(m))
 		if s < 0:
@@ -564,7 +575,7 @@ func _free_slot(group: String = "") -> int:
 			if k == KIND_CROWD and crowd_full():
 				break
 			for i in _slots.size():
-				if _slots[i] == "" and get_slot_kind(i) == k and (loose or slot_allows(i, group)):
+				if _slots[i] == "" and get_slot_kind(i) == k and not _held(i) and (loose or slot_allows(i, group)):
 					spare.append(i)
 			if not spare.is_empty():
 				kind = k
@@ -577,7 +588,7 @@ func _free_slot(group: String = "") -> int:
 	var laid_out := _seat_row.size() == _slots.size()
 	if mode == "front" and laid_out:
 		for i in _seat_order:
-			if _slots[i] == "" and get_slot_kind(i) == kind and spare.has(i):
+			if _slots[i] == "" and get_slot_kind(i) == kind and spare.has(i):   # (spare already skips held seats)
 				return i
 	elif mode == "front_random" and laid_out:
 		var best := 1 << 30
@@ -604,7 +615,7 @@ func _evict_most_idle(group: String = "") -> int:
 			break
 		for i in _slots.size():
 			if _slots[i] != "" and _slot_last[i] < oldest and get_slot_kind(i) != KIND_PRESENTER \
-					and (loose or not picky or slot_allows(i, group)):
+					and not _owner_sits(i) and (loose or not picky or slot_allows(i, group)):
 				oldest = _slot_last[i]
 				best = i
 	if best >= 0:
@@ -1096,7 +1107,12 @@ func get_chart() -> Dictionary:
 	taken.resize(_slots.size())
 	for i in _slots.size():
 		taken[i] = String(_members[_slots[i]].get("platform", "other")) if _slots[i] != "" and _members.has(_slots[i]) else ""
-	return {"spots": _spots, "sections": _section, "kinds": _kind, "taken": taken, "stage": _stage_point}
+	# reserved seats: 1 = kept for someone who isn't sitting in it, 2 = its owner sits there
+	var reserved := PackedByteArray()
+	reserved.resize(_slots.size())
+	for r: Dictionary in get_reservations():
+		reserved[int(r["slot"])] = 2 if bool(r["here"]) else 1
+	return {"spots": _spots, "sections": _section, "kinds": _kind, "taken": taken, "stage": _stage_point, "reserved": reserved}
 
 
 ## After the plan changes: anyone sitting where their platform no longer may moves to a seat
@@ -1112,14 +1128,14 @@ func reseat_by_plan() -> void:
 				continue
 			var m: Dictionary = _members[_slots[i]]
 			var g := _group_of(m)
-			if slot_allows(i, g):
-				continue
+			if slot_allows(i, g) or _owner_sits(i):
+				continue          # (a reserved seat is always its owner's, whatever the plan says)
 			var to := -1
 			for k in [KIND_SEAT, KIND_CROWD]:
 				if k == KIND_CROWD and get_slot_kind(i) != KIND_CROWD and crowd_full():
 					break
 				for j in _slots.size():
-					if _slots[j] == "" and get_slot_kind(j) == k and slot_allows(j, g):
+					if _slots[j] == "" and get_slot_kind(j) == k and not _held(j) and slot_allows(j, g):
 						to = j
 						break
 				if to >= 0:
@@ -1354,6 +1370,10 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		reseat_by_plan()
 	elif key == "seating_by_platform" or key == "seating_strict":
 		reseat_by_plan()
+	elif key == "audience_reserved" or key == "audience_reserved_hold":
+		if not _mirror:
+			_parse_reserved()
+			_apply_reserved()
 	elif key == "audience_color_by" or key.begins_with("platform_color_"):
 		_recolor_all()
 		EventBus.seating_changed.emit()
@@ -1371,6 +1391,213 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_refresh_all_seats()
 
 
+# ── Reserved seats ───────────────────────────────────────────
+## A regular's own seat (Seating tab > Reserved seats, or a guest's ask in a co-stream). When they
+## chat they go straight to it, moving whoever sits there to another seat. With
+## "audience_reserved_hold" on, nobody else takes it while they're away. Reservations are per room
+## and live in the "audience_reserved" setting (JSON, see AppState.DEFAULTS); people are matched by
+## platform group + display name or login, so they keep their seat between streams.
+## In a shared co-stream audience the host seats everyone, so the host's reservations apply on
+## every PC; a guest's chart shows them (mirror_reserved) and asks through NetSession.ask_reserve.
+
+## Most reservations kept per room (the setting is saved with every change).
+const RESERVE_MAX: int = 200
+
+
+## "platform:name" in lower case without "@", the way reservations are looked up.
+static func _who_key(platform: String, who: String) -> String:
+	return "%s:%s" % [platform, who.strip_edges().trim_prefix("@").to_lower()]
+
+
+## Every room's reservations from the setting: {room id: {slot text: {platform, name, by}}}.
+func _all_reserved() -> Dictionary:
+	var raw := String(AppState.get_setting("audience_reserved")).strip_edges()
+	if raw == "":
+		return {}
+	var data: Variant = JSON.parse_string(raw)
+	if data is Dictionary:
+		return data
+	return {}
+
+
+## Reads this room's reservations into _reserved / _reserved_by_who (on room load and setting change).
+func _parse_reserved() -> void:
+	var room := _capacity_room if _capacity_room != "" else String(AppState.get_setting("room_id"))
+	var mine: Variant = _all_reserved().get(room, {})
+	_set_reserved(room, mine if mine is Dictionary else {})
+
+
+## Fills _reserved from {slot text or int: {platform, name, by}}, checking every entry (a mirror's
+## list comes from another PC).
+func _set_reserved(room: String, raw: Dictionary) -> void:
+	_reserved.clear()
+	_reserved_by_who.clear()
+	_reserved_room = room
+	for k: Variant in raw.keys():
+		var slot := int(k) if (k is int or String(k).is_valid_int()) else -1
+		var e: Variant = raw[k]
+		if slot < 0 or not e is Dictionary or _reserved.size() >= RESERVE_MAX:
+			continue
+		var r := {"platform": platform_group(String((e as Dictionary).get("platform", "other"))),
+			"name": String((e as Dictionary).get("name", "")).strip_edges().left(40),
+			"by": String((e as Dictionary).get("by", "")).left(40)}
+		if String(r["name"]) == "":
+			continue
+		_reserved[slot] = r
+		_reserved_by_who[_who_key(String(r["platform"]), String(r["name"]))] = slot
+	EventBus.seating_changed.emit()
+
+
+## Writes this room's reservations back to the setting (other rooms' are kept); its
+## setting_changed reparses and seats anyone affected.
+func _save_reserved(mine: Dictionary) -> void:
+	var all := _all_reserved()
+	var out := {}
+	for slot: int in mine.keys():
+		out[str(slot)] = mine[slot]
+	if out.is_empty():
+		all.erase(_capacity_room)
+	else:
+		all[_capacity_room] = out
+	AppState.set_setting("audience_reserved", JSON.stringify(all) if not all.is_empty() else "")
+
+
+## The reserved seat of member m in this room, or -1.
+func _reserved_slot_of(m: Dictionary) -> int:
+	var p := String(m.get("platform", "other"))
+	var slot := int(_reserved_by_who.get(_who_key(p, String(m.get("name", ""))), -1))
+	if slot < 0 and String(m.get("username", "")) != "":
+		slot = int(_reserved_by_who.get(_who_key(p, String(m["username"])), -1))
+	return slot if slot < _slots.size() else -1
+
+
+## Is the person sitting in this slot the one it's reserved for?
+func _owner_sits(slot: int) -> bool:
+	if not _reserved.has(slot) or _slots[slot] == "" or not _members.has(_slots[slot]):
+		return false
+	return _reserved_slot_of(_members[_slots[slot]]) == slot
+
+
+## A reserved seat kept empty for its owner (hold on): _free_slot and the re-seating skip it.
+func _held(slot: int) -> bool:
+	return _reserved.has(slot) and bool(AppState.get_setting("audience_reserved_hold"))
+
+
+## Puts m in their reserved seat if they have one here. Whoever sits there instead moves to
+## another free seat (or waits for one). Returns true when m ends up in it.
+func _take_reserved(m: Dictionary) -> bool:
+	if _mirror:
+		return false
+	var rs := _reserved_slot_of(m)
+	if rs < 0 or get_slot_kind(rs) == KIND_PRESENTER:
+		return false
+	if int(m["slot"]) == rs:
+		return true
+	var bumped: Dictionary = {}
+	if _slots[rs] != "":
+		bumped = _members.get(_slots[rs], {})
+		_unseat(rs, false)
+	if int(m["slot"]) >= 0:
+		_move(int(m["slot"]), rs)
+	else:
+		_seat(m, rs, true)
+	if not bumped.is_empty():
+		var s := _free_slot(_group_of(bumped))
+		if s >= 0:
+			_seat(bumped, s, true)
+	return true
+
+
+## After the reservations change: owners who are here take their seats.
+func _apply_reserved() -> void:
+	if _mirror or _slots.is_empty():
+		return
+	var moved := false
+	for m: Dictionary in _members.values():
+		if _reserved_slot_of(m) >= 0 and _presenter_spot_for(m) < 0 and int(m["slot"]) != _reserved_slot_of(m):
+			moved = _take_reserved(m) or moved
+	if moved:
+		_emit_count()
+
+
+## Reserves slot for the chatter sitting in it now. by: who asked ("" = this PC's streamer).
+## Returns the chatter's name, or "" when the seat is empty, a podium or already theirs.
+## A person has one reserved seat per room: an older one is given up.
+func reserve_seat(slot: int, by: String = "") -> String:
+	if _mirror or slot < 0 or slot >= _slots.size() or _slots[slot] == "" or get_slot_kind(slot) == KIND_PRESENTER:
+		return ""
+	var m: Dictionary = _members.get(_slots[slot], {})
+	if m.is_empty():
+		return ""
+	var mine := _reserved.duplicate(true)
+	var old := _reserved_slot_of(m)
+	if old >= 0:
+		mine.erase(old)
+	if not mine.has(slot) and mine.size() >= RESERVE_MAX:
+		return ""
+	mine[slot] = {"platform": String(m.get("platform", "other")), "name": String(m["name"]), "by": by.left(40)}
+	_save_reserved(mine)
+	return String(m["name"])
+
+
+## Reserves the seat of whoever is sitting there by this name (Seating tab's name box).
+## Returns the name, or "" when nobody by that name has a seat.
+func reserve_seat_of(who: String, by: String = "") -> String:
+	var slot := find_slot_by_name(who)
+	return reserve_seat(slot, by) if slot >= 0 else ""
+
+
+## Gives up the reservation of a slot. Returns the name it was kept for ("" = none).
+func unreserve_seat(slot: int) -> String:
+	if _mirror or not _reserved.has(slot):
+		return ""
+	var mine := _reserved.duplicate(true)
+	var who := String(mine[slot]["name"])
+	mine.erase(slot)
+	_save_reserved(mine)
+	return who
+
+
+## A slot's reservation {platform, name, by}, or {} when it has none.
+func get_reservation(slot: int) -> Dictionary:
+	return _reserved.get(slot, {}) if _reserved_room == _capacity_room else {}
+
+
+## The reserved seats of the room shown, for the Seating tab's list: [{slot, platform, name, by,
+## section, here}] (here = the owner sits in it now), by section and seat.
+func get_reservations() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	if _reserved_room != _capacity_room:
+		return out
+	for slot: int in _reserved.keys():
+		if slot >= _slots.size():
+			continue
+		var r: Dictionary = _reserved[slot]
+		var here := _slots[slot] != "" and _members.has(_slots[slot]) \
+			and String(_members[_slots[slot]]["name"]).to_lower() == String(r["name"]).to_lower()
+		out.append({"slot": slot, "platform": r["platform"], "name": r["name"], "by": r["by"],
+			"section": get_section(slot), "here": here})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["slot"]) < int(b["slot"]))
+	return out
+
+
+## Host: this room's reservations for the guests (NetSession sends them with the roster).
+func wire_reserved() -> Dictionary:
+	return {"room": _capacity_room, "list": get_reservations()}
+
+
+## Mirror: the host's reservations for a room (drawn on the seating chart and listed; the host
+## does the seating). An entry for another room than the one shown is kept until it loads.
+func mirror_reserved(room: String, list: Array) -> void:
+	if not _mirror:
+		return
+	var raw := {}
+	for e: Variant in list.slice(0, RESERVE_MAX):
+		if e is Dictionary and (e as Dictionary).get("slot") is int:
+			raw[int(e["slot"])] = e
+	_set_reserved(room.left(80), raw)
+
+
 # ── Streaming together ───────────────────────────────────────
 ## Guest: show the host's roster instead of seating this PC's own chat (or go back to normal).
 func set_mirror(on: bool) -> void:
@@ -1379,6 +1606,10 @@ func set_mirror(on: bool) -> void:
 	clear()
 	_mirror = on
 	_pending_roster = {}
+	if on:
+		_set_reserved("", {})       # the host's arrive with the roster
+	else:
+		_parse_reserved()
 
 
 ## True on a guest that shows the host's roster (see set_mirror).

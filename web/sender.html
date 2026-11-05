@@ -43,7 +43,7 @@
   </section>
 
   <section id="liveSection" class="hidden">
-    <div class="row"><b>Streaming together</b></div>
+    <div class="row"><b>Co-stream</b></div>
     <div id="liveHost" class="hidden"><small>The tab or window you share below also goes to everyone else's big
       screens in the session, with its sound (VDO.Ninja, straight from this browser to theirs).</small></div>
     <div id="liveGuest" class="row hidden">
@@ -96,8 +96,8 @@
   </section>
 
   <section id="avatarSection" class="hidden">
-    <div class="row"><b>My avatar</b> <small>(Streaming together)</small></div>
-    <small>What the others in the session can show of you (Together tab > My avatar in the game). The host
+    <div class="row"><b>My avatar</b> <small>(Co-stream)</small></div>
+    <small>What the others in the session can show of you (Co-stream tab > My avatar in the game). The host
       puts it on a podium or the big screen.</small>
     <div id="avatarList"></div>
   </section>
@@ -1084,10 +1084,10 @@ function renderPresenter(i) {
   else if (p.stream) st.textContent = (p.kind === "camera" ? "Camera: " : "Sharing: ") + (p.label || "") + (sent ? " (sent to the others)" : i === AVATAR && live.key ? " (nobody is showing it yet)" : "");
   else if (want === "camera") st.textContent = "Starting camera...";
   else if (want === "tab") st.innerHTML = '<span class="warn">Click the button and pick a tab or window.</span>';
-  else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (' + (i === AVATAR ? "Together tab" : "Presenters tab") + ').</span>';
+  else if (web && !p.want.url) st.innerHTML = '<span class="warn">Type the web page address in the game (' + (i === AVATAR ? "Co-stream tab" : "Presenters tab") + ').</span>';
   else if (web && !winOpen) st.innerHTML = '<span class="warn">Click "1. Open page" (keep that window open, it can sit behind the game).</span>';
   else if (web) st.innerHTML = `<span class="warn">Click "2. Share it" and pick "${pageName}". If it says the site refused to connect, that site doesn't allow being shown inside another page.</span>`;
-  else if (i === AVATAR) st.textContent = "Off (Together tab > My avatar in the game).";
+  else if (i === AVATAR) st.textContent = "Off (Co-stream tab > My avatar in the game).";
   else st.textContent = "Not used (silhouette, green screen or off in the game).";
   const v = row.querySelector("video");
   if (v.srcObject !== p.stream) { v.srcObject = p.stream; if (p.stream) v.play().catch(() => {}); }

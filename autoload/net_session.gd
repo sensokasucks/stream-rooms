@@ -7,6 +7,8 @@ extends Node
 ## "together_bind" = "tunnel" the host runs cloudflared (tools/cloudflared.exe), gets a one-off
 ## https://....trycloudflare.com address, and guests join through Cloudflare. Nobody sees anyone's
 ## real address then. Addresses never go in status messages (they show on the stream).
+## "Hide my address" (together_hide_address, on by default) turns on the tunnel and the video relay
+## together, whatever Listen on and the relay tick say (see bind_mode / relay_on).
 ##
 ## The host is in charge: guests ask, the host decides and tells everyone. AppState.net_gate
 ## stops a guest changing shared state (room, curtain, the shared settings) on its own; a
@@ -35,7 +37,9 @@ extends Node
 ## 5: staying in sync (_net_sync_start / _net_sync_done / _net_guest_synced, _net_aud_check, _net_aud_resync,
 ## _net_resync_request, _net_removed), streamer areas kept by name, pause to react for everyone
 ## (_net_react_pause), whose avatar is a see-through page (_net_avatar_keyed, roster "keyed").
-const PROTOCOL: int = 5
+## 6 (Co-stream batch 2): animated silhouettes travel (_net_look_picture / _net_guest_look_picture
+## carry a frame sheet), plus the big screen remote, claimed podiums and reserved seats.
+const PROTOCOL: int = 6
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -170,12 +174,20 @@ var _live_id: String = ""
 var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
 var _live_relay: bool = false           # guest: the host wants the feed relayed (addresses hidden)
+var _live_hide: bool = false            # guest: the host has Hide my address on (told to the streamer once)
 var _live_feed_on: bool = true          # guest: the host sends its shared tab (as opposed to only avatars)
 ## Whose shared tab is on everyone's big screen (setting screen_tab_peer, "" = the host's). That
 ## person's sender page publishes their own shared tab; everyone else's views it. Each person has
 ## their own stream name for it: the host's is _live_id, a guest's is _peers[id]["tab"] (made by
 ## the host, and only ever sent out while that guest is the one sharing).
 var _live_from: int = 1                 # guest: the peer id whose tab is on the big screen (1 = host)
+## Who holds the big screen remote (peer id, 1 = the host): host and guests (from the roster). See
+## "Big screen remote".
+var _remote_id: int = 1
+var _remote_setting: bool = false
+## Claimed podiums (see "Claimed podiums"): podium number -> {"owner": peer id (0 = the host's as
+## usual), "locked": bool}. Host: the real table; guests: the host's copy (_net_podiums).
+var _podiums: Dictionary = {}      # host: _set_remote / a holder's request is changing screen_tab_peer
 var _live_from_name: String = ""        # guest: their name, for the sender page's messages
 ## This PC's sender page is sharing its OWN tab right now (not someone else's feed it's showing).
 ## From the sender page's status ("own"), via EventBus.capture_status_changed. A guest tells the
@@ -317,7 +329,8 @@ func get_info() -> Dictionary:
 	for id: int in _peers:
 		# synced: the host's view of whether that guest has everything (true for the host itself)
 		peers.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "me": id == me,
-			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100))})
+			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100)),
+			"remote": id == _remote_id, "asked": bool(_peers[id].get("asked", false))})
 	var q := String(AppState.get_setting("graphics_quality"))
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
@@ -325,7 +338,9 @@ func get_info() -> Dictionary:
 		"presenters": group_shared("presenters")}, "peers": peers, "pending": pending_guests(),
 		"waiting": _role == "guest" and not _admitted, "host_name": _host_name,
 		"syncing": _role == "guest" and _admitted and not _synced, "sync_progress": sync_progress(),
-		"reconnecting": not _rejoin.is_empty(), "aud_resyncs": _aud_resyncs}
+		"reconnecting": not _rejoin.is_empty(), "aud_resyncs": _aud_resyncs,
+		"remote": _peer_name(_remote_id) if _role != "off" else "", "has_remote": has_remote(),
+		"podiums": podium_list()}
 
 
 ## Host: who is waiting to be let in, [{id, name, host_ok, guest_ok}].
@@ -349,7 +364,12 @@ func is_shared(key: String) -> bool:
 
 ## True when this PC may not change it: a guest who isn't a co-host, for a group the host shares.
 ## what: a setting key, "room" or "curtain".
+## The big screen keys are the remote holder's instead (see "Big screen remote").
 func is_locked(what: String) -> bool:
+	if _role == "guest" and _is_screen(what):
+		return not has_remote() and group_shared(_group_of(what))
+	if _role == "guest" and my_podium() > 0 and what.begins_with("presenter_%d_" % my_podium()):
+		return false          # (this PC's own claimed podium)
 	return _role == "guest" and not _is_cohost() and _group_of(what) != "" and group_shared(_group_of(what))
 
 
@@ -379,7 +399,7 @@ func _share_flags() -> Dictionary:
 	return out
 
 
-## The name others see: the Together tab's name, else the profile name, else Host / Guest.
+## The name others see: the Co-stream tab's name, else the profile name, else Host / Guest.
 func display_name() -> String:
 	var n := _clean_name(String(AppState.get_setting("together_name")))
 	if n == "":
@@ -389,7 +409,40 @@ func display_name() -> String:
 	return n
 
 
-## Together tab "Host": checks the password, listens on together_port, and starts the tunnel when
+# ── Hide my address ──
+## Host: Hide my address is on and means something (listening on "This PC only" has no address to
+## hide, and the tests use it). Guest: the host said it's on.
+func hides_address() -> bool:
+	if _role == "guest":
+		return _live_hide
+	return bool(AppState.get_setting("together_hide_address")) and String(AppState.get_setting("together_bind")) != "local"
+
+
+## Where the host listens: together_bind, or "tunnel" while Hide my address is on.
+func bind_mode() -> String:
+	return "tunnel" if hides_address() else String(AppState.get_setting("together_bind"))
+
+
+## Host: send the video (big screen and avatars) through VDO.Ninja's relay servers? The relay tick,
+## or Hide my address.
+func relay_on() -> bool:
+	return bool(AppState.get_setting("together_live_relay")) or hides_address()
+
+
+## What Hide my address covers right now, for the "Covered" list in the Co-stream tab and Esc menu:
+## [[ok, text]] (ok false = a warning to act on).
+func hide_checklist() -> Array:
+	if not hides_address():
+		return []
+	var tunnel_ok := _cloudflared() != ""
+	return [[tunnel_ok, "Joining goes through a one-off Cloudflare address: guests never see your real one." if tunnel_ok
+			else "cloudflared.exe is missing: run tools\\get_tools.ps1 (or copy it next to the game) before hosting."],
+		[true, "The big screen and everyone's avatars go through VDO.Ninja's relay servers."],
+		[true, "Your address never shows on screen: Copy address puts it on the clipboard."],
+		[true, "Troubleshooting logs swap addresses for <tags>."]]
+
+
+## Co-stream tab "Host": checks the password, listens on together_port, and starts the tunnel when
 ## together_bind is "tunnel". "auto" listens on the Tailscale address if there is one, else 127.0.0.1.
 func host() -> void:
 	if _role != "off":
@@ -401,7 +454,7 @@ func host() -> void:
 		return
 	var port := int(AppState.get_setting("together_port"))
 	var ts := _tailscale_ip()
-	var bind := String(AppState.get_setting("together_bind"))
+	var bind := bind_mode()
 	var ip := "127.0.0.1"
 	if bind == "all":
 		ip = "*"
@@ -421,6 +474,8 @@ func host() -> void:
 	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16), "keyed": _my_avatar_keyed()}}
 	_streamer_slots.clear()
 	_aud_check_wait = AUD_CHECK_GAP
+	_remote_id = 1
+	_podiums.clear()
 	_cams.clear()
 	_video.clear()
 	AppState.net_gate = _gate
@@ -443,7 +498,7 @@ func host() -> void:
 	_set_status("Hosting. " + where + password_note())
 
 
-## Together tab "Join": connects to together_address. The password step follows in _on_host_auth.
+## Co-stream tab "Join": connects to together_address. The password step follows in _on_host_auth.
 ## A click on Join stops any reconnecting first; the reconnect timer calls it with rejoining = true.
 func join(rejoining: bool = false) -> void:
 	if _role != "off":
@@ -467,6 +522,7 @@ func join(rejoining: bool = false) -> void:
 	_session_ms = Time.get_ticks_msec()
 	DebugLog.note("net", "joining %s, version %s" % [url, _version()])   # (DebugLog hides the address)
 	_peers.clear()
+	_remote_id = 1
 	_refused = ""
 	_host_ended = false
 	_rtt = 0.0
@@ -476,7 +532,7 @@ func join(rejoining: bool = false) -> void:
 		_set_status("Connecting to the host...")
 
 
-## Together tab "Leave" / "Stop hosting".
+## Co-stream tab "Leave" / "Stop hosting".
 func leave() -> void:
 	if _role == "off":
 		if not _rejoin.is_empty():
@@ -585,7 +641,7 @@ func confirm(yes: bool) -> void:
 ## "" when this hello may join, else the reason to refuse it (the guest sees it).
 static func check_hello(d: Dictionary, nonce: PackedByteArray, password: String, version: String) -> String:
 	if int(d.get("protocol", -1)) != PROTOCOL or String(d.get("version", "")) != version:
-		return "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to stream together." % [
+		return "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to co-stream." % [
 			version, String(d.get("version", "?"))]
 	var p: Variant = d.get("proof")
 	if not p is PackedByteArray or (p as PackedByteArray) != proof(nonce, password):
@@ -715,7 +771,7 @@ func _on_host_auth(d: Dictionary) -> void:
 	match String(d.get("t", "")):
 		"challenge":
 			if int(d.get("protocol", -1)) != PROTOCOL or String(d.get("version", "")) != _version():
-				_refused = "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to stream together." % [
+				_refused = "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to co-stream." % [
 					String(d.get("version", "?")), _version()]
 				_close.call_deferred(_refused, true)
 				return
@@ -797,6 +853,11 @@ func _on_peer_disconnected(id: int) -> void:
 	_guest_looks.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
+	if _remote_id == id:
+		_set_remote(1)                # (the remote goes back to the host)
+	for pn: int in _podiums.keys():
+		if int(_podiums[pn].get("owner", 0)) == id:
+			_free_podium(pn)
 	_send_roster()
 	_update_audience_sharing()
 	_set_status("%s left. If they come back within %d minutes, their part of the audience is still there." % [n, int(AWAY_KEEP_S / 60.0)]
@@ -854,6 +915,8 @@ func _close(message: String, is_error: bool = false, keep_audience: bool = false
 			EventBus.net_peer_left.emit(id)
 	_role = "off"
 	_peers.clear()
+	_remote_id = 1
+	_podiums.clear()
 	_nonces.clear()
 	_hello_names.clear()
 	for id: int in _pending:
@@ -869,6 +932,7 @@ func _close(message: String, is_error: bool = false, keep_audience: bool = false
 	_live_id = ""
 	_live_key = ""
 	_live_on = false
+	_live_hide = false
 	_live_from = 1
 	_live_from_name = ""
 	_chat_out.clear()
@@ -911,19 +975,32 @@ func _gate(what: String, value: Variant) -> bool:
 		return true
 	if what != "video" and (_group_of(what) == "" or not group_shared(_group_of(what))):
 		return true          # not shared (or not any more): this PC's own
+	var owned := _owned_podium_of(what)
+	if owned > 0:
+		_owner_change(owned, what, value)
+		return false
+	if _is_screen(what):
+		# the big screen belongs to whoever holds the remote, not to the co-hosts
+		if has_remote():
+			_net_request.rpc_id(1, what, value)
+		else:
+			EventBus.status_message.emit("%s has the big screen remote. Ask for it in the Esc menu > Co-stream." % _peer_name(_remote_id), false)
+		return false
 	if _is_cohost():
 		_net_request.rpc_id(1, what, value)
 	else:
-		EventBus.status_message.emit("The host controls this while you're a guest (Together tab).", false)
+		EventBus.status_message.emit("The host controls this while you're a guest (Co-stream tab).", false)
 	return false
 
 
-## Host: passes shared settings on to the guests, and reacts to its own Together tab settings.
+## Host: passes shared settings on to the guests, and reacts to its own Co-stream tab settings.
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if _role == "host" and _shared.has(key) and group_shared(_group_of(key)):
 		_to_guests("_net_setting", [key, value])
 	if _role == "host" and key.begins_with("together_share_"):
 		_share_changed(key.trim_prefix("together_share_"))
+	if _role == "guest" and not _applying and key.ends_with("_picture") and _podium_of(key) > 0 and _podium_of(key) == my_podium():
+		_upload_podium_picture(my_podium(), String(value))
 	if _role == "host" and key.begins_with("presenter_") and key.ends_with("_picture") and group_shared("presenters"):
 		_send_picture(int(key.get_slice("_", 1)), -1)
 	elif key == "graphics_quality" and _role == "guest":
@@ -949,7 +1026,16 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 			_emit_live()
 			_to_guests("_net_live", [_live_info_for_guests()])
 	# (screen_tab_peer: whose tab is on the big screen; a co-host can change it too, through the host)
-	if (key == "together_live_feed" or key == "together_live_relay" or key == "screen_tab_peer") and _role == "host":
+	if key == "screen_tab_peer" and _role == "host" and not _remote_setting:
+		# the host picked whose tab is on the big screen itself: the remote goes with it
+		var to := 1
+		for id: int in _peers:
+			if id != 1 and String(_peers[id]["name"]) == String(value):
+				to = id
+		if to != _remote_id:
+			_remote_id = to
+			_send_roster()
+	if (key == "together_live_feed" or key == "together_live_relay" or key == "together_hide_address" or key == "screen_tab_peer") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
 
@@ -1115,12 +1201,16 @@ func _net_curtain(closed: bool, style: String) -> void:
 func _net_roster(list: Array) -> void:
 	if not _from_host():
 		return
+	var had_remote := _admitted and has_remote()
 	_peers.clear()
+	_remote_id = 1
 	for p: Variant in list:
 		if p is Dictionary and (p as Dictionary).get("id") is int:
 			var av := String(p.get("avatar", ""))
 			_peers[int(p["id"])] = {"name": _clean_name(String(p.get("name", ""))), "cohost": bool(p.get("cohost", false)),
-				"avatar": av if _token_ok(av) else "", "keyed": bool(p.get("keyed", false))}
+				"avatar": av if _token_ok(av) else "", "keyed": bool(p.get("keyed", false)), "asked": bool(p.get("asked", false))}
+			if bool(p.get("remote", false)):
+				_remote_id = int(p["id"])
 	if not _admitted:
 		_admitted = true
 		EventBus.net_confirm_closed.emit(1)
@@ -1131,6 +1221,9 @@ func _net_roster(list: Array) -> void:
 			_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
 		_net_tab_sharing.rpc_id(1, _own_tab)    # (in case the host puts this PC's tab on the big screen)
 		_net_avatar_keyed.rpc_id(1, _my_avatar_keyed())   # (podiums showing my avatar key it on every PC)
+	if _admitted and has_remote() != had_remote:
+		EventBus.status_message.emit("You have the big screen remote: what you show is on everyone's big screen." if has_remote()
+			else "%s has the big screen remote now." % _peer_name(_remote_id), false)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -1147,7 +1240,13 @@ func _net_left(peer_id: int) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _net_request(what: String, value: Variant) -> void:
 	var id := multiplayer.get_remote_sender_id()
-	if _role != "host" or not _peers.has(id) or not bool(_peers[id]["cohost"]):
+	if _role != "host" or not _peers.has(id):
+		return
+	# the big screen (and pausing it for everyone) is the remote holder's; the rest is the co-hosts'
+	var allowed := id == _remote_id if (_is_screen(what) or what == "react_pause") else bool(_peers[id]["cohost"])
+	if not allowed and _podium_owner(_podium_of(what)) == id:
+		allowed = _owner_value_ok(what, value, id)      # (their own claimed podium)
+	if not allowed:
 		return
 	if what == "react_pause":
 		if value is bool:
@@ -1165,7 +1264,9 @@ func _net_request(what: String, value: Variant) -> void:
 		if value is String and value != "" and is_web_address(value):
 			EventBus.file_play_requested.emit(value)
 	elif _setting_ok(what, value):
+		_remote_setting = true          # (a holder showing someone else's tab keeps the remote)
 		AppState.set_setting(what, value)
+		_remote_setting = false
 
 
 ## Guest: applies a host setting past the gate. A presenter source that only exists on the host's
@@ -1474,6 +1575,8 @@ func _on_seating_changed() -> void:
 func _send_roster_to_guests() -> void:
 	if _sharing_audience():
 		_to_guests("_net_aud_roster", [_room(), AudienceManager.get_roster()])
+		var res := AudienceManager.wire_reserved()      # (the reserved seats go along: see "Reserved seats")
+		_to_guests("_net_aud_reserved", [String(res["room"]), res["list"]])
 
 
 ## Guest: this PC's chat goes to the host's audience (its own chat windows keep showing it).
@@ -1584,6 +1687,55 @@ func _net_aud_mode(shared: bool) -> void:
 		_emit_state()
 
 
+# ── Reserved seats ──
+## In a shared audience the host does the seating, so the host's reserved seats (AudienceManager
+## "Reserved seats") count for everyone. Guests see them on their seating chart and can reserve the
+## seat of a chatter sitting in it, or free one they reserved; the host's PC does it and says so.
+
+## Guest: reserve (on) or free the seat at this slot of the room shown, on the host's PC.
+func ask_reserve(slot: int, on: bool) -> void:
+	if _role == "guest" and _admitted and _connected():
+		_net_reserve_ask.rpc_id(1, AudienceManager.seats_room(), slot, on)
+
+
+## Host: a guest's ask_reserve. Reserving works for any seat with someone in it; freeing only for a
+## seat that guest reserved (or any, for a co-host).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_reserve_ask(room: String, slot: int, on: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or not _sharing_audience() or room != AudienceManager.seats_room():
+		return
+	var guest := _peer_name(id)
+	var who := ""
+	if on:
+		who = AudienceManager.reserve_seat(slot, guest)
+		if who != "":
+			EventBus.status_message.emit("%s reserved a seat for %s." % [guest, who], false)
+	else:
+		var r := AudienceManager.get_reservation(slot)
+		if not r.is_empty() and (String(r["by"]) == guest or bool(_peers[id]["cohost"])):
+			who = AudienceManager.unreserve_seat(slot)
+			if who != "":
+				EventBus.status_message.emit("%s freed %s's reserved seat." % [guest, who], false)
+	if who == "":
+		_net_reserve_refused.rpc_id(id, "Only seats with someone in them can be reserved." if on
+			else "Only the host frees seats that someone else reserved.")
+
+
+## Guest: the host didn't do what ask_reserve asked (why, for the message line).
+@rpc("authority", "call_remote", "reliable")
+func _net_reserve_refused(why: String) -> void:
+	if _from_host():
+		EventBus.status_message.emit(why.left(120), false)
+
+
+## Guest: the host's reserved seats for its room (AudienceManager.wire_reserved).
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_reserved(room: String, list: Array) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_reserved(room, list)
+
+
 # The _net_aud_* RPCs below hand the host's seating to AudienceManager's mirror_* functions.
 @rpc("authority", "call_remote", "reliable")
 func _net_aud_roster(room: String, list: Array) -> void:
@@ -1657,7 +1809,10 @@ static func _looks_to_wire(looks: Dictionary, pictures: Dictionary) -> Dictionar
 			f["shape"] = "classic"      # (a picture that's gone here: the classic bust there too)
 			return f
 		var key := _picture_key(png)
-		pictures[key] = [png, shape]
+		# an animated GIF's frames go along (AudienceStyle.anim_sheet / anim_info_file), else empty
+		var sheet := PictureFile.read_file(AudienceStyle.anim_sheet(file))
+		var info := FileAccess.get_file_as_string(AudienceStyle.anim_info_file(file)) if not sheet.is_empty() else ""
+		pictures[key] = [png, shape, sheet if info != "" else PackedByteArray(), info]
 		f["file"] = key
 		return f)
 
@@ -1671,9 +1826,9 @@ func _give_look_pictures(id: int, pictures: Dictionary) -> void:
 		if not (_pic_sent[id] as Dictionary).has("look:" + key):
 			_pic_sent[id]["look:" + key] = true
 			if _role == "host":
-				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1])
+				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1], pictures[key][2], pictures[key][3])
 			else:
-				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1])
+				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1], pictures[key][2], pictures[key][3])
 
 
 ## Every silhouette style inside a set of looks (the main one in audience_silhouette and each saved
@@ -1702,33 +1857,60 @@ static func _parse_json(text: String) -> Variant:
 ## Guest: one of the host's silhouette pictures (a looks message that uses it follows). Kept as
 ## NET_LOOK_FILE (and its "_shape" copy), where AudienceStyle reads pictures from.
 @rpc("authority", "call_remote", "reliable")
-func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray, info: String) -> void:
 	if _from_host():
-		_save_look_picture(key, png, shape)
+		_save_look_picture(key, png, shape, sheet, info)
 		_sync_got()
 
 
 ## Host: one of a guest's own silhouette pictures (for "Viewers keep their streamer's looks"; the
 ## guest's looks follow in _net_guest_looks). Kept the same way as the host's pictures on a guest.
 @rpc("any_peer", "call_remote", "reliable")
-func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray, info: String) -> void:
 	if _role == "host" and _peers.has(multiplayer.get_remote_sender_id()):
-		_save_look_picture(key, png, shape)
+		_save_look_picture(key, png, shape, sheet, info)
 
 
 ## A silhouette picture from another PC, checked (its name must be its own MD5, both files PNGs
-## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy.
-func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy. sheet / info:
+## an animated GIF's frames (a WebP sheet and its {"frames", "delays"} JSON, AudienceStyle.anim_sheet),
+## or empty for a still picture; a sheet that fails the checks is dropped and the first frame stays.
+func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray, sheet: PackedByteArray = PackedByteArray(), info: String = "") -> void:
 	if not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
 			or PictureFile.kind_of(shape) != "png" or shape.size() > PictureFile.MAX_BYTES or PictureFile.too_big(shape):
 		return
 	var path := NET_LOOK_FILE % key.substr(EmoteCache.NET_PREFIX.length())
 	DirAccess.make_dir_recursive_absolute(AudienceStyle.PICTURE_DIR)
-	for pair: Array in [[path, png], [path.replace(".png", "_shape.png"), shape]]:
+	var files: Array = [[path, png], [path.replace(".png", "_shape.png"), shape]]
+	DirAccess.remove_absolute(AudienceStyle.anim_sheet(path))
+	DirAccess.remove_absolute(AudienceStyle.anim_info_file(path))
+	if _anim_ok(sheet, info):
+		files.append([AudienceStyle.anim_sheet(path), sheet])
+		files.append([AudienceStyle.anim_info_file(path), info.to_utf8_buffer()])
+	for pair: Array in files:
 		var f := FileAccess.open(String(pair[0]), FileAccess.WRITE)
 		if f != null:
 			f.store_buffer(pair[1] as PackedByteArray)
 			f.close()
+
+
+## An animated silhouette from another PC is usable: a WebP sheet within PictureFile's limits and
+## info naming 2..ANIM_MAX_FRAMES frames with a number for each delay.
+static func _anim_ok(sheet: PackedByteArray, info: String) -> bool:
+	if sheet.is_empty() or info.length() > 4000 or sheet.size() > PictureFile.MAX_BYTES \
+			or PictureFile.kind_of(sheet) != "webp" or PictureFile.too_big(sheet):
+		return false
+	var v: Variant = JSON.parse_string(info)
+	if not v is Dictionary or not (v as Dictionary).get("delays") is Array:
+		return false
+	var n := int((v as Dictionary).get("frames", 0))
+	var delays: Array = (v as Dictionary)["delays"]
+	if n < 2 or n > AudienceStyle.ANIM_MAX_FRAMES or delays.size() != n:
+		return false
+	for d: Variant in delays:
+		if not (d is float or d is int):
+			return false
+	return true
 
 
 ## Guest: the host's looks (see _send_looks). Shown while this PC mirrors the host's audience.
@@ -1779,7 +1961,7 @@ func _clear_net_looks() -> void:
 
 
 # ── Each streamer's own looks ────────────────────────────
-## "Viewers keep their streamer's looks" (together_streamer_looks, host's Together tab): in the one
+## "Viewers keep their streamer's looks" (together_streamer_looks, host's Co-stream tab): in the one
 ## shared audience, each chatter is drawn in the looks of the streamer whose chat they came from. A
 ## guest sends its own looks (from its own Stream Core) to the host; the host keeps them per guest
 ## and sends every guest the whole table, streamer index -> looks (AudienceStyle.streamer_looks).
@@ -1866,12 +2048,12 @@ func _live_info_for_guests() -> Dictionary:
 	# whether the big screen is being shared right now
 	return {"id": _tab_token(pub), "key": _live_key, "live": sharing,
 		"from": pub, "from_name": _peer_name(pub),
-		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": bool(AppState.get_setting("together_live_relay")),
-		"quality": _quality()}
+		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": relay_on(),
+		"hide": hides_address(), "quality": _quality()}
 
 
 ## Host: the peer id whose shared tab is on the big screen: the guest named in screen_tab_peer
-## (set in the Together tab), or 1 (the host) when it's "" or that person isn't in the session.
+## (set in the Co-stream tab), or 1 (the host) when it's "" or that person isn't in the session.
 func _tab_publisher() -> int:
 	var want := String(AppState.get_setting("screen_tab_peer"))
 	if want == "":
@@ -1941,6 +2123,10 @@ func _apply_live(info: Dictionary) -> void:
 	_live_key = key
 	_live_on = id != "" and bool(info.get("live", false))
 	_live_relay = bool(info.get("relay", false))
+	var hide := bool(info.get("hide", false))
+	if hide and not _live_hide:
+		EventBus.status_message.emit("This co-stream hides everyone's address.", false)
+	_live_hide = hide
 	_live_feed_on = bool(info.get("feed_on", true))
 	_live_from = int(info.get("from", 1)) if info.get("from") is int else 1
 	_live_from_name = _clean_name(String(info.get("from_name", "")))
@@ -1960,7 +2146,7 @@ func _emit_live() -> void:
 	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
 		var pub := _tab_publisher()
-		var relay := bool(AppState.get_setting("together_live_relay"))
+		var relay := relay_on()
 		if pub == 1:
 			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": relay}
 		else:
@@ -1970,12 +2156,16 @@ func _emit_live() -> void:
 		if _live_from == multiplayer.get_unique_id():
 			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": _live_relay}
 		else:
+			# auto: the sender page follows the big screen without a Watch click (sound may still need
+			# one click on the page: browsers only play sound after one)
 			info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay,
-				"from_name": "" if _live_from == 1 else _live_from_name}
+				"from_name": "" if _live_from == 1 else _live_from_name, "auto": true}
 	# the session key, the quality and the podium list go along even when the big screen isn't shared
 	# (the avatars use them)
 	if _role != "off":
 		info["key"] = _live_key
+		# (the avatars travel through the same page, so they're relayed too, big screen shared or not)
+		info["relay"] = relay_on() if _role == "host" else _live_relay
 		info["quality"] = _quality() if _role == "host" else _live_quality
 		info["avatars"] = avatar_list()
 	EventBus.live_feed_changed.emit(info)
@@ -2332,10 +2522,10 @@ func _on_react_pause(paused: bool) -> void:
 	if _role == "host":
 		_to_guests("_net_react_pause", [paused])
 	elif _role == "guest" and _admitted and _connected():
-		if _is_cohost():
+		if has_remote():
 			_net_request.rpc_id(1, "react_pause", paused)
 		else:
-			EventBus.status_message.emit("Paused on your PC only. The host or a co-host pauses for everyone.", false)
+			EventBus.status_message.emit("Paused on your PC only. Whoever has the big screen remote pauses for everyone.", false)
 
 
 ## Guest: the host paused / unpaused for everyone.
@@ -2349,6 +2539,279 @@ func _apply_react_pause(paused: bool) -> void:
 	_applying_pause = true
 	AppState.set_react_paused(paused)
 	_applying_pause = false
+
+
+# ── Claimed podiums ──────────────────────────────────────────
+## A guest can claim a free podium and run it from their own PC: it shows their My avatar (camera,
+## tab / window or a see-through web page, set in their Co-stream tab, sent to everyone like
+## avatars are), and they set its name tag, light, chroma key, picture and the rest in their own
+## Presenters tab. Those changes go through the host (_net_request) like a co-host's, but only for
+## that podium. The host can lock a podium (nobody can claim it) or free a claimed one; a podium is
+## freed when its owner leaves. One podium per guest. Needs the presenters shared (together_share_presenters).
+
+## This PC's claimed podium (1..PRESENTER_COUNT), or 0.
+func my_podium() -> int:
+	var me := multiplayer.get_unique_id() if _role == "guest" else -1
+	for n: int in _podiums:
+		if int(_podiums[n].get("owner", 0)) == me:
+			return n
+	return 0
+
+
+## Every podium for the menus: [{n, owner (name, "" = the host's), mine, locked, free}].
+func podium_list() -> Array:
+	var out: Array = []
+	if _role == "off":
+		return out
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var holder := _podium_owner(n)
+		var locked := bool((_podiums.get(n, {}) as Dictionary).get("locked", false))
+		out.append({"n": n, "owner": _peer_name(holder) if holder > 0 else "", "mine": holder > 0 and holder == multiplayer.get_unique_id(),
+			"locked": locked, "free": holder == 0 and not locked})
+	return out
+
+
+## Guest: claim podium n (want = false gives it up).
+func claim_podium(n: int, want: bool = true) -> void:
+	if _role == "guest" and _admitted and _connected() and n >= 1 and n <= AppState.PRESENTER_COUNT:
+		_net_podium_claim.rpc_id(1, n, want)
+
+
+## Host: lock podium n (nobody can claim it; a claimed one is freed first) or unlock it.
+func lock_podium(n: int, on: bool) -> void:
+	if _role != "host" or n < 1 or n > AppState.PRESENTER_COUNT:
+		return
+	if on and _podium_owner(n) > 0:
+		_free_podium(n)
+	if not _podiums.has(n):
+		_podiums[n] = {"owner": 0, "locked": false}
+	_podiums[n]["locked"] = on
+	_send_roster()
+
+
+## Host: give a claimed podium back to the host (it goes off set, as before it was claimed).
+func free_podium(n: int) -> void:
+	if _role == "host" and _podium_owner(n) > 0:
+		_free_podium(n)
+		_send_roster()
+
+
+func _podium_owner(n: int) -> int:
+	return int((_podiums.get(n, {}) as Dictionary).get("owner", 0)) if n > 0 else 0
+
+
+## "presenter_3_name" -> 3; anything else -> 0.
+static func _podium_of(key: String) -> int:
+	if not key.begins_with("presenter_"):
+		return 0
+	var n := key.get_slice("_", 1)
+	return int(n) if n.is_valid_int() else 0
+
+
+## Guest: the podium a setting belongs to when it's this PC's claimed one and shared, else 0.
+func _owned_podium_of(key: String) -> int:
+	var n := _podium_of(key)
+	return n if _role == "guest" and n > 0 and n == my_podium() and _shared.has(key) else 0
+
+
+## Guest: a change to this PC's own podium. Camera and Tab / window can't be seen by the others as a
+## podium source, so they become this PC's My avatar, which the podium then shows (source "peer").
+func _owner_change(n: int, key: String, value: Variant) -> void:
+	if key.ends_with("_source") and String(value) in ["camera", "tab"]:
+		AppState.set_setting("together_avatar_source", String(value))
+		EventBus.status_message.emit("Your podium shows your My avatar, now set to %s (Co-stream tab)." % ("your camera" if value == "camera" else "a tab or window"), false)
+		_net_request.rpc_id(1, AppState.presenter_key(n, "peer"), display_name())
+		value = "peer"
+	elif key.ends_with("_source") and String(value) in ["ndi", "spout"]:
+		EventBus.status_message.emit("The others can't see NDI or Spout. Send it to OBS Virtual Camera and pick Camera instead.", true)
+		return
+	_net_request.rpc_id(1, key, value)
+
+
+## Host: may this guest set this on their claimed podium? Sources other PCs can see only, and
+## "peer" only for their own avatar.
+func _owner_value_ok(key: String, value: Variant, id: int) -> bool:
+	if key.ends_with("_source"):
+		return String(value) in ["peer", "silhouette", "green", "web"]
+	if key.ends_with("_peer"):
+		return String(value) == _peer_name(id)
+	return true
+
+
+## Host: a guest claims podium n, or gives it up.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_podium_claim(n: int, want: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or n < 1 or n > AppState.PRESENTER_COUNT:
+		return
+	if not want:
+		if _podium_owner(n) == id:
+			_free_podium(n)
+			_send_roster()
+		return
+	var why := ""
+	if not group_shared("presenters"):
+		why = "The host isn't sharing the podiums right now."
+	elif bool((_podiums.get(n, {}) as Dictionary).get("locked", false)):
+		why = "The host locked that podium."
+	elif _podium_owner(n) > 0:
+		why = "%s has that podium." % _peer_name(_podium_owner(n))
+	if why != "":
+		_net_podium_refused.rpc_id(id, why)
+		return
+	for other: int in _podiums.keys():
+		if _podium_owner(other) == id:
+			_free_podium(other)          # (one podium each: moving to another)
+	_podiums[n] = {"owner": id, "locked": false}
+	var who := _peer_name(id)
+	AppState.set_setting(AppState.presenter_key(n, "on"), true)
+	AppState.set_setting(AppState.presenter_key(n, "source"), "peer")
+	AppState.set_setting(AppState.presenter_key(n, "peer"), who)
+	AppState.set_setting(AppState.presenter_key(n, "name"), who)
+	EventBus.status_message.emit("%s claimed podium %d." % [who, n], false)
+	_send_roster()
+
+
+## Guest: the host said no to a claim.
+@rpc("authority", "call_remote", "reliable")
+func _net_podium_refused(why: String) -> void:
+	if _from_host():
+		EventBus.status_message.emit(why.left(200), true)
+
+
+## Guest: the host's podium table (who has which, which are locked).
+@rpc("authority", "call_remote", "reliable")
+func _net_podiums(table: Dictionary) -> void:
+	if not _from_host():
+		return
+	var mine_before := my_podium()
+	_podiums.clear()
+	for k: Variant in table:
+		if k is int and int(k) >= 1 and int(k) <= AppState.PRESENTER_COUNT and table[k] is Dictionary:
+			_podiums[int(k)] = {"owner": int((table[k] as Dictionary).get("owner", 0)), "locked": bool((table[k] as Dictionary).get("locked", false))}
+	if my_podium() != mine_before and my_podium() > 0:
+		EventBus.status_message.emit("Podium %d is yours: set it up in the Presenters tab. It shows your My avatar." % my_podium(), false)
+	_emit_state()
+
+
+## Host: a claimed podium goes back to the host, off set.
+func _free_podium(n: int) -> void:
+	if not _podiums.has(n):
+		return
+	_podiums[n]["owner"] = 0
+	AppState.set_setting(AppState.presenter_key(n, "on"), false)
+	AppState.set_setting(AppState.presenter_key(n, "source"), "silhouette")
+	AppState.set_setting(AppState.presenter_key(n, "peer"), "")
+	AppState.set_setting(AppState.presenter_key(n, "picture"), "")
+
+
+## Guest: this PC picked a picture for its own podium: the bytes go to the host, which puts them
+## on the podium for everyone (_net_podium_picture).
+func _upload_podium_picture(n: int, path: String) -> void:
+	var bytes := PictureFile.read_file(path) if path.strip_edges() != "" else PackedByteArray()
+	if path.strip_edges() != "" and bytes.is_empty():
+		EventBus.status_message.emit("That picture can't be sent (PNG, JPG, WebP or GIF up to 3 MB).", true)
+		return
+	if _connected():
+		_net_podium_picture.rpc_id(1, n, bytes)
+
+
+## Host: the owner of podium n sent its picture (empty = none). Kept in user://podium_pictures and
+## set as the podium's picture, which then goes to everyone like the host's own.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_podium_picture(n: int, bytes: PackedByteArray) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or _podium_owner(n) != id:
+		return
+	var key := AppState.presenter_key(n, "picture")
+	if bytes.is_empty():
+		AppState.set_setting(key, "")
+		return
+	var kind := PictureFile.kind_of(bytes)
+	if bytes.size() > PictureFile.MAX_BYTES or kind == "" or (kind != "gif" and PictureFile.too_big(bytes)):
+		return
+	DirAccess.make_dir_recursive_absolute("user://podium_pictures")
+	var path := "user://podium_pictures/claimed_%d_%s.%s" % [n, bytes.slice(0, 4096).hex_encode().md5_text().left(8), kind]
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_buffer(bytes)
+	f.close()
+	AppState.set_setting(key, path)
+
+
+# ── Big screen remote ─────────────────────────────────────────
+## One person holds the big screen remote: the host at the start, then whoever it's passed to. The
+## holder decides what everyone's big screen shows (their own shared tab: screen_tab_peer follows
+## the holder; a web video; someone's avatar, screen_peer) and pauses for everyone. Co-hosts keep
+## the room, curtain and podiums, not the big screen. A guest can ask for it (the host sees "asked"
+## in the Esc menu > Co-stream); the holder can pass it on or give it back; it goes back to the host
+## when the holder leaves. The host can always take it back. Set by the Esc menu and the Co-stream tab.
+
+## The settings the holder controls ("video" is a web video for the big screen, see _gate).
+const SCREEN_KEYS: Array[String] = ["screen_peer", "screen_tab_peer"]
+
+
+func _is_screen(what: String) -> bool:
+	return what == "video" or SCREEN_KEYS.has(what)
+
+
+## True when this PC holds the remote (also true outside a session: it's all this PC's then).
+func has_remote() -> bool:
+	if _role == "host":
+		return _remote_id == 1
+	if _role == "guest":
+		return _remote_id == multiplayer.get_unique_id()
+	return true
+
+
+## Host: give the remote to someone (1 = take it back). The holder (a guest): pass it on or give it
+## back (to 1).
+func pass_remote(peer_id: int) -> void:
+	if _role == "host":
+		_set_remote(peer_id)
+	elif _role == "guest" and has_remote() and _connected():
+		_net_remote_pass.rpc_id(1, peer_id)
+
+
+## Guest: ask the host for the remote (want = false takes the question back).
+func ask_remote(want: bool = true) -> void:
+	if _role == "guest" and _admitted and _connected() and not has_remote():
+		_net_remote_ask.rpc_id(1, want)
+
+
+## Host: the remote goes to this person (anyone not in the session = the host). Their shared tab
+## becomes the big screen's, and everyone hears who has it.
+func _set_remote(peer_id: int) -> void:
+	if not _peers.has(peer_id):
+		peer_id = 1
+	_remote_id = peer_id
+	_peers[peer_id]["asked"] = false
+	_remote_setting = true
+	AppState.set_setting("screen_tab_peer", "" if peer_id == 1 else String(_peers[peer_id]["name"]))
+	_remote_setting = false
+	_set_status("You have the big screen remote." if peer_id == 1 else "%s has the big screen remote." % _peer_name(peer_id))
+	DebugLog.note("net", "big screen remote -> #%d" % peer_id)
+	_send_roster()
+
+
+## Host: a guest asks for the remote (or takes the question back).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_remote_ask(want: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or id == _remote_id:
+		return
+	_peers[id]["asked"] = want
+	if want:
+		EventBus.status_message.emit("%s asks for the big screen remote (Esc menu > Co-stream: Give remote)." % _peer_name(id), false)
+	_send_roster()
+
+
+## Host: the guest holding the remote passes it on (1 = back to the host).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_remote_pass(to: int) -> void:
+	if _role == "host" and multiplayer.get_remote_sender_id() == _remote_id:
+		_set_remote(to)
 
 
 ## True when this PC's own content is what the big screen shows (no session, the host showing its
@@ -2389,14 +2852,14 @@ func avatar_key(who: String) -> Dictionary:
 ## Host, in a session with guests and shared presenters: what's wrong with podium n for the guests
 ## ("" = nothing). A camera, tab, NDI or Spout source, or a web page only this PC can open (a local
 ## avatar app on localhost, an address on the home network), shows as a silhouette or a blank on
-## their PCs. The fix is My avatar (Together tab), shown with "Someone's avatar".
+## their PCs. The fix is My avatar (Co-stream tab), shown with "Someone's avatar".
 func podium_warning(n: int) -> String:
 	if _role != "host" or guest_count() == 0 or not group_shared("presenters"):
 		return ""
 	if not bool(AppState.get_setting(AppState.presenter_key(n, "on"))):
 		return ""
 	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
-	var how := "set it as your My avatar (Together tab) and pick Someone's avatar for the podium"
+	var how := "set it as your My avatar (Co-stream tab) and pick Someone's avatar for the podium"
 	if LOCAL_ONLY_SOURCES.has(src):
 		return "Podium %d shows your %s, which only exists on your PC: guests see a silhouette there. To show it to them, %s." % [
 			n, {"camera": "camera", "tab": "tab / window", "ndi": "NDI source", "spout": "Spout source"}[src], how]
@@ -2427,7 +2890,7 @@ func _warn_podiums(n: int = 0) -> void:
 ##     has loaded), then tells the host (_net_guest_synced), whose list shows who is still syncing.
 ##   - Audience checks. While the audience is shared the host sends a short fingerprint of who sits
 ##     where every AUD_CHECK_GAP seconds (_net_aud_check); a guest whose own differs asks for the
-##     whole roster again (_net_aud_resync). Resync on the Together tab asks for everything again.
+##     whole roster again (_net_aud_resync). Resync on the Co-stream tab asks for everything again.
 ##   - Reconnecting. A guest whose connection drops tries to get back in (RECONNECT_DELAYS), keeping
 ##     the shared audience on screen meanwhile and holding its chat (_chat_held) to send once back.
 ##     The host keeps that person's part of the audience by name (_streamer_slots, AWAY_KEEP_S) and
@@ -2492,6 +2955,7 @@ func _send_everything(id: int) -> void:
 		_net_aud_mode.rpc_id(id, true)
 		_send_looks(id)
 		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+		_net_aud_reserved.rpc_id(id, String(AudienceManager.wire_reserved()["room"]), AudienceManager.wire_reserved()["list"])
 	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
 	for other: int in _cams:
 		if other != id:
@@ -2570,7 +3034,7 @@ func sync_progress() -> float:
 	return minf(float(_sync["got"]) / float(_sync["total"]), 0.99)
 
 
-## Host: how far along a guest's sync is (percent), for the list on the Together tab.
+## Host: how far along a guest's sync is (percent), for the list on the Co-stream tab.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_guest_sync_progress(pct: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
@@ -2601,7 +3065,7 @@ func _net_aud_check(room: String, fingerprint: String) -> void:
 	if mine != fingerprint and _aud_resync_wait <= 0.0:
 		_aud_resync_wait = AUD_RESYNC_GAP
 		_aud_resyncs += 1
-		print("Together: the audience here differed from the host's; asked for it again (%d this session)." % _aud_resyncs)
+		print("Co-stream: the audience here differed from the host's; asked for it again (%d this session)." % _aud_resyncs)
 		_net_aud_resync.rpc_id(1)
 		_emit_state()
 
@@ -2612,9 +3076,10 @@ func _net_aud_resync() -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if _role == "host" and _peers.has(id) and _sharing_audience():
 		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+		_net_aud_reserved.rpc_id(id, String(AudienceManager.wire_reserved()["room"]), AudienceManager.wire_reserved()["list"])
 
 
-## Together tab "Resync": a guest asks the host for everything again; the host sends it to every
+## Co-stream tab "Resync": a guest asks the host for everything again; the host sends it to every
 ## guest. For when something looks different on two PCs.
 func resync() -> void:
 	if _role == "guest" and _admitted:
@@ -2910,8 +3375,9 @@ func _send_roster() -> void:
 	var list: Array = []
 	for id: int in _peers:
 		list.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "avatar": String(_peers[id].get("avatar", "")),
-			"keyed": bool(_peers[id].get("keyed", false))})
+			"keyed": bool(_peers[id].get("keyed", false)), "remote": id == _remote_id, "asked": bool(_peers[id].get("asked", false))})
 	_to_guests("_net_roster", [list])
+	_to_guests("_net_podiums", [_podiums])
 	_emit_state()
 	_emit_live()            # (the podium list changed)
 	_to_guests("_net_live", [_live_info_for_guests()])   # (the person sharing the big screen may have left)
@@ -2924,7 +3390,7 @@ func _to_guests(method: String, args: Array) -> void:
 			callv("rpc_id", [id, method] + args)
 
 
-## The Together tab's status line; also shown as a status message, so never put an address in it.
+## The Co-stream tab's status line; also shown as a status message, so never put an address in it.
 func _set_status(text: String, is_error: bool = false) -> void:
 	_status = text
 	_error = is_error

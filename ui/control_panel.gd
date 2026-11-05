@@ -10,7 +10,7 @@ extends CanvasLayer
 ##                              _build_source_tab, _build_room_tab, _build_react_tab, _build_audio_tab
 ##                              (the Sound tab), _build_chat_tab, _build_audience_tab, _build_seating_tab,
 ##                              _build_games_tab, _build_presenters_tab, _build_together_tab.
-##                              _option and _text_setting sit between the Presenters and Together tabs.
+##                              _option and _text_setting sit between the Presenters and Co-stream tabs.
 ##   EventBus handlers          _on_*(): keep labels, menus and controls in step with the rest of the app
 ##   NDI / Spout                source menus and status lines (big screen and podiums)
 ##   What's going on            the status strip above the tabs, the message line, the video status
@@ -79,6 +79,10 @@ var _chart: SeatingChart
 var _section_label: Label
 var _section_boxes: Dictionary = {}       # group -> CheckBox (the picked section's platforms)
 var _capacity_label: Label
+var _hide_covered: Label                 # Co-stream tab: what Hide my address covers (NetSession.hide_checklist)
+var _resv_label: Label                    # Seating tab: the seat clicked on the chart and who sits there
+var _resv_button: Button                 # ... its Reserve / Free button
+var _reserved_list: VBoxContainer         # Seating tab: the room's reserved seats, each with Free
 var _texts: Dictionary = {}               # setting key -> LineEdit (text settings)
 var _syncing: bool = false                # a control is being set to match a setting (don't write it back)
 var _curtain_buttons: Array[Button] = []
@@ -100,8 +104,8 @@ var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
 var _peer_menu_none: Dictionary = {}    # setting key -> the label of its "" item (default "(nobody)")
-var _avatar_camera: OptionButton        # Together tab: the camera for my avatar
-var _avatar_rows: Dictionary = {}       # Together tab: "camera" / "url" rows, shown by My avatar's source
+var _avatar_camera: OptionButton        # Co-stream tab: the camera for my avatar
+var _avatar_rows: Dictionary = {}       # Co-stream tab: "camera" / "url" rows, shown by My avatar's source
 var _size_marks: Dictionary = {}        # chat window key -> small ⚠ Label in the window's summary row
 var _size_need: Dictionary = {}         # chat window key -> text size (as the setting) that would be readable
 var _source_pick: OptionButton          # Source tab: which source's controls show
@@ -476,9 +480,9 @@ func _build_source_tab() -> Control:
 	_source_pick = OptionButton.new()
 	_source_pick.focus_mode = Control.FOCUS_ALL
 	_source_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a Streaming together session. It follows whatever starts playing.\nPicking one here doesn't change the screen: press Share / Show / Play in that section."
+	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a co-stream. It follows whatever starts playing.\nPicking one here doesn't change the screen: press Share / Show / Play in that section."
 	for it: Array in [["capture", "Browser tab (sender page)"], ["ndi", "NDI (OBS / NDI Tools)"], ["spout", "Spout (programs on this PC)"],
-			["file", "File or URL"], ["peer", "Someone's avatar (Streaming together)"]]:
+			["file", "File or URL"], ["peer", "Someone's avatar (Co-stream)"]]:
 		_source_pick.add_item(String(it[1]))
 		_source_pick.set_item_metadata(_source_pick.item_count - 1, it[0])
 	_source_pick.item_selected.connect(func(i: int) -> void:
@@ -530,9 +534,9 @@ func _build_source_tab() -> Control:
 	_fold(v, "source_capture").add_child(how)
 
 	v = peer_box
-	v.add_child(_heading("Someone's avatar (Streaming together)"))
+	v.add_child(_heading("Someone's avatar (Co-stream)"))
 	var sp := _peer_menu("screen_peer", "Whose avatar")
-	(sp.get_child(1) as Control).tooltip_text = "In a Streaming together session: put a person's avatar (their My avatar from the Together tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
+	(sp.get_child(1) as Control).tooltip_text = "In a co-stream: put a person's avatar (their My avatar from the Co-stream tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
 	v.add_child(sp)
 
 	v = ndi_box
@@ -1293,6 +1297,7 @@ func _build_seating_tab() -> Control:
 		floor_buttons[which] = fb
 	_chart = SeatingChart.new()
 	_chart.section_picked.connect(_on_section_picked)
+	_chart.seat_picked.connect(func(_slot: int) -> void: _refresh_reserved())
 	_chart.floors_changed.connect(func(has_top: bool) -> void:
 		fr.visible = has_top
 		if not has_top:
@@ -1323,7 +1328,110 @@ func _build_seating_tab() -> Control:
 	v.add_child(_capacity_label)
 	EventBus.seating_changed.connect(_refresh_capacity)
 	_refresh_capacity()
+	_build_reserved_seats(v)
 	return v
+
+
+## Seating tab > Reserved seats: a regular's own seat (AudienceManager "Reserved seats"). Click a
+## seat on the chart and press Reserve, or type a seated chatter's name. In a co-stream where the
+## host seats everyone, a guest's Reserve / Free asks the host (NetSession.ask_reserve).
+func _build_reserved_seats(v: VBoxContainer) -> void:
+	v.add_child(_heading("Reserved seats"))
+	v.add_child(_hint("Give a regular their own seat in this room. When they chat they go straight to it (whoever sits there moves). Each room keeps its own. The chart shows reserved seats with a gold ring."))
+	v.add_child(_tip(_check("audience_reserved_hold", "Keep reserved seats empty while their owner is away"),
+		"On: nobody else sits in a reserved seat. Off: anyone may sit there until its owner chats, then they move."))
+	var sr := HBoxContainer.new()
+	v.add_child(sr)
+	_resv_label = Label.new()
+	_resv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_resv_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sr.add_child(_resv_label)
+	_resv_button = _button("Reserve", _toggle_picked_reservation)
+	_resv_button.tooltip_text = "Reserve the seat you clicked on the chart for the chatter sitting in it, or free it if it's reserved."
+	sr.add_child(_resv_button)
+	var nr := HBoxContainer.new()
+	v.add_child(nr)
+	var name_box := LineEdit.new()
+	name_box.placeholder_text = "Name of a chatter who has a seat"
+	name_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_box.tooltip_text = "Type the name of a chatter sitting in the room now, then press Reserve their seat."
+	nr.add_child(name_box)
+	var by_name := func() -> void:
+		var who := name_box.text.strip_edges()
+		var slot := AudienceManager.find_slot_by_name(who)
+		if slot < 0:
+			EventBus.status_message.emit("%s doesn't have a seat right now." % who if who != "" else "Type a chatter's name first.", false)
+			return
+		_reserve_slot(slot, true)
+		name_box.clear()
+	name_box.text_submitted.connect(func(_t: String) -> void: by_name.call())
+	nr.add_child(_tip(_button("Reserve their seat", by_name), "Reserve the seat this chatter is sitting in now."))
+	_reserved_list = VBoxContainer.new()
+	v.add_child(_reserved_list)
+	EventBus.seating_changed.connect(_refresh_reserved)
+	_refresh_reserved()
+
+
+## Reserve (on) or free a slot. A guest in a shared audience asks the host instead.
+func _reserve_slot(slot: int, on: bool) -> void:
+	if AudienceManager.is_mirror():
+		NetSession.ask_reserve(slot, on)
+		return
+	var who := AudienceManager.reserve_seat(slot) if on else AudienceManager.unreserve_seat(slot)
+	if who != "":
+		EventBus.status_message.emit(("Seat reserved for %s." if on else "%s's seat is free again.") % who, false)
+
+
+## The seat line's button: free the clicked seat's reservation, or reserve it for whoever sits there.
+func _toggle_picked_reservation() -> void:
+	var slot := _chart.picked_seat if _chart else -1
+	if slot < 0:
+		return
+	_reserve_slot(slot, AudienceManager.get_reservation(slot).is_empty())
+
+
+## Redraws the seat line (the clicked seat) and the list of reserved seats.
+func _refresh_reserved() -> void:
+	if _reserved_list == null:
+		return
+	var slot := _chart.picked_seat if _chart else -1
+	var r := AudienceManager.get_reservation(slot) if slot >= 0 else {}
+	var sitter := AudienceManager.get_seat_member(slot) if slot >= 0 else {}
+	if slot < 0:
+		_resv_label.text = "Click a seat on the chart to reserve it."
+	elif not r.is_empty():
+		_resv_label.text = "Seat %d (%s): reserved for %s (%s)." % [slot + 1, AudienceManager.get_section(slot),
+			String(r["name"]), String(AudienceManager.PLATFORM_LABELS.get(r["platform"], "Other"))]
+	elif sitter.is_empty():
+		_resv_label.text = "Seat %d (%s): empty. Reserve a seat someone is sitting in." % [slot + 1, AudienceManager.get_section(slot)]
+	else:
+		_resv_label.text = "Seat %d (%s): %s is sitting here." % [slot + 1, AudienceManager.get_section(slot), String(sitter.get("name", "?"))]
+	_resv_button.text = "Free this seat" if not r.is_empty() else "Reserve"
+	_resv_button.disabled = slot < 0 or (r.is_empty() and sitter.is_empty())
+	var list := AudienceManager.get_reservations()
+	# (seating_changed comes often on a co-stream guest: only rebuild the rows when they changed)
+	var sig := str(list).md5_text()
+	if _reserved_list.get_meta("sig", "") == sig:
+		return
+	_reserved_list.set_meta("sig", sig)
+	for c in _reserved_list.get_children():
+		c.queue_free()
+	if list.is_empty():
+		_reserved_list.add_child(_hint("No reserved seats in this room."))
+		return
+	for e: Dictionary in list:
+		var row := HBoxContainer.new()
+		_reserved_list.add_child(row)
+		var l := Label.new()
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var by := String(e["by"])
+		l.text = "★ %s (%s), seat %d in %s%s%s" % [String(e["name"]), String(AudienceManager.PLATFORM_LABELS.get(e["platform"], "Other")),
+			int(e["slot"]) + 1, String(e["section"]) if String(e["section"]) != "" else "the room",
+			" · here now" if bool(e["here"]) else "", " · asked by %s" % by if by != "" else ""]
+		row.add_child(l)
+		var at := int(e["slot"])
+		row.add_child(_tip(_button("Free", func() -> void: _reserve_slot(at, false)),
+			"Give up this reservation: the seat is anyone's again."))
 
 
 ## A seating preset, asking first when it would replace a plan that isn't empty and differs from it.
@@ -1442,7 +1550,7 @@ const COLOR_SAFE: Dictionary = {"kick": "009e73", "twitch": "cc79a7", "youtube":
 
 const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green screen"],
 	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"], ["spout", "Spout (this PC)"],
-	["peer", "Someone's avatar (Together)"]]
+	["peer", "Someone's avatar (Co-stream)"]]
 
 
 ## Presenters tab: who is on set, and one settings block per presenter (_build_presenter_detail);
@@ -1505,7 +1613,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	d.add_theme_constant_override("separation", 5)
 	d.add_child(_heading("Presenter %d" % n))
 	var show_row := _option(k.call("source"), "Show", PRESENTER_SOURCES)
-	(show_row.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your Streaming together session set up as My avatar (Together tab), yours included."
+	(show_row.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your co-stream set up as My avatar (Co-stream tab), yours included."
 	d.add_child(show_row)
 	var rows: Dictionary = {"picture": []}
 	_pres_rows.append(rows)
@@ -1599,7 +1707,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	tag.tooltip_text = "A name shown above this presenter's picture, for example their channel name."
 	d.add_child(tag)
 	var pic := _text_setting(k.call("picture"), "Podium picture", "a png, jpg, webp or gif (animated gifs play)")
-	pic.tooltip_text = "A picture on the front of the podium: a logo, an avatar, a badge. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. When streaming together, guests get a copy of it."
+	pic.tooltip_text = "A picture on the front of the podium: a logo, an avatar, a badge. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. In a co-stream, guests get a copy of it."
 	var browse := _button("Browse...", func() -> void:
 		_pic_target = k.call("picture")
 		_pic_dialog.popup_centered_ratio(0.7))
@@ -1711,10 +1819,24 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 	return h
 
 
+## Co-stream tab: the "Covered" list under Hide my address (NetSession.hide_checklist), or why it's off.
+func _refresh_hide_covered() -> void:
+	if _hide_covered == null:
+		return
+	var lines := PackedStringArray()
+	for e: Array in NetSession.hide_checklist():
+		lines.append(("✓ " if bool(e[0]) else "⚠ ") + String(e[1]))
+	if lines.is_empty():
+		_hide_covered.text = "Hide my address is off: guests connect to your own address (Listen on below)." \
+			if String(AppState.get_setting("together_bind")) != "local" else "This PC only: nothing to hide (for testing two copies side by side)."
+	else:
+		_hide_covered.text = "Covered:\n" + "\n".join(lines)
+
+
 ## Streaming together (autoload/net_session.gd, docs/MULTIPLAYER.md).
 func _build_together_tab() -> Control:
-	var v := _tab("Together")
-	v.add_child(_heading("Streaming together"))
+	var v := _tab("Co-stream")
+	v.add_child(_heading("Co-stream"))
 	v.add_child(_hint("Up to four people in the same room. The host runs the show (room, curtain, presenters); guests fly their own camera and stream their own view. Chat reactions from every channel play for everyone. Host: pick Listen on, click Host a session, then Copy address and send it privately. Guest: paste it under Join."))
 	var name_row := _text_setting("together_name", "Your name", "shown to the others")
 	(name_row.get_child(1) as Control).tooltip_text = "The name the others see next to your camera and in the list below."
@@ -1730,6 +1852,14 @@ func _build_together_tab() -> Control:
 	_update_pw_hint()
 
 	v.add_child(_heading("Host"))
+	v.add_child(_tip(_check("together_hide_address", "Hide my address"),
+		"On (recommended, especially for VTubers): guests join through a one-off Cloudflare address and the video goes through VDO.Ninja's relay, so nobody in the session learns where you are. It overrides Listen on and the relay tick below (except This PC only, for testing). Needs cloudflared.exe in the tools folder."))
+	_hide_covered = _hint("")
+	v.add_child(_hide_covered)
+	_refresh_hide_covered()
+	EventBus.setting_changed.connect(func(k: String, _v: Variant) -> void:
+		if k in ["together_hide_address", "together_bind"]:
+			_refresh_hide_covered())
 	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["tunnel", "Cloudflare tunnel (hide my address)"],
 		["all", "Any network"], ["local", "This PC only"]])
 	bind.tooltip_text = "Where guests can reach you. Tailscale: only your Tailscale network can connect. Cloudflare tunnel: a one-off trycloudflare.com address that hides your real address from everyone (needs cloudflared.exe in the tools folder; no Tailscale or router setup). Any network also lets PCs on your home network in. This PC only is for testing two copies side by side."
@@ -1789,7 +1919,7 @@ func _build_together_tab() -> Control:
 	_net_live.add_child(_net_live_label)
 	var open_sender := _button("Open sender page", func() -> void:
 		if _capture_url != "": OS.shell_open(_capture_url))
-	open_sender.tooltip_text = "Opens the sender page in your browser. Click \"Watch the host's live feed\" there and the host's tab shows on your big screen."
+	open_sender.tooltip_text = "Opens the sender page in your browser. Whoever has the big screen remote: their shared tab shows there by itself (click the page once for its sound)."
 	_net_live.add_child(open_sender)
 	v.add_child(_net_live)
 	_net_medium = HBoxContainer.new()
@@ -1862,10 +1992,10 @@ func _build_together_tab() -> Control:
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
-	# whose tab everyone's big screen shows: switch any time, each person's own share keeps running
-	# in their sender page, so switching back is instant (NetSession._tab_publisher, sender.html "parked")
-	v.add_child(_peer_menu("screen_tab_peer", "Big screen tab", "The host's tab",
-		"Whose shared tab is on everyone's big screen, with its sound: the host's, or a guest's. Switch any time. The person picked shares a tab in their own sender page as usual, and everyone else's sender page shows it. Each person's own shared tab keeps running in the background, so switching back is instant."))
+	# whose tab everyone's big screen shows is now the big screen remote's (NetSession "Big screen
+	# remote"): Give remote / Take it back / Ask in the list above. The old "Big screen tab" pick
+	# (screen_tab_peer) follows the remote by itself.
+	v.add_child(_hint("Big screen remote: whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone. Pass it with the buttons in the list above."))
 	v.add_child(_heading("Shared with guests"))
 	v.add_child(_hint("Host: untick a part and every PC keeps its own. For example, untick Presenters to let each guest pick their own presenter sources."))
 	var share_row := HFlowContainer.new()
@@ -1964,7 +2094,7 @@ func _peer_menu(key: String, label: String, none_label: String = "(nobody)", tip
 	o.focus_mode = Control.FOCUS_ALL
 	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	o.fit_to_longest_item = false
-	o.tooltip_text = tip if tip != "" else "Whose avatar: a person in the session (what they set up under My avatar in their Together tab)."
+	o.tooltip_text = tip if tip != "" else "Whose avatar: a person in the session (what they set up under My avatar in their Co-stream tab)."
 	o.item_selected.connect(func(i: int) -> void:
 		var v: Variant = o.get_item_metadata(i)
 		AppState.set_setting(key, String(v) if v != null else ""))
@@ -2001,7 +2131,7 @@ func _fill_peer_menu(key: String) -> void:
 		menu.select(menu.item_count - 1)
 
 
-## Together tab: the camera row only for a camera avatar, the address row only for a web page.
+## Co-stream tab: the camera row only for a camera avatar, the address row only for a web page.
 func _refresh_avatar_rows() -> void:
 	if _avatar_rows.is_empty():
 		return
@@ -2039,7 +2169,7 @@ func _on_net_state(info: Dictionary) -> void:
 	if from == "me":
 		_net_live_label.text = "Everyone's big screen shows your tab: share one in your sender page."
 	elif bool(info.get("host_live", false)):
-		_net_live_label.text = "%s is sharing a live tab. Open your sender page and click \"Watch the host's live feed\"." % ("The host" if from == "" else from)
+		_net_live_label.text = "%s is sharing a live tab. Your sender page shows it by itself (click the page once to let its sound through)." % ("The host" if from == "" else from)
 	else:
 		_net_live_label.text = "%s isn't sharing a live tab right now." % ("The host" if from == "" else from)
 	for c in _net_peers.get_children():
@@ -2060,9 +2190,16 @@ func _on_net_state(info: Dictionary) -> void:
 			text += " - co-host"
 		if not bool(p.get("synced", true)):
 			text += " - syncing %d%%" % int(p.get("sync", 0))
+		if bool(p.get("remote", false)) and peers.size() > 1:
+			text += " - has the remote"
+		elif bool(p.get("asked", false)):
+			text += " - asked for the remote"
 		l.text = text
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(l)
+		var rb := _remote_button(p, role)
+		if rb != null:
+			row.add_child(rb)
 		if role == "host" and id != 1:
 			var co := CheckBox.new()
 			co.text = "Co-host"
@@ -2075,6 +2212,29 @@ func _on_net_state(info: Dictionary) -> void:
 			row.add_child(rm)
 		_net_peers.add_child(row)
 	_refresh_locks()
+
+
+## The big screen remote button for one person's row (null when there's nothing to press there):
+## host: Give remote to a guest / Take it back on its own row; a guest: Ask for it / Give it back
+## on its own row. Same rules as the Esc menu's Co-stream page (NetSession "Big screen remote").
+func _remote_button(p: Dictionary, role: String) -> Button:
+	var id := int(p["id"])
+	var holds := bool(p.get("remote", false))
+	var b: Button = null
+	if role == "host" and id != 1 and not holds:
+		b = _button("Give remote", func() -> void: NetSession.pass_remote(id))
+		b.tooltip_text = "Give this person the big screen remote: their shared tab goes on everyone's big screen, and they can play a web video or pause for everyone. You can take it back any time."
+	elif role == "host" and id == 1 and not holds:
+		b = _button("Take it back", func() -> void: NetSession.pass_remote(1))
+		b.tooltip_text = "Take the big screen remote back: your shared tab is on everyone's big screen again."
+	elif role == "guest" and bool(p["me"]) and holds:
+		b = _button("Give it back", func() -> void: NetSession.pass_remote(1))
+		b.tooltip_text = "Give the big screen remote back to the host."
+	elif role == "guest" and bool(p["me"]):
+		var asked := bool(p.get("asked", false))
+		b = _button("Asked for the remote" if asked else "Ask for the remote", func() -> void: NetSession.ask_remote(not asked))
+		b.tooltip_text = "Ask the host for the big screen remote (press again to take the question back). With it, your shared tab is on everyone's big screen."
+	return b
 
 
 ## A guest who isn't a co-host can't change shared things: those controls are greyed out.
@@ -2391,7 +2551,7 @@ func _refresh_mic_note() -> void:
 	_duck_label.text = AudioManager.get_mic_problem()
 
 
-## Together tab: a note while the password is too short to host with.
+## Co-stream tab: a note while the password is too short to host with.
 func _update_pw_hint() -> void:
 	if _net_pw_hint == null:
 		return
@@ -2510,7 +2670,7 @@ func _build_status_strip() -> HBoxContainer:
 	h.add_theme_constant_override("separation", 10)
 	for it: Array in [["core", "Chat", "Stream Core: is chat coming in? Click for the Chat tab."],
 			["screen", "Source", "The big screen: is something showing? Click for the Source tab."],
-			["together", "Together", "Streaming together: hosting, joined, or off. Click for the Together tab."]]:
+			["together", "Co-stream", "Co-stream: hosting, joined, or off. Click for the Co-stream tab."]]:
 		var key := String(it[0])
 		var tab_name := String(it[1])
 		var b := Button.new()
@@ -2584,7 +2744,7 @@ func _refresh_strip() -> void:
 	if role == "host":
 		var waiting := (info.get("pending", []) as Array).size()
 		if waiting > 0:
-			_set_strip("together", "Together: %d waiting" % waiting, STRIP_AMBER)
+			_set_strip("together", "Co-stream: %d waiting" % waiting, STRIP_AMBER)
 		else:
 			_set_strip("together", "Hosting (%d guest%s)" % [guests, "" if guests == 1 else "s"], STRIP_GREEN)
 	elif role == "guest":
@@ -2596,9 +2756,9 @@ func _refresh_strip() -> void:
 	elif bool(info.get("reconnecting", false)):
 		_set_strip("together", "Reconnecting...", STRIP_AMBER)
 	elif bool(info.get("error", false)):
-		_set_strip("together", "Together: problem", STRIP_RED)
+		_set_strip("together", "Co-stream: problem", STRIP_RED)
 	else:
-		_set_strip("together", "Together off", STRIP_GREY)
+		_set_strip("together", "Co-stream off", STRIP_GREY)
 
 
 ## The footer's message line: the latest status / error message (red for errors). Clicking it shows

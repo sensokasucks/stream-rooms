@@ -3,12 +3,15 @@ extends Control
 ## A top-down seating chart of the current room for the Seating tab: every seat as a dot,
 ## coloured by what its section allows under the seating plan (a platform's colour, a mix, or
 ## grey for "anyone"), taken seats as bigger dots in their chatter's platform colour, and
-## each section's name. Click a section to pick it for editing.
+## each section's name. Click a section to pick it for editing. Reserved seats (AudienceManager
+## "Reserved seats") get a gold ring; the clicked seat is reported too, for the Reserve button.
 
 ## The user clicked (or arrowed to) a section; the Seating tab then shows its platform ticks.
 signal section_picked(id: String)
 ## The room gained or lost upstairs seats; the Seating tab shows or hides its floor buttons.
 signal floors_changed(has_top: bool)
+## The user clicked a seat (slot index): the Seating tab's seat line offers Reserve / Free for it.
+signal seat_picked(slot: int)
 
 const BOTTOM: String = "bottom"
 const TOP: String = "top"
@@ -18,6 +21,8 @@ const MARGIN: float = 10.0       # pixels round the chart
 ## One letter per platform group, written after a section's name so the plan doesn't rely on colour alone.
 const LETTER: Dictionary = {"kick": "K", "twitch": "T", "youtube": "Y", "other": "O"}
 const LEGEND_H: float = 16.0     # pixels: the platform legend along the bottom
+## Ring round a reserved seat (a ring, not just a colour, so it shows for colour-blind streamers too).
+const RESERVED_COLOR: Color = Color(1.0, 0.78, 0.2)
 
 ## The picked section's id ("Q1".."Q4", "101", ...), "" when none.
 var selected: String = ""
@@ -27,6 +32,8 @@ var _has_top: bool = false
 var _chart: Dictionary = {}               # AudienceManager.get_chart(): spots, kinds, sections, taken, stage
 var _dots: Array[Vector2] = []           # slot -> position on the chart (NAN = not drawn)
 var _redraw_in: float = -1.0              # seconds until a delayed redraw (< 0 = none waiting)
+## The clicked seat (slot), -1 = none: drawn with a white cross.
+var picked_seat: int = -1
 
 
 func _ready() -> void:
@@ -158,6 +165,7 @@ func _draw() -> void:
 	var sections: PackedStringArray = _chart.get("sections", PackedStringArray())
 	var kinds: PackedByteArray = _chart.get("kinds", PackedByteArray())
 	var taken: PackedStringArray = _chart.get("taken", PackedStringArray())
+	var reserved: PackedByteArray = _chart.get("reserved", PackedByteArray())
 	var plan_on := bool(AppState.get_setting("seating_by_platform"))
 	var colours: Dictionary = {}          # section -> colour
 	var sums: Dictionary = {}             # section -> [sum Vector2, n]
@@ -181,6 +189,11 @@ func _draw() -> void:
 		draw_circle(p, r, c)
 		if i < taken.size() and taken[i] != "":
 			draw_circle(p, r + 0.8, AudienceManager.platform_color(taken[i]).lightened(0.15))
+		if i < reserved.size() and reserved[i] > 0:
+			draw_arc(p, r + 2.8, 0.0, TAU, 16, RESERVED_COLOR, 1.6)
+		if i == picked_seat:
+			draw_line(p - Vector2(5, 5), p + Vector2(5, 5), Color.WHITE, 1.5)
+			draw_line(p - Vector2(5, -5), p + Vector2(5, -5), Color.WHITE, 1.5)
 		if id != "":
 			if not sums.has(id):
 				sums[id] = [Vector2.ZERO, 0]
@@ -216,6 +229,9 @@ func _draw() -> void:
 		x += 22.0 + font.get_string_size(label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
 	draw_circle(Vector2(x + 5, y - 4), 4.0, Color(0.45, 0.45, 0.5))
 	draw_string(font, Vector2(x + 12, y), "Anyone", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.8))
+	x += 22.0 + font.get_string_size("Anyone", HORIZONTAL_ALIGNMENT_LEFT, -1, 11).x
+	draw_arc(Vector2(x + 5, y - 4), 4.5, 0.0, TAU, 16, RESERVED_COLOR, 1.6)
+	draw_string(font, Vector2(x + 12, y), "Reserved", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.8))
 
 
 ## A section's colour: its one platform, a blend of several, or grey for anyone.
@@ -257,8 +273,10 @@ func _gui_input(event: InputEvent) -> void:
 			best = i
 	if best >= 0:
 		selected = sections[best]
+		picked_seat = best
 		queue_redraw()
 		section_picked.emit(selected)
+		seat_picked.emit(best)
 		accept_event()
 
 

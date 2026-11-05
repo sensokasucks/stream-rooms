@@ -91,6 +91,9 @@ func _host() -> void:
 	AppState.set_setting("together_shared_audience", true)
 	AppState.set_setting("together_audience_areas", true)
 	NetSession.host()
+	NetSession.lock_podium(4, true)         # (the guest's claim on it is refused, see below)
+	for n in [3, 4]:
+		AppState.set_setting(AppState.presenter_key(n, "on"), false)
 	_chat("twitch", "hostfan1", "hi from the host's chat")
 	_check(await _wait_for(func() -> bool: return _slot("twitch", "hostfan1") >= 0, 5.0), "the host's viewer sits down")
 
@@ -128,6 +131,36 @@ func _host() -> void:
 	AppState.set_react_paused(true)
 	await _secs(3.0)
 	AppState.set_react_paused(false)
+
+	# the big screen remote: the guest asks, gets it, pauses for everyone, then gives it back
+	var host_pauses: Array = []
+	EventBus.react_pause_changed.connect(func(p: bool) -> void: host_pauses.append(p))
+	_check(await _wait_for(func() -> bool: return bool(_guest_row().get("asked", false)), 30.0), "the guest asked for the big screen remote")
+	NetSession.pass_remote(int(_guest_row()["id"]))
+	_check(not NetSession.has_remote() and bool(_guest_row().get("remote", false)), "the host gave it the remote")
+	_check(String(AppState.get_setting("screen_tab_peer")) == "ResyncGuest", "the guest's shared tab is the big screen's now")
+	_check(await _wait_for(func() -> bool: return host_pauses.has(true) and host_pauses.has(false), 30.0),
+		"the guest with the remote paused and unpaused the host's room too (%s)" % str(host_pauses))
+	_check(await _wait_for(func() -> bool: return NetSession.has_remote(), 30.0), "the guest gave the remote back")
+	_check(String(AppState.get_setting("screen_tab_peer")) == "", "the host's tab is the big screen's again")
+
+	# a claimed podium: the guest runs podium 3 from its own PC
+	var p3 := func(field: String) -> Variant: return AppState.get_setting(AppState.presenter_key(3, field))
+	_check(await _wait_for(func() -> bool: return bool(p3.call("on")) and String(p3.call("source")) == "peer" and String(p3.call("peer")) == "ResyncGuest", 30.0),
+		"the guest claimed podium 3: it's on set showing the guest's avatar")
+	_check(await _wait_for(func() -> bool: return String(p3.call("name")) == "Guest Tag" and absf(float(p3.call("light")) - 2.0) < 0.01, 30.0),
+		"the guest's name tag and podium light for it arrived (%s, %s)" % [p3.call("name"), p3.call("light")])
+	_check(await _wait_for(func() -> bool: return String(p3.call("picture")).begins_with("user://podium_pictures/claimed_3_"), 30.0),
+		"the guest's podium picture arrived (%s)" % p3.call("picture"))
+	await _secs(2.0)
+	_check(String(AppState.get_setting(AppState.presenter_key(1, "name"))) != "Not Mine", "the guest can't change a podium that isn't theirs")
+	_check(not bool(AppState.get_setting(AppState.presenter_key(4, "on"))), "nor claim a locked one")
+	_check(await _wait_for(func() -> bool: return not bool(p3.call("on")), 30.0), "giving it up takes podium 3 off set")
+	# a reserved seat the guest asked for counts on the host's PC (the host does the seating)
+	_check(await _wait_for(func() -> bool:
+		var seat := _slot("twitch", "hostfan1")
+		return seat >= 0 and String(AudienceManager.get_reservation(seat).get("by", "")) == "ResyncGuest", 30.0),
+		"the guest reserved hostfan1's seat on the host's PC")
 
 	# the guest drops its connection; from now on no popups may be needed to get it back in
 	NetSession.auto_confirm = false
@@ -175,7 +208,7 @@ func _guest() -> void:
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "guest" and AudienceManager.is_mirror(), 30.0),
 		"joined, and shows the host's audience")
 	_check(await _wait_for(func() -> bool: return NetSession._synced, 60.0), "the first sync finished")
-	_check(not progress.is_empty(), "the Together tab showed sync progress (%d steps)" % progress.size())
+	_check(not progress.is_empty(), "the Co-stream tab showed sync progress (%d steps)" % progress.size())
 	_check(String(NetSession.get_info()["status"]).begins_with("In sync with Host"), "the status says it's in sync (%s)" % String(NetSession.get_info()["status"]))
 	_check(_slot("twitch", "hostfan1") >= 0, "the host's viewer is seated here")
 	_chat("kick", "guestfan1", "hi from the guest's chat")
@@ -196,6 +229,45 @@ func _guest() -> void:
 	# the host paused and unpaused for everyone
 	_check(await _wait_for(func() -> bool: return pauses.has(true) and pauses.has(false), 30.0),
 		"the host's pause to react paused this PC too, and unpaused it (%s)" % str(pauses))
+
+	# the big screen remote: without it, the big screen is locked here; ask, use it, give it back
+	_check(not NetSession.has_remote() and NetSession.is_locked("screen_tab_peer"), "without the remote, the big screen pick is locked here")
+	NetSession.ask_remote()
+	_check(await _wait_for(func() -> bool: return NetSession.has_remote(), 60.0), "got the big screen remote after asking")
+	_check(not NetSession.is_locked("screen_tab_peer"), "and the big screen pick is unlocked")
+	await _secs(1.0)
+	AppState.set_react_paused(true)          # (with the remote: for everyone)
+	await _secs(2.0)
+	AppState.set_react_paused(false)
+	await _secs(2.0)
+	NetSession.pass_remote(1)
+	_check(await _wait_for(func() -> bool: return not NetSession.has_remote(), 20.0), "gave the remote back to the host")
+
+	# claim podium 3 and set it up from here; podium 1 and the locked podium 4 aren't this PC's
+	_check(NetSession.is_locked(AppState.presenter_key(3, "name")), "before claiming, podium 3 is the host's")
+	NetSession.claim_podium(4)
+	await _secs(2.0)
+	_check(NetSession.my_podium() == 0, "a locked podium can't be claimed")
+	NetSession.claim_podium(3)
+	_check(await _wait_for(func() -> bool: return NetSession.my_podium() == 3, 20.0), "claimed podium 3")
+	_check(not NetSession.is_locked(AppState.presenter_key(3, "name")), "its settings are unlocked here")
+	AppState.set_setting(AppState.presenter_key(3, "name"), "Guest Tag")
+	AppState.set_setting(AppState.presenter_key(3, "light"), 2.0)
+	var pic := Image.create(40, 20, false, Image.FORMAT_RGBA8)
+	pic.fill(Color(0.9, 0.2, 0.6))
+	var pic_path := ProjectSettings.globalize_path("user://claimed_badge.png")
+	pic.save_png(pic_path)
+	AppState.set_setting(AppState.presenter_key(3, "picture"), pic_path)
+	AppState.set_setting(AppState.presenter_key(1, "name"), "Not Mine")       # (not this PC's podium: refused)
+	await _secs(6.0)
+	NetSession.claim_podium(3, false)
+	_check(await _wait_for(func() -> bool: return NetSession.my_podium() == 0, 20.0), "gave podium 3 up")
+
+	# reserve a seat in the shared audience: it's asked of the host, then shows here too
+	var fan_seat := _slot("twitch", "hostfan1")
+	NetSession.ask_reserve(fan_seat, true)
+	_check(await _wait_for(func() -> bool: return String(AudienceManager.get_reservation(fan_seat).get("name", "")).to_lower() == "hostfan1", 20.0),
+		"the seat this PC reserved shows as reserved here")
 
 	# the connection drops: keep showing the audience, hold this PC's chat, get back in
 	NetSession.auto_confirm = false

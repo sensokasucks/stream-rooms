@@ -17,7 +17,7 @@ shift
 # Fast tests that are reliable without a GPU (about 2 minutes together on a GitHub machine).
 TESTS=("$@")
 if [ ${#TESTS[@]} -eq 0 ]; then
-	TESTS=(test_odd_text test_emote_urls test_together_limits test_capture_key test_status_line test_panel_tidy test_debug_log test_podium_room_change test_esc_menu)
+	TESTS=(test_odd_text test_emote_urls test_together_limits test_capture_key test_status_line test_panel_tidy test_debug_log test_podium_room_change test_esc_menu test_reserved_seats)
 fi
 TIME_LIMIT="${TIME_LIMIT:-240}"   # seconds per test before it is stopped
 OUT="${OUT:-/tmp/sr_tests}"       # logs and screenshots, outside the project folder

@@ -259,11 +259,11 @@ func _build_costream() -> void:
 	buttons.add_theme_constant_override("separation", 8)
 	_page_box.add_child(buttons)
 	if role == "off" and not bool(info.get("reconnecting", false)):
-		buttons.add_child(_btn("Host a session", "Start a session others can join, with the address and password from the control panel's Together tab.", func() -> void: NetSession.host()))
-		var join := _btn("Join", "Join the host whose address is in the control panel's Together tab.", func() -> void: NetSession.join())
+		buttons.add_child(_btn("Host a session", "Start a session others can join, with the address and password from the control panel's Co-stream tab.", func() -> void: NetSession.host()))
+		var join := _btn("Join", "Join the host whose address is in the control panel's Co-stream tab.", func() -> void: NetSession.join())
 		join.disabled = String(AppState.get_setting("together_address")).strip_edges() == ""
 		buttons.add_child(join)
-		_page_box.add_child(_hint("Your name, the password and the host's address are set in the control panel's Together tab."))
+		_page_box.add_child(_hint("Your name, the password and the host's address are set in the control panel's Co-stream tab."))
 	else:
 		if role == "host":
 			buttons.add_child(_btn("Copy invite address", "Copies the address guests need. It isn't shown on screen, so it can't end up on your stream.", func() -> void:
@@ -291,9 +291,16 @@ func _build_costream() -> void:
 				tags.append("co-host")
 			if not bool(p["synced"]):
 				tags.append("syncing %d%%" % int(p["sync"]))
+			if bool(p.get("remote", false)) and peers.size() > 1:
+				tags.append("has the remote")
+			elif bool(p.get("asked", false)):
+				tags.append("asked for the remote")
 			who.text = String(p["name"]) + (" (%s)" % ", ".join(tags) if not tags.is_empty() else "")
 			who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			r.add_child(who)
+			var rb := _remote_button(p, role)
+			if rb != null:
+				r.add_child(rb)
 			if role == "host" and int(p["id"]) != 1:
 				var id := int(p["id"])
 				var co := CheckBox.new()
@@ -317,6 +324,17 @@ func _build_costream() -> void:
 		r.add_child(_btn("No", "Turn them away.", func() -> void: NetSession.approve(wid, false)))
 		_page_box.add_child(r)
 
+	# Hide my address (NetSession "Hide my address"): the host's switch and what it covers
+	if role != "guest":
+		_page_box.add_child(_tick("together_hide_address", "Hide my address",
+			"Guests join through a one-off Cloudflare address and the video goes through a relay, so nobody in the session learns where you are."))
+		for e: Array in NetSession.hide_checklist():
+			_page_box.add_child(_hint(("✓ " if bool(e[0]) else "⚠ ") + String(e[1])))
+	elif NetSession.hides_address():
+		_page_box.add_child(_hint("This co-stream hides everyone's address."))
+	if role != "off" and peers.size() > 1:
+		_page_box.add_child(_hint("Big screen remote: %s. Whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone." % ("you have it" if bool(info.get("has_remote", false)) else String(info.get("remote", "")) + " has it")))
+	_build_podiums(info, role)
 	if role != "guest":
 		var head := Label.new()
 		head.text = "Everyone follows the host's"
@@ -332,7 +350,7 @@ func _build_costream() -> void:
 	var status := String(info.get("status", ""))
 	if status != "":
 		_page_box.add_child(_hint(status))
-	_page_box.add_child(_hint("Quality, relay and Cloudflare settings are in the control panel's Together tab."))
+	_page_box.add_child(_hint("Quality, relay and Cloudflare settings are in the control panel's Co-stream tab."))
 
 
 func _build_keys() -> void:
@@ -353,6 +371,75 @@ func _build_keys() -> void:
 		grid.add_child(what)
 	_page_box.add_child(grid)
 	_page_box.add_child(_hint("Keys don't work while you type in a text box. Esc leaves the box first."))
+
+
+## Claimed podiums (NetSession "Claimed podiums"): who has each podium, with Claim / Give up for a
+## guest and Lock / Unlock / Free for the host. Shown while in a session with the podiums shared.
+func _build_podiums(info: Dictionary, role: String) -> void:
+	var list: Array = info.get("podiums", [])
+	if role == "off" or list.is_empty() or not NetSession.group_shared("presenters"):
+		return
+	var head := Label.new()
+	head.text = "Podiums"
+	head.add_theme_font_size_override("font_size", 16)
+	_page_box.add_child(head)
+	var have_one := NetSession.my_podium() > 0
+	for p: Dictionary in list:
+		var n := int(p["n"])
+		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 10)
+		var l := Label.new()
+		var state := "the host's"
+		if bool(p["mine"]):
+			state = "yours"
+		elif String(p["owner"]) != "":
+			state = String(p["owner"]) + "'s"
+		elif bool(p["locked"]):
+			state = "locked by the host"
+		elif role == "guest":
+			state = "free"
+		l.text = "Podium %d: %s" % [n, state]
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		r.add_child(l)
+		if role == "guest" and bool(p["mine"]):
+			r.add_child(_btn("Give up", "Give this podium back to the host.", func() -> void: NetSession.claim_podium(n, false)))
+		elif role == "guest" and bool(p["free"]):
+			var claim := _btn("Claim", "Make this podium yours: it shows your My avatar, and you set its name tag, light, picture and chroma key in your Presenters tab. Everyone sees what you set.",
+				func() -> void: NetSession.claim_podium(n))
+			claim.text = "Move here" if have_one else "Claim"
+			r.add_child(claim)
+		elif role == "host":
+			if String(p["owner"]) != "":
+				r.add_child(_btn("Free", "Take this podium back from them (it goes off set).", func() -> void: NetSession.free_podium(n)))
+			r.add_child(_btn("Unlock" if bool(p["locked"]) else "Lock",
+				"Locked: nobody can claim this podium, it stays yours." if not bool(p["locked"]) else "Let guests claim this podium again.",
+				func() -> void: NetSession.lock_podium(n, not bool(p["locked"]))))
+		_page_box.add_child(r)
+	if role == "guest":
+		_page_box.add_child(_hint("Your podium shows your My avatar (camera, a tab or window, or a see-through web page; Co-stream tab). Set its name tag, light, picture and chroma key in the control panel's Presenters tab."))
+
+
+## The big screen remote button for one person's row, or null: the host gives it to a guest or takes
+## it back on its own row; a guest asks for it or gives it back on its own row (NetSession "Big
+## screen remote"; the control panel's Co-stream tab has the same buttons).
+func _remote_button(p: Dictionary, role: String) -> Button:
+	var id := int(p["id"])
+	var holds := bool(p.get("remote", false))
+	var asked := bool(p.get("asked", false))
+	if role == "host" and id != 1 and not holds:
+		var give := _btn("Give remote", "Give them the big screen remote: their shared tab goes on everyone's big screen, and they can play a web video or pause for everyone. You can take it back any time.",
+			func() -> void: NetSession.pass_remote(id))
+		if asked:
+			give.add_theme_color_override("font_color", Color(0.55, 1.0, 0.45))
+		return give
+	if role == "host" and id == 1 and not holds:
+		return _btn("Take it back", "Take the big screen remote back: your shared tab is on everyone's big screen again.", func() -> void: NetSession.pass_remote(1))
+	if role == "guest" and bool(p["me"]) and holds:
+		return _btn("Give it back", "Give the big screen remote back to the host.", func() -> void: NetSession.pass_remote(1))
+	if role == "guest" and bool(p["me"]):
+		return _btn("Asked for the remote" if asked else "Ask for the remote",
+			"Ask the host for the big screen remote (press again to take the question back).", func() -> void: NetSession.ask_remote(not asked))
+	return null
 
 
 # ── Actions ──────────────────────────────────────────────────────────
