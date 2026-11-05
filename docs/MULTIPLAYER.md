@@ -106,6 +106,32 @@ ended up only half in step. What `autoload/net_session.gd` ("Staying in sync") d
   `_net_removed` first so a removed guest doesn't reconnect, and drops their slot.
 - Test: `_tests/test_costream_resync` (drop, self-repair, rejoin, Remove).
 
+### Second co-stream batch (built 2026-11, protocol 6)
+
+- **Big screen remote** (`NetSession` "Big screen remote"): `_remote_id` holds it (1 = host at
+  the start). `_gate` / `_net_request` let only the holder change `screen_peer` /
+  `screen_tab_peer` and pause for everyone (`react_pause`); the holder's tab becomes
+  `screen_tab_peer`. Guests ask with `_net_remote_ask`, the host passes it with `_net_remote_pass`;
+  it returns to the host when the holder leaves. Guests' sender pages view with `"auto": true`
+  (no Watch click).
+- **Claimed podiums** (`NetSession` "Claimed podiums"): `_podiums` n -> {owner, locked}, sent with
+  the roster (`_net_podiums`). The owner's presenter_n_* changes are accepted from them
+  (`_owner_change` / `_owner_value_ok`); camera / tab sources become source "peer" with their own
+  avatar; ndi / spout are refused. Pictures travel with `_net_podium_picture`. Freed on leave.
+- **Animated silhouettes**: `AudienceStyle.import_picture` turns a GIF into the first-frame PNG
+  plus a lossy WebP frame sheet (`_anim.webp`, up to 32 frames, 8 columns) and `_anim.json`
+  (frames, delays). `_looks_to_wire` sends `[png, shape, sheet, info]`; `_save_look_picture`
+  checks the sheet (`_anim_ok`).
+- **Reserved seats** (`AudienceManager` "Reserved seats", setting `audience_reserved`): the host
+  seats everyone, so its reservations count everywhere; guests get them with
+  `_net_aud_reserved` (sent with every roster) and ask with `_net_reserve_ask`.
+- **Hide my address** (`together_hide_address`, on by default): `bind_mode()` is "tunnel" and
+  `relay_on()` is true unless Listen on is "local". The relay flag now goes to the sender page
+  for the avatars too, not only while the big screen is shared. Guests learn it from the live info
+  (`"hide"`).
+- Tests: `test_costream_resync` (remote, claimed podium, reserved seat), `test_net_pictures`
+  (animated GIF), `test_reserved_seats` (one PC).
+
 ### Stream Core
 
 Each streamer keeps their own Stream Core, and **mostly nothing changes**. Extras are only needed for cross-channel features: chat games across all four audiences, shared points, feedback on permissions, and an optional channel tag on chat events.

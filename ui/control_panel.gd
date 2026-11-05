@@ -79,6 +79,10 @@ var _chart: SeatingChart
 var _section_label: Label
 var _section_boxes: Dictionary = {}       # group -> CheckBox (the picked section's platforms)
 var _capacity_label: Label
+var _hide_covered: Label                 # Co-stream tab: what Hide my address covers (NetSession.hide_checklist)
+var _resv_label: Label                    # Seating tab: the seat clicked on the chart and who sits there
+var _resv_button: Button                 # ... its Reserve / Free button
+var _reserved_list: VBoxContainer         # Seating tab: the room's reserved seats, each with Free
 var _texts: Dictionary = {}               # setting key -> LineEdit (text settings)
 var _syncing: bool = false                # a control is being set to match a setting (don't write it back)
 var _curtain_buttons: Array[Button] = []
@@ -1293,6 +1297,7 @@ func _build_seating_tab() -> Control:
 		floor_buttons[which] = fb
 	_chart = SeatingChart.new()
 	_chart.section_picked.connect(_on_section_picked)
+	_chart.seat_picked.connect(func(_slot: int) -> void: _refresh_reserved())
 	_chart.floors_changed.connect(func(has_top: bool) -> void:
 		fr.visible = has_top
 		if not has_top:
@@ -1323,7 +1328,110 @@ func _build_seating_tab() -> Control:
 	v.add_child(_capacity_label)
 	EventBus.seating_changed.connect(_refresh_capacity)
 	_refresh_capacity()
+	_build_reserved_seats(v)
 	return v
+
+
+## Seating tab > Reserved seats: a regular's own seat (AudienceManager "Reserved seats"). Click a
+## seat on the chart and press Reserve, or type a seated chatter's name. In a co-stream where the
+## host seats everyone, a guest's Reserve / Free asks the host (NetSession.ask_reserve).
+func _build_reserved_seats(v: VBoxContainer) -> void:
+	v.add_child(_heading("Reserved seats"))
+	v.add_child(_hint("Give a regular their own seat in this room. When they chat they go straight to it (whoever sits there moves). Each room keeps its own. The chart shows reserved seats with a gold ring."))
+	v.add_child(_tip(_check("audience_reserved_hold", "Keep reserved seats empty while their owner is away"),
+		"On: nobody else sits in a reserved seat. Off: anyone may sit there until its owner chats, then they move."))
+	var sr := HBoxContainer.new()
+	v.add_child(sr)
+	_resv_label = Label.new()
+	_resv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_resv_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sr.add_child(_resv_label)
+	_resv_button = _button("Reserve", _toggle_picked_reservation)
+	_resv_button.tooltip_text = "Reserve the seat you clicked on the chart for the chatter sitting in it, or free it if it's reserved."
+	sr.add_child(_resv_button)
+	var nr := HBoxContainer.new()
+	v.add_child(nr)
+	var name_box := LineEdit.new()
+	name_box.placeholder_text = "Name of a chatter who has a seat"
+	name_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_box.tooltip_text = "Type the name of a chatter sitting in the room now, then press Reserve their seat."
+	nr.add_child(name_box)
+	var by_name := func() -> void:
+		var who := name_box.text.strip_edges()
+		var slot := AudienceManager.find_slot_by_name(who)
+		if slot < 0:
+			EventBus.status_message.emit("%s doesn't have a seat right now." % who if who != "" else "Type a chatter's name first.", false)
+			return
+		_reserve_slot(slot, true)
+		name_box.clear()
+	name_box.text_submitted.connect(func(_t: String) -> void: by_name.call())
+	nr.add_child(_tip(_button("Reserve their seat", by_name), "Reserve the seat this chatter is sitting in now."))
+	_reserved_list = VBoxContainer.new()
+	v.add_child(_reserved_list)
+	EventBus.seating_changed.connect(_refresh_reserved)
+	_refresh_reserved()
+
+
+## Reserve (on) or free a slot. A guest in a shared audience asks the host instead.
+func _reserve_slot(slot: int, on: bool) -> void:
+	if AudienceManager.is_mirror():
+		NetSession.ask_reserve(slot, on)
+		return
+	var who := AudienceManager.reserve_seat(slot) if on else AudienceManager.unreserve_seat(slot)
+	if who != "":
+		EventBus.status_message.emit(("Seat reserved for %s." if on else "%s's seat is free again.") % who, false)
+
+
+## The seat line's button: free the clicked seat's reservation, or reserve it for whoever sits there.
+func _toggle_picked_reservation() -> void:
+	var slot := _chart.picked_seat if _chart else -1
+	if slot < 0:
+		return
+	_reserve_slot(slot, AudienceManager.get_reservation(slot).is_empty())
+
+
+## Redraws the seat line (the clicked seat) and the list of reserved seats.
+func _refresh_reserved() -> void:
+	if _reserved_list == null:
+		return
+	var slot := _chart.picked_seat if _chart else -1
+	var r := AudienceManager.get_reservation(slot) if slot >= 0 else {}
+	var sitter := AudienceManager.get_seat_member(slot) if slot >= 0 else {}
+	if slot < 0:
+		_resv_label.text = "Click a seat on the chart to reserve it."
+	elif not r.is_empty():
+		_resv_label.text = "Seat %d (%s): reserved for %s (%s)." % [slot + 1, AudienceManager.get_section(slot),
+			String(r["name"]), String(AudienceManager.PLATFORM_LABELS.get(r["platform"], "Other"))]
+	elif sitter.is_empty():
+		_resv_label.text = "Seat %d (%s): empty. Reserve a seat someone is sitting in." % [slot + 1, AudienceManager.get_section(slot)]
+	else:
+		_resv_label.text = "Seat %d (%s): %s is sitting here." % [slot + 1, AudienceManager.get_section(slot), String(sitter.get("name", "?"))]
+	_resv_button.text = "Free this seat" if not r.is_empty() else "Reserve"
+	_resv_button.disabled = slot < 0 or (r.is_empty() and sitter.is_empty())
+	var list := AudienceManager.get_reservations()
+	# (seating_changed comes often on a co-stream guest: only rebuild the rows when they changed)
+	var sig := str(list).md5_text()
+	if _reserved_list.get_meta("sig", "") == sig:
+		return
+	_reserved_list.set_meta("sig", sig)
+	for c in _reserved_list.get_children():
+		c.queue_free()
+	if list.is_empty():
+		_reserved_list.add_child(_hint("No reserved seats in this room."))
+		return
+	for e: Dictionary in list:
+		var row := HBoxContainer.new()
+		_reserved_list.add_child(row)
+		var l := Label.new()
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var by := String(e["by"])
+		l.text = "★ %s (%s), seat %d in %s%s%s" % [String(e["name"]), String(AudienceManager.PLATFORM_LABELS.get(e["platform"], "Other")),
+			int(e["slot"]) + 1, String(e["section"]) if String(e["section"]) != "" else "the room",
+			" · here now" if bool(e["here"]) else "", " · asked by %s" % by if by != "" else ""]
+		row.add_child(l)
+		var at := int(e["slot"])
+		row.add_child(_tip(_button("Free", func() -> void: _reserve_slot(at, false)),
+			"Give up this reservation: the seat is anyone's again."))
 
 
 ## A seating preset, asking first when it would replace a plan that isn't empty and differs from it.
@@ -1711,6 +1819,20 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 	return h
 
 
+## Co-stream tab: the "Covered" list under Hide my address (NetSession.hide_checklist), or why it's off.
+func _refresh_hide_covered() -> void:
+	if _hide_covered == null:
+		return
+	var lines := PackedStringArray()
+	for e: Array in NetSession.hide_checklist():
+		lines.append(("✓ " if bool(e[0]) else "⚠ ") + String(e[1]))
+	if lines.is_empty():
+		_hide_covered.text = "Hide my address is off: guests connect to your own address (Listen on below)." \
+			if String(AppState.get_setting("together_bind")) != "local" else "This PC only: nothing to hide (for testing two copies side by side)."
+	else:
+		_hide_covered.text = "Covered:\n" + "\n".join(lines)
+
+
 ## Streaming together (autoload/net_session.gd, docs/MULTIPLAYER.md).
 func _build_together_tab() -> Control:
 	var v := _tab("Co-stream")
@@ -1730,6 +1852,14 @@ func _build_together_tab() -> Control:
 	_update_pw_hint()
 
 	v.add_child(_heading("Host"))
+	v.add_child(_tip(_check("together_hide_address", "Hide my address"),
+		"On (recommended, especially for VTubers): guests join through a one-off Cloudflare address and the video goes through VDO.Ninja's relay, so nobody in the session learns where you are. It overrides Listen on and the relay tick below (except This PC only, for testing). Needs cloudflared.exe in the tools folder."))
+	_hide_covered = _hint("")
+	v.add_child(_hide_covered)
+	_refresh_hide_covered()
+	EventBus.setting_changed.connect(func(k: String, _v: Variant) -> void:
+		if k in ["together_hide_address", "together_bind"]:
+			_refresh_hide_covered())
 	var bind := _option("together_bind", "Listen on", [["auto", "Tailscale (else this PC only)"], ["tunnel", "Cloudflare tunnel (hide my address)"],
 		["all", "Any network"], ["local", "This PC only"]])
 	bind.tooltip_text = "Where guests can reach you. Tailscale: only your Tailscale network can connect. Cloudflare tunnel: a one-off trycloudflare.com address that hides your real address from everyone (needs cloudflared.exe in the tools folder; no Tailscale or router setup). Any network also lets PCs on your home network in. This PC only is for testing two copies side by side."

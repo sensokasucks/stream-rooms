@@ -74,6 +74,9 @@ const BASE_DEFAULTS: Dictionary = {
 	"seating_by_platform": false,  # use the seating plan
 	"seating_plan": "",          # JSON {section id: "kick,twitch,youtube,other"}; a missing / blank section = anyone
 	"seating_strict": true,      # a chatter whose sections are full waits (or takes an idle chatter's seat there) instead of sitting elsewhere
+	# Reserved seats (Seating tab > Reserved seats; AudienceManager "Reserved seats")
+	"audience_reserved": "",     # JSON {room id: {slot (as text): {"platform": group, "name": display name, "by": who reserved it}}}
+	"audience_reserved_hold": true,  # keep a reserved seat empty while its owner is away (off: anyone may sit there until they chat)
 	"audience_avatars": true,    # chatters' profile pictures as the silhouette's head (Kick, Twitch, YouTube; Stream Core saves them)
 	"audience_hide_avatars": "", # names whose picture is never shown (comma separated; display name or login; "kick:name" = that platform only)
 	"audience_seating": "random",  # new chatters sit: random | front (front row, centre out) | front_random (front row first, random seat in it)
@@ -219,6 +222,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_password": "",     # session password (stays on this PC)
 	"together_bind": "auto",     # host listens on: "auto" (Tailscale, else this PC only) | "all" | "local" | "tunnel" (Cloudflare)
 	"together_live_relay": false, # live feed through VDO.Ninja's relay servers, so host and guests don't see each other's addresses
+	"together_hide_address": true, # Hide my address (host): the Cloudflare tunnel + the video relay, whatever the two settings above say ("This PC only" excepted)
 	# My avatar: what the others in the session can show of me (their podiums / big screen), sent from
 	# my sender page through VDO.Ninja. Each person picks their own; the host picks where it shows.
 	"together_avatar_source": "off",   # "off" | "camera" | "tab" | "web"

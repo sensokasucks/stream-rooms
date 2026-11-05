@@ -7,6 +7,8 @@ extends Node
 ## "together_bind" = "tunnel" the host runs cloudflared (tools/cloudflared.exe), gets a one-off
 ## https://....trycloudflare.com address, and guests join through Cloudflare. Nobody sees anyone's
 ## real address then. Addresses never go in status messages (they show on the stream).
+## "Hide my address" (together_hide_address, on by default) turns on the tunnel and the video relay
+## together, whatever Listen on and the relay tick say (see bind_mode / relay_on).
 ##
 ## The host is in charge: guests ask, the host decides and tells everyone. AppState.net_gate
 ## stops a guest changing shared state (room, curtain, the shared settings) on its own; a
@@ -172,6 +174,7 @@ var _live_id: String = ""
 var _live_key: String = ""
 var _live_on: bool = false              # guest: the host is sharing a tab right now
 var _live_relay: bool = false           # guest: the host wants the feed relayed (addresses hidden)
+var _live_hide: bool = false            # guest: the host has Hide my address on (told to the streamer once)
 var _live_feed_on: bool = true          # guest: the host sends its shared tab (as opposed to only avatars)
 ## Whose shared tab is on everyone's big screen (setting screen_tab_peer, "" = the host's). That
 ## person's sender page publishes their own shared tab; everyone else's views it. Each person has
@@ -406,6 +409,39 @@ func display_name() -> String:
 	return n
 
 
+# ── Hide my address ──
+## Host: Hide my address is on and means something (listening on "This PC only" has no address to
+## hide, and the tests use it). Guest: the host said it's on.
+func hides_address() -> bool:
+	if _role == "guest":
+		return _live_hide
+	return bool(AppState.get_setting("together_hide_address")) and String(AppState.get_setting("together_bind")) != "local"
+
+
+## Where the host listens: together_bind, or "tunnel" while Hide my address is on.
+func bind_mode() -> String:
+	return "tunnel" if hides_address() else String(AppState.get_setting("together_bind"))
+
+
+## Host: send the video (big screen and avatars) through VDO.Ninja's relay servers? The relay tick,
+## or Hide my address.
+func relay_on() -> bool:
+	return bool(AppState.get_setting("together_live_relay")) or hides_address()
+
+
+## What Hide my address covers right now, for the "Covered" list in the Co-stream tab and Esc menu:
+## [[ok, text]] (ok false = a warning to act on).
+func hide_checklist() -> Array:
+	if not hides_address():
+		return []
+	var tunnel_ok := _cloudflared() != ""
+	return [[tunnel_ok, "Joining goes through a one-off Cloudflare address: guests never see your real one." if tunnel_ok
+			else "cloudflared.exe is missing: run tools\\get_tools.ps1 (or copy it next to the game) before hosting."],
+		[true, "The big screen and everyone's avatars go through VDO.Ninja's relay servers."],
+		[true, "Your address never shows on screen: Copy address puts it on the clipboard."],
+		[true, "Troubleshooting logs swap addresses for <tags>."]]
+
+
 ## Co-stream tab "Host": checks the password, listens on together_port, and starts the tunnel when
 ## together_bind is "tunnel". "auto" listens on the Tailscale address if there is one, else 127.0.0.1.
 func host() -> void:
@@ -418,7 +454,7 @@ func host() -> void:
 		return
 	var port := int(AppState.get_setting("together_port"))
 	var ts := _tailscale_ip()
-	var bind := String(AppState.get_setting("together_bind"))
+	var bind := bind_mode()
 	var ip := "127.0.0.1"
 	if bind == "all":
 		ip = "*"
@@ -896,6 +932,7 @@ func _close(message: String, is_error: bool = false, keep_audience: bool = false
 	_live_id = ""
 	_live_key = ""
 	_live_on = false
+	_live_hide = false
 	_live_from = 1
 	_live_from_name = ""
 	_chat_out.clear()
@@ -998,7 +1035,7 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		if to != _remote_id:
 			_remote_id = to
 			_send_roster()
-	if (key == "together_live_feed" or key == "together_live_relay" or key == "screen_tab_peer") and _role == "host":
+	if (key == "together_live_feed" or key == "together_live_relay" or key == "together_hide_address" or key == "screen_tab_peer") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
 
@@ -1538,6 +1575,8 @@ func _on_seating_changed() -> void:
 func _send_roster_to_guests() -> void:
 	if _sharing_audience():
 		_to_guests("_net_aud_roster", [_room(), AudienceManager.get_roster()])
+		var res := AudienceManager.wire_reserved()      # (the reserved seats go along: see "Reserved seats")
+		_to_guests("_net_aud_reserved", [String(res["room"]), res["list"]])
 
 
 ## Guest: this PC's chat goes to the host's audience (its own chat windows keep showing it).
@@ -1646,6 +1685,55 @@ func _net_aud_mode(shared: bool) -> void:
 		else:
 			_send_own_looks()      # (the host uses them if "Viewers keep their streamer's looks" is on)
 		_emit_state()
+
+
+# ── Reserved seats ──
+## In a shared audience the host does the seating, so the host's reserved seats (AudienceManager
+## "Reserved seats") count for everyone. Guests see them on their seating chart and can reserve the
+## seat of a chatter sitting in it, or free one they reserved; the host's PC does it and says so.
+
+## Guest: reserve (on) or free the seat at this slot of the room shown, on the host's PC.
+func ask_reserve(slot: int, on: bool) -> void:
+	if _role == "guest" and _admitted and _connected():
+		_net_reserve_ask.rpc_id(1, AudienceManager.seats_room(), slot, on)
+
+
+## Host: a guest's ask_reserve. Reserving works for any seat with someone in it; freeing only for a
+## seat that guest reserved (or any, for a co-host).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_reserve_ask(room: String, slot: int, on: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or not _sharing_audience() or room != AudienceManager.seats_room():
+		return
+	var guest := _peer_name(id)
+	var who := ""
+	if on:
+		who = AudienceManager.reserve_seat(slot, guest)
+		if who != "":
+			EventBus.status_message.emit("%s reserved a seat for %s." % [guest, who], false)
+	else:
+		var r := AudienceManager.get_reservation(slot)
+		if not r.is_empty() and (String(r["by"]) == guest or bool(_peers[id]["cohost"])):
+			who = AudienceManager.unreserve_seat(slot)
+			if who != "":
+				EventBus.status_message.emit("%s freed %s's reserved seat." % [guest, who], false)
+	if who == "":
+		_net_reserve_refused.rpc_id(id, "Only seats with someone in them can be reserved." if on
+			else "Only the host frees seats that someone else reserved.")
+
+
+## Guest: the host didn't do what ask_reserve asked (why, for the message line).
+@rpc("authority", "call_remote", "reliable")
+func _net_reserve_refused(why: String) -> void:
+	if _from_host():
+		EventBus.status_message.emit(why.left(120), false)
+
+
+## Guest: the host's reserved seats for its room (AudienceManager.wire_reserved).
+@rpc("authority", "call_remote", "reliable")
+func _net_aud_reserved(room: String, list: Array) -> void:
+	if _from_host() and _aud_shared:
+		AudienceManager.mirror_reserved(room, list)
 
 
 # The _net_aud_* RPCs below hand the host's seating to AudienceManager's mirror_* functions.
@@ -1960,8 +2048,8 @@ func _live_info_for_guests() -> Dictionary:
 	# whether the big screen is being shared right now
 	return {"id": _tab_token(pub), "key": _live_key, "live": sharing,
 		"from": pub, "from_name": _peer_name(pub),
-		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": bool(AppState.get_setting("together_live_relay")),
-		"quality": _quality()}
+		"feed_on": bool(AppState.get_setting("together_live_feed")), "relay": relay_on(),
+		"hide": hides_address(), "quality": _quality()}
 
 
 ## Host: the peer id whose shared tab is on the big screen: the guest named in screen_tab_peer
@@ -2035,6 +2123,10 @@ func _apply_live(info: Dictionary) -> void:
 	_live_key = key
 	_live_on = id != "" and bool(info.get("live", false))
 	_live_relay = bool(info.get("relay", false))
+	var hide := bool(info.get("hide", false))
+	if hide and not _live_hide:
+		EventBus.status_message.emit("This co-stream hides everyone's address.", false)
+	_live_hide = hide
 	_live_feed_on = bool(info.get("feed_on", true))
 	_live_from = int(info.get("from", 1)) if info.get("from") is int else 1
 	_live_from_name = _clean_name(String(info.get("from_name", "")))
@@ -2054,7 +2146,7 @@ func _emit_live() -> void:
 	var info := {"role": "off", "id": "", "key": "", "live": false, "relay": false}
 	if _role == "host" and bool(AppState.get_setting("together_live_feed")) and _live_id != "":
 		var pub := _tab_publisher()
-		var relay := bool(AppState.get_setting("together_live_relay"))
+		var relay := relay_on()
 		if pub == 1:
 			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": relay}
 		else:
@@ -2072,6 +2164,8 @@ func _emit_live() -> void:
 	# (the avatars use them)
 	if _role != "off":
 		info["key"] = _live_key
+		# (the avatars travel through the same page, so they're relayed too, big screen shared or not)
+		info["relay"] = relay_on() if _role == "host" else _live_relay
 		info["quality"] = _quality() if _role == "host" else _live_quality
 		info["avatars"] = avatar_list()
 	EventBus.live_feed_changed.emit(info)
@@ -2861,6 +2955,7 @@ func _send_everything(id: int) -> void:
 		_net_aud_mode.rpc_id(id, true)
 		_send_looks(id)
 		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+		_net_aud_reserved.rpc_id(id, String(AudienceManager.wire_reserved()["room"]), AudienceManager.wire_reserved()["list"])
 	_last_cam = Transform3D()         # send the host's camera again, for the newcomer
 	for other: int in _cams:
 		if other != id:
@@ -2981,6 +3076,7 @@ func _net_aud_resync() -> void:
 	var id := multiplayer.get_remote_sender_id()
 	if _role == "host" and _peers.has(id) and _sharing_audience():
 		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
+		_net_aud_reserved.rpc_id(id, String(AudienceManager.wire_reserved()["room"]), AudienceManager.wire_reserved()["list"])
 
 
 ## Co-stream tab "Resync": a guest asks the host for everything again; the host sends it to every

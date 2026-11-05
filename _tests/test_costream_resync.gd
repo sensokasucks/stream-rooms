@@ -156,6 +156,11 @@ func _host() -> void:
 	_check(String(AppState.get_setting(AppState.presenter_key(1, "name"))) != "Not Mine", "the guest can't change a podium that isn't theirs")
 	_check(not bool(AppState.get_setting(AppState.presenter_key(4, "on"))), "nor claim a locked one")
 	_check(await _wait_for(func() -> bool: return not bool(p3.call("on")), 30.0), "giving it up takes podium 3 off set")
+	# a reserved seat the guest asked for counts on the host's PC (the host does the seating)
+	_check(await _wait_for(func() -> bool:
+		var seat := _slot("twitch", "hostfan1")
+		return seat >= 0 and String(AudienceManager.get_reservation(seat).get("by", "")) == "ResyncGuest", 30.0),
+		"the guest reserved hostfan1's seat on the host's PC")
 
 	# the guest drops its connection; from now on no popups may be needed to get it back in
 	NetSession.auto_confirm = false
@@ -257,6 +262,12 @@ func _guest() -> void:
 	await _secs(6.0)
 	NetSession.claim_podium(3, false)
 	_check(await _wait_for(func() -> bool: return NetSession.my_podium() == 0, 20.0), "gave podium 3 up")
+
+	# reserve a seat in the shared audience: it's asked of the host, then shows here too
+	var fan_seat := _slot("twitch", "hostfan1")
+	NetSession.ask_reserve(fan_seat, true)
+	_check(await _wait_for(func() -> bool: return String(AudienceManager.get_reservation(fan_seat).get("name", "")).to_lower() == "hostfan1", 20.0),
+		"the seat this PC reserved shows as reserved here")
 
 	# the connection drops: keep showing the audience, hold this PC's chat, get back in
 	NetSession.auto_confirm = false

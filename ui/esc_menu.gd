@@ -324,6 +324,14 @@ func _build_costream() -> void:
 		r.add_child(_btn("No", "Turn them away.", func() -> void: NetSession.approve(wid, false)))
 		_page_box.add_child(r)
 
+	# Hide my address (NetSession "Hide my address"): the host's switch and what it covers
+	if role != "guest":
+		_page_box.add_child(_tick("together_hide_address", "Hide my address",
+			"Guests join through a one-off Cloudflare address and the video goes through a relay, so nobody in the session learns where you are."))
+		for e: Array in NetSession.hide_checklist():
+			_page_box.add_child(_hint(("✓ " if bool(e[0]) else "⚠ ") + String(e[1])))
+	elif NetSession.hides_address():
+		_page_box.add_child(_hint("This co-stream hides everyone's address."))
 	if role != "off" and peers.size() > 1:
 		_page_box.add_child(_hint("Big screen remote: %s. Whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone." % ("you have it" if bool(info.get("has_remote", false)) else String(info.get("remote", "")) + " has it")))
 	_build_podiums(info, role)

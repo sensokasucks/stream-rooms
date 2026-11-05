@@ -231,6 +231,24 @@ Keeps each platform's chatters physically apart in the audience.
   what their section allows (grey = anyone), big dots are chatters in their platform colour,
   and podium boxes are presenters. Below it, the number of seats each platform may use.
 
+### Reserved seats (Seating tab)
+Give a regular their own seat. When they chat, they go straight to it, and whoever was sitting
+there moves to another seat.
+- **Reserve a seat:** click the seat on the chart (it gets a white cross; the line under the
+  chart says who sits there) and press **Reserve**. Or type a seated chatter's name and press
+  **Reserve their seat**. The person in the seat at that moment is who it's kept for.
+- Reserved seats have a **gold ring** on the chart. They're listed under the chart with a ★,
+  the seat number and section, "here now" while their owner sits in it, and a **Free** button.
+  Click a reserved seat and **Free this seat** does the same.
+- **Keep reserved seats empty while their owner is away** (on by default): nobody else sits
+  there. Off: anyone may sit there until its owner chats.
+- Each room keeps its own reserved seats, and they're saved, so a regular has the same seat
+  next stream. People are matched by platform and name.
+- A reserved seat is always its owner's, whatever the seating plan says.
+- **In a co-stream** with one audience, the host's reserved seats count on every PC. A guest
+  can reserve the seat of a chatter sitting in the shared audience too (the host's message line
+  says so), and can free the ones they reserved.
+
 ## Accessibility
 - **Panel size** (bottom of the control panel, or Ctrl+= / Ctrl+-): 75-200%. Text, buttons
   and sliders all scale, in the main window and in the panel's own window.
@@ -289,7 +307,9 @@ of the room never shows it. **Esc** or **Resume** goes back.
   choice is kept for the next start. Until you pick something, the window opens as it always did.
 - **Sound**: **Video volume**, **Room ambience** and **Curtain sounds**.
 - **Co-stream**: host or join, who's in (with **Co-host** and **Remove** for the host), **Copy
-  invite address**, **Resync**, **End session** / **Leave**, and what everyone follows (**Room**,
+  invite address**, **Resync**, **End session** / **Leave**, the big screen remote (**Give remote**,
+  **Take it back**, **Ask for the remote**), **Hide my address** with its **Covered** list, the
+  podiums to **Claim** / **Lock** / **Free**, and what everyone follows (**Room**,
   **Curtain and lights**, **Podiums**, **One audience**). The name, password and address are still
   set in the control panel's Co-stream tab.
 - **Keys**: every keyboard shortcut.
@@ -519,9 +539,11 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     **Text width**.
   - **Silhouettes**: **Shape** (*Classic*, *Big head*, *Broad shoulders*, *Hoodie*, *Cat ears*,
     *Hair bun*, *Robot*, or *My own picture*). Your own pictures are kept in Core's **Stored
-    files**: pick one under **Picture**, or **Upload a picture...** (PNG, JPG or WebP; a
+    files**: pick one under **Picture**, or **Upload a picture...** (PNG, JPG, WebP or GIF; a
     see-through PNG works best, a picture without see-through parts is read as a dark shape on
-    a light background). **Add many pictures...** uploads several at once and saves each as a
+    a light background). An **animated GIF** moves on the seats near the stage (up to 32
+    frames are kept); the filler crowd far back shows its first frame. In a co-stream the
+    animation goes to the other PCs too. **Add many pictures...** uploads several at once and saves each as a
     look of yours, ready for a random mix. **Painted**, **Colour**, **Brightness**, **Size**,
     **The filler crowd uses it too**, and **Across** / **Down** / **Picture size** for where the
     chatter's profile picture sits on your own picture. Stream Rooms downloads each picture from
@@ -749,6 +771,13 @@ Up to four people share one room: a **host** who runs the show and up to three *
 
 Two ways, and nobody has to open ports on their router either way:
 
+- **Hide my address** (Co-stream tab, host, **on by default**) does it all at once: guests join
+  through the Cloudflare tunnel below, and the big screen and everyone's avatars go through
+  VDO.Ninja's relay servers, whatever **Listen on** and **Relay the live feed** say. Under it, a
+  **Covered:** list says what's hidden, with a ⚠ when something is missing (for example
+  `cloudflared.exe`). Guests get the message "This co-stream hides everyone's address." Untick it
+  to use **Listen on** as you set it (for example Tailscale). With **Listen on** set to **This PC
+  only** (testing two copies) there's nothing to hide and it doesn't apply.
 - **Cloudflare tunnel (hides your address).** The host sets **Listen on** to **Cloudflare tunnel
   (hide my address)**. Hosting then runs `cloudflared` in the background and gets a one-off address
   like `something.trycloudflare.com`. Guests reach you through Cloudflare, so nobody ever sees
@@ -889,17 +918,14 @@ anything live: a game, a stream you're reacting to, a website.
 
 - **Host:** nothing extra to do while **Send my shared tab to the guests** (Co-stream tab) is ticked.
   The sender page says "Everyone in the session gets this tab too."
-- **Guest:** the Co-stream tab says when the host is sharing. Open your own sender page (the
-  **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
-  takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
-  again. **Stop watching** lets go.
-- **A guest's tab on the big screen:** the host (or a co-host) picks a person in **Big screen tab**
-  (Co-stream tab). That person shares a tab in their own sender page as usual, and everyone else's
-  big screen shows it, sound included: the host's page follows by itself, a guest's page once
-  they've clicked **Watch** before. Pick **The host's tab** to switch back. Switch any time: everyone's
-  own shared tab keeps running in the background (the sender page says "ready"), so it comes
-  straight back without picking the tab again. You can also press **Share** while watching someone
-  else's tab, to have yours ready for your turn.
+- **Guest:** the Co-stream tab says when the host is sharing. Keep your own sender page open (the
+  **Open sender page** button there): it shows the host's tab by itself, no click needed. It comes
+  back by itself if the host stops and starts sharing again.
+- **A guest's tab on the big screen:** pass that guest the **big screen remote** (below). They
+  share a tab in their own sender page as usual, and everyone else's big screen shows it, sound
+  included. Switch any time: everyone's own shared tab keeps running in the background (the sender
+  page says "ready"), so it comes straight back without picking the tab again. You can also press
+  **Share** while watching someone else's tab, to have yours ready for your turn.
   Browsers only let a page's sound through after a click on it, so if the sender page asks,
   click anywhere on it once.
 - It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
@@ -912,6 +938,40 @@ anything live: a game, a stream you're reacting to, a website.
   password right.
 
 NDI and Spout aren't shared: they only exist on the host's PC.
+
+### The big screen remote
+
+One person at a time has the **big screen remote**: they decide what everyone's big screen shows
+(their own shared tab, a web video, someone's avatar) and their **Pause to react** pauses
+everyone. The host starts with it.
+- In the list of people (Co-stream tab, or the Esc menu's **Co-stream** page), the host has
+  **Give remote** next to each guest, and **Take it back**.
+- A guest presses **Ask for the remote**; the host's list shows "asked for the remote", and the
+  host decides. Whoever has it can **Give it back**.
+- Without the remote, a guest's big screen choices are greyed out and the message line says who
+  has it. If the holder leaves, the remote goes back to the host.
+
+### Claim a podium
+
+Each guest can run a podium of their own from their own PC: the Esc menu's **Co-stream** page
+lists the podiums with **Claim** (or **Move here**) and **Give up**. A claimed podium shows its
+owner's **My avatar**, and its owner sets the name tag, light, picture and chroma key in their own
+Presenters tab; everyone sees the changes. Camera and tab sources become the owner's **My avatar**
+(NDI and Spout can't travel). The host can **Lock** a podium so nobody can claim it, or **Free** a
+claimed one. A podium is freed by itself when its owner leaves.
+
+### For VTubers
+
+Co-streaming without anyone learning where you live:
+- Keep **Hide my address** on (it is by default) and check its **Covered:** list says ✓ for
+  everything. Put `cloudflared.exe` in the `tools` folder (`tools\get_tools.ps1`).
+- Send your avatar as **My avatar** (**Web page (transparent)** for a PNGTuber page, or the VTube
+  Studio window as **Tab / window**), not a camera.
+- The session address and password go to your guests in a private message, never on stream. The
+  game never shows them on screen.
+- Your own Stream Core stays on your PC; nothing from it is shared except chat lines and audience
+  looks.
+- A guest who wants to hide from Cloudflare too can use a VPN.
 
 ### Avatars: everyone's picture on podiums and the big screen
 
