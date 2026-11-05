@@ -146,6 +146,11 @@ const BASE_DEFAULTS: Dictionary = {
 	"gfx_render_scale": 1.0,     # 3D resolution, 0.5-1 (below 1 is scaled up with FSR)
 	"fps_cap": 60,               # frames per second cap: 30 | 60 | 0 (unlimited)
 	"vsync": true,               # wait for the display refresh (no tearing)
+	# Window (Esc menu > Display; core/display_mode.gd): per machine. "" / -1 = leave it as the app
+	# opened (project.godot's window settings), so nothing changes until someone picks something.
+	"window_mode": "",           # "" | windowed | borderless (no frame, covers the screen) | fullscreen
+	"window_screen": -1,         # which monitor, from 0 (-1 = the one it opened on)
+	"window_size": "",           # "1920x1080" etc. for Windowed / Borderless ("" = fill the screen)
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)

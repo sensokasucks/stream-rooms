@@ -116,7 +116,8 @@ broken video in the cache.
 | **PgUp / PgDn** | Previous / next room. |
 | **F10** | Clean feed: hides all UI (the webcam overlay stays). |
 | **Tab** | Show/hide the control panel. |
-| **F11** | Fullscreen. |
+| **Esc** | The game menu (see *The Esc menu*). Esc again goes back. |
+| **F11** | Fullscreen for now. To keep it, pick **Fullscreen** in the Esc menu's **Display** page. |
 | **C** | Chat screen on/off (rooms that have one). |
 | **R** | Reply screen on/off (rooms that have one). |
 | **B** | Stage curtain: close / open. **Shift+B** = the reveal (lights down, spotlight, drum roll, curtain sweeps open). |
@@ -277,6 +278,26 @@ Keeps each platform's chatters physically apart in the audience.
   Run plugged in, on Windows' best-performance power mode, and make sure Redot and OBS use the
   NVIDIA GPU (Windows Settings → System → Display → Graphics → High performance). Use NVENC
   in OBS so the encoder doesn't load the CPU.
+
+## The Esc menu
+Press **Esc** in the room for the game menu. It opens in its own window, so an OBS Window Capture
+of the room never shows it. **Esc** or **Resume** goes back.
+
+- **Display**: **Window** (**Windowed**, **Borderless** with no frame covering the monitor, or
+  **Fullscreen**), **Monitor**, **Window size** (pick your OBS canvas size, often 1920 × 1080; used
+  for Windowed and Borderless), **Graphics quality**, **Frame rate cap** and **V-Sync**. The window
+  choice is kept for the next start. Until you pick something, the window opens as it always did.
+- **Sound**: **Video volume**, **Room ambience** and **Curtain sounds**.
+- **Co-stream**: host or join, who's in (with **Co-host** and **Remove** for the host), **Copy
+  invite address**, **Resync**, **End session** / **Leave**, and what everyone follows (**Room**,
+  **Curtain and lights**, **Podiums**, **One audience**). The name, password and address are still
+  set in the control panel's Together tab.
+- **Keys**: every keyboard shortcut.
+- **Open Stream Core dashboard** opens Core in your browser. If it asks for the admin token, press
+  **Sign in on this PC** there.
+- **Quit** closes the app (it asks first while you host guests).
+
+These are the same settings as in the control panel, so changing one in either place changes both.
 
 ## Closing the app
 

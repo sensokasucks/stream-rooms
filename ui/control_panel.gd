@@ -421,7 +421,7 @@ func _build() -> void:
 	get_viewport().size_changed.connect(_fit_height)
 	_fit_height.call_deferred()
 	var hint := Label.new()
-	hint.text = "Tab panel | F6 keyboard (Esc leaves) | F9 own window | Space react pause | F focus | B curtain (Shift+B reveal) | 1-9, 0 cameras | PgUp/PgDn rooms | F10 clean feed | right-drag look"
+	hint.text = "Esc menu | Tab panel | F6 keyboard (Esc leaves) | F9 own window | Space react pause | F focus | B curtain (Shift+B reveal) | 1-9, 0 cameras | PgUp/PgDn rooms | F10 clean feed | right-drag look"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size = Vector2(panel_width - 20, 0)
 	hint.add_theme_font_size_override("font_size", 12)
