@@ -145,6 +145,9 @@ var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 ## Builds the whole panel, then connects the EventBus signals it shows and fills the status
 ## lines once. NDI / Spout availability is read first because the tab builders use it.
 func _ready() -> void:
+	# core/rooms_remote.gd finds the panel by this group to read settings_schema() for Core's
+	# Setup > Stream Rooms pages
+	add_to_group("control_panel")
 	_ndi_available = NdiReceiver.is_available()
 	_spout_available = SpoutReceiver.is_available()
 	_build()
@@ -3028,6 +3031,116 @@ func _refresh_ready_videos() -> void:
 		else "%d %s, %s on disk." % [list.size(), "video" if list.size() == 1 else "videos", String.humanize_size(total)]
 
 
+# ── Settings for Stream Core ─────────────────────────────────
+## Every setting this panel has a control for, described for Stream Core's Setup > Stream Rooms pages
+## (work list item 16). core/rooms_remote.gd sends it as the "rooms_settings" packet; Core draws its
+## own control from each entry and sends changes back ("rooms_set"). Built from the controls
+## themselves (the _sliders / _checks / _options / _colors / _texts dicts), so a new panel control
+## shows in Core with no extra work. Each entry:
+##   {key, label, tip, tab (the panel tab's name), group (the heading above it, "" for none),
+##    adv (true inside an Advanced ▸ fold), type: bool | range | choice | text | color,
+##    range: min, max, step (setting units), scale, fmt, zero, int; choice: options [[value, label]]}
+## Order: tab order, then top to bottom.
+func settings_schema() -> Array:
+	var out: Array = []
+	for kind: String in ["range", "bool", "choice", "color", "text"]:
+		var d: Dictionary = {"range": _sliders, "bool": _checks, "choice": _options, "color": _colors, "text": _texts}[kind]
+		for key: String in d:
+			var c := d[key] as Control
+			if c == null or not is_instance_valid(c) or not AppState.DEFAULTS.has(key):
+				continue
+			var row := c.get_parent() as Control
+			var e := {"key": key, "type": kind, "tab": _tab_of(c), "group": _group_of(c), "adv": _in_fold(c)}
+			e["label"] = (c as CheckBox).text if c is CheckBox else _row_label(row)
+			e["tip"] = _tip_of(c)
+			if c is HSlider:
+				var sl := c as HSlider
+				var sc := float(sl.get_meta("scale", 1.0))
+				e["min"] = sl.min_value / sc
+				e["max"] = sl.max_value / sc
+				e["step"] = sl.step / sc
+				e["scale"] = sc
+				e["fmt"] = String(sl.get_meta("fmt", "%s"))
+				e["zero"] = String(sl.get_meta("zero_text", ""))
+				e["int"] = typeof(AppState.DEFAULTS[key]) == TYPE_INT
+			elif c is OptionButton:
+				var ob := c as OptionButton
+				var opts: Array = []
+				for i in ob.item_count:
+					opts.append([ob.get_item_metadata(i), ob.get_item_text(i)])
+				e["options"] = opts
+			e["order"] = _order_of(c)
+			out.append(e)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return String(a["order"]) < String(b["order"]))
+	for e: Dictionary in out:
+		e.erase("order")
+	return out
+
+
+## The panel tab a control sits in (its ScrollContainer's name), or "Panel" for the footer ones.
+func _tab_of(c: Node) -> String:
+	var n := c
+	while n != null and n.get_parent() != _tabs:
+		n = n.get_parent()
+	return String(n.name) if n != null else "Panel"
+
+
+## The heading (_heading) above a control: the nearest one before it in its box, else a box further out.
+func _group_of(c: Node) -> String:
+	var n := c
+	while n != null and n.get_parent() != null and n.get_parent() != _tabs:
+		var p := n.get_parent()
+		for i in range(n.get_index() - 1, -1, -1):
+			var sib := p.get_child(i)
+			if sib is Label and sib.has_meta("panel_heading"):
+				return (sib as Label).text
+		n = p
+	return ""
+
+
+## True when a control is inside an Advanced ▸ fold (_fold marks the fold body with "fold_head").
+func _in_fold(c: Node) -> bool:
+	var n := c.get_parent()
+	while n != null and n != _tabs:
+		if n.has_meta("fold_head"):
+			return true
+		n = n.get_parent()
+	return false
+
+
+## A control's help text: its own tooltip, else the nearest one on a box around it (a row of
+## colour pickers shares one), the same text its "?" button shows.
+func _tip_of(c: Node) -> String:
+	var n := c
+	while n != null and n != _tabs and n != self:
+		if n is Control and (n as Control).tooltip_text != "":
+			return (n as Control).tooltip_text
+		n = n.get_parent()
+	return ""
+
+
+## A setting row's label: the first Label in the row (the helpers put it first).
+static func _row_label(row: Node) -> String:
+	if row == null:
+		return ""
+	for ch in row.get_children():
+		if ch is Label:
+			return (ch as Label).text
+	return ""
+
+
+## A sort key in panel order: tab index, then each ancestor's child index, zero-padded.
+func _order_of(c: Node) -> String:
+	var parts := PackedStringArray()
+	var n := c
+	while n != null and n != _tabs and n != self:
+		parts.insert(0, "%04d" % n.get_index())
+		n = n.get_parent()
+	if n != _tabs:
+		parts.insert(0, "9999")     # the footer controls go last
+	return ".".join(parts)
+
+
 # ── Widget helpers ───────────────────────────────────────────
 ## A tab page. Its name is the tab's title: _build gives it to the page's ScrollContainer, which is
 ## what _go_to_tab and _check_text_sizes look up by name.
@@ -3128,6 +3241,7 @@ func _heading(text: String) -> Label:
 	l.text = text
 	l.add_theme_font_size_override("font_size", 15)
 	l.add_theme_color_override("font_color", Color(1.0, 0.72, 0.4))
+	l.set_meta("panel_heading", true)     # settings_schema() groups the settings under it
 	return l
 
 
@@ -3203,6 +3317,8 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 	s.max_value = hi * display_scale
 	s.step = step * display_scale
 	s.set_meta("scale", display_scale)
+	s.set_meta("fmt", fmt)               # settings_schema() hands these to Core's pages
+	s.set_meta("zero_text", zero_text)
 	s.value = float(AppState.get_setting(key)) * display_scale
 	s.focus_mode = Control.FOCUS_ALL
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL

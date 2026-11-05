@@ -71,6 +71,44 @@ func _ready() -> void:
 	_check(rig.global_position.distance_to(before) > 1.0, "a camera view button moves the camera (%s)" % str(rig.global_position))
 	_check(not remote.run_command("format_disk", "now"), "an unknown action is refused")
 
+	# Setup > Stream Rooms pages: the panel's settings, described for Core
+	var data := remote.refresh_schema()
+	var schema: Array = data.get("schema", [])
+	_check(schema.size() >= 150, "the panel describes its settings for Core (%d)" % schema.size())
+	var tabs := {}
+	var no_tip: Array = []
+	var by_key := {}
+	for e: Dictionary in schema:
+		tabs[e["tab"]] = true
+		by_key[e["key"]] = e
+		if String(e["tip"]) == "":
+			no_tip.append(e["key"])
+	_check(tabs.has("Room") and tabs.has("Audience") and tabs.has("Co-stream"), "grouped by panel tab (%s)" % ", ".join(PackedStringArray(tabs.keys())))
+	_check(no_tip.is_empty(), "every one has its help text (%s)" % ", ".join(PackedStringArray(no_tip)))
+	var vol: Dictionary = by_key.get("volume", {})
+	_check(String(vol.get("type", "")) == "range" and is_equal_approx(float(vol.get("max", 0)), 1.0), "Volume is a 0..1 slider (%s)" % str(vol))
+	var gq: Dictionary = by_key.get("graphics_quality", {})
+	_check(String(gq.get("type", "")) == "choice" and (gq.get("options", []) as Array).size() >= 3, "Graphics quality lists its choices")
+	_check(data["values"].has("volume") and data["defaults"].has("volume"), "values and defaults come along")
+	var adv := 0
+	for e: Dictionary in schema:
+		if bool(e["adv"]):
+			adv += 1
+	_check(adv > 20 and adv < schema.size(), "Advanced ▸ settings are marked (%d)" % adv)
+	_check(JSON.stringify(data).length() < 900000, "the packet fits the socket buffer (%d chars)" % JSON.stringify(data).length())
+	_check(remote.set_from_core("volume", 0.55) and is_equal_approx(float(AppState.get_setting("volume")), 0.55), "Core sets a slider")
+	_check(not by_key.has("together_password") and not by_key.has("together_address"), "the co-stream password and address stay on this PC")
+	_check(not remote.set_from_core("together_password", "x"), "and Core can't set them")
+	_check(not remote.set_from_core("panel_advanced", "x"), "Core can't set a setting the panel has no control for")
+	var color_key := ""
+	for e: Dictionary in schema:
+		if String(e["type"]) == "color":
+			color_key = String(e["key"])
+			break
+	if color_key != "":
+		_check(remote.set_from_core(color_key, "#ff0000") and AppState.get_setting(color_key) == Color(1, 0, 0), "a colour comes over as #rrggbb (%s)" % color_key)
+	_check(not remote.set_from_core("volume_typo", 1), "an unknown key is refused")
+
 	remote.run_command("room", "theater")
 	await _secs(4.0)
 	_check(String(AppState.get_setting("room_id")) == "theater", "the room picker changes the room")

@@ -160,6 +160,8 @@ func _open() -> void:
 	# Core also sends big snapshots on connect; a too-small buffer makes the peer drop the
 	# connection (an older Core sent its 2 MB credits roster on every new chatter)
 	_ws.inbound_buffer_size = 16 * 1024 * 1024
+	# the settings list for Core's Setup > Stream Rooms pages is ~60 KB (core/rooms_remote.gd)
+	_ws.outbound_buffer_size = 1024 * 1024
 	_ping_in = PING_INTERVAL
 	var err := _ws.connect_to_url(url)
 	if err != OK:
@@ -249,6 +251,11 @@ func _handle(text: String) -> void:
 						AppState.reveal_curtain()
 					"toggle":
 						AppState.toggle_curtain()
+		"rooms_set":
+			# a setting changed on Core's Setup > Stream Rooms pages (core/rooms_remote.gd)
+			var rs: Variant = (msg as Dictionary).get("data")
+			if rs is Dictionary:
+				_remote.set_from_core(String((rs as Dictionary).get("key", "")), (rs as Dictionary).get("value"))
 		"audience_looks":
 			# bubble and silhouette looks from Core's dashboard (Overlays > Audience looks)
 			var lk: Variant = (msg as Dictionary).get("data")

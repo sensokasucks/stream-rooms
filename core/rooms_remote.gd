@@ -16,9 +16,19 @@ class_name RoomsRemote
 ##  2. Runs the commands Core's card sends back. They arrive as the existing "stage" packet,
 ##     {action, value}; ChatFeed hands every action except "curtain" to run_command() here.
 ##
+##  3. Setup > Stream Rooms pages in Core (work list item 16): on (re)connect it sends
+##     {"type": "rooms_settings", "data": {schema, values, defaults}} (schema from the control panel's
+##     settings_schema(): every setting the panel has a control for), then {"type": "rooms_values",
+##     "data": {key: value}} for the ones that change. Core's changes arrive as {"type": "rooms_set",
+##     "data": {key, value}} (ChatFeed -> set_from_core); only keys in the schema are taken.
+##
 ## Nothing here is new behaviour: each command presses the same thing the panel or a hotkey does
 ## (AppState / EventBus / NetSession), so co-stream rules (who may change the room, the remote)
 ## still apply.
+
+## Settings that never go to Core's pages: the co-stream password and the host address (they stay on
+## this PC, like Core's own secrets) and Core's own address (changing it from Core would cut the link).
+const LOCAL_ONLY: PackedStringArray = ["together_password", "together_address", "chat_core_url"]
 
 ## Seconds between two state packets at most (a slider being dragged in the game sends a few).
 const SEND_GAP: float = 0.3
@@ -29,6 +39,9 @@ var _views: Array = []            # last camera_views_changed list (CameraRig)
 var _sender: Dictionary = {}      # summary of the last capture_status_changed
 var _last_sent: String = ""       # JSON of the last packet: an unchanged state isn't sent again
 var _podiums: int = 0             # podiums in the room on now (room_presenters_changed)
+var _schema_keys: Dictionary = {} # setting keys Core may change (from the last schema sent)
+var _changed: Dictionary = {}     # schema keys changed since the last rooms_values packet
+var _send_schema: bool = false    # a full rooms_settings packet is due (after a (re)connect)
 
 
 func _ready() -> void:
@@ -49,10 +62,21 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_wait = maxf(_wait - delta, 0.0)
-	if _dirty and _wait <= 0.0:
-		_dirty = false
+	if (_dirty or _send_schema or not _changed.is_empty()) and _wait <= 0.0:
 		_wait = SEND_GAP
-		send_state(false)
+		if _send_schema:
+			_send_schema = false
+			_changed.clear()
+			send_settings()
+		elif not _changed.is_empty():
+			var vals := {}
+			for k: String in _changed:
+				vals[k] = _json_value(AppState.get_setting(k))
+			_changed.clear()
+			ChatFeed.send_message({"type": "rooms_values", "data": vals})
+		if _dirty:
+			_dirty = false
+			send_state(false)
 
 
 ## Ask for a state packet soon (batched by SEND_GAP).
@@ -66,6 +90,7 @@ func _on_chat_status(info: Dictionary) -> void:
 	if bool(info.get("connected", false)):
 		_last_sent = ""
 		_wait = SEND_GAP
+		_send_schema = true
 		_mark()
 
 
@@ -92,6 +117,72 @@ func _on_capture_status(info: Dictionary) -> void:
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "volume" or key == "ambience_volume" or key.begins_with("presenter_"):
 		_mark()
+	if _schema_keys.has(key):
+		_changed[key] = true
+
+
+## The full settings packet for Core's Setup > Stream Rooms pages. False without Core or a panel.
+func send_settings() -> bool:
+	if not ChatFeed.is_connected_to_core():
+		return false
+	var data := refresh_schema()
+	return not data.is_empty() and ChatFeed.send_message({"type": "rooms_settings", "data": data})
+
+
+## Reads the panel's settings_schema() and remembers its keys (the ones Core may set). Returns
+## {schema, values, defaults}, or {} without a panel. Also used by test_rooms_remote.
+func refresh_schema() -> Dictionary:
+	var panel := get_tree().get_first_node_in_group("control_panel")
+	if panel == null:
+		return {}
+	var schema: Array = []
+	for e: Dictionary in panel.call("settings_schema"):
+		if not LOCAL_ONLY.has(String(e["key"])):
+			schema.append(e)
+	var values := {}
+	var defaults := {}
+	_schema_keys.clear()
+	for e: Dictionary in schema:
+		var k := String(e["key"])
+		_schema_keys[k] = true
+		values[k] = _json_value(AppState.get_setting(k))
+		defaults[k] = _json_value(AppState.DEFAULTS.get(k))
+	return {"schema": schema, "values": values, "defaults": defaults}
+
+
+## A setting from Core's pages ("rooms_set"). Only keys the panel shows; the value is turned into
+## the setting's own type (a float for 1.0 settings, an int for 60 ones, a Color from "#rrggbb").
+## Goes through AppState.set_setting, so co-stream rules still apply. False when refused.
+func set_from_core(key: String, value: Variant) -> bool:
+	if not _schema_keys.has(key) or not AppState.DEFAULTS.has(key):
+		return false
+	var def: Variant = AppState.DEFAULTS[key]
+	var v: Variant = value
+	match typeof(def):
+		TYPE_BOOL:
+			v = bool(value)
+		TYPE_INT:
+			v = int(value)
+		TYPE_FLOAT:
+			v = float(value)
+		TYPE_STRING:
+			v = str(value)
+		TYPE_COLOR:
+			if not (value is String and Color.html_is_valid(value)):
+				return false
+			v = Color.html(value)
+		_:
+			return false
+	AppState.set_setting(key, v)
+	DebugLog.note("core", "Setup page set %s" % key)
+	return true
+
+
+## A setting value as JSON can carry it (a Color becomes "#rrggbb").
+static func _json_value(v: Variant) -> Variant:
+	if v is Color:
+		return "#" + (v as Color).to_html(false)
+	return v
 
 
 ## The summary Core's card draws (keys in the file comment). Also used by test_rooms_remote.
