@@ -219,6 +219,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_avatar_camera": "",      # camera device id ("" = default camera)
 	"together_avatar_url": "",         # web page for "web"
 	"screen_peer": "",                 # the big screen shows this person's avatar ("" = no); shared with guests
+	"screen_tab_peer": "",             # whose shared tab is on everyone's big screen ("" = the host's); shared with guests
 	# Quality of what goes between the PCs (the host decides for everyone); kbps caps the bitrate per viewer
 	"together_screen_height": 720,   # 480 | 540 | 720 | 1080
 	"together_screen_fps": 30,       # 15 | 30 | 60

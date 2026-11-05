@@ -817,11 +817,18 @@ page**, as usual), the guests can watch it on their big screens too, with its so
 anything live: a game, a stream you're reacting to, a website.
 
 - **Host:** nothing extra to do while **Send my shared tab to the guests** (Together tab) is ticked.
-  The sender page says "Your guests get this tab too."
+  The sender page says "Everyone in the session gets this tab too."
 - **Guest:** the Together tab says when the host is sharing. Open your own sender page (the
   **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
   takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
   again. **Stop watching** lets go.
+- **A guest's tab on the big screen:** the host (or a co-host) picks a person in **Big screen tab**
+  (Together tab). That person shares a tab in their own sender page as usual, and everyone else's
+  big screen shows it, sound included: the host's page follows by itself, a guest's page once
+  they've clicked **Watch** before. Pick **The host's tab** to switch back. Switch any time: everyone's
+  own shared tab keeps running in the background (the sender page says "ready"), so it comes
+  straight back without picking the tab again. You can also press **Share** while watching someone
+  else's tab, to have yours ready for your turn.
   Browsers only let a page's sound through after a click on it, so if the sender page asks,
   click anywhere on it once.
 - It goes through **VDO.Ninja**, straight from the host's browser to each guest's (peer to peer),
