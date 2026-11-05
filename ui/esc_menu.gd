@@ -291,9 +291,16 @@ func _build_costream() -> void:
 				tags.append("co-host")
 			if not bool(p["synced"]):
 				tags.append("syncing %d%%" % int(p["sync"]))
+			if bool(p.get("remote", false)) and peers.size() > 1:
+				tags.append("has the remote")
+			elif bool(p.get("asked", false)):
+				tags.append("asked for the remote")
 			who.text = String(p["name"]) + (" (%s)" % ", ".join(tags) if not tags.is_empty() else "")
 			who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			r.add_child(who)
+			var rb := _remote_button(p, role)
+			if rb != null:
+				r.add_child(rb)
 			if role == "host" and int(p["id"]) != 1:
 				var id := int(p["id"])
 				var co := CheckBox.new()
@@ -317,6 +324,8 @@ func _build_costream() -> void:
 		r.add_child(_btn("No", "Turn them away.", func() -> void: NetSession.approve(wid, false)))
 		_page_box.add_child(r)
 
+	if role != "off" and peers.size() > 1:
+		_page_box.add_child(_hint("Big screen remote: %s. Whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone." % ("you have it" if bool(info.get("has_remote", false)) else String(info.get("remote", "")) + " has it")))
 	if role != "guest":
 		var head := Label.new()
 		head.text = "Everyone follows the host's"
@@ -353,6 +362,29 @@ func _build_keys() -> void:
 		grid.add_child(what)
 	_page_box.add_child(grid)
 	_page_box.add_child(_hint("Keys don't work while you type in a text box. Esc leaves the box first."))
+
+
+## The big screen remote button for one person's row, or null: the host gives it to a guest or takes
+## it back on its own row; a guest asks for it or gives it back on its own row (NetSession "Big
+## screen remote"; the control panel's Co-stream tab has the same buttons).
+func _remote_button(p: Dictionary, role: String) -> Button:
+	var id := int(p["id"])
+	var holds := bool(p.get("remote", false))
+	var asked := bool(p.get("asked", false))
+	if role == "host" and id != 1 and not holds:
+		var give := _btn("Give remote", "Give them the big screen remote: their shared tab goes on everyone's big screen, and they can play a web video or pause for everyone. You can take it back any time.",
+			func() -> void: NetSession.pass_remote(id))
+		if asked:
+			give.add_theme_color_override("font_color", Color(0.55, 1.0, 0.45))
+		return give
+	if role == "host" and id == 1 and not holds:
+		return _btn("Take it back", "Take the big screen remote back: your shared tab is on everyone's big screen again.", func() -> void: NetSession.pass_remote(1))
+	if role == "guest" and bool(p["me"]) and holds:
+		return _btn("Give it back", "Give the big screen remote back to the host.", func() -> void: NetSession.pass_remote(1))
+	if role == "guest" and bool(p["me"]):
+		return _btn("Asked for the remote" if asked else "Ask for the remote",
+			"Ask the host for the big screen remote (press again to take the question back).", func() -> void: NetSession.ask_remote(not asked))
+	return null
 
 
 # ── Actions ──────────────────────────────────────────────────────────

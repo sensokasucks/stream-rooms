@@ -129,6 +129,18 @@ func _host() -> void:
 	await _secs(3.0)
 	AppState.set_react_paused(false)
 
+	# the big screen remote: the guest asks, gets it, pauses for everyone, then gives it back
+	var host_pauses: Array = []
+	EventBus.react_pause_changed.connect(func(p: bool) -> void: host_pauses.append(p))
+	_check(await _wait_for(func() -> bool: return bool(_guest_row().get("asked", false)), 30.0), "the guest asked for the big screen remote")
+	NetSession.pass_remote(int(_guest_row()["id"]))
+	_check(not NetSession.has_remote() and bool(_guest_row().get("remote", false)), "the host gave it the remote")
+	_check(String(AppState.get_setting("screen_tab_peer")) == "ResyncGuest", "the guest's shared tab is the big screen's now")
+	_check(await _wait_for(func() -> bool: return host_pauses.has(true) and host_pauses.has(false), 30.0),
+		"the guest with the remote paused and unpaused the host's room too (%s)" % str(host_pauses))
+	_check(await _wait_for(func() -> bool: return NetSession.has_remote(), 30.0), "the guest gave the remote back")
+	_check(String(AppState.get_setting("screen_tab_peer")) == "", "the host's tab is the big screen's again")
+
 	# the guest drops its connection; from now on no popups may be needed to get it back in
 	NetSession.auto_confirm = false
 	_check(await _wait_for(func() -> bool: return _guest_row().is_empty(), 60.0), "noticed the guest dropping")
@@ -196,6 +208,19 @@ func _guest() -> void:
 	# the host paused and unpaused for everyone
 	_check(await _wait_for(func() -> bool: return pauses.has(true) and pauses.has(false), 30.0),
 		"the host's pause to react paused this PC too, and unpaused it (%s)" % str(pauses))
+
+	# the big screen remote: without it, the big screen is locked here; ask, use it, give it back
+	_check(not NetSession.has_remote() and NetSession.is_locked("screen_tab_peer"), "without the remote, the big screen pick is locked here")
+	NetSession.ask_remote()
+	_check(await _wait_for(func() -> bool: return NetSession.has_remote(), 60.0), "got the big screen remote after asking")
+	_check(not NetSession.is_locked("screen_tab_peer"), "and the big screen pick is unlocked")
+	await _secs(1.0)
+	AppState.set_react_paused(true)          # (with the remote: for everyone)
+	await _secs(2.0)
+	AppState.set_react_paused(false)
+	await _secs(2.0)
+	NetSession.pass_remote(1)
+	_check(await _wait_for(func() -> bool: return not NetSession.has_remote(), 20.0), "gave the remote back to the host")
 
 	# the connection drops: keep showing the audience, hold this PC's chat, get back in
 	NetSession.auto_confirm = false

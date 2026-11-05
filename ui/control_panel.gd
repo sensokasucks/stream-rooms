@@ -1789,7 +1789,7 @@ func _build_together_tab() -> Control:
 	_net_live.add_child(_net_live_label)
 	var open_sender := _button("Open sender page", func() -> void:
 		if _capture_url != "": OS.shell_open(_capture_url))
-	open_sender.tooltip_text = "Opens the sender page in your browser. Click \"Watch the host's live feed\" there and the host's tab shows on your big screen."
+	open_sender.tooltip_text = "Opens the sender page in your browser. Whoever has the big screen remote: their shared tab shows there by itself (click the page once for its sound)."
 	_net_live.add_child(open_sender)
 	v.add_child(_net_live)
 	_net_medium = HBoxContainer.new()
@@ -1862,10 +1862,10 @@ func _build_together_tab() -> Control:
 	var live := _check("together_live_feed", "Send my shared tab to the guests")
 	live.tooltip_text = "Host: the tab or window you share in the sender page also goes to your guests' big screens, with its sound, through VDO.Ninja (peer to peer, about 0.2 to 1 second behind). Each guest costs you roughly 3 to 6 Mbps of upload."
 	v.add_child(live)
-	# whose tab everyone's big screen shows: switch any time, each person's own share keeps running
-	# in their sender page, so switching back is instant (NetSession._tab_publisher, sender.html "parked")
-	v.add_child(_peer_menu("screen_tab_peer", "Big screen tab", "The host's tab",
-		"Whose shared tab is on everyone's big screen, with its sound: the host's, or a guest's. Switch any time. The person picked shares a tab in their own sender page as usual, and everyone else's sender page shows it. Each person's own shared tab keeps running in the background, so switching back is instant."))
+	# whose tab everyone's big screen shows is now the big screen remote's (NetSession "Big screen
+	# remote"): Give remote / Take it back / Ask in the list above. The old "Big screen tab" pick
+	# (screen_tab_peer) follows the remote by itself.
+	v.add_child(_hint("Big screen remote: whoever has it decides what everyone's big screen shows (their shared tab, a web video, someone's avatar) and pauses it for everyone. Pass it with the buttons in the list above."))
 	v.add_child(_heading("Shared with guests"))
 	v.add_child(_hint("Host: untick a part and every PC keeps its own. For example, untick Presenters to let each guest pick their own presenter sources."))
 	var share_row := HFlowContainer.new()
@@ -2039,7 +2039,7 @@ func _on_net_state(info: Dictionary) -> void:
 	if from == "me":
 		_net_live_label.text = "Everyone's big screen shows your tab: share one in your sender page."
 	elif bool(info.get("host_live", false)):
-		_net_live_label.text = "%s is sharing a live tab. Open your sender page and click \"Watch the host's live feed\"." % ("The host" if from == "" else from)
+		_net_live_label.text = "%s is sharing a live tab. Your sender page shows it by itself (click the page once to let its sound through)." % ("The host" if from == "" else from)
 	else:
 		_net_live_label.text = "%s isn't sharing a live tab right now." % ("The host" if from == "" else from)
 	for c in _net_peers.get_children():
@@ -2060,9 +2060,16 @@ func _on_net_state(info: Dictionary) -> void:
 			text += " - co-host"
 		if not bool(p.get("synced", true)):
 			text += " - syncing %d%%" % int(p.get("sync", 0))
+		if bool(p.get("remote", false)) and peers.size() > 1:
+			text += " - has the remote"
+		elif bool(p.get("asked", false)):
+			text += " - asked for the remote"
 		l.text = text
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_child(l)
+		var rb := _remote_button(p, role)
+		if rb != null:
+			row.add_child(rb)
 		if role == "host" and id != 1:
 			var co := CheckBox.new()
 			co.text = "Co-host"
@@ -2075,6 +2082,29 @@ func _on_net_state(info: Dictionary) -> void:
 			row.add_child(rm)
 		_net_peers.add_child(row)
 	_refresh_locks()
+
+
+## The big screen remote button for one person's row (null when there's nothing to press there):
+## host: Give remote to a guest / Take it back on its own row; a guest: Ask for it / Give it back
+## on its own row. Same rules as the Esc menu's Co-stream page (NetSession "Big screen remote").
+func _remote_button(p: Dictionary, role: String) -> Button:
+	var id := int(p["id"])
+	var holds := bool(p.get("remote", false))
+	var b: Button = null
+	if role == "host" and id != 1 and not holds:
+		b = _button("Give remote", func() -> void: NetSession.pass_remote(id))
+		b.tooltip_text = "Give this person the big screen remote: their shared tab goes on everyone's big screen, and they can play a web video or pause for everyone. You can take it back any time."
+	elif role == "host" and id == 1 and not holds:
+		b = _button("Take it back", func() -> void: NetSession.pass_remote(1))
+		b.tooltip_text = "Take the big screen remote back: your shared tab is on everyone's big screen again."
+	elif role == "guest" and bool(p["me"]) and holds:
+		b = _button("Give it back", func() -> void: NetSession.pass_remote(1))
+		b.tooltip_text = "Give the big screen remote back to the host."
+	elif role == "guest" and bool(p["me"]):
+		var asked := bool(p.get("asked", false))
+		b = _button("Asked for the remote" if asked else "Ask for the remote", func() -> void: NetSession.ask_remote(not asked))
+		b.tooltip_text = "Ask the host for the big screen remote (press again to take the question back). With it, your shared tab is on everyone's big screen."
+	return b
 
 
 ## A guest who isn't a co-host can't change shared things: those controls are greyed out.

@@ -178,6 +178,10 @@ var _live_feed_on: bool = true          # guest: the host sends its shared tab (
 ## their own stream name for it: the host's is _live_id, a guest's is _peers[id]["tab"] (made by
 ## the host, and only ever sent out while that guest is the one sharing).
 var _live_from: int = 1                 # guest: the peer id whose tab is on the big screen (1 = host)
+## Who holds the big screen remote (peer id, 1 = the host): host and guests (from the roster). See
+## "Big screen remote".
+var _remote_id: int = 1
+var _remote_setting: bool = false      # host: _set_remote / a holder's request is changing screen_tab_peer
 var _live_from_name: String = ""        # guest: their name, for the sender page's messages
 ## This PC's sender page is sharing its OWN tab right now (not someone else's feed it's showing).
 ## From the sender page's status ("own"), via EventBus.capture_status_changed. A guest tells the
@@ -319,7 +323,8 @@ func get_info() -> Dictionary:
 	for id: int in _peers:
 		# synced: the host's view of whether that guest has everything (true for the host itself)
 		peers.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "me": id == me,
-			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100))})
+			"synced": id == 1 or bool(_peers[id].get("synced", true)), "sync": int(_peers[id].get("sync", 100)),
+			"remote": id == _remote_id, "asked": bool(_peers[id].get("asked", false))})
 	var q := String(AppState.get_setting("graphics_quality"))
 	return {"role": _role, "status": _status, "error": _error, "address": _address, "cohost": _is_cohost(),
 		"suggest_medium": _role == "guest" and _peers.size() > 0 and not _medium_dismissed and (q == "high" or q == "custom"),
@@ -327,7 +332,8 @@ func get_info() -> Dictionary:
 		"presenters": group_shared("presenters")}, "peers": peers, "pending": pending_guests(),
 		"waiting": _role == "guest" and not _admitted, "host_name": _host_name,
 		"syncing": _role == "guest" and _admitted and not _synced, "sync_progress": sync_progress(),
-		"reconnecting": not _rejoin.is_empty(), "aud_resyncs": _aud_resyncs}
+		"reconnecting": not _rejoin.is_empty(), "aud_resyncs": _aud_resyncs,
+		"remote": _peer_name(_remote_id) if _role != "off" else "", "has_remote": has_remote()}
 
 
 ## Host: who is waiting to be let in, [{id, name, host_ok, guest_ok}].
@@ -351,7 +357,10 @@ func is_shared(key: String) -> bool:
 
 ## True when this PC may not change it: a guest who isn't a co-host, for a group the host shares.
 ## what: a setting key, "room" or "curtain".
+## The big screen keys are the remote holder's instead (see "Big screen remote").
 func is_locked(what: String) -> bool:
+	if _role == "guest" and _is_screen(what):
+		return not has_remote() and group_shared(_group_of(what))
 	return _role == "guest" and not _is_cohost() and _group_of(what) != "" and group_shared(_group_of(what))
 
 
@@ -423,6 +432,7 @@ func host() -> void:
 	_peers = {1: {"name": display_name(), "cohost": true, "avatar": _random_token(16), "keyed": _my_avatar_keyed()}}
 	_streamer_slots.clear()
 	_aud_check_wait = AUD_CHECK_GAP
+	_remote_id = 1
 	_cams.clear()
 	_video.clear()
 	AppState.net_gate = _gate
@@ -469,6 +479,7 @@ func join(rejoining: bool = false) -> void:
 	_session_ms = Time.get_ticks_msec()
 	DebugLog.note("net", "joining %s, version %s" % [url, _version()])   # (DebugLog hides the address)
 	_peers.clear()
+	_remote_id = 1
 	_refused = ""
 	_host_ended = false
 	_rtt = 0.0
@@ -799,6 +810,8 @@ func _on_peer_disconnected(id: int) -> void:
 	_guest_looks.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
+	if _remote_id == id:
+		_set_remote(1)                # (the remote goes back to the host)
 	_send_roster()
 	_update_audience_sharing()
 	_set_status("%s left. If they come back within %d minutes, their part of the audience is still there." % [n, int(AWAY_KEEP_S / 60.0)]
@@ -856,6 +869,7 @@ func _close(message: String, is_error: bool = false, keep_audience: bool = false
 			EventBus.net_peer_left.emit(id)
 	_role = "off"
 	_peers.clear()
+	_remote_id = 1
 	_nonces.clear()
 	_hello_names.clear()
 	for id: int in _pending:
@@ -913,6 +927,13 @@ func _gate(what: String, value: Variant) -> bool:
 		return true
 	if what != "video" and (_group_of(what) == "" or not group_shared(_group_of(what))):
 		return true          # not shared (or not any more): this PC's own
+	if _is_screen(what):
+		# the big screen belongs to whoever holds the remote, not to the co-hosts
+		if has_remote():
+			_net_request.rpc_id(1, what, value)
+		else:
+			EventBus.status_message.emit("%s has the big screen remote. Ask for it in the Esc menu > Co-stream." % _peer_name(_remote_id), false)
+		return false
 	if _is_cohost():
 		_net_request.rpc_id(1, what, value)
 	else:
@@ -951,6 +972,15 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 			_emit_live()
 			_to_guests("_net_live", [_live_info_for_guests()])
 	# (screen_tab_peer: whose tab is on the big screen; a co-host can change it too, through the host)
+	if key == "screen_tab_peer" and _role == "host" and not _remote_setting:
+		# the host picked whose tab is on the big screen itself: the remote goes with it
+		var to := 1
+		for id: int in _peers:
+			if id != 1 and String(_peers[id]["name"]) == String(value):
+				to = id
+		if to != _remote_id:
+			_remote_id = to
+			_send_roster()
 	if (key == "together_live_feed" or key == "together_live_relay" or key == "screen_tab_peer") and _role == "host":
 		_emit_live()
 		_to_guests("_net_live", [_live_info_for_guests()])
@@ -1117,12 +1147,16 @@ func _net_curtain(closed: bool, style: String) -> void:
 func _net_roster(list: Array) -> void:
 	if not _from_host():
 		return
+	var had_remote := _admitted and has_remote()
 	_peers.clear()
+	_remote_id = 1
 	for p: Variant in list:
 		if p is Dictionary and (p as Dictionary).get("id") is int:
 			var av := String(p.get("avatar", ""))
 			_peers[int(p["id"])] = {"name": _clean_name(String(p.get("name", ""))), "cohost": bool(p.get("cohost", false)),
-				"avatar": av if _token_ok(av) else "", "keyed": bool(p.get("keyed", false))}
+				"avatar": av if _token_ok(av) else "", "keyed": bool(p.get("keyed", false)), "asked": bool(p.get("asked", false))}
+			if bool(p.get("remote", false)):
+				_remote_id = int(p["id"])
 	if not _admitted:
 		_admitted = true
 		EventBus.net_confirm_closed.emit(1)
@@ -1133,6 +1167,9 @@ func _net_roster(list: Array) -> void:
 			_set_status("Joined %s's session. The host controls the room, curtain and presenters." % _host_name)
 		_net_tab_sharing.rpc_id(1, _own_tab)    # (in case the host puts this PC's tab on the big screen)
 		_net_avatar_keyed.rpc_id(1, _my_avatar_keyed())   # (podiums showing my avatar key it on every PC)
+	if _admitted and has_remote() != had_remote:
+		EventBus.status_message.emit("You have the big screen remote: what you show is on everyone's big screen." if has_remote()
+			else "%s has the big screen remote now." % _peer_name(_remote_id), false)
 	_refresh_sources()
 	_emit_state()
 	_emit_live()
@@ -1149,7 +1186,11 @@ func _net_left(peer_id: int) -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _net_request(what: String, value: Variant) -> void:
 	var id := multiplayer.get_remote_sender_id()
-	if _role != "host" or not _peers.has(id) or not bool(_peers[id]["cohost"]):
+	if _role != "host" or not _peers.has(id):
+		return
+	# the big screen (and pausing it for everyone) is the remote holder's; the rest is the co-hosts'
+	var allowed := id == _remote_id if (_is_screen(what) or what == "react_pause") else bool(_peers[id]["cohost"])
+	if not allowed:
 		return
 	if what == "react_pause":
 		if value is bool:
@@ -1167,7 +1208,9 @@ func _net_request(what: String, value: Variant) -> void:
 		if value is String and value != "" and is_web_address(value):
 			EventBus.file_play_requested.emit(value)
 	elif _setting_ok(what, value):
+		_remote_setting = true          # (a holder showing someone else's tab keeps the remote)
 		AppState.set_setting(what, value)
+		_remote_setting = false
 
 
 ## Guest: applies a host setting past the gate. A presenter source that only exists on the host's
@@ -2002,8 +2045,10 @@ func _emit_live() -> void:
 		if _live_from == multiplayer.get_unique_id():
 			info = {"role": "publish", "id": _live_id, "key": _live_key, "live": true, "relay": _live_relay}
 		else:
+			# auto: the sender page follows the big screen without a Watch click (sound may still need
+			# one click on the page: browsers only play sound after one)
 			info = {"role": "view", "id": _live_id, "key": _live_key, "live": _live_on, "relay": _live_relay,
-				"from_name": "" if _live_from == 1 else _live_from_name}
+				"from_name": "" if _live_from == 1 else _live_from_name, "auto": true}
 	# the session key, the quality and the podium list go along even when the big screen isn't shared
 	# (the avatars use them)
 	if _role != "off":
@@ -2364,10 +2409,10 @@ func _on_react_pause(paused: bool) -> void:
 	if _role == "host":
 		_to_guests("_net_react_pause", [paused])
 	elif _role == "guest" and _admitted and _connected():
-		if _is_cohost():
+		if has_remote():
 			_net_request.rpc_id(1, "react_pause", paused)
 		else:
-			EventBus.status_message.emit("Paused on your PC only. The host or a co-host pauses for everyone.", false)
+			EventBus.status_message.emit("Paused on your PC only. Whoever has the big screen remote pauses for everyone.", false)
 
 
 ## Guest: the host paused / unpaused for everyone.
@@ -2381,6 +2426,80 @@ func _apply_react_pause(paused: bool) -> void:
 	_applying_pause = true
 	AppState.set_react_paused(paused)
 	_applying_pause = false
+
+
+# ── Big screen remote ─────────────────────────────────────────
+## One person holds the big screen remote: the host at the start, then whoever it's passed to. The
+## holder decides what everyone's big screen shows (their own shared tab: screen_tab_peer follows
+## the holder; a web video; someone's avatar, screen_peer) and pauses for everyone. Co-hosts keep
+## the room, curtain and podiums, not the big screen. A guest can ask for it (the host sees "asked"
+## in the Esc menu > Co-stream); the holder can pass it on or give it back; it goes back to the host
+## when the holder leaves. The host can always take it back. Set by the Esc menu and the Co-stream tab.
+
+## The settings the holder controls ("video" is a web video for the big screen, see _gate).
+const SCREEN_KEYS: Array[String] = ["screen_peer", "screen_tab_peer"]
+
+
+func _is_screen(what: String) -> bool:
+	return what == "video" or SCREEN_KEYS.has(what)
+
+
+## True when this PC holds the remote (also true outside a session: it's all this PC's then).
+func has_remote() -> bool:
+	if _role == "host":
+		return _remote_id == 1
+	if _role == "guest":
+		return _remote_id == multiplayer.get_unique_id()
+	return true
+
+
+## Host: give the remote to someone (1 = take it back). The holder (a guest): pass it on or give it
+## back (to 1).
+func pass_remote(peer_id: int) -> void:
+	if _role == "host":
+		_set_remote(peer_id)
+	elif _role == "guest" and has_remote() and _connected():
+		_net_remote_pass.rpc_id(1, peer_id)
+
+
+## Guest: ask the host for the remote (want = false takes the question back).
+func ask_remote(want: bool = true) -> void:
+	if _role == "guest" and _admitted and _connected() and not has_remote():
+		_net_remote_ask.rpc_id(1, want)
+
+
+## Host: the remote goes to this person (anyone not in the session = the host). Their shared tab
+## becomes the big screen's, and everyone hears who has it.
+func _set_remote(peer_id: int) -> void:
+	if not _peers.has(peer_id):
+		peer_id = 1
+	_remote_id = peer_id
+	_peers[peer_id]["asked"] = false
+	_remote_setting = true
+	AppState.set_setting("screen_tab_peer", "" if peer_id == 1 else String(_peers[peer_id]["name"]))
+	_remote_setting = false
+	_set_status("You have the big screen remote." if peer_id == 1 else "%s has the big screen remote." % _peer_name(peer_id))
+	DebugLog.note("net", "big screen remote -> #%d" % peer_id)
+	_send_roster()
+
+
+## Host: a guest asks for the remote (or takes the question back).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_remote_ask(want: bool) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or id == _remote_id:
+		return
+	_peers[id]["asked"] = want
+	if want:
+		EventBus.status_message.emit("%s asks for the big screen remote (Esc menu > Co-stream: Give remote)." % _peer_name(id), false)
+	_send_roster()
+
+
+## Host: the guest holding the remote passes it on (1 = back to the host).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_remote_pass(to: int) -> void:
+	if _role == "host" and multiplayer.get_remote_sender_id() == _remote_id:
+		_set_remote(to)
 
 
 ## True when this PC's own content is what the big screen shows (no session, the host showing its
@@ -2942,7 +3061,7 @@ func _send_roster() -> void:
 	var list: Array = []
 	for id: int in _peers:
 		list.append({"id": id, "name": String(_peers[id]["name"]), "cohost": bool(_peers[id]["cohost"]), "avatar": String(_peers[id].get("avatar", "")),
-			"keyed": bool(_peers[id].get("keyed", false))})
+			"keyed": bool(_peers[id].get("keyed", false)), "remote": id == _remote_id, "asked": bool(_peers[id].get("asked", false))})
 	_to_guests("_net_roster", [list])
 	_emit_state()
 	_emit_live()            # (the podium list changed)
