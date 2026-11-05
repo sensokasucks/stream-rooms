@@ -234,6 +234,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_share_presenters": true,
 	"together_shared_audience": true, # host: everyone's chat sits in one audience, the same on every PC
 	"together_audience_areas": true,  # host: each streamer's viewers get their own part of the audience
+	"together_streamer_looks": false, # host: with one audience, each streamer's viewers keep that streamer's looks (bubbles, silhouettes)
 	"together_live_feed": true,  # host: the tab shared in the sender page also goes to the guests (VDO.Ninja)
 }
 

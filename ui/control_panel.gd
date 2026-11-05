@@ -1872,6 +1872,9 @@ func _build_together_tab() -> Control:
 	var areas := _check("together_audience_areas", "Each streamer's viewers sit together")
 	areas.tooltip_text = "Host: with one audience, each streamer's viewers get their own part of it. Two of you: left and right halves; four: a quarter each. The big crowd sections are shared out the same way."
 	v.add_child(areas)
+	var own_looks := _check("together_streamer_looks", "Viewers keep their streamer's looks")
+	own_looks.tooltip_text = "Host: with one audience, each chatter shows in the bubbles and silhouettes of the streamer whose chat they came from, as set on that streamer's own Stream Core (Audience looks). Off: everyone shows in your looks."
+	v.add_child(own_looks)
 	var cams := _check("together_show_cameras", "Show the others' cameras")
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)

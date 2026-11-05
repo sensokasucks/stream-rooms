@@ -23,13 +23,15 @@ extends Node
 ##
 ## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
 ## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
-## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Live feed
+## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Each streamer's own looks, Live feed
 ## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
 ## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
 ## Network protocol number, checked in the password step along with the app version. Raise it when
 ## the RPCs change in a way older copies can't follow.
-const PROTOCOL: int = 3       # 2: guests send chat in batches (_net_guest_chat_batch); 3: reaction pictures and audience looks travel
+## 2: guests send chat in batches (_net_guest_chat_batch); 3: reaction pictures and audience looks travel;
+## 4: guests send their own looks and the host sends each streamer's (_net_guest_looks, _net_streamer_looks).
+const PROTOCOL: int = 4
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -87,6 +89,9 @@ const LOOKS_MAX_CHARS: int = 200000
 const NET_LOOK_FILE: String = "user://silhouettes/net_%s.png"
 
 # Session state below. Most of it only means something for one role; the comment says which.
+## Host: each guest's own audience looks (peer id -> looks as _looks_from_wire makes them), for
+## "Viewers keep their streamer's looks" (see "Each streamer's own looks").
+var _guest_looks: Dictionary = {}
 var _shared: Dictionary = {}            # setting key -> true
 var _host_shares: Dictionary = {}       # guest: group -> bool, as the host last said (empty = all)
 var _role: String = "off"               # "off" | "host" | "guest"
@@ -669,6 +674,7 @@ func _on_peer_disconnected(id: int) -> void:
 	_peers.erase(id)
 	_cams.erase(id)
 	_pic_sent.erase(id)
+	_guest_looks.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
 	_send_roster()
@@ -737,6 +743,8 @@ func _close(message: String, is_error: bool = false) -> void:
 	_pic_sent.clear()
 	_pic_waiting.clear()
 	_clear_net_looks()
+	_guest_looks.clear()
+	_apply_streamer_looks({})
 	AudienceManager.set_mirror(false)
 	AudienceManager.set_streamer_areas(0)
 	_address = ""
@@ -781,6 +789,10 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_update_audience_sharing()
 	if AudienceStyle.LOOK_KEYS.has(key) and _sharing_audience():
 		_send_looks()          # (the host saved new looks in its Stream Core)
+	elif AudienceStyle.LOOK_KEYS.has(key) and _role == "guest" and _aud_shared:
+		_send_own_looks()      # (this guest saved new looks in its own Stream Core)
+	if key == "together_streamer_looks" and _role == "host":
+		_update_streamer_looks()
 	if key.begins_with("together_screen_") or key in ["together_avatar_height", "together_avatar_fps", "together_avatar_kbps"]:
 		if _role == "host":
 			_emit_live()
@@ -1233,6 +1245,7 @@ func _update_audience_sharing() -> void:
 	if on:
 		_roster_wait = 0.1
 		_send_looks()
+	_update_streamer_looks()
 
 
 ## Whose viewer: 0 = the host, then the guests in the order they joined (peer ids grow).
@@ -1376,6 +1389,9 @@ func _net_aud_mode(shared: bool) -> void:
 		AudienceManager.set_mirror(shared)
 		if not shared:
 			_clear_net_looks()     # (this PC's own audience, with its own looks again)
+			_apply_streamer_looks({})
+		else:
+			_send_own_looks()      # (the host uses them if "Viewers keep their streamer's looks" is on)
 		_emit_state()
 
 
@@ -1423,11 +1439,24 @@ func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
 func _send_looks(to: int = -1) -> void:
 	if not _sharing_audience():
 		return
-	var pictures := {}          # "net:<md5>" -> [picture png, its "_shape" png]
 	var looks := {}
 	for k: String in AudienceStyle.LOOK_KEYS:
 		looks[k] = String(AppState.get_setting(k))
-	looks = _map_figures(looks, func(f: Dictionary) -> Dictionary:
+	var pictures := {}          # "net:<md5>" -> [picture png, its "_shape" png]
+	looks = _looks_to_wire(looks, pictures)
+	for id: int in _peers:
+		if id == 1 or (to > 0 and id != to):
+			continue
+		_give_look_pictures(id, pictures)
+		_net_looks.rpc_id(id, looks)
+
+
+## A set of looks (LOOK_KEYS key -> text) made ready to send: each custom silhouette picture file is
+## swapped for its "net:<md5>" name, and its bytes are added to `pictures` ("net:<md5>" -> [png,
+## shape png]) for _give_look_pictures. Used for the host's looks (_send_looks), a guest's own looks
+## going to the host (_send_own_looks) and every streamer's looks (_update_streamer_looks).
+static func _looks_to_wire(looks: Dictionary, pictures: Dictionary) -> Dictionary:
+	return _map_figures(looks, func(f: Dictionary) -> Dictionary:
 		var file := String(f.get("file", ""))
 		if String(f.get("shape", "")) != "custom" or not file.begins_with(AudienceStyle.PICTURE_DIR):
 			return f
@@ -1441,16 +1470,20 @@ func _send_looks(to: int = -1) -> void:
 		pictures[key] = [png, shape]
 		f["file"] = key
 		return f)
-	for id: int in _peers:
-		if id == 1 or (to > 0 and id != to):
-			continue
-		if not _pic_sent.has(id):
-			_pic_sent[id] = {}
-		for key: String in pictures:
-			if not (_pic_sent[id] as Dictionary).has("look:" + key):
-				_pic_sent[id]["look:" + key] = true
+
+
+## Sends silhouette pictures (from _looks_to_wire) to one PC unless it has them already: the host
+## to a guest (_net_look_picture), a guest to the host (_net_guest_look_picture, peer 1).
+func _give_look_pictures(id: int, pictures: Dictionary) -> void:
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	for key: String in pictures:
+		if not (_pic_sent[id] as Dictionary).has("look:" + key):
+			_pic_sent[id]["look:" + key] = true
+			if _role == "host":
 				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1])
-		_net_looks.rpc_id(id, looks)
+			else:
+				_net_guest_look_picture.rpc_id(1, key, pictures[key][0], pictures[key][1])
 
 
 ## Every silhouette style inside a set of looks (the main one in audience_silhouette and each saved
@@ -1480,7 +1513,22 @@ static func _parse_json(text: String) -> Variant:
 ## NET_LOOK_FILE (and its "_shape" copy), where AudienceStyle reads pictures from.
 @rpc("authority", "call_remote", "reliable")
 func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
-	if not _from_host() or not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
+	if _from_host():
+		_save_look_picture(key, png, shape)
+
+
+## Host: one of a guest's own silhouette pictures (for "Viewers keep their streamer's looks"; the
+## guest's looks follow in _net_guest_looks). Kept the same way as the host's pictures on a guest.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if _role == "host" and _peers.has(multiplayer.get_remote_sender_id()):
+		_save_look_picture(key, png, shape)
+
+
+## A silhouette picture from another PC, checked (its name must be its own MD5, both files PNGs
+## within PictureFile's limits), then written as NET_LOOK_FILE and its "_shape" copy.
+func _save_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
 			or PictureFile.kind_of(shape) != "png" or shape.size() > PictureFile.MAX_BYTES or PictureFile.too_big(shape):
 		return
 	var path := NET_LOOK_FILE % key.substr(EmoteCache.NET_PREFIX.length())
@@ -1497,19 +1545,25 @@ func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray
 func _net_looks(looks: Dictionary) -> void:
 	if not _from_host() or not _aud_shared:
 		return
+	_apply_net_looks(_looks_from_wire(looks))
+
+
+## Looks that came over the network, made safe to show here: only LOOK_KEYS, length-capped, and each
+## "net:<md5>" picture name swapped for this PC's copy (or the classic bust when it didn't come).
+## Never a path from the other PC.
+static func _looks_from_wire(looks: Dictionary) -> Dictionary:
 	var clean := {}
 	for k: String in AudienceStyle.LOOK_KEYS:
 		clean[k] = String(looks.get(k, "")).left(LOOKS_MAX_CHARS)
-	clean = _map_figures(clean, func(f: Dictionary) -> Dictionary:
+	return _map_figures(clean, func(f: Dictionary) -> Dictionary:
 		var file := String(f.get("file", ""))
 		var here := NET_LOOK_FILE % file.substr(EmoteCache.NET_PREFIX.length()) if _is_picture_key(file) else ""
 		if here != "" and FileAccess.file_exists(here):
 			f["file"] = here
 		elif String(f.get("shape", "")) == "custom" or file != "":
 			f["file"] = ""
-			f["shape"] = "classic"      # (never a path from the host's PC; a picture that didn't come: the classic bust)
+			f["shape"] = "classic"
 		return f)
-	_apply_net_looks(clean)
 
 
 ## Guest: shows these looks (AudienceStyle.net_looks; {} = this PC's own again). Tells the audience
@@ -1530,6 +1584,84 @@ func _apply_net_looks(looks: Dictionary) -> void:
 func _clear_net_looks() -> void:
 	if not AudienceStyle.net_looks.is_empty():
 		_apply_net_looks({})
+
+
+# ── Each streamer's own looks ────────────────────────────
+## "Viewers keep their streamer's looks" (together_streamer_looks, host's Together tab): in the one
+## shared audience, each chatter is drawn in the looks of the streamer whose chat they came from. A
+## guest sends its own looks (from its own Stream Core) to the host; the host keeps them per guest
+## and sends every guest the whole table, streamer index -> looks (AudienceStyle.streamer_looks).
+## The host's own viewers (index 0) need no entry: they get the main looks, which are the host's
+## on every PC.
+
+## Guest: this PC's own looks (and their pictures) to the host. Sent when the host starts sharing its
+## audience and each time this PC's Stream Core changes them; the host only uses them while the
+## option is on.
+func _send_own_looks() -> void:
+	if _role != "guest" or not _aud_shared:
+		return
+	var looks := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		looks[k] = String(AppState.get_setting(k))
+	var pictures := {}
+	looks = _looks_to_wire(looks, pictures)
+	_give_look_pictures(1, pictures)
+	_net_guest_looks.rpc_id(1, looks)
+
+
+## Host: a guest's own looks (see _send_own_looks).
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_looks(looks: Dictionary) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	_guest_looks[id] = _looks_from_wire(looks)
+	_update_streamer_looks()
+
+
+## Host: works out the table (streamer index -> looks) and shows it here and on every guest; an
+## empty table while the option or the shared audience is off. Called when a guest's looks arrive,
+## someone joins or leaves, and the option or the shared audience is switched.
+func _update_streamer_looks() -> void:
+	if _role != "host":
+		return
+	var table := {}
+	if _sharing_audience() and bool(AppState.get_setting("together_streamer_looks")):
+		for id: int in _guest_looks:
+			if _peers.has(id):
+				table[_streamer_index(id)] = _guest_looks[id]
+	_apply_streamer_looks(table)
+	var wire := {}
+	var pictures := {}
+	for i: int in table:
+		wire[i] = _looks_to_wire(table[i], pictures)
+	for id: int in _peers:
+		if id != 1:
+			_give_look_pictures(id, pictures)
+			_net_streamer_looks.rpc_id(id, wire)
+
+
+## Guest: every streamer's looks from the host (see _update_streamer_looks).
+@rpc("authority", "call_remote", "reliable")
+func _net_streamer_looks(table: Dictionary) -> void:
+	if not _from_host():
+		return
+	var clean := {}
+	if _aud_shared:
+		for i: Variant in table:
+			if i is int and int(i) >= 1 and int(i) <= MAX_GUESTS and table[i] is Dictionary:
+				clean[int(i)] = _looks_from_wire(table[i])
+	_apply_streamer_looks(clean)
+
+
+## Shows a table of streamer looks here (AudienceStyle.streamer_looks; {} = off) and redraws the
+## audience: AudienceView redraws silhouettes and bubbles on an "audience_style_groups" change.
+func _apply_streamer_looks(table: Dictionary) -> void:
+	if table.is_empty() and AudienceStyle.streamer_looks.is_empty():
+		return
+	AudienceStyle.streamer_looks = table
+	AudienceStyle.streamer_looks_version += 1
+	EventBus.setting_changed.emit("audience_style_groups", AppState.get_setting("audience_style_groups"))
 
 
 # ── Live feed ────────────────────────────────────────────────
