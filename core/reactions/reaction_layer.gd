@@ -471,11 +471,17 @@ func _object(text: String, scale_by: float = 1.0) -> Label3D:
 
 ## What an effect throws / drops: the reaction's picture (Core's "img:name" object, sent as
 ## params.object_image) or else the emoji / emote text. A Sprite3D or a Label3D.
+## A reaction from another PC in a Together session carries {"net": key} instead of a Core
+## address: NetSession sends the picture's bytes along and EmoteCache keeps them as "net-picture:<key>".
 func _thing(p: Dictionary, fallback: String, scale_by: float) -> Node3D:
 	var pic: Variant = p.get("object_image")
-	if not (pic is Dictionary) or String((pic as Dictionary).get("url", "")) == "":
+	var url := ""
+	if pic is Dictionary:
+		var net := String((pic as Dictionary).get("net", ""))
+		var core := String((pic as Dictionary).get("url", ""))
+		url = EmoteCache.NET_PREFIX + net if net != "" else (_core_url(core) if core != "" else "")
+	if url == "":
 		return _object(String(p.get("object", fallback)), scale_by)
-	var url := _core_url(String((pic as Dictionary)["url"]))
 	var s := Sprite3D.new()
 	s.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	s.shaded = false
@@ -521,6 +527,12 @@ func _thing(p: Dictionary, fallback: String, scale_by: float) -> Node3D:
 	_live += 1
 	s.tree_exiting.connect(func() -> void: _live -= 1)
 	return s
+
+
+## The full address a reaction picture is downloaded from (and kept under in EmoteCache).
+## NetSession uses it to find the bytes of a picture this PC showed, to send them to the other PCs.
+static func picture_url(path: String) -> String:
+	return _core_url(path)
 
 
 ## Core's relative picture URL ("/reactions/images/boot.png?v=…") on the Core the game is

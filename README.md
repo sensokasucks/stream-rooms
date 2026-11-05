@@ -495,7 +495,8 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     *Random mix...* lets you tick several silhouettes: each chatter in that group gets one of
     them, picked from their name, so they keep it every time they chat. Someone in more than
     one group gets the first one in the list that has a look set, so a mod who subscribes gets
-    the Mods look. In a Together session, each PC uses the looks from its own Core.
+    the Mods look. In a Together session, each PC uses the looks from its own Core, except
+    while the host shares one audience: then guests show the host's looks (see Streaming together).
   Needs a Stream Core with the Audience looks page. Until you change something there, Stream
   Rooms keeps the looks it had.
 - **Glow for highlighted chatter** (Audience tab, on by default): when you highlight a chat
@@ -760,7 +761,7 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 
 - **Room**, **stage curtain**, **House lights** and the curtain's look (sign, colour, speed).
 - **Presenters**: who's on set and what they show. A **web page** presenter (for example a VDO.Ninja link) shows for everyone, and so does **Someone's avatar** (see below). A presenter showing the host's **camera**, **browser tab**, **NDI** or **Spout** only exists on the host's PC, so guests see a silhouette there instead.
-- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture shows its emoji on the other PCs, because the picture lives on the sender's Stream Core.
+- **Chat reactions** from every channel play for everyone: a tomato thrown by a guest's viewer lands in everyone's room, in about the same place. A reaction with its own picture (for example a boot picture for `!boot`) shows that picture on every PC: the picture is sent along the first time it's used in a session. Pictures over 3 MB still show their emoji on the other PCs.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
 
@@ -782,6 +783,10 @@ seats, with the same speech bubbles:
   big crowd sections are shared out the same way.
 - A viewer of a guest's channel can be thrown at with a reaction from any channel, because
   everyone sees the same seats.
+- Guests also show the **host's audience looks**: the speech bubbles, silhouettes, saved looks
+  and group looks from the host's Stream Core (Audience looks page), custom silhouette pictures
+  included. So the same chatter looks the same on every stream. The guest's own looks come back
+  when the host unticks this or the session ends (even after a crash, at the next start).
 - When a guest leaves, their copy goes back to its own audience.
 
 Untick it and each of you has your own audience again.

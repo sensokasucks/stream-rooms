@@ -500,7 +500,7 @@ Nothing is shared and nothing syncs until both of you have said yes. Until then 
 
 - The **room**, the **stage curtain** and its look, and the **house lights**.
 - **Presenters**: who's on set, what they show, name tags and podium pictures. A web page or **Someone's avatar** podium shows for everyone. A podium showing the host's own camera, tab, NDI or Spout only exists on the host's PC, so guests see a silhouette there.
-- **Chat reactions** from every channel play for everyone.
+- **Chat reactions** from every channel play for everyone. A reaction with its own picture (like a boot for `!boot`) shows that picture on every PC; it is sent along the first time it's used.
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core.
 
@@ -518,7 +518,7 @@ Every guest draws the whole room while streaming. When a guest joins on High or 
 
 ### One audience for everyone's chat
 
-With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat.
+With **One audience for everyone's chat** ticked (host), every streamer's viewers sit in the same audience, and every stream shows the same people in the same seats with the same bubbles. The host's seating settings decide who sits where. **Each streamer's viewers sit together** gives each streamer's viewers their own part of the room (halves for two, quarters for three or four). Each guest's own chat windows still show only their own chat. Guests also show the host's audience looks (bubbles, silhouettes and group looks, custom silhouette pictures included) and get their own back when this is unticked or the session ends.
 
 ### Watching a video together
 

@@ -165,3 +165,7 @@ signal net_confirm_closed(peer_id: int)
 ## The live feed for the sender page (the host's shared tab, sent to guests through VDO.Ninja):
 ## {role: "off" | "publish" | "view", id: String, key: String, live: bool}. ScreenFeed passes it on.
 signal live_feed_changed(info: Dictionary)
+## NetSession -> CoreLooks: a Together guest starts (true) / stops (false) showing the host's audience
+## looks, while it mirrors the host's audience. Meanwhile CoreLooks keeps looks from this PC's own
+## Stream Core aside, and applies the latest of them when it's false again.
+signal net_looks_mirrored(on: bool)

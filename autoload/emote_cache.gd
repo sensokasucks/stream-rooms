@@ -8,6 +8,8 @@ extends Node
 ## Animated WebP can't be decoded, so those stay as their text name.
 ##   is_animated(tex): viewports showing it must redraw every frame to play it.
 ##   set_fallback(url, still): if url can't be shown (e.g. animated WebP), load still in its place.
+##   get_bytes(url) / put_bytes(url, body): the file behind a picture, so NetSession can send a
+##   reaction picture to the other PCs in a Together session and they can show it ("net-picture:<key>").
 ## Busy chat: the round profile pictures are made on worker threads from the picture's bytes (no
 ## read-back from the graphics card, no per-pixel work on the main thread), a few finished ones
 ## per frame; and both caches have a size budget (MAX_CACHE_BYTES): the pictures used longest ago
@@ -45,6 +47,9 @@ var max_cache_bytes: int = MAX_CACHE_BYTES
 static var _masks: Dictionary = {} # size -> {"mask": Image, "edge": PackedInt32Array, "alpha": PackedFloat32Array}
 ## Prefix that marks a round picture's key in _sizes / _used (CIRCLE + url), apart from the plain one.
 const CIRCLE := "○"
+## Address prefix of pictures that came from another PC in a Together session (NetSession hands their
+## bytes to put_bytes). They are never downloaded: until the bytes arrive they're simply not ready.
+const NET_PREFIX := "net-picture:"
 
 
 # _process only runs while worker-thread jobs are waiting (GIF decodes, round pictures).
@@ -73,9 +78,41 @@ func get_texture(url: String) -> Texture2D:
 			if disk:
 				_store(url, disk)
 				return disk
+		if url.begins_with(NET_PREFIX):
+			return null      # (its bytes come from NetSession, see put_bytes; there's nothing to download)
 		_queue.append(url)
 		_pump()
 	return null
+
+
+## The picture file behind url, as downloaded (the disk copy), or empty when it isn't here (yet).
+## NetSession calls it to send a reaction picture to the other PCs in a Together session.
+func get_bytes(url: String) -> PackedByteArray:
+	var path := _disk_path(url)
+	if url == "" or not FileAccess.file_exists(path):
+		return PackedByteArray()
+	return FileAccess.get_file_as_bytes(path)
+
+
+## A picture whose bytes came some other way than a download (NetSession: a reaction picture another
+## PC in the session sent). It's decoded, kept on disk under url like a download, and
+## EventBus.emote_ready(url) fires, so a reaction already in the air shows it as soon as it's here.
+## The caller checks the size and type first (the bytes came over the network).
+func put_bytes(url: String, body: PackedByteArray) -> void:
+	if url == "" or body.is_empty() or body.size() > MAX_BYTES or _decoding.has(url):
+		return
+	if _textures.has(url):
+		EventBus.emote_ready.emit(url)     # (already here: the same key means the same picture)
+		return
+	_failed.erase(url)
+	if GifDecoder.is_gif(body):
+		_decode_gif(url, body, true)
+		return
+	var tex := _decode(body)
+	if tex:
+		_store(url, tex)
+		_save(url, body)
+		EventBus.emote_ready.emit(url)
 
 
 ## True for textures that change over time (animated emotes).

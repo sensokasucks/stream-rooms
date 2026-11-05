@@ -180,6 +180,12 @@ func _ready() -> void:
 	_check(got.size() >= 2, "a random mix gives different chatters different silhouettes (%d kinds)" % got.size())
 	await _secs(0.5)
 	await _shot(out + "/looks_from_core.png")
+	# streaming together: while a guest shows the host's looks, this PC's Core looks wait, then apply
+	EventBus.net_looks_mirrored.emit(true)
+	feed._handle(JSON.stringify({"type": "audience_looks", "data": {"edited": true, "bubble_theme": "dark"}}))
+	_check(String(AppState.get_setting("audience_bubble_theme")) == "custom", "Core's looks wait while a Together guest shows the host's")
+	EventBus.net_looks_mirrored.emit(false)
+	_check(String(AppState.get_setting("audience_bubble_theme")) == "dark", "and apply once the host's looks are gone")
 	# the Audience tab's button opens Core's page: check the address it builds
 	_check(ChatFeed.core_url("/admin/#looks") == "http://127.0.0.1:9/admin/#looks", "the Audience looks button points at Core's page")
 

@@ -16,6 +16,10 @@ extends Node
 ## user://silhouettes/ as core_<name>.png); the list of what is here is PICTURES_FILE. Until a
 ## picture is here, a style using it shows the classic silhouette; the looks are applied again
 ## when the download finishes.
+##
+## Streaming together: while a guest mirrors the host's audience it shows the host's looks instead
+## (NetSession, "Audience looks"). EventBus.net_looks_mirrored says when: packets from this PC's Core
+## are then only remembered (and their pictures downloaded), and applied when it ends.
 
 ## Which Core pictures are here: {stored name: {"version": int, "file": "user://silhouettes/..."}}.
 const PICTURES_FILE: String = "user://silhouettes/core_pictures.json"
@@ -28,14 +32,25 @@ const MAX_PICTURE_BYTES: int = 16 * 1024 * 1024
 var _pictures: Dictionary = {}       # PICTURES_FILE's contents
 var _active: Dictionary = {}         # stored name -> HTTPRequest while it downloads
 var _last: Dictionary = {}           # the last packet's data, applied again after a download
+var _held: bool = false              # a Together guest shows the host's looks now (EventBus.net_looks_mirrored)
 
 
 func _ready() -> void:
 	_pictures = _read_json(PICTURES_FILE)
+	EventBus.net_looks_mirrored.connect(_on_net_looks_mirrored)
+
+
+## NetSession: the host's looks are shown here (true), or this PC's own are back (false). When they're
+## back, the latest packet from this PC's Core is applied (it may have changed meanwhile).
+func _on_net_looks_mirrored(on: bool) -> void:
+	_held = on
+	if not on and not _last.is_empty():
+		apply(_last)
 
 
 ## One "audience_looks" packet's data from Core. Ignored until the streamer has saved looks in
-## Core once ("edited"), so a fresh Core never resets looks that were set before.
+## Core once ("edited"), so a fresh Core never resets looks that were set before. Called by ChatFeed
+## for each packet, after each picture download, and when a Together guest's own looks come back.
 func apply(data: Dictionary) -> void:
 	if not bool(data.get("edited", false)):
 		return
@@ -45,6 +60,8 @@ func apply(data: Dictionary) -> void:
 		var p: Variant = pics[stored]
 		if p is Dictionary and not _is_here(stored, int((p as Dictionary).get("version", 0))):
 			_download(stored, String((p as Dictionary).get("url", "")), int((p as Dictionary).get("version", 0)))
+	if _held:
+		return            # a Together guest shows the host's looks: these wait (see _on_net_looks_mirrored)
 	var theme := String(data.get("bubble_theme", "light"))
 	_put_setting("audience_bubble_theme", theme if theme in ["light", "dark", "custom"] else "light")
 	_put_setting("audience_bubble_style", _json(data.get("bubble")))
