@@ -159,7 +159,7 @@ func _ready() -> void:
 	for l in root.find_children("*", "Label", true, false):
 		if (l as Label).text.begins_with("Up to four people"):
 			tail = (l as Label).text
-	_check(tail != "" and not tail.contains("100.x") and tail.contains("Copy address"), "the Together hint describes Copy address, not typing a Tailscale address")
+	_check(tail != "" and not tail.contains("100.x") and tail.contains("Copy address"), "the Co-stream hint describes Copy address, not typing a Tailscale address")
 
 	# ── chat windows: the Show tick carries the name; the ⚠ opens the fold ──
 	var left_show: CheckBox = panel._checks["chat_left"]

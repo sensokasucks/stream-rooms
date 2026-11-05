@@ -368,7 +368,7 @@ static func _cached(key: String, make: Callable) -> Dictionary:
 	return _group_cache[key]
 
 
-# ── Each streamer's own looks (Together) ────────────────────
+# ── Each streamer's own looks (Co-stream) ────────────────────
 ## The looks of the streamer a chatter came from (streamer_looks), or {} for the main looks.
 static func _streamer_src(member: Dictionary) -> Dictionary:
 	if streamer_looks.is_empty():

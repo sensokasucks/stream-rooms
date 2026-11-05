@@ -3,7 +3,7 @@ extends Node3D
 ## Streaming together: a small floating camera with a name for everyone else in the session, so
 ## each streamer can see where the others are looking. Moves smoothly toward the latest position
 ## (updates arrive about 10 times a second) and only does work while a marker is moving.
-## Together tab > Show the others' cameras turns them off (setting "together_show_cameras").
+## Co-stream tab > Show the others' cameras turns them off (setting "together_show_cameras").
 ## main.gd adds it at start-up. Positions come from NetSession (autoload/net_session.gd) as
 ## EventBus.net_camera_moved; EventBus.net_peer_left removes a marker.
 

@@ -259,11 +259,11 @@ func _build_costream() -> void:
 	buttons.add_theme_constant_override("separation", 8)
 	_page_box.add_child(buttons)
 	if role == "off" and not bool(info.get("reconnecting", false)):
-		buttons.add_child(_btn("Host a session", "Start a session others can join, with the address and password from the control panel's Together tab.", func() -> void: NetSession.host()))
-		var join := _btn("Join", "Join the host whose address is in the control panel's Together tab.", func() -> void: NetSession.join())
+		buttons.add_child(_btn("Host a session", "Start a session others can join, with the address and password from the control panel's Co-stream tab.", func() -> void: NetSession.host()))
+		var join := _btn("Join", "Join the host whose address is in the control panel's Co-stream tab.", func() -> void: NetSession.join())
 		join.disabled = String(AppState.get_setting("together_address")).strip_edges() == ""
 		buttons.add_child(join)
-		_page_box.add_child(_hint("Your name, the password and the host's address are set in the control panel's Together tab."))
+		_page_box.add_child(_hint("Your name, the password and the host's address are set in the control panel's Co-stream tab."))
 	else:
 		if role == "host":
 			buttons.add_child(_btn("Copy invite address", "Copies the address guests need. It isn't shown on screen, so it can't end up on your stream.", func() -> void:
@@ -332,7 +332,7 @@ func _build_costream() -> void:
 	var status := String(info.get("status", ""))
 	if status != "":
 		_page_box.add_child(_hint(status))
-	_page_box.add_child(_hint("Quality, relay and Cloudflare settings are in the control panel's Together tab."))
+	_page_box.add_child(_hint("Quality, relay and Cloudflare settings are in the control panel's Co-stream tab."))
 
 
 func _build_keys() -> void:

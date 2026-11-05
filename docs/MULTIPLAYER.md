@@ -133,6 +133,6 @@ Update README.md (a new "Streaming together" section) and the tests in each phas
 
 - **Reactions:** a tomato thrown by a viewer on any channel (host or guest) plays for **everyone** in the room.
 - **Guest permissions:** only the host changes the room, curtain and screen. The host can tick **co-host** per guest to let that guest change them too.
-- **Panel:** the tab is called **Together**. Guests see host-only controls **locked** (greyed out) with a tooltip saying the host controls them, not hidden.
+- **Panel:** the tab is called **Co-stream** (it was **Together** until November 2026; the code and setting keys still say `together_` / `NetSession`, so saved settings carry over). Guests see host-only controls **locked** (greyed out) with a tooltip saying the host controls them, not hidden.
 - **Guest hardware:** joining as a guest **suggests Medium** graphics quality, and the guest can say no.
 - **Copyright:** the README states the risk plainly (done, in "Streaming together").

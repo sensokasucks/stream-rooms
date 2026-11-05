@@ -10,7 +10,7 @@ extends CanvasLayer
 ##                              _build_source_tab, _build_room_tab, _build_react_tab, _build_audio_tab
 ##                              (the Sound tab), _build_chat_tab, _build_audience_tab, _build_seating_tab,
 ##                              _build_games_tab, _build_presenters_tab, _build_together_tab.
-##                              _option and _text_setting sit between the Presenters and Together tabs.
+##                              _option and _text_setting sit between the Presenters and Co-stream tabs.
 ##   EventBus handlers          _on_*(): keep labels, menus and controls in step with the rest of the app
 ##   NDI / Spout                source menus and status lines (big screen and podiums)
 ##   What's going on            the status strip above the tabs, the message line, the video status
@@ -100,8 +100,8 @@ var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
 var _peer_menu_none: Dictionary = {}    # setting key -> the label of its "" item (default "(nobody)")
-var _avatar_camera: OptionButton        # Together tab: the camera for my avatar
-var _avatar_rows: Dictionary = {}       # Together tab: "camera" / "url" rows, shown by My avatar's source
+var _avatar_camera: OptionButton        # Co-stream tab: the camera for my avatar
+var _avatar_rows: Dictionary = {}       # Co-stream tab: "camera" / "url" rows, shown by My avatar's source
 var _size_marks: Dictionary = {}        # chat window key -> small ⚠ Label in the window's summary row
 var _size_need: Dictionary = {}         # chat window key -> text size (as the setting) that would be readable
 var _source_pick: OptionButton          # Source tab: which source's controls show
@@ -476,9 +476,9 @@ func _build_source_tab() -> Control:
 	_source_pick = OptionButton.new()
 	_source_pick.focus_mode = Control.FOCUS_ALL
 	_source_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a Streaming together session. It follows whatever starts playing.\nPicking one here doesn't change the screen: press Share / Show / Play in that section."
+	_source_pick.tooltip_text = "Which kind of source the controls below are for: a browser tab from the sender page, an NDI source, a Spout program, a video file or web link, or someone's avatar from a co-stream. It follows whatever starts playing.\nPicking one here doesn't change the screen: press Share / Show / Play in that section."
 	for it: Array in [["capture", "Browser tab (sender page)"], ["ndi", "NDI (OBS / NDI Tools)"], ["spout", "Spout (programs on this PC)"],
-			["file", "File or URL"], ["peer", "Someone's avatar (Streaming together)"]]:
+			["file", "File or URL"], ["peer", "Someone's avatar (Co-stream)"]]:
 		_source_pick.add_item(String(it[1]))
 		_source_pick.set_item_metadata(_source_pick.item_count - 1, it[0])
 	_source_pick.item_selected.connect(func(i: int) -> void:
@@ -530,9 +530,9 @@ func _build_source_tab() -> Control:
 	_fold(v, "source_capture").add_child(how)
 
 	v = peer_box
-	v.add_child(_heading("Someone's avatar (Streaming together)"))
+	v.add_child(_heading("Someone's avatar (Co-stream)"))
 	var sp := _peer_menu("screen_peer", "Whose avatar")
-	(sp.get_child(1) as Control).tooltip_text = "In a Streaming together session: put a person's avatar (their My avatar from the Together tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
+	(sp.get_child(1) as Control).tooltip_text = "In a co-stream: put a person's avatar (their My avatar from the Co-stream tab) on the big screen, at the avatar quality. Pick (nobody) to go back to your own shared tab. The host's choice goes to every PC in the session."
 	v.add_child(sp)
 
 	v = ndi_box
@@ -1442,7 +1442,7 @@ const COLOR_SAFE: Dictionary = {"kick": "009e73", "twitch": "cc79a7", "youtube":
 
 const PRESENTER_SOURCES: Array = [["silhouette", "Silhouette"], ["green", "Green screen"],
 	["camera", "Camera"], ["tab", "Tab / window"], ["web", "Web page (transparent)"], ["ndi", "NDI source"], ["spout", "Spout (this PC)"],
-	["peer", "Someone's avatar (Together)"]]
+	["peer", "Someone's avatar (Co-stream)"]]
 
 
 ## Presenters tab: who is on set, and one settings block per presenter (_build_presenter_detail);
@@ -1505,7 +1505,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	d.add_theme_constant_override("separation", 5)
 	d.add_child(_heading("Presenter %d" % n))
 	var show_row := _option(k.call("source"), "Show", PRESENTER_SOURCES)
-	(show_row.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your Streaming together session set up as My avatar (Together tab), yours included."
+	(show_row.get_child(1) as Control).tooltip_text = "What this podium shows. Someone's avatar: the picture a person in your co-stream set up as My avatar (Co-stream tab), yours included."
 	d.add_child(show_row)
 	var rows: Dictionary = {"picture": []}
 	_pres_rows.append(rows)
@@ -1599,7 +1599,7 @@ func _build_presenter_detail(n: int) -> VBoxContainer:
 	tag.tooltip_text = "A name shown above this presenter's picture, for example their channel name."
 	d.add_child(tag)
 	var pic := _text_setting(k.call("picture"), "Podium picture", "a png, jpg, webp or gif (animated gifs play)")
-	pic.tooltip_text = "A picture on the front of the podium: a logo, an avatar, a badge. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. When streaming together, guests get a copy of it."
+	pic.tooltip_text = "A picture on the front of the podium: a logo, an avatar, a badge. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. In a co-stream, guests get a copy of it."
 	var browse := _button("Browse...", func() -> void:
 		_pic_target = k.call("picture")
 		_pic_dialog.popup_centered_ratio(0.7))
@@ -1713,8 +1713,8 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 
 ## Streaming together (autoload/net_session.gd, docs/MULTIPLAYER.md).
 func _build_together_tab() -> Control:
-	var v := _tab("Together")
-	v.add_child(_heading("Streaming together"))
+	var v := _tab("Co-stream")
+	v.add_child(_heading("Co-stream"))
 	v.add_child(_hint("Up to four people in the same room. The host runs the show (room, curtain, presenters); guests fly their own camera and stream their own view. Chat reactions from every channel play for everyone. Host: pick Listen on, click Host a session, then Copy address and send it privately. Guest: paste it under Join."))
 	var name_row := _text_setting("together_name", "Your name", "shown to the others")
 	(name_row.get_child(1) as Control).tooltip_text = "The name the others see next to your camera and in the list below."
@@ -1964,7 +1964,7 @@ func _peer_menu(key: String, label: String, none_label: String = "(nobody)", tip
 	o.focus_mode = Control.FOCUS_ALL
 	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	o.fit_to_longest_item = false
-	o.tooltip_text = tip if tip != "" else "Whose avatar: a person in the session (what they set up under My avatar in their Together tab)."
+	o.tooltip_text = tip if tip != "" else "Whose avatar: a person in the session (what they set up under My avatar in their Co-stream tab)."
 	o.item_selected.connect(func(i: int) -> void:
 		var v: Variant = o.get_item_metadata(i)
 		AppState.set_setting(key, String(v) if v != null else ""))
@@ -2001,7 +2001,7 @@ func _fill_peer_menu(key: String) -> void:
 		menu.select(menu.item_count - 1)
 
 
-## Together tab: the camera row only for a camera avatar, the address row only for a web page.
+## Co-stream tab: the camera row only for a camera avatar, the address row only for a web page.
 func _refresh_avatar_rows() -> void:
 	if _avatar_rows.is_empty():
 		return
@@ -2391,7 +2391,7 @@ func _refresh_mic_note() -> void:
 	_duck_label.text = AudioManager.get_mic_problem()
 
 
-## Together tab: a note while the password is too short to host with.
+## Co-stream tab: a note while the password is too short to host with.
 func _update_pw_hint() -> void:
 	if _net_pw_hint == null:
 		return
@@ -2510,7 +2510,7 @@ func _build_status_strip() -> HBoxContainer:
 	h.add_theme_constant_override("separation", 10)
 	for it: Array in [["core", "Chat", "Stream Core: is chat coming in? Click for the Chat tab."],
 			["screen", "Source", "The big screen: is something showing? Click for the Source tab."],
-			["together", "Together", "Streaming together: hosting, joined, or off. Click for the Together tab."]]:
+			["together", "Co-stream", "Co-stream: hosting, joined, or off. Click for the Co-stream tab."]]:
 		var key := String(it[0])
 		var tab_name := String(it[1])
 		var b := Button.new()
@@ -2584,7 +2584,7 @@ func _refresh_strip() -> void:
 	if role == "host":
 		var waiting := (info.get("pending", []) as Array).size()
 		if waiting > 0:
-			_set_strip("together", "Together: %d waiting" % waiting, STRIP_AMBER)
+			_set_strip("together", "Co-stream: %d waiting" % waiting, STRIP_AMBER)
 		else:
 			_set_strip("together", "Hosting (%d guest%s)" % [guests, "" if guests == 1 else "s"], STRIP_GREEN)
 	elif role == "guest":
@@ -2596,9 +2596,9 @@ func _refresh_strip() -> void:
 	elif bool(info.get("reconnecting", false)):
 		_set_strip("together", "Reconnecting...", STRIP_AMBER)
 	elif bool(info.get("error", false)):
-		_set_strip("together", "Together: problem", STRIP_RED)
+		_set_strip("together", "Co-stream: problem", STRIP_RED)
 	else:
-		_set_strip("together", "Together off", STRIP_GREY)
+		_set_strip("together", "Co-stream off", STRIP_GREY)
 
 
 ## The footer's message line: the latest status / error message (red for errors). Clicking it shows

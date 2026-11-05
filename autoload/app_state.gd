@@ -212,7 +212,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"spout_auto": true,          # show it again by itself when it comes back (and nothing else is playing)
 	"max_height": 720,           # file/URL conversion height
 	"loop_files": true,
-	# Streaming together (Together tab, autoload/net_session.gd)
+	# Streaming together (Co-stream tab, autoload/net_session.gd)
 	"together_name": "",         # your name in the session ("" = the profile name, or "Host" / "Guest")
 	"together_address": "",      # the host's address to join, e.g. 100.101.102.103 (Tailscale)
 	"together_port": 7350,       # the port the host listens on
@@ -249,7 +249,7 @@ const PRESENTER_COUNT: int = 4
 const PRESENTER_FIELDS: Dictionary = {
 	"on": false,                 # on set (podium, picture and lamp shown)
 	"source": "silhouette",      # "silhouette" | "green" | "camera" | "tab" | "web" | "ndi" | "spout" | "peer"
-	"peer": "",                  # for "peer": the name (Together tab > Your name) of the person whose avatar shows
+	"peer": "",                  # for "peer": the name (Co-stream tab > Your name) of the person whose avatar shows
 	"camera": "",                # camera device id for "camera" ("" = default camera)
 	"url": "",                   # web page for "web" (shown over the key colour, e.g. a transparent avatar page)
 	"ndi": "",                   # NDI source name for "ndi"

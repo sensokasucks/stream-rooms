@@ -13,7 +13,7 @@ The owner streams with it. Changes should be practical, tested and explained in 
 - New `.gd` files get a `.gd.uid` file when the editor opens them. Keep the `.uid` files (and commit them).
 - Optional NDI support comes from the `addons/godot-ndi` GDExtension (patched; the original is in `_backup/`). The app must keep working when the extension isn't there.
 - Optional Spout input comes from the `addons/godot-spout` GDExtension (built here for Redot's 4.5 API with Vulkan, patched; see its `STREAM_ROOMS_PATCH.md`). Same rule: the app must keep working without it. `core/spout_receiver.gd` looks it up by name.
-- `tools/` holds `ffmpeg.exe` and `yt-dlp.exe` (used by `core/video_loader.gd`) and `cloudflared.exe` (the Together tab's Cloudflare tunnel, `autoload/net_session.gd`). `tools/get_tools.ps1` downloads all three.
+- `tools/` holds `ffmpeg.exe` and `yt-dlp.exe` (used by `core/video_loader.gd`) and `cloudflared.exe` (the Co-stream tab's Cloudflare tunnel, `autoload/net_session.gd`). `tools/get_tools.ps1` downloads all three.
 
 ## Related project: Fridge Stream Core
 
@@ -53,7 +53,7 @@ Stream Core is a separate Python app (FastAPI). On the owner's PC it lives at `G
   - The owner's rule: no control is removed. Anything not touched every stream goes under an **Advanced ▸** fold: `_fold(box, id, label, head)` (closed by default, open folds remembered in `panel_advanced`). The Source tab shows one source's section at a time (`_source_sections`, `_show_source_section`).
   - Keyboard mode: F6 enters it and Esc leaves it. Hotkeys are skipped while focus is inside the `keyboard_panel` group.
 - **Troubleshooting log:** `autoload/debug_log.gd` (`DebugLog`) writes one cleaned file per run to `user://logs_to_share/` (IP addresses, user / computer names, personal folders, tunnel names and keys swapped for `<tags>`), catching all engine output with a `Logger`. Log app events that would help someone debug a friend's problem with `DebugLog.note("area", text)`; the text is cleaned, so addresses are fine to pass. Setting `debug_log`, footer > Messages.
-- **Messages:** `EventBus.status_message` shows on the panel's message line (footer, last 10 kept). It only reaches the room picture (the window OBS captures) when **Show messages on the picture** (`messages_on_picture`) is on, so write messages for the streamer, never with addresses or keys. The status strip above the tabs (Core / Big screen / Together) is `_refresh_strip()` in `control_panel.gd`.
+- **Messages:** `EventBus.status_message` shows on the panel's message line (footer, last 10 kept). It only reaches the room picture (the window OBS captures) when **Show messages on the picture** (`messages_on_picture`) is on, so write messages for the streamer, never with addresses or keys. The status strip above the tabs (Core / Big screen / Co-stream) is `_refresh_strip()` in `control_panel.gd`.
 - **Accessibility:** flashes and strobes must respect `flash_strength` and `photosensitive_safe` (see `core/reactions/reaction_layer.gd`). Camera shake turns off in safe mode.
 - **Performance:** the filler crowd is one MultiMesh draw. Per-chatter cost is what grows. Work that runs every frame should only happen while something changes (for example, the camera moving).
 - **Style:** typed GDScript, tabs, a `##` comment at the top of each file explaining what it is for, and short comments on the "why".

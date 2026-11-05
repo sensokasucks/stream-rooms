@@ -379,7 +379,7 @@ func _share_flags() -> Dictionary:
 	return out
 
 
-## The name others see: the Together tab's name, else the profile name, else Host / Guest.
+## The name others see: the Co-stream tab's name, else the profile name, else Host / Guest.
 func display_name() -> String:
 	var n := _clean_name(String(AppState.get_setting("together_name")))
 	if n == "":
@@ -389,7 +389,7 @@ func display_name() -> String:
 	return n
 
 
-## Together tab "Host": checks the password, listens on together_port, and starts the tunnel when
+## Co-stream tab "Host": checks the password, listens on together_port, and starts the tunnel when
 ## together_bind is "tunnel". "auto" listens on the Tailscale address if there is one, else 127.0.0.1.
 func host() -> void:
 	if _role != "off":
@@ -443,7 +443,7 @@ func host() -> void:
 	_set_status("Hosting. " + where + password_note())
 
 
-## Together tab "Join": connects to together_address. The password step follows in _on_host_auth.
+## Co-stream tab "Join": connects to together_address. The password step follows in _on_host_auth.
 ## A click on Join stops any reconnecting first; the reconnect timer calls it with rejoining = true.
 func join(rejoining: bool = false) -> void:
 	if _role != "off":
@@ -476,7 +476,7 @@ func join(rejoining: bool = false) -> void:
 		_set_status("Connecting to the host...")
 
 
-## Together tab "Leave" / "Stop hosting".
+## Co-stream tab "Leave" / "Stop hosting".
 func leave() -> void:
 	if _role == "off":
 		if not _rejoin.is_empty():
@@ -585,7 +585,7 @@ func confirm(yes: bool) -> void:
 ## "" when this hello may join, else the reason to refuse it (the guest sees it).
 static func check_hello(d: Dictionary, nonce: PackedByteArray, password: String, version: String) -> String:
 	if int(d.get("protocol", -1)) != PROTOCOL or String(d.get("version", "")) != version:
-		return "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to stream together." % [
+		return "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to co-stream." % [
 			version, String(d.get("version", "?"))]
 	var p: Variant = d.get("proof")
 	if not p is PackedByteArray or (p as PackedByteArray) != proof(nonce, password):
@@ -715,7 +715,7 @@ func _on_host_auth(d: Dictionary) -> void:
 	match String(d.get("t", "")):
 		"challenge":
 			if int(d.get("protocol", -1)) != PROTOCOL or String(d.get("version", "")) != _version():
-				_refused = "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to stream together." % [
+				_refused = "Different Stream Rooms versions: the host has %s, you have %s. Use the same version to co-stream." % [
 					String(d.get("version", "?")), _version()]
 				_close.call_deferred(_refused, true)
 				return
@@ -914,11 +914,11 @@ func _gate(what: String, value: Variant) -> bool:
 	if _is_cohost():
 		_net_request.rpc_id(1, what, value)
 	else:
-		EventBus.status_message.emit("The host controls this while you're a guest (Together tab).", false)
+		EventBus.status_message.emit("The host controls this while you're a guest (Co-stream tab).", false)
 	return false
 
 
-## Host: passes shared settings on to the guests, and reacts to its own Together tab settings.
+## Host: passes shared settings on to the guests, and reacts to its own Co-stream tab settings.
 func _on_setting_changed(key: String, value: Variant) -> void:
 	if _role == "host" and _shared.has(key) and group_shared(_group_of(key)):
 		_to_guests("_net_setting", [key, value])
@@ -1779,7 +1779,7 @@ func _clear_net_looks() -> void:
 
 
 # ── Each streamer's own looks ────────────────────────────
-## "Viewers keep their streamer's looks" (together_streamer_looks, host's Together tab): in the one
+## "Viewers keep their streamer's looks" (together_streamer_looks, host's Co-stream tab): in the one
 ## shared audience, each chatter is drawn in the looks of the streamer whose chat they came from. A
 ## guest sends its own looks (from its own Stream Core) to the host; the host keeps them per guest
 ## and sends every guest the whole table, streamer index -> looks (AudienceStyle.streamer_looks).
@@ -1871,7 +1871,7 @@ func _live_info_for_guests() -> Dictionary:
 
 
 ## Host: the peer id whose shared tab is on the big screen: the guest named in screen_tab_peer
-## (set in the Together tab), or 1 (the host) when it's "" or that person isn't in the session.
+## (set in the Co-stream tab), or 1 (the host) when it's "" or that person isn't in the session.
 func _tab_publisher() -> int:
 	var want := String(AppState.get_setting("screen_tab_peer"))
 	if want == "":
@@ -2389,14 +2389,14 @@ func avatar_key(who: String) -> Dictionary:
 ## Host, in a session with guests and shared presenters: what's wrong with podium n for the guests
 ## ("" = nothing). A camera, tab, NDI or Spout source, or a web page only this PC can open (a local
 ## avatar app on localhost, an address on the home network), shows as a silhouette or a blank on
-## their PCs. The fix is My avatar (Together tab), shown with "Someone's avatar".
+## their PCs. The fix is My avatar (Co-stream tab), shown with "Someone's avatar".
 func podium_warning(n: int) -> String:
 	if _role != "host" or guest_count() == 0 or not group_shared("presenters"):
 		return ""
 	if not bool(AppState.get_setting(AppState.presenter_key(n, "on"))):
 		return ""
 	var src := String(AppState.get_setting(AppState.presenter_key(n, "source")))
-	var how := "set it as your My avatar (Together tab) and pick Someone's avatar for the podium"
+	var how := "set it as your My avatar (Co-stream tab) and pick Someone's avatar for the podium"
 	if LOCAL_ONLY_SOURCES.has(src):
 		return "Podium %d shows your %s, which only exists on your PC: guests see a silhouette there. To show it to them, %s." % [
 			n, {"camera": "camera", "tab": "tab / window", "ndi": "NDI source", "spout": "Spout source"}[src], how]
@@ -2427,7 +2427,7 @@ func _warn_podiums(n: int = 0) -> void:
 ##     has loaded), then tells the host (_net_guest_synced), whose list shows who is still syncing.
 ##   - Audience checks. While the audience is shared the host sends a short fingerprint of who sits
 ##     where every AUD_CHECK_GAP seconds (_net_aud_check); a guest whose own differs asks for the
-##     whole roster again (_net_aud_resync). Resync on the Together tab asks for everything again.
+##     whole roster again (_net_aud_resync). Resync on the Co-stream tab asks for everything again.
 ##   - Reconnecting. A guest whose connection drops tries to get back in (RECONNECT_DELAYS), keeping
 ##     the shared audience on screen meanwhile and holding its chat (_chat_held) to send once back.
 ##     The host keeps that person's part of the audience by name (_streamer_slots, AWAY_KEEP_S) and
@@ -2570,7 +2570,7 @@ func sync_progress() -> float:
 	return minf(float(_sync["got"]) / float(_sync["total"]), 0.99)
 
 
-## Host: how far along a guest's sync is (percent), for the list on the Together tab.
+## Host: how far along a guest's sync is (percent), for the list on the Co-stream tab.
 @rpc("any_peer", "call_remote", "reliable")
 func _net_guest_sync_progress(pct: int) -> void:
 	var id := multiplayer.get_remote_sender_id()
@@ -2601,7 +2601,7 @@ func _net_aud_check(room: String, fingerprint: String) -> void:
 	if mine != fingerprint and _aud_resync_wait <= 0.0:
 		_aud_resync_wait = AUD_RESYNC_GAP
 		_aud_resyncs += 1
-		print("Together: the audience here differed from the host's; asked for it again (%d this session)." % _aud_resyncs)
+		print("Co-stream: the audience here differed from the host's; asked for it again (%d this session)." % _aud_resyncs)
 		_net_aud_resync.rpc_id(1)
 		_emit_state()
 
@@ -2614,7 +2614,7 @@ func _net_aud_resync() -> void:
 		_net_aud_roster.rpc_id(id, _room(), AudienceManager.get_roster())
 
 
-## Together tab "Resync": a guest asks the host for everything again; the host sends it to every
+## Co-stream tab "Resync": a guest asks the host for everything again; the host sends it to every
 ## guest. For when something looks different on two PCs.
 func resync() -> void:
 	if _role == "guest" and _admitted:
@@ -2924,7 +2924,7 @@ func _to_guests(method: String, args: Array) -> void:
 			callv("rpc_id", [id, method] + args)
 
 
-## The Together tab's status line; also shown as a status message, so never put an address in it.
+## The Co-stream tab's status line; also shown as a status message, so never put an address in it.
 func _set_status(text: String, is_error: bool = false) -> void:
 	_status = text
 	_error = is_error

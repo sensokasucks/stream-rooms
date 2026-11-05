@@ -175,7 +175,7 @@ func _guest() -> void:
 	_check(await _wait_for(func() -> bool: return NetSession.get_role() == "guest" and AudienceManager.is_mirror(), 30.0),
 		"joined, and shows the host's audience")
 	_check(await _wait_for(func() -> bool: return NetSession._synced, 60.0), "the first sync finished")
-	_check(not progress.is_empty(), "the Together tab showed sync progress (%d steps)" % progress.size())
+	_check(not progress.is_empty(), "the Co-stream tab showed sync progress (%d steps)" % progress.size())
 	_check(String(NetSession.get_info()["status"]).begins_with("In sync with Host"), "the status says it's in sync (%s)" % String(NetSession.get_info()["status"]))
 	_check(_slot("twitch", "hostfan1") >= 0, "the host's viewer is seated here")
 	_chat("kick", "guestfan1", "hi from the guest's chat")

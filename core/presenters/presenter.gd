@@ -171,7 +171,7 @@ func _apply_all() -> void:
 			else "open the web page in the sender page" if source == "web"
 			else "waiting for NDI source %s" % String(_setting("ndi")) if source == "ndi"
 			else "waiting for Spout sender %s" % String(_setting("spout")) if source == "spout"
-			else "waiting for %s's avatar (Together)" % String(_setting("peer")) if source == "peer"
+			else "waiting for %s's avatar (Co-stream)" % String(_setting("peer")) if source == "peer"
 			else "pick a tab or window in the sender page"]
 
 

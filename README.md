@@ -13,11 +13,11 @@ Every tab shows the controls you touch while streaming; the set-up-once settings
 **Advanced ▸** button, closed until you click it (what you open stays open next time). Nothing
 was removed, it just folds away: the Room tab's curtain options, the room's own looks (windows,
 light rays) and the whole **Performance** block; each chat window's replies, header, text size,
-looks and position; a podium picture's size, lighting and position; the Together tab's
+looks and position; a podium picture's size, lighting and position; the Co-stream tab's
 **Quality** block; and on the Source tab each source's help text and its "by itself" ticks.
 
 The **Source** tab shows one source at a time: **Big screen shows** picks **Browser tab**,
-**NDI**, **Spout**, **File or URL** or **Someone's avatar (Streaming together)**, and only that
+**NDI**, **Spout**, **File or URL** or **Someone's avatar (Co-stream)**, and only that
 source's controls appear. It follows whatever starts playing, and remembers your last pick.
 Picking one there only changes which controls you see, not the screen: press **Share**, **Show**
 or **Play** in that section. The line under it, **On the big screen now:**, always says what is
@@ -31,9 +31,9 @@ sources found, what's showing) right under the picker, not inside **Advanced ▸
   stop), grey when chat is off.
 - **Big screen**: green while something shows, amber when the screen is empty, red when the
   browser tab stopped.
-- **Together**: hosting / joined (green), someone waiting or joining (amber), off (grey).
+- **Co-stream**: hosting / joined (green), someone waiting or joining (amber), off (grey).
 
-Click a dot to jump to its tab (Chat, Source, Together).
+Click a dot to jump to its tab (Chat, Source, Co-stream).
 
 **Messages** go to the line at the bottom of the panel, not onto the room picture, so viewers
 never see things like "Address copied" or a download error. Errors are red. Click the line (or
@@ -44,12 +44,12 @@ stops sharing, a message says so (before, the screen just went blank).
 at the bottom of the room picture, as the app used to. It is **off by default**, because that is
 the window OBS captures. Clean feed (F10) hides them either way.
 
-Together's "wants to join" and "is this the right host?" popups open as their own small window,
+Co-stream's "wants to join" and "is this the right host?" popups open as their own small window,
 even while the panel sits inside the main window, so a guest's name never shows on stream.
 
 ### Log files for troubleshooting
 **Save a log file for troubleshooting** (under **Messages ▸**, **on by default**) writes what the
-app does to a file each time it runs: errors, the Stream Core connection, Together joins, leaves and
+app does to a file each time it runs: errors, the Stream Core connection, co-stream joins, leaves and
 drops (with the ping), room and source changes, a "still alive" line every minute, and, after a
 crash, the last lines from the run that crashed. **Open log folder** opens the folder
 (`%APPDATA%\Redot\app_userdata\Stream Rooms\logs_to_share`). The last 15 runs are kept, newest
@@ -85,7 +85,7 @@ default. Adjust **Audio delay** or **Video delay** in the *Sound* tab ▸ Advanc
 **Only your sender page can use it:** each time the game starts it makes a new secret key and
 writes it into the sender page. The game only takes pictures and sound from a page that has that
 key, so another website open in your browser can't put its own picture on your big screen or
-read your Together live-feed key. Nothing changes for you: open the page with **Open sender page**
+read your co-stream live-feed key. Nothing changes for you: open the page with **Open sender page**
 (or your bookmark) as before. A sender page left open while you restart the game picks up the new
 key by itself and reconnects. The page only opens as `127.0.0.1` or `localhost`.
 
@@ -103,7 +103,7 @@ age-restricted video, no internet) with a **Try again** button; what yt-dlp / ff
 under **Details ▸**.
 
 Downloads are limited to 2 GB and 4 hours per video, so a link (yours, or a co-host's in a
-Together session) can't fill your disk. Closing the app while a video downloads or converts stops
+co-stream) can't fill your disk. Closing the app while a video downloads or converts stops
 yt-dlp / ffmpeg straight away instead of waiting for them, and a stopped convert never leaves a
 broken video in the cache.
 
@@ -291,7 +291,7 @@ of the room never shows it. **Esc** or **Resume** goes back.
 - **Co-stream**: host or join, who's in (with **Co-host** and **Remove** for the host), **Copy
   invite address**, **Resync**, **End session** / **Leave**, and what everyone follows (**Room**,
   **Curtain and lights**, **Podiums**, **One audience**). The name, password and address are still
-  set in the control panel's Together tab.
+  set in the control panel's Co-stream tab.
 - **Keys**: every keyboard shortcut.
 - **Open Stream Core dashboard** opens Core in your browser. If it asks for the admin token, press
   **Sign in on this PC** there.
@@ -419,7 +419,7 @@ is stuck to the podium's front surface (it finds the surface itself, so a slante
 keeps its shape. **Picture size** scales it, **Podium picture self-lit** shows it in its own colours
 whatever the room's light, and **Podium picture left/right** / **Podium picture up/down** slide it
 along the front.
-When streaming together, guests get a copy of the picture (the file itself travels, so it works
+In a co-stream, guests get a copy of the picture (the file itself travels, so it works
 even though it only exists on your PC).
 Once a picture is chosen, its **Advanced ▸** holds **Picture size**, **Podium picture self-lit** and
 the two **Podium picture** sliders.
@@ -473,7 +473,7 @@ compression, and transparency is kept.
   (VTube Studio: Settings > Spout2 output) keeps its transparency: turn **Chroma key** off.
 - Turning Spout on in other programs: VTube Studio has it in its settings; OBS needs the free
   *Spout2 Plugin for OBS*.
-- Streaming together: Spout only exists on your PC, so guests see a silhouette on a podium that
+- Co-stream: Spout only exists on your PC, so guests see a silhouette on a podium that
   shows your Spout sender.
 - Needs the **godot-spout** extension in `addons/godot-spout` (github.com/buresu/godot-spout,
   MIT), built for Redot 26.2 with a small patch (see `addons/godot-spout/STREAM_ROOMS_PATCH.md`).
@@ -492,7 +492,7 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   instead of pixel by pixel on the main thread, and pictures and emotes in memory are kept to
   about 256 MB: the ones not seen for longest are dropped (never one that's on screen) and load
   again from the disk cache if needed. Chat that piles up during a hitch is worked through over
-  the next frames instead of all at once. In a Together session a guest sends its chat to the
+  the next frames instead of all at once. In a co-stream a guest sends its chat to the
   host in small batches.
 - **Speech bubbles:** their messages pop up in a speech bubble above their head, with their name
   on top. Each person gets one of four bubble shapes. A message sent with Kick's or Twitch's
@@ -531,7 +531,7 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     *Random mix...* lets you tick several silhouettes: each chatter in that group gets one of
     them, picked from their name, so they keep it every time they chat. Someone in more than
     one group gets the first one in the list that has a look set, so a mod who subscribes gets
-    the Mods look. In a Together session, each PC uses the looks from its own Core.
+    the Mods look. In a co-stream, each PC uses the looks from its own Core.
   Needs a Stream Core with the Audience looks page. Until you change something there, Stream
   Rooms keeps the looks it had.
 - **Glow for highlighted chatter** (Audience tab, on by default): when you highlight a chat
@@ -581,7 +581,7 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
     newest first, and adds `platform:name` for you. Those names are also added to Core's list
     (the **Chatter profile pictures** card in Core's dashboard), so Core's chat overlay hides
     them too. To show someone again, remove the name in both places.
-  - When streaming together, guests' PCs get the platform's own picture link, since Core's copy
+  - In a co-stream, guests' PCs get the platform's own picture link, since Core's copy
     only exists on your PC.
 - **Red-flagged chatters:** Stream Core's dashboard (**Chat history** page, **🚩 Red flags**) has a
   list of phrases. Whoever says one is red-flagged: they leave their seat, their lines leave the
@@ -740,7 +740,8 @@ point costs, opt-outs) and the game plays it. Set reactions up in Stream Core:
   (effects, attached to each room by RoomHost). Test: `_tests/test_reactions.tscn` (runs a fake
   Stream Core).
 
-## Streaming together (Together tab)
+## Co-stream (Co-stream tab)
+Co-stream used to be called "Together". Your saved settings carry over as they are.
 
 Up to four people share one room: a **host** who runs the show and up to three **guests**. Everyone runs their own copy of Stream Rooms, flies their own camera and streams their own view from their own OBS. Only small messages travel between the PCs (no video), so it needs almost no bandwidth.
 
@@ -761,7 +762,7 @@ Two ways, and nobody has to open ports on their router either way:
 
 Then:
 
-1. In the **Together** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 8 characters) and tells the guests. A shorter password you saved before this rule still works, but the Together tab asks you to pick a longer one.
+1. In the **Co-stream** tab, everyone types a **Your name** and the same **Password**. The host picks the password (at least 8 characters) and tells the guests. A shorter password you saved before this rule still works, but the Co-stream tab asks you to pick a longer one.
 2. The host clicks **Host a session**, then **Copy address**, and sends the copied address to the guests (in a private message, not on stream).
 3. Each guest pastes it into **Host address** and clicks **Join**.
 
@@ -781,7 +782,7 @@ Then:
 
 - **Syncing.** Right after a guest is let in, the host sends everything at once: the room,
   presenters, podium pictures, the audience, its looks and silhouette pictures. The guest's
-  Together tab shows **Syncing with *Host*** with a progress bar, and the status strip says
+  Co-stream tab shows **Syncing with *Host*** with a progress bar, and the status strip says
   **Syncing...** until it has all arrived and the room has loaded. Then the status line says
   **In sync with *Host*'s session**. The host's list shows "syncing 40%" next to that guest until
   then. These messages only show on the panel, never on your stream (unless you ticked **Show
@@ -789,7 +790,7 @@ Then:
 - **The audience checks itself.** While you share one audience, the host's PC sends a short check
   of who sits where every 5 seconds. If a guest's seats differ (a lost message, a room that loaded
   late), that guest gets the whole audience again by itself.
-- **Resync** (Together tab) is for when something still looks different on two PCs: a guest
+- **Resync** (Co-stream tab) is for when something still looks different on two PCs: a guest
   asks the host for everything again, and the host sends everything to every guest again.
 - **Dropped connections.** If a guest's connection drops, their copy tries to get back in by
   itself (8 tries over about a minute and a half). Meanwhile it keeps showing the shared audience
@@ -825,14 +826,14 @@ host or the other guests. A guest who wants to hide from Cloudflare too can run 
 
 Each person keeps their own camera, graphics, sound, chat windows and Stream Core connection.
 
-**Shared with guests** (Together tab, host): three ticks say which parts the guests follow:
+**Shared with guests** (Co-stream tab, host): three ticks say which parts the guests follow:
 **Room**, **Curtain and house lights** and **Presenters**. Untick one and every PC keeps its own:
 for example, untick **Presenters** to let each guest pick their own presenter sources, name tags
 and podium pictures. Tick it again and the guests get the host's state back.
 
 ### One audience for everyone's chat
 
-With **One audience for everyone's chat** ticked (Together tab, on the host's PC), every
+With **One audience for everyone's chat** ticked (Co-stream tab, on the host's PC), every
 streamer's viewers sit in the same audience, and every stream shows the same people in the same
 seats, with the same speech bubbles:
 
@@ -886,14 +887,14 @@ When the host shares a browser tab or window in their **sender page** (Source ta
 page**, as usual), the guests can watch it on their big screens too, with its sound. Use it for
 anything live: a game, a stream you're reacting to, a website.
 
-- **Host:** nothing extra to do while **Send my shared tab to the guests** (Together tab) is ticked.
+- **Host:** nothing extra to do while **Send my shared tab to the guests** (Co-stream tab) is ticked.
   The sender page says "Everyone in the session gets this tab too."
-- **Guest:** the Together tab says when the host is sharing. Open your own sender page (the
+- **Guest:** the Co-stream tab says when the host is sharing. Open your own sender page (the
   **Open sender page** button there) and click **Watch the host's live feed**. The host's tab then
   takes the place of a tab of your own. It comes back by itself if the host stops and starts sharing
   again. **Stop watching** lets go.
 - **A guest's tab on the big screen:** the host (or a co-host) picks a person in **Big screen tab**
-  (Together tab). That person shares a tab in their own sender page as usual, and everyone else's
+  (Co-stream tab). That person shares a tab in their own sender page as usual, and everyone else's
   big screen shows it, sound included: the host's page follows by itself, a guest's page once
   they've clicked **Watch** before. Pick **The host's tab** to switch back. Switch any time: everyone's
   own shared tab keeps running in the background (the sender page says "ready"), so it comes
@@ -905,7 +906,7 @@ anything live: a game, a stream you're reacting to, a website.
   about 0.2 to 1 second behind the host. Each guest costs the host roughly 3 to 6 Mbps of upload,
   so a host on a slow connection may want to untick it.
 - Straight from browser to browser means the host's and the guests' browsers see each other's
-  addresses. **Relay the live feed (hide addresses)** (Together tab, host) sends it through
+  addresses. **Relay the live feed (hide addresses)** (Co-stream tab, host) sends it through
   VDO.Ninja's relay servers instead, so they don't. It adds a little delay and can lower the quality.
 - The stream's name and key are random for each session and only go to guests who got the
   password right.
@@ -914,7 +915,7 @@ NDI and Spout aren't shared: they only exist on the host's PC.
 
 ### Avatars: everyone's picture on podiums and the big screen
 
-Each person picks **My avatar** in their own **Together** tab: **Camera**, **Tab / window** or
+Each person picks **My avatar** in their own **Co-stream** tab: **Camera**, **Tab / window** or
 **Web page (transparent)** (plus the **Camera** to use, or the **Web page** address). Their sender
 page captures it, exactly like a presenter feed, and sends it to everyone in the session through
 VDO.Ninja. The sender page gets a **My avatar** row for it, and says "sent to the others" once
@@ -922,7 +923,7 @@ somebody shows it.
 
 The host then decides where the avatars show, and every PC follows:
 
-- **On a podium:** Presenters tab, set a podium's **Show** to **Someone's avatar (Together)** and
+- **On a podium:** Presenters tab, set a podium's **Show** to **Someone's avatar (Co-stream)** and
   pick the person under **Whose avatar** (the list is everyone in the session, you included). The
   podium's chroma key and other picture settings apply as usual, with one exception: a
   **Web page (transparent)** avatar is sent over pure green, and every PC cuts out exactly that
@@ -937,7 +938,7 @@ who isn't in the session right now leaves their podium waiting until they join. 
 avatars can't travel this way (they live in the game, not the browser); for those, send them to OBS
 and from there into a web page, for example a VDO.Ninja link.
 
-**Quality** (Together tab under **Advanced ▸**, host decides for everyone; everything is sent once per viewer, so lower
+**Quality** (Co-stream tab under **Advanced ▸**, host decides for everyone; everything is sent once per viewer, so lower
 it on a slow upload): **Big screen to guests** 480p / 540p / 720p / 1080p, **Big screen frame rate**
 and **Big screen bitrate** for the shared tab; **Avatars** 240p / 360p / 480p / 720p, **Avatar frame
 rate** and **Avatar bitrate**. Rough costs per viewer: a 720p tab 3 to 6 Mbps, a 540p tab about 2;
@@ -1171,7 +1172,7 @@ Settings and caches live in the user data folder (`%APPDATA%\Redotpp_userdata\S
   *Export > Resources > Filters to export non-resource files*.
 - `rooms/`: one folder per room
 
-The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppState's defaults (a copy started with `--mp-profile` shifts them, see Streaming together).
+The link only listens on `127.0.0.1` (this PC). Ports 8765 and 8766 are in AppState's defaults (a copy started with `--mp-profile` shifts them, see Co-stream).
 
 ## Checks on GitHub (for developers)
 Every pull request (and every push to main) runs a short check on GitHub: the script warning check (`tools/lint_warnings.py`), a project import that fails on any script that doesn't load, and a few fast tests without a graphics card (`tools/ci_tests.sh`). The full test set (Forward+, pictures, crashes) still runs on the PC with `tools\run_tests.ps1`.
