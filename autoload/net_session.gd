@@ -23,13 +23,13 @@ extends Node
 ##
 ## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
 ## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
-## room, curtain), Podium pictures, Synced video, Shared audience, Live feed (VDO.Ninja), Reactions,
-## Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
+## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Live feed
+## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Connection helpers (tunnel), Helpers.
 ## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
 ## Network protocol number, checked in the password step along with the app version. Raise it when
 ## the RPCs change in a way older copies can't follow.
-const PROTOCOL: int = 2       # 2: guests send chat in batches (_net_guest_chat_batch)
+const PROTOCOL: int = 3       # 2: guests send chat in batches (_net_guest_chat_batch); 3: reaction pictures and audience looks travel
 ## Guests at most (plus the host = 4 people, see docs/MULTIPLAYER.md).
 const MAX_GUESTS: int = 3
 ## Seconds a connection has to answer the password challenge (one round trip) before it's dropped.
@@ -76,6 +76,15 @@ const SHARE_GROUPS: Array[String] = ["room", "curtain", "presenters"]
 const LOCAL_ONLY_SOURCES: Array[String] = ["camera", "tab", "ndi", "spout"]
 ## Curtain styles accepted from the network (same as EventBus.curtain_changed's style).
 const CURTAIN_STYLES: Array[String] = ["normal", "instant", "reveal"]
+## Sender of a reaction with a picture from its own Stream Core: seconds the reaction waits for the
+## picture's first download to finish (it goes to the others along with the reaction). After that
+## it goes without, and the other PCs show its emoji / word.
+const REACTION_PICTURE_WAIT: float = 5.0
+## Longest audience-looks setting accepted from the host, in characters (each is JSON text).
+const LOOKS_MAX_CHARS: int = 200000
+## Guest: where this PC keeps its copies of the host's silhouette pictures (AudienceStyle only takes
+## pictures inside its PICTURE_DIR, user://silhouettes/): NET_LOOK_FILE % md5, plus a "_shape" copy.
+const NET_LOOK_FILE: String = "user://silhouettes/net_%s.png"
 
 # Session state below. Most of it only means something for one role; the comment says which.
 var _shared: Dictionary = {}            # setting key -> true
@@ -143,6 +152,12 @@ var _host_sources: Dictionary = {}      # guest: presenter source keys -> what t
 var _live_quality: Dictionary = {}      # guest: the host's quality settings for the live feed and avatars
 var _aud_shared: bool = false           # guest: the host shares its audience (this PC mirrors it)
 var _roster_wait: float = -1.0          # host: send the whole roster to the guests in this long
+## Pictures already sent, so each goes over once per session. Host: peer id -> {key: true}, where key
+## is a reaction picture's "net:<md5>" or "look:" + a silhouette picture's; guest: {key: true} sent to the host.
+var _pic_sent: Dictionary = {}
+## Sender: reactions waiting for their picture's first download (see REACTION_PICTURE_WAIT):
+## picture address -> {"list": [reaction Dictionaries], "wait": seconds left}.
+var _pic_waiting: Dictionary = {}
 # host: last synced-video id handed out (each new video gets the next number)
 var _video_count: int = 0
 ## Host: the synced video. {id, url, ready: {peer id: true}, live (host's copy loaded), started, wait}
@@ -177,6 +192,7 @@ func _ready() -> void:
 	EventBus.room_requested.connect(_on_room_requested)
 	EventBus.curtain_changed.connect(_on_curtain_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
+	EventBus.emote_ready.connect(_on_emote_ready)
 	EventBus.file_prepared.connect(_on_file_prepared)
 	EventBus.file_prepare_failed.connect(_on_file_prepare_failed)
 	EventBus.file_progress.connect(_on_file_progress)
@@ -217,6 +233,7 @@ func _process(delta: float) -> void:
 		if _roster_wait < 0.0:
 			_send_roster_to_guests()
 	_pending_timeout(delta)
+	_reaction_picture_timeout(delta)
 	_cam_wait -= delta
 	if _cam_wait > 0.0:
 		return
@@ -651,6 +668,7 @@ func _on_peer_disconnected(id: int) -> void:
 	var n := String(_peers[id]["name"])
 	_peers.erase(id)
 	_cams.erase(id)
+	_pic_sent.erase(id)
 	EventBus.net_peer_left.emit(id)
 	_to_guests("_net_left", [id])
 	_send_roster()
@@ -716,6 +734,9 @@ func _close(message: String, is_error: bool = false) -> void:
 	_emit_live()
 	_aud_shared = false
 	_roster_wait = -1.0
+	_pic_sent.clear()
+	_pic_waiting.clear()
+	_clear_net_looks()
 	AudienceManager.set_mirror(false)
 	AudienceManager.set_streamer_areas(0)
 	_address = ""
@@ -758,6 +779,8 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_emit_state()
 	if (key == "together_shared_audience" or key == "together_audience_areas") and _role == "host":
 		_update_audience_sharing()
+	if AudienceStyle.LOOK_KEYS.has(key) and _sharing_audience():
+		_send_looks()          # (the host saved new looks in its Stream Core)
 	if key.begins_with("together_screen_") or key in ["together_avatar_height", "together_avatar_fps", "together_avatar_kbps"]:
 		if _role == "host":
 			_emit_live()
@@ -1209,6 +1232,7 @@ func _update_audience_sharing() -> void:
 	AudienceManager.set_streamer_areas(areas)
 	if on:
 		_roster_wait = 0.1
+		_send_looks()
 
 
 ## Whose viewer: 0 = the host, then the guests in the order they joined (peer ids grow).
@@ -1350,6 +1374,8 @@ func _net_aud_mode(shared: bool) -> void:
 	if _from_host():
 		_aud_shared = shared
 		AudienceManager.set_mirror(shared)
+		if not shared:
+			_clear_net_looks()     # (this PC's own audience, with its own looks again)
 		_emit_state()
 
 
@@ -1382,6 +1408,128 @@ func _net_aud_speak(room: String, slot: int, parts: Array) -> void:
 func _net_aud_update(room: String, slot: int, wm: Dictionary) -> void:
 	if _from_host() and _aud_shared:
 		AudienceManager.mirror_update(room, slot, wm)
+
+
+# ── Audience looks ───────────────────────────────────────────
+## While the host shares its audience, guests also show the host's looks: its bubbles and
+## silhouettes (Stream Core's Audience looks page, AudienceStyle.LOOK_KEYS), custom silhouette
+## pictures included, so every stream shows the same audience. A guest's own looks settings are
+## never changed (AudienceStyle.net_looks sits on top of them), so they're back after the session.
+## Pictures are named by their bytes' MD5 ("net:<md5>"), each sent once per guest per session.
+
+## Host: its looks to one guest (peer id) or all of them (-1): the silhouette pictures they don't
+## have yet first, then the settings with each picture's file swapped for its "net:<md5>" name.
+## Called when the audience starts being shared, when a guest joins, and when the looks change.
+func _send_looks(to: int = -1) -> void:
+	if not _sharing_audience():
+		return
+	var pictures := {}          # "net:<md5>" -> [picture png, its "_shape" png]
+	var looks := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		looks[k] = String(AppState.get_setting(k))
+	looks = _map_figures(looks, func(f: Dictionary) -> Dictionary:
+		var file := String(f.get("file", ""))
+		if String(f.get("shape", "")) != "custom" or not file.begins_with(AudienceStyle.PICTURE_DIR):
+			return f
+		var png := PictureFile.read_file(file)
+		var shape := PictureFile.read_file(file.replace(".png", "_shape.png"))
+		if png.is_empty() or shape.is_empty():
+			f["file"] = ""
+			f["shape"] = "classic"      # (a picture that's gone here: the classic bust there too)
+			return f
+		var key := _picture_key(png)
+		pictures[key] = [png, shape]
+		f["file"] = key
+		return f)
+	for id: int in _peers:
+		if id == 1 or (to > 0 and id != to):
+			continue
+		if not _pic_sent.has(id):
+			_pic_sent[id] = {}
+		for key: String in pictures:
+			if not (_pic_sent[id] as Dictionary).has("look:" + key):
+				_pic_sent[id]["look:" + key] = true
+				_net_look_picture.rpc_id(id, key, pictures[key][0], pictures[key][1])
+		_net_looks.rpc_id(id, looks)
+
+
+## Every silhouette style inside a set of looks (the main one in audience_silhouette and each saved
+## one in audience_saved_styles), passed through fix (a style -> the style to keep), as a new set.
+## The host swaps picture files for "net:<md5>" names with it, a guest swaps them back for its copies.
+static func _map_figures(looks: Dictionary, fix: Callable) -> Dictionary:
+	var out := looks.duplicate()
+	var main: Variant = _parse_json(String(looks.get("audience_silhouette", "")))
+	if main is Dictionary:
+		out["audience_silhouette"] = JSON.stringify(fix.call(main))
+	var saved: Variant = _parse_json(String(looks.get("audience_saved_styles", "")))
+	if saved is Dictionary and (saved as Dictionary).get("silhouette") is Dictionary:
+		var figs: Dictionary = saved["silhouette"]
+		for look_name: Variant in figs.keys():
+			if figs[look_name] is Dictionary:
+				figs[look_name] = fix.call(figs[look_name])
+		out["audience_saved_styles"] = JSON.stringify(saved)
+	return out
+
+
+## JSON text -> its value (null for blank text, without the parser's error line).
+static func _parse_json(text: String) -> Variant:
+	return JSON.parse_string(text) if text.strip_edges() != "" else null
+
+
+## Guest: one of the host's silhouette pictures (a looks message that uses it follows). Kept as
+## NET_LOOK_FILE (and its "_shape" copy), where AudienceStyle reads pictures from.
+@rpc("authority", "call_remote", "reliable")
+func _net_look_picture(key: String, png: PackedByteArray, shape: PackedByteArray) -> void:
+	if not _from_host() or not _picture_ok(key, png) or PictureFile.kind_of(png) != "png" \
+			or PictureFile.kind_of(shape) != "png" or shape.size() > PictureFile.MAX_BYTES or PictureFile.too_big(shape):
+		return
+	var path := NET_LOOK_FILE % key.substr(EmoteCache.NET_PREFIX.length())
+	DirAccess.make_dir_recursive_absolute(AudienceStyle.PICTURE_DIR)
+	for pair: Array in [[path, png], [path.replace(".png", "_shape.png"), shape]]:
+		var f := FileAccess.open(String(pair[0]), FileAccess.WRITE)
+		if f != null:
+			f.store_buffer(pair[1] as PackedByteArray)
+			f.close()
+
+
+## Guest: the host's looks (see _send_looks). Shown while this PC mirrors the host's audience.
+@rpc("authority", "call_remote", "reliable")
+func _net_looks(looks: Dictionary) -> void:
+	if not _from_host() or not _aud_shared:
+		return
+	var clean := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		clean[k] = String(looks.get(k, "")).left(LOOKS_MAX_CHARS)
+	clean = _map_figures(clean, func(f: Dictionary) -> Dictionary:
+		var file := String(f.get("file", ""))
+		var here := NET_LOOK_FILE % file.substr(EmoteCache.NET_PREFIX.length()) if _is_picture_key(file) else ""
+		if here != "" and FileAccess.file_exists(here):
+			f["file"] = here
+		elif String(f.get("shape", "")) == "custom" or file != "":
+			f["file"] = ""
+			f["shape"] = "classic"      # (never a path from the host's PC; a picture that didn't come: the classic bust)
+		return f)
+	_apply_net_looks(clean)
+
+
+## Guest: shows these looks (AudienceStyle.net_looks; {} = this PC's own again). Tells the audience
+## to redraw with a setting_changed for each look setting that now reads differently (the same
+## signal a change in Stream Core gives; AudienceView and the bubbles read the looks through
+## AudienceStyle, and the values in AppState stay this PC's own).
+func _apply_net_looks(looks: Dictionary) -> void:
+	var before := {}
+	for k: String in AudienceStyle.LOOK_KEYS:
+		before[k] = AudienceStyle.look_setting(k)
+	AudienceStyle.net_looks = looks
+	for k: String in AudienceStyle.LOOK_KEYS:
+		if AudienceStyle.look_setting(k) != String(before[k]):
+			EventBus.setting_changed.emit(k, AppState.get_setting(k))
+
+
+## Guest: back to this PC's own looks (the session ended, or the host stopped sharing its audience).
+func _clear_net_looks() -> void:
+	if not AudienceStyle.net_looks.is_empty():
+		_apply_net_looks({})
 
 
 # ── Live feed ────────────────────────────────────────────────
@@ -1582,14 +1730,108 @@ static func _token_ok(t: String) -> bool:
 # ── Reactions ────────────────────────────────────────────────
 ## A reaction played here (from this PC's own Stream Core) plays for everyone: a guest sends it to
 ## the host, the host plays it and passes it on to the other guests.
+## A reaction with its own picture (Core's "img:boot" object, params.object_image) only has an
+## address on the sender's own Stream Core, which the other PCs can't reach. So the picture's bytes
+## go along, once per PC per session (_send_reaction_picture), and the reaction names it as
+## "net:<md5>" (_picture_key). The others keep it in EmoteCache under that name.
 func _on_reaction_play(d: Dictionary) -> void:
 	if _role == "off" or bool(d.get("net_remote", false)):
 		return
+	var url := _reaction_picture_url(d)
+	if url != "" and EmoteCache.get_bytes(url).is_empty() and not EmoteCache.is_failed(url):
+		# the picture's first use: it's still downloading from Core (ReactionLayer asked for it),
+		# so the reaction waits for it (_on_emote_ready), at most REACTION_PICTURE_WAIT seconds
+		if not _pic_waiting.has(url):
+			_pic_waiting[url] = {"list": [], "wait": REACTION_PICTURE_WAIT}
+			EmoteCache.get_texture(url)      # (starts the download if nothing here asked for it yet)
+		(_pic_waiting[url]["list"] as Array).append(d)
+		return
+	_share_reaction(d, url)
+
+
+## Sends one of this PC's reactions to the others, with its picture (url: its address on this PC's
+## Core, "" for none) when that's here and small enough; else they show its emoji / word.
+func _share_reaction(d: Dictionary, url: String) -> void:
+	if _role == "off":
+		return
 	var out := _shareable_reaction(d)
+	var bytes := EmoteCache.get_bytes(url) if url != "" else PackedByteArray()
+	var key := ""
+	if bytes.size() <= PictureFile.MAX_BYTES and PictureFile.kind_of(bytes) != "":
+		key = _picture_key(bytes)
+		(out["params"] as Dictionary)["object_image"] = {"url": key}
 	if _role == "host":
-		_to_guests("_net_reaction", [out])
+		for id: int in _peers:
+			if id != 1:
+				_send_reaction_picture(id, key, bytes)
+				_net_reaction.rpc_id(id, out)
 	else:
+		if key != "" and not _pic_sent.has(key):
+			_pic_sent[key] = true
+			_net_guest_reaction_picture.rpc_id(1, key, bytes)
 		_net_guest_reaction.rpc_id(1, out)
+
+
+## The full address of a reaction's own picture on this PC's Stream Core, or "" when it has none.
+static func _reaction_picture_url(d: Dictionary) -> String:
+	var params: Variant = d.get("params")
+	var pic: Variant = (params as Dictionary).get("object_image") if params is Dictionary else null
+	var path := String((pic as Dictionary).get("url", "")) if pic is Dictionary else ""
+	if path == "" or path.begins_with(EmoteCache.NET_PREFIX):
+		return ""
+	return ReactionLayer._core_url(path)
+
+
+## A picture finished downloading (EmoteCache): reactions waiting for it go out now.
+func _on_emote_ready(url: String) -> void:
+	if _pic_waiting.has(url):
+		var list: Array = _pic_waiting[url]["list"]
+		_pic_waiting.erase(url)
+		for d: Dictionary in list:
+			_share_reaction(d, url)
+
+
+## (from _process) Reactions whose picture didn't arrive in time, or failed, go without it.
+func _reaction_picture_timeout(delta: float) -> void:
+	for url: String in _pic_waiting.keys():
+		_pic_waiting[url]["wait"] = float(_pic_waiting[url]["wait"]) - delta
+		if float(_pic_waiting[url]["wait"]) <= 0.0 or EmoteCache.is_failed(url):
+			var list: Array = _pic_waiting[url]["list"]
+			_pic_waiting.erase(url)
+			for d: Dictionary in list:
+				_share_reaction(d, "")
+
+
+## Host: a reaction picture to guest `id`, unless it has it already. Sent just before the reaction
+## that uses it (same reliable channel, so it arrives first).
+func _send_reaction_picture(id: int, key: String, bytes: PackedByteArray) -> void:
+	if key == "" or bytes.is_empty():
+		return
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	if not (_pic_sent[id] as Dictionary).has(key):
+		_pic_sent[id][key] = true
+		_net_reaction_picture.rpc_id(id, key, bytes)
+
+
+## Guest: a reaction picture from the host (its own, or another guest's that it passes on).
+@rpc("authority", "call_remote", "reliable")
+func _net_reaction_picture(key: String, bytes: PackedByteArray) -> void:
+	if _from_host() and _picture_ok(key, bytes):
+		EmoteCache.put_bytes(key, bytes)
+
+
+## Host: a guest's reaction picture (the reaction that uses it follows). Kept here so it can be
+## shown here and passed on to the other guests.
+@rpc("any_peer", "call_remote", "reliable")
+func _net_guest_reaction_picture(key: String, bytes: PackedByteArray) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or not _picture_ok(key, bytes):
+		return
+	EmoteCache.put_bytes(key, bytes)
+	if not _pic_sent.has(id):
+		_pic_sent[id] = {}
+	_pic_sent[id][key] = true          # (the guest that sent it has it)
 
 
 @rpc("authority", "call_remote", "reliable")
@@ -1605,17 +1847,24 @@ func _net_guest_reaction(d: Dictionary) -> void:
 		return
 	var out := _shareable_reaction(d)
 	_play_remote(out)
+	var key := _reaction_key(out)
+	var bytes := EmoteCache.get_bytes(key) if key != "" else PackedByteArray()
 	for other: int in _peers:
 		if other != 1 and other != id:
+			_send_reaction_picture(other, key, bytes)
 			_net_reaction.rpc_id(other, out)
 
 
 ## Only what the effect needs, as plain values. The id is marked so nobody reports the result to
-## their own Stream Core twice, and a picture from the sender's Stream Core (only reachable on
-## their PC) is dropped: the reaction shows its emoji / word instead.
+## their own Stream Core twice. A picture is only kept as a "net:<md5>" name (its bytes travel
+## separately, see _on_reaction_play); an address on the sender's Stream Core (only reachable on
+## their PC) is dropped, and the reaction shows its emoji / word instead.
 static func _shareable_reaction(d: Dictionary) -> Dictionary:
 	var params: Dictionary = (d.get("params") as Dictionary).duplicate(true) if d.get("params") is Dictionary else {}
+	var pic: Variant = params.get("object_image")
 	params.erase("object_image")
+	if pic is Dictionary and _is_picture_key(String((pic as Dictionary).get("url", ""))):
+		params["object_image"] = {"url": String(pic["url"])}
 	var from: Dictionary = d.get("from") if d.get("from") is Dictionary else {}
 	var target: Variant = null
 	if d.get("target") is Dictionary:
@@ -1633,8 +1882,38 @@ static func _shareable_reaction(d: Dictionary) -> Dictionary:
 func _play_remote(d: Dictionary) -> void:
 	if not bool(AppState.get_setting("reactions_enabled")) or not Reactions.get_effect_ids().has(String(d["effect"])):
 		return
+	var key := _reaction_key(d)
+	if key != "" and EmoteCache.get_bytes(key).is_empty() and EmoteCache.get_texture(key) == null:
+		(d["params"] as Dictionary).erase("object_image")    # (its picture never came: the emoji / word then)
 	d["net_remote"] = true
 	EventBus.reaction_play.emit(d)
+
+
+## The "net:<md5>" picture a shared reaction names, or "".
+static func _reaction_key(d: Dictionary) -> String:
+	var params: Variant = d.get("params")
+	var pic: Variant = (params as Dictionary).get("object_image") if params is Dictionary else null
+	return String((pic as Dictionary).get("url", "")) if pic is Dictionary else ""
+
+
+## A picture's name between the PCs: EmoteCache.NET_PREFIX + the MD5 of its bytes (the same picture
+## gets the same name on every PC, whoever's Core it came from).
+static func _picture_key(bytes: PackedByteArray) -> String:
+	var h := HashingContext.new()
+	h.start(HashingContext.HASH_MD5)
+	h.update(bytes)
+	return EmoteCache.NET_PREFIX + h.finish().hex_encode()
+
+
+## "net:" plus 32 hex digits (a name _picture_key makes), nothing else.
+static func _is_picture_key(key: String) -> bool:
+	return key.length() == 36 and key.begins_with(EmoteCache.NET_PREFIX) and key.substr(4).is_valid_hex_number()
+
+
+## A picture from another PC: a known format, not too big, and its name matches its bytes.
+static func _picture_ok(key: String, bytes: PackedByteArray) -> bool:
+	return _is_picture_key(key) and bytes.size() <= PictureFile.MAX_BYTES and PictureFile.kind_of(bytes) != "" \
+		and not PictureFile.too_big(bytes) and _picture_key(bytes) == key
 
 
 # ── Cameras ──────────────────────────────────────────────────
