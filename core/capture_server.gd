@@ -52,6 +52,10 @@ const PRESENTER_CHANNEL: int = 100
 const WS_BUFFER_BYTES: int = 8 * 1024 * 1024
 ## Close code for a socket with a wrong or missing key (the sender page then fetches /key).
 const CLOSE_BAD_KEY: int = 4001
+## Close code for the sender a newer one replaced (newest sender wins). The page then stops
+## reconnecting and offers "Use this page" (web/sender.html setReplaced), so two open sender pages,
+## say Stream Core's dashboard and this game's own page, don't keep taking it from each other.
+const CLOSE_REPLACED: int = 4002
 ## How long a socket may take to open before it is dropped.
 const PENDING_TIMEOUT_MS: int = 5000
 ## At most this many sockets waiting to open at once.
@@ -68,7 +72,7 @@ var _http: TCPServer = TCPServer.new()
 var _ws_listener: TCPServer = TCPServer.new()
 var _http_clients: Array[Dictionary] = []
 var _pending_ws: Array[Dictionary] = []    # {ws: WebSocketPeer, t: msec}
-var _closing_ws: Array[WebSocketPeer] = []   # refused sockets finishing their close handshake
+var _closing_ws: Array[WebSocketPeer] = []   # refused or replaced sockets finishing their close handshake
 var _ws: WebSocketPeer                       # the one accepted sender (newest wins)
 var _http_port: int = 0
 var _ws_port: int = 0
@@ -291,7 +295,8 @@ func _poll_ws_accept() -> void:
 					_closing_ws.append(ws)
 					continue
 				if _ws:  # newest sender wins
-					_ws.close(1000, "Replaced by a new sender")
+					_ws.close(CLOSE_REPLACED, "Replaced by a new sender")
+					_closing_ws.append(_ws)   # let its close handshake finish
 				_ws = ws
 			WebSocketPeer.STATE_CLOSED:
 				_pending_ws.erase(p)

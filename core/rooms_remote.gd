@@ -341,7 +341,7 @@ func run_command(action: String, value: Variant) -> bool:
 			# The tab itself is then picked there, in the browser's share dialog.
 			if v != "open":
 				return false
-			OS.shell_open(sender_url())
+			open_sender_page()
 		"remote":
 			# "take" = host takes the big screen remote back; "ask" = a guest asks for it
 			if v == "take":
@@ -383,6 +383,24 @@ func run_command(action: String, value: Variant) -> bool:
 ## the page's key isn't in the address (CaptureServer writes it into the page itself).
 static func sender_url() -> String:
 	return "http://127.0.0.1:%d/" % AppState.get_capture_port("capture_http_port")
+
+
+## Core's dashboard page that runs the sender page inside it (Live controls, "Share to the big
+## screen" card: fridge-stream-core admin/rooms-sender.js opens it for the "#live/sender" address).
+const CORE_SENDER_PATH: String = "/admin/#live/sender"
+
+
+## Opens the sender page in this PC's default browser: the one built into Stream Core's dashboard
+## while this app is linked to Core (ChatFeed connected), else the game's own page at sender_url()
+## (the fallback, it works without Core). Called by the panel's "Open sender page" buttons
+## (ui/control_panel.gd) and Core's "sender" "open" command above.
+static func open_sender_page() -> void:
+	if ChatFeed.is_connected_to_core():
+		var url := ChatFeed.core_url(CORE_SENDER_PATH)
+		if url.begins_with("http"):
+			OS.shell_open(url)
+			return
+	OS.shell_open(sender_url())
 
 
 ## "on" -> true, "off" -> false, anything else ("toggle") flips the current value.

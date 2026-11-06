@@ -256,7 +256,7 @@ hr{border:0;border-top:2px solid var(--line);margin:3em 0}
 <p><strong>Only your sender page can use the big screen.</strong> Each time Stream Rooms starts it makes a new secret key and writes it into the sender page, and it only takes pictures and sound from a page with that key. Another website open in your browser can't put its own picture on your big screen. Nothing changes for you: open the page with <strong>Open sender page</strong> (or your bookmark) as before. A sender page left open while you restart Stream Rooms picks up the new key by itself.</p>
 <h3 id="a-browser-tab-recommended">A browser tab (recommended)</h3>
 <ol>
-<li>Click <strong>Open sender page</strong>. It opens <code>http://127.0.0.1:8765/</code> in your browser.</li>
+<li>Click <strong>Open sender page</strong>. While Stream Rooms is connected to Stream Core it opens the sender inside Core's dashboard (Live controls, card <strong>Share to the big screen</strong>), so there's no extra tab to keep open. Without Core it opens the game's own page, <code>http://127.0.0.1:8765/</code>, in your browser, as before.</li>
 <li>Click <strong>Share a tab or window</strong>, pick the tab (for example YouTube) and leave <strong>Share tab audio</strong> on.</li>
 <li>The tab shows on the big screen within a second or two. Keep the sender page open. It can sit behind other tabs, but don't minimise the whole browser window.</li>
 </ol>
@@ -751,7 +751,7 @@ hr{border:0;border-top:2px solid var(--line);margin:3em 0}
 </tr>
 <tr>
 <td>The shared tab doesn't show (<strong>Big screen: tab stopped</strong>)</td>
-<td>Keep the sender page open and don't minimise the browser window. Check the sender page says <strong>Connected to the game</strong>. Open it with <strong>Open sender page</strong> (or your bookmark of <code>http://127.0.0.1:8765/</code>); a page left open from before a restart reconnects by itself.</td>
+<td>Keep the sender page open and don't minimise the browser window. Check the sender page says <strong>Connected to the game</strong>. Open it with <strong>Open sender page</strong> (or your bookmark of <code>http://127.0.0.1:8765/</code>); a page left open from before a restart reconnects by itself. Only one sender page sends at a time (the dashboard's card or the game's own page): if one says <strong>Another sender page took over</strong>, press <strong>Use this page</strong> on the one you want.</td>
 </tr>
 <tr>
 <td>A video link doesn't play</td>
