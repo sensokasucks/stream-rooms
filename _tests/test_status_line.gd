@@ -80,7 +80,8 @@ func _ready() -> void:
 	await _secs(0.3)
 	EventBus.video_job_changed.emit("downloading", "", "")
 	await _secs(1.2)
-	var clock := RegEx.create_from_string("^Downloading\\.\\.\\. \\d+:\\d\\d$")
+	# "Step 1 of 2: Downloading · 0:03" (the video steps line, control_panel.gd _on_video_job)
+	var clock := RegEx.create_from_string("Downloading.* \\d+:\\d\\d$")
 	_check(clock.search(String(panel._video_status.text)) != null and not String(panel._video_status.text).ends_with("0:00"),
 		"downloading shows a running clock (%s)" % panel._video_status.text)
 	EventBus.video_job_changed.emit("failed", VIDEO_LOADER.plain_error(raw), raw)

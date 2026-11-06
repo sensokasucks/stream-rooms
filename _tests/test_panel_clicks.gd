@@ -80,12 +80,15 @@ func _ready() -> void:
 	for c in (panel._camera_box as Node).get_children():
 		if c is Button and (c as Button).is_visible_in_tree():
 			cam_btn = c
-	var picked: Array[int] = []
-	var on_preset := func(i: int) -> void: picked.append(i)
-	EventBus.camera_preset_requested.connect(on_preset)
+	# a camera button asks for its saved view by id (camera_view_action "go", see camera_rig.gd)
+	var picked: Array[String] = []
+	var on_view := func(action: String, id: String, _arg: String) -> void:
+		if action == "go":
+			picked.append(id)
+	EventBus.camera_view_action.connect(on_view)
 	if cam_btn:
 		await _click(cam_btn)
-	EventBus.camera_preset_requested.disconnect(on_preset)
+	EventBus.camera_view_action.disconnect(on_view)
 	_check(cam_btn != null and picked.size() == 1, "clicking a camera button picks that camera")
 
 	var q: Button = null
