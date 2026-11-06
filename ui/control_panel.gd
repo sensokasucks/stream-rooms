@@ -30,7 +30,6 @@ extends CanvasLayer
 var _panel: PanelContainer
 var _url: LineEdit
 var _capture_label: Label
-var _capture_url: String = ""
 var _room_select: OptionButton
 var _camera_box: HFlowContainer
 var _views_box: VBoxContainer             # Room tab > Advanced > Camera views: one row per view (CameraRig "Saved views")
@@ -539,8 +538,8 @@ func _build_source_tab() -> Control:
 	var row := HBoxContainer.new()
 	v.add_child(row)
 	row.add_child(_tip(_button("Open sender page", func() -> void:
-		if _capture_url != "": OS.shell_open(_capture_url)),
-		"Opens the sender page in your browser. Pick the tab or window to share there, and it shows on the big screen."))
+		RoomsRemote.open_sender_page()),
+		"Opens the sender page in your browser (inside Stream Core's dashboard while Core is connected, else the game's own page). Pick the tab or window to share there, and it shows on the big screen."))
 	_capture_label = Label.new()
 	_capture_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_capture_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1979,7 +1978,7 @@ func _build_together_tab() -> Control:
 	_net_live_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_net_live.add_child(_net_live_label)
 	var open_sender := _button("Open sender page", func() -> void:
-		if _capture_url != "": OS.shell_open(_capture_url))
+		RoomsRemote.open_sender_page())
 	open_sender.tooltip_text = "Opens the sender page in your browser. Whoever has the big screen remote: their shared tab shows there by itself (click the page once for its sound)."
 	_net_live.add_child(open_sender)
 	v.add_child(_net_live)
@@ -2524,7 +2523,6 @@ func _on_audience_count(seated: int, capacity: int) -> void:
 ## EventBus.capture_status_changed (the sender page, via CaptureServer; keys at that signal, plus
 ## label, capturing, cameras and presenters): the Source tab's line, the presenters' feeds, the strip.
 func _on_capture_status(info: Dictionary) -> void:
-	_capture_url = String(info.get("url", _capture_url))
 	_capture_info = info
 	_refresh_now()
 	_update_presenter_feeds(info)

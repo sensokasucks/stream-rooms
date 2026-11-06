@@ -130,7 +130,28 @@ func _ready() -> void:
 	_check(frames.size() >= 1 and frames.size() <= colors.size(), "frames were decoded (%d of %d; extra ones may be skipped)" % [frames.size(), colors.size()])
 	_check(frames.size() > 0 and frames[-1].r > 0.8 and frames[-1].g < 0.3, "the newest frame is the one shown last (%s)" % (str(frames[-1]) if frames.size() > 0 else "none"))
 	_check(AppState.get_source_mode() == "capture", "the big screen shows the browser tab")
-	good.close()
+
+	# a second sender page (say Stream Core's dashboard) takes over: the first one is told with 4002,
+	# so web/sender.html stops reconnecting instead of taking it back every second
+	var second := await _open_ws("?key=" + key)
+	_check(second.get_ready_state() == WebSocketPeer.STATE_OPEN, "a second sender page's socket opens")
+	for i in 100:
+		good.poll()
+		second.poll()
+		if good.get_ready_state() == WebSocketPeer.STATE_CLOSED:
+			break
+		await _secs(0.03)
+	_check(good.get_ready_state() == WebSocketPeer.STATE_CLOSED and good.get_close_code() == CaptureServer.CLOSE_REPLACED,
+		"the replaced sender is closed with code 4002 (got %d)" % good.get_close_code())
+	var n_before := frames.size()
+	second.send(_jpeg(Color.GREEN))
+	for i in 100:
+		second.poll()
+		if frames.size() > n_before:
+			break
+		await _secs(0.03)
+	_check(frames.size() > n_before and server.is_connected_to_sender(), "the newest sender's pictures reach the screen")
+	second.close()
 
 	print("DONE fails=", _fails)
 	AppState.request_quit(1 if _fails > 0 else 0)

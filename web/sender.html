@@ -45,6 +45,15 @@
   .pres.unused { display: none; }
   #presSection:not(:has(#presList .pres:not(.unused))):has(#camPermRow.hidden) { display: none; }
   .hidden { display: none !important; }
+  /* Inside Stream Core's dashboard (see "Inside Stream Core" in the script): the dashboard card has
+     its own heading, so the page's header goes and the page uses the card's full width. */
+  html.in-core { color-scheme: dark; background: transparent; }   /* (the frame is dark too: no white edge) */
+  body.in-core { background: transparent; }
+  body.in-core main { max-width: none; padding: 0; }
+  body.in-core header.top { display: none; }
+  /* the card is already a box: the sections inside are just stacked parts of it, split by a line */
+  body.in-core section { background: transparent; border: 0; border-radius: 0; padding: 8px 0 0; margin: 0 0 8px; }
+  body.in-core section section { padding-top: 0; }
 </style>
 </head>
 <body>
@@ -52,7 +61,9 @@
   <header class="top"><b>Stream Rooms sender</b> · keep this window open while sharing</header>
 
   <section>
-    <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span></div>
+    <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span>
+      <!-- shown when another sender page took over (close code 4002, see "replaced" in the script) -->
+      <button id="takeBackBtn" class="hidden" title="Make this page the one that sends to the big screen again">Use this page</button></div>
 
   <section id="liveSection" class="hidden">
     <div class="row"><b>Co-stream</b></div>
@@ -127,6 +138,22 @@
 
 <script>
 "use strict";
+// ── Inside Stream Core ───────────────────────────────────────
+// Stream Core's dashboard can run this page inside its Live page (fridge-stream-core
+// admin/rooms-sender.js, the "Share to the big screen" card). Core fetches the page from the game
+// (GET /api/admin/rooms/sender-page), adds a <base href> pointing at the game's address (so
+// /vdoninja-sdk.min.js and /backdrop still come from the game) and loads it in a same-origin frame.
+// The dashboard leaves window.RoomsSenderHost for this page:
+//   fetchKey() -> Promise<string>  this run's key, through Core (the game's /key can't be read
+//                                  from the dashboard's address: no CORS, on purpose)
+//   params                         the dashboard's ?query (?testshare, ?safeshare... for tests)
+// Opened on its own (http://127.0.0.1:8765/, the fallback when Core isn't connected) there is no
+// host and the page works exactly as before. Keep in step with admin/rooms-sender.js.
+let HOST = null;
+try { if (window.parent !== window && window.parent.RoomsSenderHost) HOST = window.parent.RoomsSenderHost; } catch (_) {}
+const PARAMS = new URLSearchParams(HOST ? String(HOST.params || "") : location.search);
+if (HOST) { document.documentElement.classList.add("in-core"); document.body.classList.add("in-core"); }
+
 // The game writes this run's key in when it serves the page; a socket without it is refused.
 let wsKey = "{{WS_KEY}}";
 const wsUrl = () => "ws://127.0.0.1:{{WS_PORT}}/?key=" + encodeURIComponent(wsKey);
@@ -146,9 +173,9 @@ const JPEG_QUALITY = 0.82;
 
 const $ = (id) => document.getElementById(id);
 // Tests only: "?testshare" shares a generated picture and tone instead of asking for a tab.
-const TEST_SHARE = new URLSearchParams(location.search).has("testshare");
+const TEST_SHARE = PARAMS.has("testshare");
 // Tests only: "?autoshare" clicks Share by itself (Chrome's --auto-select-desktop-capture-source picks the source).
-const AUTO_SHARE = new URLSearchParams(location.search).has("autoshare");
+const AUTO_SHARE = PARAMS.has("autoshare");
 let pumpMode = "";          // how the main video's frames reach the worker: "track" | "frames" | "video" (see startFramePump)
 let link = null;           // the worker that owns the socket and does the picture work (WORKER_SRC)
 let linkOpen = false;
@@ -180,7 +207,7 @@ const SAFE_MAX_HEIGHT = 720, SAFE_MAX_FPS = 30;
 // localStorage can be missing or blocked (private window, strict settings): then the guard is off.
 function storeSet(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (_) {} }
 function storeGet(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }
-let safeMode = new URLSearchParams(location.search).has("safeshare") || storeGet(SAFE_KEY) === "1";
+let safeMode = PARAMS.has("safeshare") || storeGet(SAFE_KEY) === "1";
 if (storeGet(FREEZE_KEY)) {
   console.log("sender: the last share didn't finish starting (browser froze or closed?): safe mode on");
   safeMode = true;
@@ -219,6 +246,7 @@ function connect() {
     else if (m.type === "fps") { workerFps = m.fps; tick(); }
     else if (m.type === "done") { const cb = pumpDone.get(m.id); if (cb) cb(); }
     else if (m.type === "badkey") refreshKey();
+    else if (m.type === "replaced") setReplaced(true);
     else if (m.type === "message") {
       let msg; try { msg = JSON.parse(m.text); } catch (_) { return; }
       if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots, msg.avatar, msg.screen);
@@ -234,14 +262,31 @@ let keyBusy = false;
 function refreshKey() {
   if (keyBusy) return;
   keyBusy = true;
-  fetch("/key", { cache: "no-store" }).then((r) => r.ok ? r.text() : "").then((k) => {
+  const got = HOST ? Promise.resolve(HOST.fetchKey())
+    : fetch("/key", { cache: "no-store" }).then((r) => r.ok ? r.text() : "");
+  got.then((k) => {
     if (k && link) { wsKey = k.trim(); link.postMessage({ type: "url", url: wsUrl() }); }
   }).catch(() => {}).finally(() => { keyBusy = false; });
 }
+let replaced = false;   // another sender page took over (the game closed this one with code 4002)
 function setLink(ok) {
+  if (ok) setReplaced(false);
+  if (replaced) return;
   $("linkDot").classList.toggle("ok", ok);
   $("linkText").textContent = ok ? "Connected to the game." : "Waiting for the game... (is it running?)";
 }
+// Only one sender page sends at a time: the newest one that opens wins, and the game tells the one
+// it replaced (close code 4002, CaptureServer.CLOSE_REPLACED). That page stops reconnecting, so two
+// open pages (say this dashboard and the game's own page) don't keep taking it from each other
+// every second. "Use this page" connects it again (and so replaces the other one in turn).
+function setReplaced(on) {
+  replaced = on;
+  $("takeBackBtn").classList.toggle("hidden", !on);
+  if (!on) return;
+  $("linkDot").classList.remove("ok");
+  $("linkText").textContent = "Another sender page took over (Stream Core's dashboard or another tab).";
+}
+$("takeBackBtn").onclick = () => { setReplaced(false); setLink(false); if (link) link.postMessage({ type: "reconnect" }); };
 function bufferLimit(type) {
   if (type === PKT_AUDIO) return MAX_BUFFERED_AUDIO;
   if (type === PKT_PRESENTER) return share ? MAX_BUFFERED_PRES_BUSY : MAX_BUFFERED_PRES;
@@ -405,6 +450,8 @@ function connect() {
   ws.onclose = (e) => {
     postMessage({ type: "link", ok: false });
     if (e.code === 4001) postMessage({ type: "badkey" });   // the game restarted: fetch its new key
+    // 4002: another sender page took over. Don't take it back by reconnecting; the page offers a button.
+    if (e.code === 4002) { ws = null; postMessage({ type: "replaced" }); return; }
     setTimeout(connect, 1000);
   };
   ws.onerror = () => {};
@@ -467,6 +514,7 @@ onmessage = (e) => {
   const m = e.data;
   if (m.type === "connect") { url = m.url; limits = m.limits; connect(); }
   else if (m.type === "url") url = m.url;   // a new key: the next reconnect uses it
+  else if (m.type === "reconnect") { if (!ws) connect(); }   // "Use this page" after a 4002 close
   else if (m.type === "json") { if (ws && ws.readyState === 1) ws.send(m.text); }
   else if (m.type === "packet") sendPacket(m.kind, m.bytes, m.slot);
   else if (m.type === "busy") busyShare = m.on;
@@ -906,7 +954,7 @@ function applyLiveFeed(msg) {
     vdoClose();
     if (follow) { startWatching(); return; }
   }
-  if (new URLSearchParams(location.search).has("autowatch") && live.role === "view" && live.live && !watching) {
+  if (PARAMS.has("autowatch") && live.role === "view" && live.live && !watching) {
     startWatching();     // (tests: no click needed)
     return;
   }
