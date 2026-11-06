@@ -158,7 +158,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
-	"panel_small": true,         # while Stream Core is connected, hide the panel tabs whose settings all live in Core's Setup > Stream Rooms settings (control_panel.gd SMALL_HIDDEN_TABS)
+	"panel_small": true,         # while Stream Core is connected, the panel keeps only what has to be done in the game: tabs and setting rows that Core's Setup > Stream Rooms settings has are hidden (control_panel.gd SMALL_HIDDEN_TABS, _apply_small_rows). Someone who unticked it keeps the full panel.
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
 	"chat_left_header_on": true,
