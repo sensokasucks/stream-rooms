@@ -8,6 +8,7 @@
 #include <godot_cpp/classes/rendering_device.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/texture2drd.hpp>
+#include <godot_cpp/classes/time.hpp>
 #include <godot_cpp/core/class_db.hpp>
 #include <godot_cpp/godot.hpp>
 
@@ -65,6 +66,7 @@ PackedStringArray SpoutTexture::get_sender_names() {
 void SpoutTexture::set_channel_name(String p_name) {
   _channel_name = p_name;
   _release_receiver();
+  _retry_at_ms = 0; // a new name connects on the next frame, no waiting
 }
 
 bool SpoutTexture::_is_initialized() const {
@@ -150,17 +152,37 @@ void SpoutTexture::_release_texture() {
   }
 }
 
+// Called by RenderingServer's frame_pre_draw signal (once per drawn frame, on the thread that
+// draws). Copies the sender's newest picture into _rd_texture.
+//
+// Stream Rooms patch (2026-11-06, crash fix): upstream released the whole receiver whenever one
+// frame's copy failed, then built a new one on the next frame. A new receiver opens its own
+// Direct3D 11 device and the release waits for the whole GPU to go idle (plus a 67 ms sleep
+// inside Spout), so a sender that is briefly busy (VTube Studio holding its picture's lock for
+// a moment) made us do that up to 60 times a second. That ended in crashes inside NVIDIA's
+// D3D11 driver, heap corruption and freezes on the owner's PC. Now:
+// - a frame whose copy fails is simply skipped (the last picture stays on screen);
+// - only "the sender is gone" (update_receiver fails) releases the receiver, and a new one is
+//   tried at most once every RETRY_MS milliseconds.
 void SpoutTexture::_receive_texture() {
 
   if (!_is_initialized()) {
+    // wait between attempts so a missing sender doesn't rebuild D3D11 every frame
+    uint64_t now = Time::get_singleton()->get_ticks_msec();
+    if (_retry_at_ms != 0 && now < _retry_at_ms) {
+      return;
+    }
     if (!_create_receiver()) {
+      _retry_at_ms = now + RETRY_MS;
       return;
     }
   }
 
   auto channel = _channel_name.utf8();
   if (!_backend->update_receiver(channel.get_data())) {
+    // the sender is not there (closed, or not found yet): let go and try again later
     _release_receiver();
+    _retry_at_ms = Time::get_singleton()->get_ticks_msec() + RETRY_MS;
     return;
   }
 
@@ -177,7 +199,6 @@ void SpoutTexture::_receive_texture() {
     }
   }
 
-  if (!_backend->receive(_rd_texture, width, height, channel.get_data())) {
-    _release_receiver();
-  }
+  // A failed copy (the sender holds its lock this frame) just skips this frame.
+  _backend->receive(_rd_texture, width, height, channel.get_data());
 }

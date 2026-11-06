@@ -11,10 +11,14 @@ index 1e8261b..f900969 100644
  if(GODOT_SPOUT_ENABLE_OPENGL)
      target_include_directories(GodotSpout PRIVATE
 diff --git a/src/SpoutTexture.cpp b/src/SpoutTexture.cpp
-index 8e77708..f4a235e 100644
+index 8e77708..1ec7838 100644
 --- a/src/SpoutTexture.cpp
 +++ b/src/SpoutTexture.cpp
-@@ -11,6 +11,10 @@
+@@ -8,9 +8,14 @@
+ #include <godot_cpp/classes/rendering_device.hpp>
+ #include <godot_cpp/classes/rendering_server.hpp>
+ #include <godot_cpp/classes/texture2drd.hpp>
++#include <godot_cpp/classes/time.hpp>
  #include <godot_cpp/core/class_db.hpp>
  #include <godot_cpp/godot.hpp>
  
@@ -25,7 +29,7 @@ index 8e77708..f4a235e 100644
  using namespace godot;
  
  void SpoutTexture::_bind_methods() {
-@@ -22,6 +26,8 @@ void SpoutTexture::_bind_methods() {
+@@ -22,6 +27,8 @@ void SpoutTexture::_bind_methods() {
                         &SpoutTexture::get_channel_name);
    ClassDB::bind_method(D_METHOD("set_channel_name", "name"),
                         &SpoutTexture::set_channel_name);
@@ -34,7 +38,7 @@ index 8e77708..f4a235e 100644
  
    // Add properties
    ClassDB::add_property("SpoutTexture", {Variant::STRING, "channel_name"},
-@@ -44,6 +50,18 @@ SpoutTexture::~SpoutTexture() {
+@@ -44,9 +51,22 @@ SpoutTexture::~SpoutTexture() {
  
  String SpoutTexture::get_channel_name() const { return _channel_name; }
  
@@ -53,7 +57,11 @@ index 8e77708..f4a235e 100644
  void SpoutTexture::set_channel_name(String p_name) {
    _channel_name = p_name;
    _release_receiver();
-@@ -101,8 +119,10 @@ bool SpoutTexture::_create_texture(uint32_t p_width, uint32_t p_height) {
++  _retry_at_ms = 0; // a new name connects on the next frame, no waiting
+ }
+ 
+ bool SpoutTexture::_is_initialized() const {
+@@ -101,8 +121,10 @@ bool SpoutTexture::_create_texture(uint32_t p_width, uint32_t p_height) {
    fmt->set_mipmaps(1);
    fmt->set_texture_type(RenderingDevice::TEXTURE_TYPE_2D);
    fmt->set_samples(RenderingDevice::TEXTURE_SAMPLES_1);
@@ -65,8 +73,56 @@ index 8e77708..f4a235e 100644
  
    Ref<RDTextureView> view;
    view.instantiate();
+@@ -130,17 +152,37 @@ void SpoutTexture::_release_texture() {
+   }
+ }
+ 
++// Called by RenderingServer's frame_pre_draw signal (once per drawn frame, on the thread that
++// draws). Copies the sender's newest picture into _rd_texture.
++//
++// Stream Rooms patch (2026-11-06, crash fix): upstream released the whole receiver whenever one
++// frame's copy failed, then built a new one on the next frame. A new receiver opens its own
++// Direct3D 11 device and the release waits for the whole GPU to go idle (plus a 67 ms sleep
++// inside Spout), so a sender that is briefly busy (VTube Studio holding its picture's lock for
++// a moment) made us do that up to 60 times a second. That ended in crashes inside NVIDIA's
++// D3D11 driver, heap corruption and freezes on the owner's PC. Now:
++// - a frame whose copy fails is simply skipped (the last picture stays on screen);
++// - only "the sender is gone" (update_receiver fails) releases the receiver, and a new one is
++//   tried at most once every RETRY_MS milliseconds.
+ void SpoutTexture::_receive_texture() {
+ 
+   if (!_is_initialized()) {
++    // wait between attempts so a missing sender doesn't rebuild D3D11 every frame
++    uint64_t now = Time::get_singleton()->get_ticks_msec();
++    if (_retry_at_ms != 0 && now < _retry_at_ms) {
++      return;
++    }
+     if (!_create_receiver()) {
++      _retry_at_ms = now + RETRY_MS;
+       return;
+     }
+   }
+ 
+   auto channel = _channel_name.utf8();
+   if (!_backend->update_receiver(channel.get_data())) {
++    // the sender is not there (closed, or not found yet): let go and try again later
+     _release_receiver();
++    _retry_at_ms = Time::get_singleton()->get_ticks_msec() + RETRY_MS;
+     return;
+   }
+ 
+@@ -157,7 +199,6 @@ void SpoutTexture::_receive_texture() {
+     }
+   }
+ 
+-  if (!_backend->receive(_rd_texture, width, height, channel.get_data())) {
+-    _release_receiver();
+-  }
++  // A failed copy (the sender holds its lock this frame) just skips this frame.
++  _backend->receive(_rd_texture, width, height, channel.get_data());
+ }
 diff --git a/src/SpoutTexture.hpp b/src/SpoutTexture.hpp
-index cd8f737..4b5bda4 100644
+index cd8f737..3408286 100644
 --- a/src/SpoutTexture.hpp
 +++ b/src/SpoutTexture.hpp
 @@ -15,6 +15,9 @@ public:
@@ -79,3 +135,74 @@ index cd8f737..4b5bda4 100644
  protected:
    static void _bind_methods();
    bool _is_initialized() const;
+@@ -32,6 +35,11 @@ private:
+ 
+   // Properties
+   String _channel_name;
++
++  // Stream Rooms patch: after a failed connect / a sender that went away, the next attempt waits
++  // until this time (Time.get_ticks_msec(), 0 = no wait). See _receive_texture.
++  uint64_t _retry_at_ms = 0;
++  static constexpr uint64_t RETRY_MS = 1000;
+ };
+ 
+ } // namespace godot
+diff --git a/src/SpoutVulkanBackend.cpp b/src/SpoutVulkanBackend.cpp
+index f58097a..c3ce3ce 100644
+--- a/src/SpoutVulkanBackend.cpp
++++ b/src/SpoutVulkanBackend.cpp
+@@ -68,6 +68,7 @@ void SpoutVulkanBackend::release() {
+   _device = VK_NULL_HANDLE;
+   _queue = VK_NULL_HANDLE;
+   _queue_family_index = 0;
++  _connected = false;
+ }
+ 
+ bool SpoutVulkanBackend::is_initialized() const {
+@@ -102,12 +103,17 @@ bool SpoutVulkanBackend::update_receiver(const char *p_sender_name) {
+     return false;
+   }
+ 
+-  if (p_sender_name && p_sender_name[0]) {
++  // Stream Rooms patch: "active sender" is one setting shared by every Spout program on the
++  // PC. spoutVK only reads it while it has no sender yet, so set it just for that first
++  // connect, instead of every frame from every receiver (two podiums on different senders
++  // kept flipping it, and so did any other Spout program).
++  if (!_connected && p_sender_name && p_sender_name[0]) {
+     spoutSenderNames sender_names;
+     sender_names.SetActiveSender(p_sender_name);
+   }
+ 
+-  return _spout->ReceiveSenderTexture(_physical_device, _device) != nullptr;
++  _connected = _spout->ReceiveSenderTexture(_physical_device, _device) != nullptr;
++  return _connected;
+ }
+ 
+ bool SpoutVulkanBackend::receive(const RID &p_texture, uint32_t p_width,
+@@ -116,11 +122,7 @@ bool SpoutVulkanBackend::receive(const RID &p_texture, uint32_t p_width,
+     return false;
+   }
+ 
+-  if (p_sender_name && p_sender_name[0]) {
+-    spoutSenderNames sender_names;
+-    sender_names.SetActiveSender(p_sender_name);
+-  }
+-
++  // (Stream Rooms patch: no SetActiveSender here; update_receiver ran just before, see there.)
+   VkImage image = get_texture_image(p_texture);
+   VkFormat format = get_texture_format(p_texture);
+   VkImageLayout layout = get_texture_layout(p_texture);
+diff --git a/src/SpoutVulkanBackend.hpp b/src/SpoutVulkanBackend.hpp
+index d927b43..12553ac 100644
+--- a/src/SpoutVulkanBackend.hpp
++++ b/src/SpoutVulkanBackend.hpp
+@@ -54,6 +54,9 @@ private:
+   VkQueue _queue = VK_NULL_HANDLE;
+   uint32_t _queue_family_index = 0;
+   VkCommandPool _command_pool = VK_NULL_HANDLE;
++  // Stream Rooms patch: true once spoutVK has found its sender (it then keeps that name, so
++  // the PC-wide "active sender" doesn't need setting again). Cleared by release().
++  bool _connected = false;
+ };
+ 
+ } // namespace godot
