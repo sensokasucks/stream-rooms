@@ -278,6 +278,11 @@ there moves to another seat.
 ## Accessibility
 - **Panel size** (bottom of the control panel, or Ctrl+= / Ctrl+-): 75-200%. Text, buttons
   and sliders all scale, in the main window and in the panel's own window.
+- **Small panel** (bottom of the control panel, on by default): while Stream Core is connected,
+  the **React**, **Sound**, **Chat** and **Audience** tabs hide, because every setting on them is in
+  Stream Core's **Setup › Stream Rooms settings** (and the buttons are on its Live page or are
+  hotkeys). A line above the tabs has **Open in Stream Core** and **Show all tabs**. When Core isn't
+  connected, all tabs show. Nothing is removed: untick it to get them back.
 - **Keyboard:** F6 puts the keyboard in the panel (a yellow outline shows where). Tab /
   Shift+Tab move between controls, Left / Right change a slider or switch tabs, Space / Enter
   press buttons and tick boxes, Esc gives the keys back to the hotkeys. Clicking with the mouse

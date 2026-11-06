@@ -116,6 +116,35 @@ func _ready() -> void:
 		_check(remote.set_from_core(color_key, "#ff0000") and AppState.get_setting(color_key) == Color(1, 0, 0), "a colour comes over as #rrggbb (%s)" % color_key)
 	_check(not remote.set_from_core("volume_typo", 1), "an unknown key is refused")
 
+	# Small panel (panel_small): with Core connected the React / Sound / Chat / Audience tabs hide,
+	# and come back when Core drops or the box is unticked
+	var panel: Node = get_tree().get_first_node_in_group("control_panel")
+	var ptabs: TabContainer = panel.get("_tabs")
+	var hidden_names := func() -> Array:
+		var out: Array = []
+		for i in ptabs.get_tab_count():
+			if ptabs.is_tab_hidden(i):
+				out.append(String(ptabs.get_tab_control(i).name))
+		return out
+	AppState.set_setting("panel_small", true)
+	panel.call("_refresh_strip")
+	_check((hidden_names.call() as Array).is_empty(), "Small panel: all tabs show while Core isn't connected")
+	ChatFeed.set("_connected", true)        # pretend Core is there
+	ptabs.current_tab = (ptabs.get_node("Audience") as Control).get_index()
+	panel.call("_refresh_strip")
+	_check(hidden_names.call() == ["React", "Sound", "Chat", "Audience"], "with Core connected the four tabs hide (%s)" % str(hidden_names.call()))
+	_check(String(ptabs.get_current_tab_control().name) == "Source", "the open Audience tab moves to Source")
+	_check((panel.get("_small_note") as Control).visible, "and a note says where they went")
+	await get_tree().process_frame
+	if args.size() > 0 and not args[0].begins_with("--"):
+		get_viewport().get_texture().get_image().save_png(args[0].path_join("small_panel.png"))
+	AppState.set_setting("panel_small", false)
+	_check((hidden_names.call() as Array).is_empty() and not (panel.get("_small_note") as Control).visible, "unticking Small panel brings them back")
+	AppState.set_setting("panel_small", true)
+	ChatFeed.set("_connected", false)
+	panel.call("_refresh_strip")
+	_check((hidden_names.call() as Array).is_empty(), "and so does Core dropping")
+
 	remote.run_command("room", "theater")
 	await _secs(4.0)
 	_check(String(AppState.get_setting("room_id")) == "theater", "the room picker changes the room")

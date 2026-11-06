@@ -423,6 +423,7 @@ func _build() -> void:
 	var outer := VBoxContainer.new()
 	_panel.add_child(outer)
 	outer.add_child(_build_status_strip())
+	outer.add_child(_build_small_note())
 	_tabs = TabContainer.new()
 	_tabs.custom_minimum_size = Vector2(panel_width - 20, 0)
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -457,6 +458,8 @@ func _build() -> void:
 	(size_row.get_child(0) as Label).custom_minimum_size = Vector2(80, 0)
 	size_row.tooltip_text = "Makes everything in this panel bigger or smaller (text, buttons, sliders). Ctrl+= / Ctrl+- also work."
 	bottom.add_child(size_row)
+	bottom.add_child(_tip(_check("panel_small", "Small panel"),
+		"While Stream Core is connected, hide the React, Sound, Chat and Audience tabs: every setting on them is in Stream Core's Setup > Stream Rooms settings (and on its Live page). Untick to see all tabs again; nothing is removed."))
 	_build_message_line(outer)
 	_add_help_buttons(_panel)
 	_apply_scale.call_deferred()
@@ -2670,7 +2673,7 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_refresh_mic_note()
 	if key == "photosensitive_safe" or key == "flash_strength":
 		_refresh_flash_note()
-	if key == "chat_enabled":
+	if key == "chat_enabled" or key == "panel_small":
 		_refresh_strip()
 	if key == "ndi_source" or key == "spout_source":
 		_refresh_now()
@@ -2788,8 +2791,59 @@ func _build_status_strip() -> HBoxContainer:
 ## Opens the tab whose page is named tab_name (the page names are the tab titles).
 func _go_to_tab(tab_name: String) -> void:
 	var page := _tabs.get_node_or_null(tab_name)
-	if page:
-		_tabs.current_tab = page.get_index()
+	if page == null:
+		return
+	if _tabs.is_tab_hidden(page.get_index()):
+		_open_core_rooms()       # Small panel hides it: its settings are in Core
+		return
+	_tabs.current_tab = page.get_index()
+
+
+# ── Small panel ──────────────────────────────────────────────
+## Tabs that "Small panel" (setting panel_small) hides while Stream Core is connected. Every
+## setting on them is on Core's Setup > Stream Rooms settings page (core/rooms_remote.gd sends the
+## schema) and their buttons are on Core's Live page Stream Rooms card or are hotkeys. Keep this
+## list in step with the "Small panel" tooltip, the note in _build_small_note and the README.
+const SMALL_HIDDEN_TABS: PackedStringArray = ["React", "Sound", "Chat", "Audience"]
+var _small_note: Control
+
+
+## The line above the tabs that says where the hidden tabs went (only shown while they are hidden).
+func _build_small_note() -> Control:
+	var h := HBoxContainer.new()
+	h.visible = false
+	var l := _hint("Small panel: React, Sound, Chat and Audience are in Stream Core.")
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(l)
+	h.add_child(_tip(_button("Open in Stream Core", _open_core_rooms),
+		"Opens Stream Core's Setup > Stream Rooms settings in your browser: every setting from these tabs, changed live."))
+	h.add_child(_tip(_button("Show all tabs", func() -> void: AppState.set_setting("panel_small", false)),
+		"Untick Small panel: all tabs come back here. Tick it again at the bottom of the panel."))
+	_small_note = h
+	return h
+
+
+## Hides or shows SMALL_HIDDEN_TABS. Called from _refresh_strip, which runs whenever Core
+## connects / drops (chat_status_changed) and when chat_enabled or panel_small change.
+func _apply_small_panel() -> void:
+	if _tabs == null:
+		return
+	var hide_them := bool(AppState.get_setting("panel_small")) and ChatFeed.is_connected_to_core()
+	for i in _tabs.get_tab_count():
+		var on_list := SMALL_HIDDEN_TABS.has(String(_tabs.get_tab_control(i).name))
+		if _tabs.is_tab_hidden(i) != (hide_them and on_list):
+			if hide_them and on_list and _tabs.current_tab == i:
+				_tabs.current_tab = 0          # (a hidden tab can't stay the open one)
+			_tabs.set_tab_hidden(i, hide_them and on_list)
+	if _small_note:
+		_small_note.visible = hide_them
+
+
+## Opens Core's Setup > Stream Rooms settings page (admin.js routes #rooms/<page>).
+func _open_core_rooms() -> void:
+	OS.shell_open(ChatFeed.core_url("/admin/#rooms/room"))
+	if not ChatFeed.is_connected_to_core():
+		EventBus.status_message.emit("Stream Core isn't connected: start it, then its Stream Rooms settings page works.", true)
 
 
 ## Status strip colours: green = working, amber = needs a look, red = a problem, grey = off.
@@ -2812,6 +2866,7 @@ func _set_strip(key: String, text: String, color: Color) -> void:
 ## Works out all three dots from ChatFeed, the source mode / sender page status and NetSession.
 ## Called whenever one of those changes (and on every status message).
 func _refresh_strip() -> void:
+	_apply_small_panel()
 	if _strip.is_empty():
 		return
 	# Stream Core
