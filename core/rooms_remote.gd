@@ -250,7 +250,7 @@ func _sources_line() -> Dictionary:
 		"spout": Array(_spout_names).slice(0, MAX_SOURCE_NAMES),
 		"spout_ok": _spout_ok,
 		"spout_on": String(AppState.get_setting("spout_source")) if mode == "spout" else "",
-		"sender_url": "http://127.0.0.1:%d/" % AppState.get_capture_port("capture_http_port"),
+		"sender_url": sender_url(),
 	}
 
 
@@ -334,6 +334,14 @@ func run_command(action: String, value: Variant) -> bool:
 			if n < 1 or n > AppState.PRESENTER_COUNT:
 				return false
 			AppState.set_setting(AppState.presenter_key(n, "on"), parts[1] == "on")
+		"sender":
+			# "open": Core's Big screen picker with "Browser tab" picked, on a device that isn't this
+			# PC (a phone, another PC: a 127.0.0.1 link would open on that device): open the sender
+			# page in this PC's default browser, like the Source tab's "Open sender page" button.
+			# The tab itself is then picked there, in the browser's share dialog.
+			if v != "open":
+				return false
+			OS.shell_open(sender_url())
 		"remote":
 			# "take" = host takes the big screen remote back; "ask" = a guest asks for it
 			if v == "take":
@@ -367,6 +375,14 @@ func run_command(action: String, value: Variant) -> bool:
 	DebugLog.note("core", "Live card: %s %s" % [action, v])
 	_mark()
 	return true
+
+
+## The sender page's address on this PC: CaptureServer serves it on 127.0.0.1 at the capture HTTP
+## port (setting capture_http_port plus the profile's port offset, AppState.get_capture_port; the
+## same address CaptureServer.get_sender_url gives the panel). Sent to Core in the state's "sources";
+## the page's key isn't in the address (CaptureServer writes it into the page itself).
+static func sender_url() -> String:
+	return "http://127.0.0.1:%d/" % AppState.get_capture_port("capture_http_port")
 
 
 ## "on" -> true, "off" -> false, anything else ("toggle") flips the current value.

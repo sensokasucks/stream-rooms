@@ -70,6 +70,9 @@ func _ready() -> void:
 	await _secs(0.5)
 	_check(rig.global_position.distance_to(before) > 1.0, "a camera view button moves the camera (%s)" % str(rig.global_position))
 	_check(not remote.run_command("format_disk", "now"), "an unknown action is refused")
+	# Core's picker on another device asks this PC to open the sender page: "sender" only takes
+	# "open" (not run here: it would open a browser)
+	_check(not remote.run_command("sender", "close"), "the sender action only takes open")
 
 	# Big screen picker: the state lists what can go on the screen, and each pick sends the same
 	# EventBus request the Source tab's Show / Play buttons send
@@ -119,7 +122,7 @@ func _ready() -> void:
 	for e: Dictionary in schema:
 		if bool(e["adv"]):
 			adv += 1
-	_check(adv > 20 and adv < schema.size(), "Advanced â–¸ settings are marked (%d)" % adv)
+	_check(adv > 20 and adv < schema.size(), "Advanced ▸ settings are marked (%d)" % adv)
 	_check(JSON.stringify(data).length() < 900000, "the packet fits the socket buffer (%d chars)" % JSON.stringify(data).length())
 	_check(remote.set_from_core("volume", 0.55) and is_equal_approx(float(AppState.get_setting("volume")), 0.55), "Core sets a slider")
 	_check(not by_key.has("together_password") and not by_key.has("together_address"), "the co-stream password and address stay on this PC")
