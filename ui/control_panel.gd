@@ -459,7 +459,7 @@ func _build() -> void:
 	size_row.tooltip_text = "Makes everything in this panel bigger or smaller (text, buttons, sliders). Ctrl+= / Ctrl+- also work."
 	bottom.add_child(size_row)
 	bottom.add_child(_tip(_check("panel_small", "Small panel"),
-		"While Stream Core is connected, hide the React, Sound, Chat and Audience tabs: every setting on them is in Stream Core's Setup > Stream Rooms settings (and on its Live page). Untick to see all tabs again; nothing is removed."))
+		"While Stream Core is connected, this panel keeps only what has to be done in the game (big screen sources, room and camera buttons, camera views, the seating chart, joining a co-stream). Every setting is changed in Stream Core's Setup > Stream Rooms settings instead. Untick to see every tab and setting here again; nothing is removed."))
 	_build_message_line(outer)
 	_add_help_buttons(_panel)
 	_apply_scale.call_deferred()
@@ -2627,6 +2627,10 @@ func _on_room_controls(controls: Array) -> void:
 		_room_box.add_child(w)
 		_room_keys.append(key)
 	_add_help_buttons(_room_box)
+	if _small_rows_on:
+		# the old room's rows are gone: forget them and hide the new room's settings rows too
+		_apply_small_rows(false)
+		_apply_small_rows.call_deferred(true)
 
 
 ## EventBus.react_pause_changed: the React button's text.
@@ -2800,31 +2804,43 @@ func _go_to_tab(tab_name: String) -> void:
 
 
 # ── Small panel ──────────────────────────────────────────────
-## Tabs that "Small panel" (setting panel_small) hides while Stream Core is connected. Every
-## setting on them is on Core's Setup > Stream Rooms settings page (core/rooms_remote.gd sends the
-## schema) and their buttons are on Core's Live page Stream Rooms card or are hotkeys. Keep this
-## list in step with the "Small panel" tooltip, the note in _build_small_note and the README.
-const SMALL_HIDDEN_TABS: PackedStringArray = ["React", "Sound", "Chat", "Audience"]
+## "Small panel" (setting panel_small, on by default): while Stream Core is connected, Core's
+## Setup > Stream Rooms settings page is the main place to change settings, so this panel keeps only
+## what has to be done in the game. Two steps:
+##  1. Tabs whose settings are all in Core and whose buttons are on Core's Live page (or hotkeys)
+##     hide: SMALL_HIDDEN_TABS.
+##  2. On the tabs that stay (Source, Room, Seating, Co-stream), every row that is only settings Core
+##     has (the keys settings_schema() sends, minus RoomsRemote.LOCAL_ONLY) hides too, with its "?"
+##     text, and then any heading, hint or Advanced ▸ fold left with nothing to press. What stays:
+##     picking and showing big screen sources, the room picker, curtain and camera buttons, saving
+##     and editing camera views, the room's own controls, the seating chart, and the co-stream
+##     address, password, Host / Join and people list.
+## Keep this in step with the "Small panel" tooltip, the note in _build_small_note, Core's wording
+## for panel_small (admin/rooms-setup.js WORDS) and the README.
+const SMALL_HIDDEN_TABS: PackedStringArray = ["React", "Sound", "Chat", "Audience", "Games", "Presenters"]
 var _small_note: Control
+var _small_rows_on: bool = false      # step 2 is applied now
+var _small_hidden: Array = []         # [Control, was visible] for each node step 2 hid (put back on undo)
 
 
-## The line above the tabs that says where the hidden tabs went (only shown while they are hidden).
+## The line above the tabs that says where the settings went (only shown while Small panel is on).
 func _build_small_note() -> Control:
 	var h := HBoxContainer.new()
 	h.visible = false
-	var l := _hint("Small panel: React, Sound, Chat and Audience are in Stream Core.")
+	var l := _hint("Small panel: settings are changed in Stream Core. This panel keeps what has to be done here.")
 	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	h.add_child(l)
 	h.add_child(_tip(_button("Open in Stream Core", _open_core_rooms),
-		"Opens Stream Core's Setup > Stream Rooms settings in your browser: every setting from these tabs, changed live."))
-	h.add_child(_tip(_button("Show all tabs", func() -> void: AppState.set_setting("panel_small", false)),
-		"Untick Small panel: all tabs come back here. Tick it again at the bottom of the panel."))
+		"Opens Stream Core's Setup > Stream Rooms settings in your browser: every setting of this panel, changed live."))
+	h.add_child(_tip(_button("Show everything", func() -> void: AppState.set_setting("panel_small", false)),
+		"Untick Small panel: every tab and setting comes back here. Tick it again at the bottom of the panel."))
 	_small_note = h
 	return h
 
 
-## Hides or shows SMALL_HIDDEN_TABS. Called from _refresh_strip, which runs whenever Core
-## connects / drops (chat_status_changed) and when chat_enabled or panel_small change.
+## Hides or shows SMALL_HIDDEN_TABS and the settings rows (step 2 above). Called from
+## _refresh_strip, which runs whenever Core connects / drops (chat_status_changed) and when
+## chat_enabled or panel_small change, and after a room change rebuilds the room's own controls.
 func _apply_small_panel() -> void:
 	if _tabs == null:
 		return
@@ -2835,8 +2851,139 @@ func _apply_small_panel() -> void:
 			if hide_them and on_list and _tabs.current_tab == i:
 				_tabs.current_tab = 0          # (a hidden tab can't stay the open one)
 			_tabs.set_tab_hidden(i, hide_them and on_list)
+	_apply_small_rows(hide_them)
 	if _small_note:
 		_small_note.visible = hide_them
+
+
+## Step 2 of Small panel: hide (on) or bring back (off) the settings rows on the tabs that stay.
+func _apply_small_rows(on: bool) -> void:
+	if on == _small_rows_on:
+		return
+	_small_rows_on = on
+	if not on:
+		for pair: Array in _small_hidden:
+			var n: Variant = pair[0]
+			if is_instance_valid(n):
+				(n as Control).visible = bool(pair[1])
+		_small_hidden.clear()
+		_fit_height.call_deferred()
+		return
+	# the setting controls Core has (what settings_schema sends); the "?" buttons and a slider's
+	# number box belong to them
+	var core_controls := {}
+	for d: Dictionary in [_sliders, _checks, _options, _colors, _texts]:
+		for key: String in d:
+			var c: Variant = d[key]
+			if is_instance_valid(c) and AppState.DEFAULTS.has(key) and not RoomsRemote.LOCAL_ONLY.has(key):
+				core_controls[c] = true
+	# rows that are only such settings, on tabs that stay; rows other code shows and hides are left alone
+	var managed := _avatar_rows.values()
+	var touched := {}                  # VBoxes (and their outer VBoxes) a row was hidden in
+	for c: Control in core_controls:
+		if SMALL_HIDDEN_TABS.has(_tab_of(c)) or _tab_of(c) == "Panel":
+			continue
+		var row := c
+		while row.get_parent() != null and not (row.get_parent() is VBoxContainer):
+			row = row.get_parent() as Control
+		if row == null or row.get_parent() == null or not row.visible or managed.has(row) or not _only_settings(row, core_controls):
+			continue
+		_small_hide(row)
+		if row.has_meta("help_label"):
+			_small_hide(row.get_meta("help_label") as Control)
+		var box := row.get_parent()
+		while box != null and box != _tabs:
+			if box is VBoxContainer:
+				touched[box] = true
+			box = box.get_parent()
+	# then, innermost box first: headings and hints left over a section with nothing to press, and
+	# Advanced ▸ folds with nothing left inside
+	var boxes: Array = touched.keys()
+	boxes.sort_custom(func(a: Node, b: Node) -> bool: return _depth(a) > _depth(b))
+	for box: VBoxContainer in boxes:
+		_small_tidy_sections(box)
+		if box.has_meta("fold_button") and not _has_live_control(box):
+			_small_hide(box.get_meta("fold_button") as Control)
+			_small_hide(box)
+			# the fold's own head row would be left with just its "?": hide it too
+			var head := box.get_meta("fold_head") as Control
+			if head != null and not _has_live_control(head):
+				_small_hide(head)
+	_fit_height.call_deferred()
+
+
+## Hides a node for Small panel and remembers how it was (only once per node).
+func _small_hide(n: Control) -> void:
+	if n == null:
+		return
+	for pair: Array in _small_hidden:
+		if pair[0] == n:
+			return
+	_small_hidden.append([n, n.visible])
+	n.visible = false
+
+
+## True when every control in a row you could press or type in is a setting Core has (or its "?"
+## button, or a slider's number box), so hiding the row loses nothing.
+func _only_settings(row: Control, core_controls: Dictionary) -> bool:
+	var all: Array = [row]
+	all.append_array(row.find_children("*", "Control", true, false))
+	for n: Node in all:
+		var c := n as Control
+		if core_controls.has(c) or c.has_meta("help_q"):
+			continue
+		if c is LineEdit and (c as LineEdit).flat and c.get_parent() is HBoxContainer and core_controls.has(c.get_parent().get_child(1)):
+			continue      # a slider's number box
+		if c is BaseButton or c is Range or c is LineEdit or c is TextEdit or c is ItemList or c is SeatingChart:
+			return false
+	return true
+
+
+## True when a node (or anything visible inside it) is something to press, type in or drag.
+func _has_live_control(n: Node) -> bool:
+	var c := n as Control
+	if c == null or not c.visible:
+		return false
+	if c.has_meta("help_q"):
+		return false
+	if c is BaseButton or c is Range or c is LineEdit or c is TextEdit or c is ItemList or c is SeatingChart:
+		return true
+	for ch in c.get_children():
+		if _has_live_control(ch):
+			return true
+	return false
+
+
+## In one box: a heading (_heading) starts a section. A section where Small panel hid something and
+## nothing to press is left loses its heading and its hint lines too.
+func _small_tidy_sections(box: VBoxContainer) -> void:
+	var sections: Array = [[]]
+	for ch in box.get_children():
+		if ch is Label and ch.has_meta("panel_heading"):
+			sections.append([])
+		(sections[-1] as Array).append(ch)
+	for sec: Array in sections:
+		var hid_some := false
+		var live := false
+		for ch: Node in sec:
+			for pair: Array in _small_hidden:
+				if pair[0] == ch:
+					hid_some = true
+			if _has_live_control(ch):
+				live = true
+		if hid_some and not live:
+			for ch: Node in sec:
+				if ch is Label and (ch as Label).visible:
+					_small_hide(ch as Label)
+
+
+## How deep a node is in the tree (for "innermost box first").
+static func _depth(n: Node) -> int:
+	var d := 0
+	while n != null:
+		d += 1
+		n = n.get_parent()
+	return d
 
 
 ## Opens Core's Setup > Stream Rooms settings page (admin.js routes #rooms/<page>).

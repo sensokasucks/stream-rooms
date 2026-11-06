@@ -132,14 +132,39 @@ func _ready() -> void:
 	ChatFeed.set("_connected", true)        # pretend Core is there
 	ptabs.current_tab = (ptabs.get_node("Audience") as Control).get_index()
 	panel.call("_refresh_strip")
-	_check(hidden_names.call() == ["React", "Sound", "Chat", "Audience"], "with Core connected the four tabs hide (%s)" % str(hidden_names.call()))
+	_check(hidden_names.call() == ["React", "Sound", "Chat", "Audience", "Games", "Presenters"], "with Core connected the six tabs hide (%s)" % str(hidden_names.call()))
 	_check(String(ptabs.get_current_tab_control().name) == "Source", "the open Audience tab moves to Source")
 	_check((panel.get("_small_note") as Control).visible, "and a note says where they went")
+	# on the tabs that stay, rows of settings Core has hide; things only the game can do stay
+	var shown := func(c: Control) -> bool:
+		var n: Node = c
+		while n != null and n.get_parent() != ptabs:
+			if n is CanvasItem and not (n as CanvasItem).visible:
+				return false
+			n = n.get_parent()
+		return true
+	var sliders: Dictionary = panel.get("_sliders")
+	var checks: Dictionary = panel.get("_checks")
+	var texts: Dictionary = panel.get("_texts")
+	_check(not shown.call(sliders["house_lights"]) and not shown.call(sliders["camera_glide"]), "Room tab: its sliders hide (they're in Core)")
+	_check(not shown.call(checks["curtain_enabled"]) and not shown.call(checks["seating_by_platform"]), "curtain options and seating ticks hide")
+	_check(shown.call(panel.get("_room_select")), "the room picker stays")
+	_check(shown.call(panel.get("_net_host_btn")) and shown.call(texts["together_password"]), "Host and the co-stream password stay (Core never gets the password)")
+	_check(shown.call(panel.get("_chart")), "the seating chart stays")
+	if args.size() > 0 and not args[0].begins_with("--"):
+		ptabs.current_tab = (ptabs.get_node("Room") as Control).get_index()
+		await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(args[0].path_join("small_panel_room.png"))
+		ptabs.current_tab = (ptabs.get_node("Co-stream") as Control).get_index()
+		await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(args[0].path_join("small_panel_costream.png"))
+		ptabs.current_tab = (ptabs.get_node("Source") as Control).get_index()
 	await get_tree().process_frame
 	if args.size() > 0 and not args[0].begins_with("--"):
 		get_viewport().get_texture().get_image().save_png(args[0].path_join("small_panel.png"))
 	AppState.set_setting("panel_small", false)
 	_check((hidden_names.call() as Array).is_empty() and not (panel.get("_small_note") as Control).visible, "unticking Small panel brings them back")
+	_check(shown.call(sliders["house_lights"]) and shown.call(checks["seating_by_platform"]), "and the setting rows too")
 	AppState.set_setting("panel_small", true)
 	ChatFeed.set("_connected", false)
 	panel.call("_refresh_strip")

@@ -279,10 +279,15 @@ there moves to another seat.
 - **Panel size** (bottom of the control panel, or Ctrl+= / Ctrl+-): 75-200%. Text, buttons
   and sliders all scale, in the main window and in the panel's own window.
 - **Small panel** (bottom of the control panel, on by default): while Stream Core is connected,
-  the **React**, **Sound**, **Chat** and **Audience** tabs hide, because every setting on them is in
-  Stream Core's **Setup › Stream Rooms settings** (and the buttons are on its Live page or are
-  hotkeys). A line above the tabs has **Open in Stream Core** and **Show all tabs**. When Core isn't
-  connected, all tabs show. Nothing is removed: untick it to get them back.
+  Stream Core's **Setup › Stream Rooms settings** is where you change settings, so the panel keeps
+  only what has to be done in the game. The **React**, **Sound**, **Chat**, **Audience**, **Games**
+  and **Presenters** tabs hide (their buttons are on Core's Live page or are hotkeys), and on
+  **Source**, **Room**, **Seating** and **Co-stream** the setting rows hide too. What stays: picking
+  and showing a big screen source, the room picker, curtain and camera buttons, saving and editing
+  camera views, the room's own controls, the seating chart, and the co-stream address, password,
+  **Host** / **Join** and people list. A line above the tabs has **Open in Stream Core** and
+  **Show everything**. When Core isn't connected, everything shows. Nothing is removed: untick it
+  to get it all back (if you unticked it before, it stays unticked).
 - **Keyboard:** F6 puts the keyboard in the panel (a yellow outline shows where). Tab /
   Shift+Tab move between controls, Left / Right change a slider or switch tabs, Space / Enter
   press buttons and tick boxes, Esc gives the keys back to the hotkeys. Clicking with the mouse
