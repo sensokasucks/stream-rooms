@@ -28,9 +28,19 @@ signal file_sync_requested(position: float, playing: bool)
 signal file_progress(position: float, playing: bool)
 signal file_stop_requested
 signal file_pause_toggle_requested
+## Source tab "Just get it ready": download / convert a file or URL into the cache without playing it.
+signal file_ready_requested(input: String)
+## Source tab "Cancel": stop the running download / convert.
+signal file_cancel_requested
 ## The video download / convert (File or URL): state "downloading" | "converting" | "ready" |
-## "failed"; message is plain words for the panel, details the tool's own log (failures only).
+## "prepared" (Just get it ready finished) | "cancelled" | "failed"; message is plain words for the
+## panel, details the tool's own log (failures only).
 signal video_job_changed(state: String, message: String, details: String)
+## How far the download / convert step has got: stage "downloading" | "converting", fraction 0..1
+## (-1 = the tool doesn't say). From VideoLoader through ScreenFeed.
+signal video_progress(stage: String, fraction: float)
+## The list of ready videos (the cache) changed: a video finished or one was deleted.
+signal ready_videos_changed
 ## Hotkeys / panel -> CameraRig: jump to camera preset number `index` of the current room.
 signal camera_preset_requested(index: int)
 
@@ -57,8 +67,16 @@ signal ducking_changed(ducking: bool)
 signal room_requested(room_id: String)
 ## RoomHost: the new room is loaded and set up (audience, reactions, camera presets).
 signal room_changed(room_id: String)
-## RoomHost: the current room's camera preset names, in order (the first is key 1).
+## CameraRig: the current room's visible camera view names, in key order (the first is key 1).
 signal camera_presets_changed(names: PackedStringArray)
+## CameraRig: every camera view of the current room in its saved order, hidden ones too:
+## [{id, name, hidden, saved, key}] (key 1-10 for the visible ones, 0 = no key). See CameraRig "Saved views".
+signal camera_views_changed(views: Array)
+## Hotkeys / panel / Core -> CameraRig: go to the n-th visible view (0 = key 1, 9 = key 0).
+signal camera_key_requested(n: int)
+## Panel / Core -> CameraRig: change the saved views. action: "save" (arg = name), "update",
+## "rename" (arg = name), "up", "down", "hide", "show", "delete" (saved views only), "go".
+signal camera_view_action(action: String, id: String, arg: String)
 ## Room-specific controls for the Room tab: an Array of Dictionaries (see Room.get_controls()).
 signal room_controls_changed(controls: Array)
 
@@ -112,6 +130,10 @@ signal chat_user_hidden(info: Dictionary)
 ## name)} of the chatter on screen, or {} when nothing is highlighted. AudienceView makes that
 ## chatter's seat glow ("audience_highlight_glow").
 signal chat_highlight_changed(info: Dictionary)
+## Stream Core started reading a chatter's line aloud (its "tts_speaking" packet, core/tts.py there):
+## {"platform", "names" (lower-case login), "seconds" (about how long it plays)}. AudienceView
+## makes that chatter's silhouette glow for that long ("audience_tts_glow").
+signal chat_speaking(info: Dictionary)
 ## Stream Core answered a chat command (its API-free reply path: {message, platform,
 ## reply_to_user, source, timestamp, history}). Shown on the reply screen.
 signal core_reply_received(reply: Dictionary)

@@ -63,6 +63,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_bubble_animated": true,     # animated emotes move in bubbles (off: their first frame, lighter)
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_highlight_glow": true,  # the chatter on Stream Core's Highlighted message overlay gets a glowing seat
+	"audience_tts_glow": true,     # a chatter's silhouette glows while Stream Core reads their line aloud (EventBus.chat_speaking)
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
 	"audience_color_by": "chat", # silhouette / name colours: chat (the chatter's own chat colour) | name (picked from the name) | platform
@@ -157,6 +158,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
+	"panel_small": true,         # while Stream Core is connected, hide the panel tabs whose settings all live in Core's Setup > Stream Rooms settings (control_panel.gd SMALL_HIDDEN_TABS)
 	"panel_advanced": "",        # the "Advanced" folds that are open (CSV of fold ids); all closed by default
 	"source_tab_pick": "",       # Source tab: which source's controls show ("" = whatever plays, else the last one)
 	"chat_left_header_on": true,
@@ -197,6 +199,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"curtain_speed": 1.0,        # open / close speed multiplier
 	"curtain_sound": 0.8,        # swish / drum roll volume (0 = silent)
 	"curtain_show_lights": true, # the reveal dims the house lights and uses a spotlight
+	"camera_views": "",          # JSON {room id: {order: [view ids], hidden: [ids], names: {id: name}, saved: {id: {o: 12 floats, fov}}}} (CameraRig "Saved views")
+	"camera_glide": 0.9,         # seconds a move between camera views takes (0 = cut straight to it)
 	"camera_fov": 65.0,          # camera field of view in degrees (mouse wheel while right-dragging changes it too)
 	"camera_see_through": true,  # outside the room, see in through the walls instead of hitting black
 	# Control panel in its own window (F9), so it never shows up in a window capture
@@ -455,6 +459,11 @@ func set_react_paused(paused: bool) -> void:
 func toggle_focus_view() -> void:
 	_focus_view = not _focus_view
 	EventBus.focus_view_changed.emit(_focus_view)
+
+
+## Focus view on (the big screen fills the picture)? Core's Live card shows it (core/rooms_remote.gd).
+func is_focus_view() -> bool:
+	return _focus_view
 
 
 func is_clean_feed() -> bool:

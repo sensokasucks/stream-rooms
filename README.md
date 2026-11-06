@@ -70,6 +70,11 @@ send yours from the same time).
 4. The tab appears on the screen within a second or two. Keep the sender page open. A small
    separate window works best, because browsers slow down hidden tabs.
 
+The sender page is kept small: the link light, **Share a tab or window** / **Stop**, the preview
+and **Start webcam**. Picture quality, frame rate and the sound switch sit under **Quality and
+sound**. The **Presenter feeds** box only shows while a podium in the game is set to a camera,
+tab or web page, and only the podiums in use get a row.
+
 The sender page can sit behind other tabs: the picture work runs in a background worker, which
 browsers don't slow down the way they slow down a tab that isn't in front. (Keeping it in its own
 small window still works too.) Don't minimise the whole browser window: Windows stops drawing a
@@ -96,8 +101,19 @@ key by itself and reconnects. The page only opens as `127.0.0.1` or `localhost`.
 Type a path or a YouTube URL in the *Source* tab, or click **Browse...**. Non-`.ogv` files and URLs
 need `yt-dlp` and `ffmpeg`: right-click `tools/get_tools.ps1` > *Run with PowerShell*.
 
-While a video downloads or converts, a line under the File controls says so with a running clock
-("Downloading... 1:12", "Converting... 0:40"), then "Ready". If it fails, the line says why in
+A video goes through up to three steps: **Download** (links only), **Convert** (to the format the
+game plays) and **Play**. While it works, a line under the File controls says which step it's on,
+how far it got and for how long ("Step 1 of 2: Downloading 42% · 1:12", "Step 2 of 2: Converting
+80% · 0:40"), with a progress bar and a **Cancel** button (nothing half-done is kept). Then
+"Ready". **Just get it ready** does the download and convert without playing, so the video starts
+at once later.
+
+**Ready videos** (under the File controls) lists every video that's ready on this PC, with its
+name, its size and the disk space they all use. **Play** starts one straight away; **Delete**
+removes it from this PC (it asks first; a link can be downloaded again). In a co-stream, the host's
+File section shows who has the video ready and who is still getting it ready.
+
+If it fails, the line says why in
 plain words (for example "yt-dlp may be out of date: run tools\get_tools.ps1", a private or
 age-restricted video, no internet) with a **Try again** button; what yt-dlp / ffmpeg printed is
 under **Details ▸**.
@@ -112,7 +128,7 @@ broken video in the cache.
 |---|---|
 | **Space** | Pause to react. Pauses a file directly. For a browser tab it sends the Windows Play/Pause media key. Lights come up, the camera moves to the room's *Reaction* camera, and a badge shows. |
 | **F** | Focus view: the video flat and full-frame, so viewers can read it. |
-| **1-9, 0** | Camera presets (smooth moves). **0** is the 10th preset. |
+| **1-9, 0** | Camera views (smooth moves), in the order of the Room tab's camera buttons. **0** is the 10th. |
 | **PgUp / PgDn** | Previous / next room. |
 | **F10** | Clean feed: hides all UI (the webcam overlay stays). |
 | **Tab** | Show/hide the control panel. |
@@ -124,6 +140,7 @@ broken video in the cache.
 | **F9** | Control panel in its own window / back in the main window. |
 | **F6** | Work the control panel with the keyboard (see *Accessibility*). Esc leaves. |
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
+| **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -133,6 +150,15 @@ right-dragging. **See into the room from outside** (Room tab ▸ Advanced, on by
 through a wall and the wall (and anything else between you and the room) is cut away instead of
 the view going black. It kicks in when none of the room's camera markers can see the camera; the
 walls get collision shapes for this (only these rays use them).
+
+**Saved camera views:** fly the camera somewhere you like, type a name next to **Save this view**
+(Room tab, under the camera buttons) and press it. The view gets its own button and number key in
+this room, and keeps its zoom. **Glide time** sets how long the camera takes to glide between views
+(0 cuts straight there). Room tab ▸ Advanced ▸ **Camera views** lists every view of the room: type
+a new name and press Enter to rename it, **▲ / ▼** change the order (the number keys follow it),
+untick **Shown** to hide one (no button, no key), **Update** moves a saved view to where the camera is
+now, and **Delete** removes a saved view (it asks first). The room's own cameras can be renamed,
+moved and hidden, never deleted. Each room keeps its own views.
 
 **Big screen light:** Room tab ▸ Advanced → **Screen light** (how much light the big screen
 throws into the room) and **Screen glow** (how bright the picture itself glows). They used to be
@@ -252,6 +278,11 @@ there moves to another seat.
 ## Accessibility
 - **Panel size** (bottom of the control panel, or Ctrl+= / Ctrl+-): 75-200%. Text, buttons
   and sliders all scale, in the main window and in the panel's own window.
+- **Small panel** (bottom of the control panel, on by default): while Stream Core is connected,
+  the **React**, **Sound**, **Chat** and **Audience** tabs hide, because every setting on them is in
+  Stream Core's **Setup › Stream Rooms settings** (and the buttons are on its Live page or are
+  hotkeys). A line above the tabs has **Open in Stream Core** and **Show all tabs**. When Core isn't
+  connected, all tabs show. Nothing is removed: untick it to get them back.
 - **Keyboard:** F6 puts the keyboard in the panel (a yellow outline shows where). Tab /
   Shift+Tab move between controls, Left / Right change a slider or switch tabs, Space / Enter
   press buttons and tick boxes, Esc gives the keys back to the hotkeys. Clicking with the mouse
@@ -296,6 +327,38 @@ there moves to another seat.
   Run plugged in, on Windows' best-performance power mode, and make sure Redot and OBS use the
   NVIDIA GPU (Windows Settings → System → Display → Graphics → High performance). Use NVENC
   in OBS so the encoder doesn't load the CPU.
+
+## Click on people in the room
+Hold **Shift** and left-click a chatter's silhouette, a presenter or the big screen (or press
+**P**, then click without Shift). A small menu opens in its own window, so your stream never shows
+it:
+- **Throw ▸** a tomato, confetti, a spotlight, balloons or a high five at them. In a co-stream it
+  plays on every PC, like a chat reaction.
+- **Highlight / glow** makes their seat glow (the same glow as Stream Core's Highlighted message);
+  pick **Stop the glow** to end it.
+- **Show their last message** puts it on the panel's message line.
+- **Seat ▸** reserve their seat for them (or free it), or move them to the front row.
+- **Read aloud ▸** stop Stream Core reading them aloud: for this stream, for 24 hours or for good.
+- **Copy name** copies their name.
+
+A plain left click does nothing, so it never fires while you move the camera.
+
+## Run the room from Stream Core's Live page
+
+While Stream Rooms is connected to Stream Core, Core's **Live** page shows a **Stream Rooms** card
+(it is hidden the rest of the time). From there, or from the dashboard on your phone, you can:
+
+- see what the big screen shows and whether the sender page is sharing (with its frame rate and
+  whether it has sound),
+- press **Pause to react**, **Focus view**, **Clean feed** and **Play / pause video** (a lit button
+  is on),
+- open or close the curtain (**Reveal**, **Close**, **Open**),
+- change the **Room**, jump to a camera view (the same list as your number keys),
+- move the **Stream sound** and **Room sound** sliders,
+- put presenters on or off set (podium rooms), and in a co-stream see who has the big screen remote,
+  take it back (host) or ask for it (guest).
+
+Every button does exactly what the same control in the game does, so co-stream rules still apply.
 
 ## The Esc menu
 Press **Esc** in the room for the game menu. It opens in its own window, so an OBS Window Capture
@@ -561,6 +624,9 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   chatter's seat gets a slow purple glow while their message is on screen. It moves to the next
   highlight and goes away when Core clears it. In photosensitive-safe mode the glow is steady.
   Only chatters with a seat glow. Needs Stream Core v2026.11.2 or newer.
+- **Glow while read aloud** (Audience tab, on by default): while Stream Core's **Read aloud (TTS)**
+  reads a chatter's line, their seat gets a soft blue glow that fades in and out (no flashing).
+  Only chatters with a seat glow. Needs the matching Stream Core build.
 - **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
   Bits get a gold bubble and a gold box on the chat windows; Twitch messages highlighted with
   channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an

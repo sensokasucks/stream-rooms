@@ -108,6 +108,55 @@ func resolve_target(target: Variant) -> Dictionary:
 		"slot": -1, "fallback": false}
 
 
+## What is under a point on the screen (core/people_picker.gd, a Shift+click in the room), as a
+## reaction target: {kind: "user" (a chatter's silhouette; slot, name), "guest" (a presenter on set;
+## n, name), "screen" or "" (nothing), target: the reaction "target" for it}. Seats are tried
+## first (their head within ~36 px of the click), then presenters, then the big screen.
+func pick_at(cam: Camera3D, at: Vector2) -> Dictionary:
+	if _audience:
+		var best := -1
+		var best_d := 36.0
+		for slot in _audience.get_seat_count():
+			if not _audience.is_seat_taken(slot):
+				continue
+			var head := _audience.get_seat_head(slot)
+			if cam.is_position_behind(head):
+				continue
+			var d := cam.unproject_position(head).distance_to(at)
+			if d < best_d:
+				best_d = d
+				best = slot
+		if best >= 0:
+			var who := String(AudienceManager.get_seat_member(best).get("name", ""))
+			if who != "":
+				return {"kind": "user", "slot": best, "name": who, "target": {"type": "user", "name": who}}
+	for spot: Dictionary in _guests.values():
+		if _spot_hit(cam, spot, at):
+			var n := int(spot["n"])
+			var label := String(AppState.get_setting(AppState.presenter_key(n, "name"))).strip_edges()
+			return {"kind": "guest", "n": n, "name": label if label != "" else "Presenter %d" % n,
+				"target": {"type": "spot", "name": String(spot["id"])}}
+	if not _screen.is_empty() and _spot_hit(cam, _screen, at):
+		return {"kind": "screen", "name": "The big screen", "target": {"type": "spot", "name": "screen"}}
+	return {"kind": "", "target": {}}
+
+
+## Is the screen point inside a spot's rectangle (its corners projected, the box around them)?
+static func _spot_hit(cam: Camera3D, spot: Dictionary, at: Vector2) -> bool:
+	var c: Vector3 = spot["pos"]
+	if cam.is_position_behind(c):
+		return false
+	var half: Vector2 = (spot["size"] as Vector2) * 0.5
+	var lo := Vector2(INF, INF)
+	var hi := Vector2(-INF, -INF)
+	for sx in [-1.0, 1.0]:
+		for sy in [-1.0, 1.0]:
+			var p := cam.unproject_position(c + (spot["right"] as Vector3) * half.x * sx + (spot["up"] as Vector3) * half.y * sy)
+			lo = lo.min(p)
+			hi = hi.max(p)
+	return Rect2(lo, hi - lo).has_point(at)
+
+
 # ── Targets ──────────────────────────────────────────────────
 ## Builds _targets: the screen (facing the audience), webcam, chat screen and TARGET_* markers,
 ## then the presenter spots. Rooms without a TVScreen get a made-up spot in front of the audience.

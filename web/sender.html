@@ -5,42 +5,54 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stream Rooms sender</title>
 <style>
-  :root { --bg:#111317; --panel:#1b1e24; --text:#e8e8ea; --muted:#9aa0aa; --accent:#e0852f; --ok:#5fbf77; --warn:#e6b84a; --err:#e06060; }
+  /* Stream Core's dashboard look (fridge-stream-core/admin/admin.css): same colours and green accent,
+     so the sender reads as part of the same set of tools. A slim window: open it small next to OBS. */
+  :root { --bg:#0f1218; --panel:#171b24; --border:#2a3140; --text:#e8ecf4; --muted:#a3adbf; --accent:#53fc18;
+    --ok:#53fc18; --warn:#ffb347; --err:#ff5c5c; }
   * { box-sizing: border-box; }
-  body { margin:0; font:15px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--text); }
-  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 32px; }
-  h1 { font-size: 20px; margin: 0 0 4px; }
-  p.sub { margin: 0 0 16px; color: var(--muted); }
-  section { background: var(--panel); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
-  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 6px 0; }
-  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #3a3f49; background:#262a32; color:var(--text); cursor:pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color:#1a1206; font-weight:600; }
-  button:disabled { opacity: .5; cursor: default; }
+  body { margin:0; font:14px/1.45 system-ui, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width: 480px; margin: 0 auto; padding: 10px 12px 18px; }
+  header.top { display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; margin: 0 0 8px; }
+  header.top b { color: var(--text); font-weight:600; }
+  section { background: var(--panel); border:1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin: 4px 0; }
+  button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border); background:#202633; color:var(--text); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:#4a5468; }
+  button.primary { background: var(--accent); border-color: var(--accent); color:#0b1406; font-weight:600; }
+  button:disabled { opacity: .45; cursor: default; }
+  button:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid #ffd166; outline-offset: 2px; }
   select, label { font: inherit; color: var(--text); }
-  select { background:#262a32; border:1px solid #3a3f49; border-radius:6px; padding:5px 8px; }
-  .dot { width:10px; height:10px; border-radius:50%; background: var(--err); display:inline-block; }
+  select { background:#202633; border:1px solid var(--border); border-radius:6px; padding:4px 8px; }
+  .dot { width:10px; height:10px; border-radius:50%; background: var(--err); display:inline-block; flex: none; }
   .dot.ok { background: var(--ok); }
-  .status { color: var(--muted); font-size: 14px; }
+  #linkText { font-weight:600; }
+  .status { color: var(--muted); font-size: 13px; }
   .warn { color: var(--warn); }
   .err { color: var(--err); }
-  video { width: 100%; border-radius: 8px; background:#000; margin-top: 8px; }
+  video { width: 100%; border-radius: 8px; background:#05070a; margin-top: 6px; border:1px solid var(--border); aspect-ratio: 16 / 9; object-fit: contain; }
   small { color: var(--muted); }
-  .pres { display:grid; grid-template-columns: 96px 1fr; gap: 10px; align-items:center; padding: 8px 0; border-top: 1px solid #2a2e36; }
+  details.more > summary { cursor:pointer; color: var(--muted); font-size:13px; margin-top:4px; }
+  details.more[open] > summary { margin-bottom: 4px; }
+  .pres { display:grid; grid-template-columns: 96px 1fr; gap: 10px; align-items:center; padding: 8px 0; border-top: 1px solid var(--border); }
   .pres:first-of-type { border-top: 0; }
   .pres video { width: 96px; height: 54px; object-fit: cover; margin: 0; }
   .pres .name { font-weight: 600; }
-  .pres.want-web .openweb, .pres.want-tab .pick { background: var(--accent); border-color: var(--accent); color:#1a1206; font-weight:600; }
+  .pres.want-web .openweb, .pres.want-tab .pick { background: var(--accent); border-color: var(--accent); color:#0b1406; font-weight:600; }
+  /* presenter feeds only matter when a podium uses this page (its list is filled by the script) */
+  /* Slimmer window (work list item 12): a presenter row that isn't used is hidden
+     (renderPresenter marks it .unused), and the whole Presenter feeds box hides
+     while no row is in use and no camera permission is asked for. */
+  .pres.unused { display: none; }
+  #presSection:not(:has(#presList .pres:not(.unused))):has(#camPermRow.hidden) { display: none; }
   .hidden { display: none !important; }
 </style>
 </head>
 <body>
 <main>
-  <h1>Stream Rooms sender</h1>
-  <p class="sub">Shares a tab or window with the game. Keep this page open, ideally in its own small window.</p>
+  <header class="top"><b>Stream Rooms sender</b> · keep this window open while sharing</header>
 
   <section>
     <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span></div>
-  </section>
 
   <section id="liveSection" class="hidden">
     <div class="row"><b>Co-stream</b></div>
@@ -53,11 +65,18 @@
     <div id="liveStatus" class="status"></div>
   </section>
 
-  <section>
     <div class="row">
       <button id="shareBtn" class="primary">Share a tab or window</button>
-      <button id="stopBtn" disabled>Stop sharing</button>
+      <button id="stopBtn" disabled>Stop</button>
     </div>
+    <div id="shareStatus" class="status">Not sharing.</div>
+    <video id="preview" muted playsinline></video>
+    <div class="row">
+      <button id="camBtn">Start webcam</button>
+      <span id="camStatus" class="status">Webcam off.</span>
+    </div>
+    <details class="more">
+      <summary>Quality and sound</summary>
     <div class="row">
       <label>Quality
         <select id="quality">
@@ -73,7 +92,8 @@
       </label>
       <label><input type="checkbox" id="sendAudio" checked> Send tab audio to the game</label>
     </div>
-    <div id="shareStatus" class="status">Not sharing.</div>
+    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
+    </details>
     <!-- Shown when the last Share froze or closed the browser, so the page now shares the safer way
          (see "Freeze guard" in the script). The button turns that off again. -->
     <div id="safeNote" class="row hidden">
@@ -84,15 +104,6 @@
     <!-- Warns when the pick films the game itself (whole screen, or the game's own window). -->
     <div id="surfaceWarn" class="status"></div>
     <div id="audioStatus" class="status"></div>
-    <video id="preview" muted playsinline></video>
-  </section>
-
-  <section>
-    <div class="row">
-      <button id="camBtn">Start webcam</button>
-      <span id="camStatus" class="status">Webcam off.</span>
-    </div>
-    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
   </section>
 
   <section id="avatarSection" class="hidden">
@@ -1089,6 +1100,8 @@ function renderPresenter(i) {
   else if (web) st.innerHTML = `<span class="warn">Click "2. Share it" and pick "${pageName}". If it says the site refused to connect, that site doesn't allow being shown inside another page.</span>`;
   else if (i === AVATAR) st.textContent = "Off (Co-stream tab > My avatar in the game).";
   else st.textContent = "Not used (silhouette, green screen or off in the game).";
+  // Unused podium rows hide (see .pres.unused in the CSS); the avatar row has its own box.
+  row.classList.toggle("unused", i !== AVATAR && want === "off" && !p.stream && !p.error);
   const v = row.querySelector("video");
   if (v.srcObject !== p.stream) { v.srcObject = p.stream; if (p.stream) v.play().catch(() => {}); }
 }

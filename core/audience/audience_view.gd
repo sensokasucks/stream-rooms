@@ -88,6 +88,9 @@ var _hl_slot: int = -1
 var _hl_light: OmniLight3D = null
 ## Colour of the highlight glow (matches the stripe on Core's highlight overlay).
 const HIGHLIGHT_COLOR := Color(0.65, 0.36, 1.0)
+## The glow on a chatter whose line Stream Core reads aloud (EventBus.chat_speaking): soft blue, so
+## it doesn't look like the purple highlight glow.
+const SPEAKING_COLOR := Color(0.35, 0.75, 1.0)
 ## Counts down to the next bubble visibility check (BUBBLE_CHECK).
 var _vis_clock: float = 0.0
 ## Room light level last handed to the crowd (Room._level), so it is only set when it changes.
@@ -162,6 +165,7 @@ func _ready() -> void:
 	EventBus.audience_updated.connect(_on_updated)
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.chat_highlight_changed.connect(_on_highlight_changed)
+	EventBus.chat_speaking.connect(_on_speaking)
 
 
 func _exit_tree() -> void:
@@ -185,6 +189,7 @@ func retire() -> void:
 	EventBus.audience_spoke.disconnect(_on_spoke)
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 	EventBus.chat_highlight_changed.disconnect(_on_highlight_changed)
+	EventBus.chat_speaking.disconnect(_on_speaking)
 
 
 ## Per frame: seat fades and tag sizes only when the camera moved (or a seat changed), the crowd
@@ -1435,6 +1440,41 @@ func _update_highlight_glow() -> void:
 		pulse.tween_interval(0.4)
 		pulse.tween_property(light, "light_energy", 0.9, 1.2).set_trans(Tween.TRANS_SINE)
 		pulse.tween_property(light, "light_energy", 1.8, 1.2).set_trans(Tween.TRANS_SINE)
+
+
+## EventBus.chat_speaking: Stream Core reads this chatter's line aloud. Their seat gets a steady
+## blue light for info.seconds, fading in and out (no pulsing, so it's fine with photosensitive_safe).
+## The light belongs to the seat's root: if they leave, it goes with it. Only "rich" seats (own nodes).
+func _on_speaking(info: Dictionary) -> void:
+	if not bool(AppState.get_setting("audience_tts_glow")):
+		return
+	var slot := -1
+	for n: String in info.get("names", PackedStringArray()):
+		slot = AudienceManager.find_slot_by_name(n)
+		if slot >= 0:
+			break
+	if slot < 0 or slot >= _seats.size() or not bool(_seats[slot]["rich"]):
+		return
+	var s: Dictionary = _seats[slot]
+	var root := s["root"] as Node3D
+	var old := root.get_node_or_null("SpeakingGlow")
+	if old != null:
+		old.free()                      # a new line from the same chatter: start over
+	var sc := float(s["scale"])
+	var light := OmniLight3D.new()
+	light.name = "SpeakingGlow"
+	light.light_color = SPEAKING_COLOR
+	light.omni_range = 1.4 * sc
+	light.shadow_enabled = false
+	light.position = Vector3(0, (bust_lift + _seat_bust(slot) * 0.5) * sc, 0.45 * sc)
+	light.light_energy = 0.0
+	root.add_child(light)
+	var secs := float(info.get("seconds", 3.0))
+	var tw := light.create_tween()      # belongs to the light: freed together
+	tw.tween_property(light, "light_energy", 1.6, 0.3)
+	tw.tween_interval(maxf(secs - 0.6, 0.2))
+	tw.tween_property(light, "light_energy", 0.0, 0.3)
+	tw.tween_callback(light.queue_free)
 
 
 ## Audience tab and Presenters tab settings that change what this view shows.

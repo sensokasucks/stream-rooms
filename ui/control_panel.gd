@@ -33,6 +33,7 @@ var _capture_label: Label
 var _capture_url: String = ""
 var _room_select: OptionButton
 var _camera_box: HFlowContainer
+var _views_box: VBoxContainer             # Room tab > Advanced > Camera views: one row per view (CameraRig "Saved views")
 var _react_btn: Button
 var _mic_bar: ProgressBar
 var _duck_label: Label
@@ -127,6 +128,14 @@ var _video_details_fold: VBoxContainer
 var _video_state: String = ""           # "", "downloading", "converting", "ready", "failed"
 var _video_started_ms: int = 0
 var _video_tick: float = 0.0
+var _video_fraction: float = -1.0         # how far the step has got (EventBus.video_progress; -1 = unknown)
+var _video_bar: ProgressBar               # File section: the step's progress
+var _video_cancel: Button                 # File section: Cancel while a download / convert runs
+var _ready_list: VBoxContainer            # File section: Ready videos (VideoLoader.list_ready)
+var _ready_total: Label
+var _video_who: Label                     # File section: who's ready in a co-stream (host)
+## The loader script, for its static ready-videos functions (it has no class_name).
+const VIDEO_LOADER := preload("res://core/video_loader.gd")
 var _last_video_input: String = ""      # what Play was last asked to load (for Try again)
 var _confirm: ConfirmationDialog        # "Empty all seats?" and the other ask-first questions
 var _hide_pick: OptionButton            # Audience tab: hide a seated chatter's picture
@@ -136,11 +145,14 @@ var _flash_note: Label                  # Games tab: "safe mode caps it at 30%"
 ## Builds the whole panel, then connects the EventBus signals it shows and fills the status
 ## lines once. NDI / Spout availability is read first because the tab builders use it.
 func _ready() -> void:
+	# core/rooms_remote.gd finds the panel by this group to read settings_schema() for Core's
+	# Setup > Stream Rooms pages
+	add_to_group("control_panel")
 	_ndi_available = NdiReceiver.is_available()
 	_spout_available = SpoutReceiver.is_available()
 	_build()
 	EventBus.capture_status_changed.connect(_on_capture_status)
-	EventBus.camera_presets_changed.connect(_on_camera_presets)
+	EventBus.camera_views_changed.connect(_on_camera_views)
 	EventBus.room_changed.connect(_on_room_changed)
 	EventBus.room_controls_changed.connect(_on_room_controls)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
@@ -159,6 +171,10 @@ func _ready() -> void:
 	EventBus.status_message.connect(_on_status_message)
 	EventBus.source_changed.connect(func(_m: String) -> void: _refresh_now())
 	EventBus.video_job_changed.connect(_on_video_job)
+	EventBus.video_progress.connect(func(_st: String, f: float) -> void:
+		_video_fraction = f
+		_show_video_status())
+	EventBus.ready_videos_changed.connect(_refresh_ready_videos)
 	EventBus.file_play_requested.connect(func(input: String) -> void:
 		if input.strip_edges() != "":
 			_last_video_input = input)
@@ -407,6 +423,7 @@ func _build() -> void:
 	var outer := VBoxContainer.new()
 	_panel.add_child(outer)
 	outer.add_child(_build_status_strip())
+	outer.add_child(_build_small_note())
 	_tabs = TabContainer.new()
 	_tabs.custom_minimum_size = Vector2(panel_width - 20, 0)
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -441,6 +458,8 @@ func _build() -> void:
 	(size_row.get_child(0) as Label).custom_minimum_size = Vector2(80, 0)
 	size_row.tooltip_text = "Makes everything in this panel bigger or smaller (text, buttons, sliders). Ctrl+= / Ctrl+- also work."
 	bottom.add_child(size_row)
+	bottom.add_child(_tip(_check("panel_small", "Small panel"),
+		"While Stream Core is connected, hide the React, Sound, Chat and Audience tabs: every setting on them is in Stream Core's Setup > Stream Rooms settings (and on its Live page). Untick to see all tabs again; nothing is removed."))
 	_build_message_line(outer)
 	_add_help_buttons(_panel)
 	_apply_scale.call_deferred()
@@ -614,6 +633,8 @@ func _build_source_tab() -> Control:
 	r1.add_child(_url)
 	r1.add_child(_tip(_button("Play", func() -> void: EventBus.file_play_requested.emit(_url.text)),
 		"Play it on the big screen. An address is downloaded and converted first (the status line below shows how far it got)."))
+	r1.add_child(_tip(_button("Just get it ready", func() -> void: EventBus.file_ready_requested.emit(_url.text)),
+		"Download and convert it now without playing it, so it starts at once later (from Ready videos below)."))
 	r1.add_child(_tip(_button("Browse...", func() -> void: _dialog.popup_centered_ratio(0.6)), "Pick a video file on this PC."))
 	var r2 := HBoxContainer.new()
 	v.add_child(r2)
@@ -640,11 +661,31 @@ func _build_source_tab() -> Control:
 	_video_retry.tooltip_text = "Load the same file or link again (for example after updating yt-dlp with tools\\get_tools.ps1)."
 	_video_retry.visible = false
 	r3.add_child(_video_retry)
+	_video_cancel = _button("Cancel", func() -> void: EventBus.file_cancel_requested.emit())
+	_video_cancel.tooltip_text = "Stop the download or convert. Nothing half-done is kept."
+	_video_cancel.visible = false
+	r3.add_child(_video_cancel)
+	_video_bar = ProgressBar.new()
+	_video_bar.min_value = 0.0
+	_video_bar.max_value = 100.0
+	_video_bar.custom_minimum_size = Vector2(0, 14)
+	_video_bar.tooltip_text = "How far this step has got. A video goes through Download (links only), then Convert, then Play."
+	_video_bar.visible = false
+	v.add_child(_video_bar)
+	_video_who = _hint("")
+	_video_who.visible = false
+	v.add_child(_video_who)
 	_video_details_fold = _fold(v, "source_video_details", "Details")
 	(_video_details_fold.get_meta("fold_head") as Control).visible = false
 	_video_details = _hint("")
 	_video_details.tooltip_text = "What yt-dlp / ffmpeg printed last. Useful when asking for help."
 	_video_details_fold.add_child(_video_details)
+	v.add_child(_heading("Ready videos"))
+	_ready_total = _hint("")
+	v.add_child(_ready_total)
+	_ready_list = VBoxContainer.new()
+	v.add_child(_ready_list)
+	_refresh_ready_videos()
 	# start on what plays now, else the last pick, else the browser tab
 	var pick := String(AppState.get_setting("source_tab_pick"))
 	var playing := AppState.get_source_mode()
@@ -669,7 +710,7 @@ func _show_source_section(mode: String) -> void:
 	_fit_height.call_deferred()
 
 
-## Room tab: room picker, house lights, curtain, camera buttons (filled by _on_camera_presets) and
+## Room tab: room picker, house lights, curtain, camera buttons (filled by _on_camera_views) and
 ## field of view. Advanced: curtain options, screen light / glow, this room's own controls (_room_box,
 ## filled by _on_room_controls), see-through cameras and performance.
 func _build_room_tab() -> Control:
@@ -689,6 +730,21 @@ func _build_room_tab() -> Control:
 	v.add_child(_heading("Cameras (keys 1-9, 0 = 10th)"))
 	_camera_box = HFlowContainer.new()
 	v.add_child(_camera_box)
+	var save_row := HBoxContainer.new()
+	v.add_child(save_row)
+	var view_name := LineEdit.new()
+	view_name.placeholder_text = "Name for this view"
+	view_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	view_name.tooltip_text = "A name for the view you're about to save (blank = My view 1, 2 ...)."
+	save_row.add_child(view_name)
+	var save_view := func() -> void:
+		EventBus.camera_view_action.emit("save", "", view_name.text)
+		view_name.clear()
+	view_name.text_submitted.connect(func(_t: String) -> void: save_view.call())
+	save_row.add_child(_tip(_button("Save this view", save_view),
+		"Keep where the camera is now (and its zoom) as a camera of this room, with its own button and number key. Fly there first: hold the right mouse button and use WASD."))
+	v.add_child(_tip(_slider("camera_glide", "Glide time", 0.0, 3.0, 0.1, "%.1f s"),
+		"How long the camera takes to glide to another view. 0 cuts straight to it."))
 	v.add_child(_tip(_slider("camera_fov", "Field of view", 25.0, 110.0, 1.0, "%d°"),
 		"How wide the camera sees. Lower zooms in, higher shows more of the room."))
 	# set-up-once settings: curtain options, this room's own looks, the camera's see-through, performance
@@ -702,6 +758,10 @@ func _build_room_tab() -> Control:
 	_room_box = VBoxContainer.new()
 	_room_box.add_theme_constant_override("separation", 6)
 	adv.add_child(_room_box)
+	adv.add_child(_heading("Camera views"))
+	adv.add_child(_hint("Rename, reorder (the number keys follow the order), hide or update this room's views. A room's own cameras can be hidden but not deleted."))
+	_views_box = VBoxContainer.new()
+	adv.add_child(_views_box)
 	adv.add_child(_heading("Camera"))
 	adv.add_child(_tip(_check("camera_see_through", "See into the room from outside (instead of black)"),
 		"When a camera is outside the room's walls, show the room through them instead of a black picture."))
@@ -1099,6 +1159,7 @@ func _build_audience_tab() -> Control:
 	v.add_child(r3)
 	r3.add_child(_tip(_check("audience_names", "Name tags"), "Each chatter's name over their head."))
 	r3.add_child(_tip(_check("audience_highlight_glow", "Glow for highlighted chatter"), "When you highlight a chat message in Stream Core (the Highlighted message lower third), that chatter's seat glows while it is on screen. Only works when they have a seat."))
+	r3.add_child(_tip(_check("audience_tts_glow", "Glow while read aloud"), "While Stream Core reads a chatter's line aloud (Read aloud / TTS), their silhouette glows a soft blue. Only works when they have a seat."))
 	var pics := _check("audience_avatars", "Chatter pictures (everywhere)")
 	pics.tooltip_text = "Chatters' profile pictures (Kick, Twitch, YouTube) as their heads and in the chat windows. Off: no pictures anywhere (the Chat tab's Pictures in chat windows only turns them off in the chat windows). Stream Core finds and saves the pictures; for Twitch it needs Connect Twitch in Core's dashboard."
 	r3.add_child(pics)
@@ -2145,6 +2206,13 @@ func _refresh_avatar_rows() -> void:
 ## only dots: the panel can be on stream.
 func _on_net_state(info: Dictionary) -> void:
 	_refresh_strip()
+	if _video_who != null:
+		# co-stream video: who has it ready (host; NetSession "video_ready" / "video_waiting")
+		var ready_names: Array = info.get("video_ready", [])
+		var waiting: Array = info.get("video_waiting", [])
+		_video_who.visible = not ready_names.is_empty() or not waiting.is_empty()
+		_video_who.text = "Ready: %s · Still getting it ready: %s" % [", ".join(ready_names) if not ready_names.is_empty() else "nobody yet",
+			", ".join(waiting) if not waiting.is_empty() else "nobody"]
 	if _net_status == null:
 		return
 	for key: String in _peer_menus:
@@ -2476,14 +2544,49 @@ func _on_capture_status(info: Dictionary) -> void:
 	_capture_label.text = text
 
 
-## EventBus.camera_presets_changed: one button per camera of this room (keys 1-9, 0 = the 10th).
-func _on_camera_presets(names: PackedStringArray) -> void:
+## EventBus.camera_views_changed (CameraRig "Saved views"): a button per visible view of this room
+## (keys 1-9, 0 = the 10th), and under Advanced a row per view to rename, move, hide, update or delete.
+func _on_camera_views(views: Array) -> void:
 	for c in _camera_box.get_children():
 		c.queue_free()
-	for i in names.size():
-		var idx := i
-		_camera_box.add_child(_tip(_button("%d  %s" % [i + 1, names[i]], func() -> void:
-			EventBus.camera_preset_requested.emit(idx)), "Switch to this camera (key %d)." % ((i + 1) % 10)))
+	for vw: Dictionary in views:
+		if bool(vw["hidden"]):
+			continue
+		var id := String(vw["id"])
+		var key := int(vw["key"])
+		var label := ("%d  %s" % [key % 10, String(vw["name"])]) if key > 0 else String(vw["name"])
+		_camera_box.add_child(_tip(_button(label, func() -> void: EventBus.camera_view_action.emit("go", id, "")),
+			"Switch to this camera (key %d)." % (key % 10) if key > 0 else "Switch to this camera."))
+	if _views_box == null:
+		return
+	for c in _views_box.get_children():
+		c.queue_free()
+	for vw: Dictionary in views:
+		var id := String(vw["id"])
+		var row := HBoxContainer.new()
+		_views_box.add_child(row)
+		var nm := LineEdit.new()
+		nm.text = String(vw["name"])
+		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nm.tooltip_text = "This view's name. Type a new one and press Enter."
+		nm.text_submitted.connect(func(t: String) -> void: EventBus.camera_view_action.emit("rename", id, t))
+		row.add_child(nm)
+		row.add_child(_tip(_button("▲", func() -> void: EventBus.camera_view_action.emit("up", id, "")), "Move this view up (it gets the number key before)."))
+		row.add_child(_tip(_button("▼", func() -> void: EventBus.camera_view_action.emit("down", id, "")), "Move this view down."))
+		var shown := CheckBox.new()
+		shown.text = "Shown"
+		shown.button_pressed = not bool(vw["hidden"])
+		shown.tooltip_text = "Untick to hide this view: no button and no number key (it's kept here)."
+		shown.toggled.connect(func(on: bool) -> void: EventBus.camera_view_action.emit("show" if on else "hide", id, ""))
+		row.add_child(shown)
+		if bool(vw["saved"]):
+			row.add_child(_tip(_button("Update", func() -> void: EventBus.camera_view_action.emit("update", id, "")),
+				"Move this saved view to where the camera is now."))
+			var vname := String(vw["name"])
+			row.add_child(_tip(_button("Delete", func() -> void:
+				_ask("Delete this view?", "The saved view \"%s\" is removed from this room." % vname, "Delete",
+					func() -> void: EventBus.camera_view_action.emit("delete", id, ""))),
+				"Remove this saved view (asks first)."))
 
 
 ## EventBus.room_changed: point the room dropdown at the room now loaded (PgUp / PgDn, the host).
@@ -2570,7 +2673,7 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		_refresh_mic_note()
 	if key == "photosensitive_safe" or key == "flash_strength":
 		_refresh_flash_note()
-	if key == "chat_enabled":
+	if key == "chat_enabled" or key == "panel_small":
 		_refresh_strip()
 	if key == "ndi_source" or key == "spout_source":
 		_refresh_now()
@@ -2688,8 +2791,59 @@ func _build_status_strip() -> HBoxContainer:
 ## Opens the tab whose page is named tab_name (the page names are the tab titles).
 func _go_to_tab(tab_name: String) -> void:
 	var page := _tabs.get_node_or_null(tab_name)
-	if page:
-		_tabs.current_tab = page.get_index()
+	if page == null:
+		return
+	if _tabs.is_tab_hidden(page.get_index()):
+		_open_core_rooms()       # Small panel hides it: its settings are in Core
+		return
+	_tabs.current_tab = page.get_index()
+
+
+# ── Small panel ──────────────────────────────────────────────
+## Tabs that "Small panel" (setting panel_small) hides while Stream Core is connected. Every
+## setting on them is on Core's Setup > Stream Rooms settings page (core/rooms_remote.gd sends the
+## schema) and their buttons are on Core's Live page Stream Rooms card or are hotkeys. Keep this
+## list in step with the "Small panel" tooltip, the note in _build_small_note and the README.
+const SMALL_HIDDEN_TABS: PackedStringArray = ["React", "Sound", "Chat", "Audience"]
+var _small_note: Control
+
+
+## The line above the tabs that says where the hidden tabs went (only shown while they are hidden).
+func _build_small_note() -> Control:
+	var h := HBoxContainer.new()
+	h.visible = false
+	var l := _hint("Small panel: React, Sound, Chat and Audience are in Stream Core.")
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(l)
+	h.add_child(_tip(_button("Open in Stream Core", _open_core_rooms),
+		"Opens Stream Core's Setup > Stream Rooms settings in your browser: every setting from these tabs, changed live."))
+	h.add_child(_tip(_button("Show all tabs", func() -> void: AppState.set_setting("panel_small", false)),
+		"Untick Small panel: all tabs come back here. Tick it again at the bottom of the panel."))
+	_small_note = h
+	return h
+
+
+## Hides or shows SMALL_HIDDEN_TABS. Called from _refresh_strip, which runs whenever Core
+## connects / drops (chat_status_changed) and when chat_enabled or panel_small change.
+func _apply_small_panel() -> void:
+	if _tabs == null:
+		return
+	var hide_them := bool(AppState.get_setting("panel_small")) and ChatFeed.is_connected_to_core()
+	for i in _tabs.get_tab_count():
+		var on_list := SMALL_HIDDEN_TABS.has(String(_tabs.get_tab_control(i).name))
+		if _tabs.is_tab_hidden(i) != (hide_them and on_list):
+			if hide_them and on_list and _tabs.current_tab == i:
+				_tabs.current_tab = 0          # (a hidden tab can't stay the open one)
+			_tabs.set_tab_hidden(i, hide_them and on_list)
+	if _small_note:
+		_small_note.visible = hide_them
+
+
+## Opens Core's Setup > Stream Rooms settings page (admin.js routes #rooms/<page>).
+func _open_core_rooms() -> void:
+	OS.shell_open(ChatFeed.core_url("/admin/#rooms/room"))
+	if not ChatFeed.is_connected_to_core():
+		EventBus.status_message.emit("Stream Core isn't connected: start it, then its Stream Rooms settings page works.", true)
 
 
 ## Status strip colours: green = working, amber = needs a look, red = a problem, grey = off.
@@ -2712,6 +2866,7 @@ func _set_strip(key: String, text: String, color: Color) -> void:
 ## Works out all three dots from ChatFeed, the source mode / sender page status and NetSession.
 ## Called whenever one of those changes (and on every status message).
 func _refresh_strip() -> void:
+	_apply_small_panel()
 	if _strip.is_empty():
 		return
 	# Stream Core
@@ -2843,6 +2998,8 @@ func _on_video_job(state: String, message: String, details: String) -> void:
 	if state == "downloading" or state == "converting":
 		if _video_state != "downloading" and _video_state != "converting":
 			_video_started_ms = Time.get_ticks_msec()
+		if state != _video_state:
+			_video_fraction = -1.0          # (a new step: no percentage yet)
 	_video_state = state
 	_video_status.set_meta("message", message)
 	_video_details.text = details
@@ -2867,11 +3024,18 @@ func _show_video_status() -> void:
 	var clock := "%d:%02d" % [secs / 60, secs % 60]
 	var text := ""
 	var color := Color(1, 1, 1, 0.78)
+	var pct := " %d%%" % roundi(_video_fraction * 100.0) if _video_fraction >= 0.0 else ""
+	var link := _last_video_input.strip_edges().begins_with("http")
 	match _video_state:
 		"downloading":
-			text = "Downloading... %s" % clock
+			text = "Step 1 of 2: Downloading%s · %s" % [pct, clock]
 		"converting":
-			text = "Converting... %s (long videos take a while)" % clock
+			text = ("Step 2 of 2: Converting%s · %s (long videos take a while)" if link
+				else "Converting%s · %s (long videos take a while)") % [pct, clock]
+		"cancelled":
+			text = "Stopped."
+		"prepared":
+			text = String(_video_status.get_meta("message", "Ready to play."))
 		"ready":
 			text = String(_video_status.get_meta("message", "Ready."))
 		"failed":
@@ -2881,6 +3045,156 @@ func _show_video_status() -> void:
 	_video_status.visible = text != ""
 	_video_status.add_theme_color_override("font_color", color)
 	_video_retry.visible = _video_state == "failed" and _last_video_input != ""
+	var busy := _video_state == "downloading" or _video_state == "converting"
+	_video_cancel.visible = busy
+	_video_bar.visible = busy
+	_video_bar.value = maxf(_video_fraction, 0.0) * 100.0
+	_video_bar.show_percentage = _video_fraction >= 0.0
+
+
+## File section > Ready videos: everything in the video cache (VideoLoader.list_ready) with its size,
+## Play and Delete, and the disk space they use together.
+func _refresh_ready_videos() -> void:
+	if _ready_list == null:
+		return
+	for c in _ready_list.get_children():
+		c.queue_free()
+	var list := VIDEO_LOADER.list_ready()
+	var total := 0
+	for e: Dictionary in list:
+		total += int(e["bytes"])
+		var row := HBoxContainer.new()
+		_ready_list.add_child(row)
+		var l := Label.new()
+		l.text = "%s  (%s)" % [String(e["title"]).left(70), String.humanize_size(int(e["bytes"]))]
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.clip_text = true
+		l.tooltip_text = String(e["source"]) if String(e["source"]) != "" else String(e["title"])
+		l.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_child(l)
+		var path := String(e["path"])
+		var source := String(e["source"])
+		row.add_child(_tip(_button("Play", func() -> void:
+			# (in a co-stream a link plays through the link, so every PC loads it; otherwise straight from the cache)
+			_last_video_input = source if source.begins_with("http") and NetSession.get_role() != "off" else path
+			EventBus.file_play_requested.emit(_last_video_input)), "Play this video on the big screen. It starts at once: it's ready."))
+		var title := String(e["title"]).left(60)
+		row.add_child(_tip(_button("Delete", func() -> void:
+			_ask("Delete this video?", "\"%s\" is removed from Ready videos. A link can be downloaded again later." % title, "Delete", func() -> void:
+				VIDEO_LOADER.delete_ready(path)
+				_refresh_ready_videos())), "Remove this video from the cache to free disk space (asks first)."))
+	_ready_total.text = "No ready videos yet. Play or Just get it ready keeps a video here." if list.is_empty() \
+		else "%d %s, %s on disk." % [list.size(), "video" if list.size() == 1 else "videos", String.humanize_size(total)]
+
+
+# ── Settings for Stream Core ─────────────────────────────────
+## Every setting this panel has a control for, described for Stream Core's Setup > Stream Rooms pages
+## (work list item 16). core/rooms_remote.gd sends it as the "rooms_settings" packet; Core draws its
+## own control from each entry and sends changes back ("rooms_set"). Built from the controls
+## themselves (the _sliders / _checks / _options / _colors / _texts dicts), so a new panel control
+## shows in Core with no extra work. Each entry:
+##   {key, label, tip, tab (the panel tab's name), group (the heading above it, "" for none),
+##    adv (true inside an Advanced ▸ fold), type: bool | range | choice | text | color,
+##    range: min, max, step (setting units), scale, fmt, zero, int; choice: options [[value, label]]}
+## Order: tab order, then top to bottom.
+func settings_schema() -> Array:
+	var out: Array = []
+	for kind: String in ["range", "bool", "choice", "color", "text"]:
+		var d: Dictionary = {"range": _sliders, "bool": _checks, "choice": _options, "color": _colors, "text": _texts}[kind]
+		for key: String in d:
+			var c := d[key] as Control
+			if c == null or not is_instance_valid(c) or not AppState.DEFAULTS.has(key):
+				continue
+			var row := c.get_parent() as Control
+			var e := {"key": key, "type": kind, "tab": _tab_of(c), "group": _group_of(c), "adv": _in_fold(c)}
+			e["label"] = (c as CheckBox).text if c is CheckBox else _row_label(row)
+			e["tip"] = _tip_of(c)
+			if c is HSlider:
+				var sl := c as HSlider
+				var sc := float(sl.get_meta("scale", 1.0))
+				e["min"] = sl.min_value / sc
+				e["max"] = sl.max_value / sc
+				e["step"] = sl.step / sc
+				e["scale"] = sc
+				e["fmt"] = String(sl.get_meta("fmt", "%s"))
+				e["zero"] = String(sl.get_meta("zero_text", ""))
+				e["int"] = typeof(AppState.DEFAULTS[key]) == TYPE_INT
+			elif c is OptionButton:
+				var ob := c as OptionButton
+				var opts: Array = []
+				for i in ob.item_count:
+					opts.append([ob.get_item_metadata(i), ob.get_item_text(i)])
+				e["options"] = opts
+			e["order"] = _order_of(c)
+			out.append(e)
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return String(a["order"]) < String(b["order"]))
+	for e: Dictionary in out:
+		e.erase("order")
+	return out
+
+
+## The panel tab a control sits in (its ScrollContainer's name), or "Panel" for the footer ones.
+func _tab_of(c: Node) -> String:
+	var n := c
+	while n != null and n.get_parent() != _tabs:
+		n = n.get_parent()
+	return String(n.name) if n != null else "Panel"
+
+
+## The heading (_heading) above a control: the nearest one before it in its box, else a box further out.
+func _group_of(c: Node) -> String:
+	var n := c
+	while n != null and n.get_parent() != null and n.get_parent() != _tabs:
+		var p := n.get_parent()
+		for i in range(n.get_index() - 1, -1, -1):
+			var sib := p.get_child(i)
+			if sib is Label and sib.has_meta("panel_heading"):
+				return (sib as Label).text
+		n = p
+	return ""
+
+
+## True when a control is inside an Advanced ▸ fold (_fold marks the fold body with "fold_head").
+func _in_fold(c: Node) -> bool:
+	var n := c.get_parent()
+	while n != null and n != _tabs:
+		if n.has_meta("fold_head"):
+			return true
+		n = n.get_parent()
+	return false
+
+
+## A control's help text: its own tooltip, else the nearest one on a box around it (a row of
+## colour pickers shares one), the same text its "?" button shows.
+func _tip_of(c: Node) -> String:
+	var n := c
+	while n != null and n != _tabs and n != self:
+		if n is Control and (n as Control).tooltip_text != "":
+			return (n as Control).tooltip_text
+		n = n.get_parent()
+	return ""
+
+
+## A setting row's label: the first Label in the row (the helpers put it first).
+static func _row_label(row: Node) -> String:
+	if row == null:
+		return ""
+	for ch in row.get_children():
+		if ch is Label:
+			return (ch as Label).text
+	return ""
+
+
+## A sort key in panel order: tab index, then each ancestor's child index, zero-padded.
+func _order_of(c: Node) -> String:
+	var parts := PackedStringArray()
+	var n := c
+	while n != null and n != _tabs and n != self:
+		parts.insert(0, "%04d" % n.get_index())
+		n = n.get_parent()
+	if n != _tabs:
+		parts.insert(0, "9999")     # the footer controls go last
+	return ".".join(parts)
 
 
 # ── Widget helpers ───────────────────────────────────────────
@@ -2983,6 +3297,7 @@ func _heading(text: String) -> Label:
 	l.text = text
 	l.add_theme_font_size_override("font_size", 15)
 	l.add_theme_color_override("font_color", Color(1.0, 0.72, 0.4))
+	l.set_meta("panel_heading", true)     # settings_schema() groups the settings under it
 	return l
 
 
@@ -3058,6 +3373,8 @@ func _slider(key: String, label: String, lo: float, hi: float, step: float, fmt:
 	s.max_value = hi * display_scale
 	s.step = step * display_scale
 	s.set_meta("scale", display_scale)
+	s.set_meta("fmt", fmt)               # settings_schema() hands these to Core's pages
+	s.set_meta("zero_text", zero_text)
 	s.value = float(AppState.get_setting(key)) * display_scale
 	s.focus_mode = Control.FOCUS_ALL
 	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL

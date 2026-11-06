@@ -9,6 +9,7 @@ extends Node
 ##   B          stage curtain close / open      Shift+B  curtain reveal (lights, drum roll)
 ##   F9         control panel in its own window / back in the main window (handled by the panel)
 ##   Esc        the game menu (ui/esc_menu.gd, its own window; Esc there closes it)
+##   P / Shift+click  the click menu on people in the room (core/people_picker.gd handles it)
 ## (Tab for the control panel is handled by the panel itself.)
 ## Lives as the Hotkeys node in core/main.tscn. Keep the list above and the README in sync with
 ## _handle() when adding a key.
@@ -85,9 +86,9 @@ func _handle(keycode: Key) -> bool:
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if fs else DisplayServer.WINDOW_MODE_FULLSCREEN)
 		_:
 			if keycode >= KEY_1 and keycode <= KEY_9:
-				EventBus.camera_preset_requested.emit(int(keycode - KEY_1))
+				EventBus.camera_key_requested.emit(int(keycode - KEY_1))     # (the visible views, in their order)
 			elif keycode == KEY_0:
-				EventBus.camera_preset_requested.emit(9)
+				EventBus.camera_key_requested.emit(9)
 			else:
 				return false
 	return true

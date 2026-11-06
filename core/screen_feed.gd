@@ -103,9 +103,15 @@ func _ready() -> void:
 	video_loader.status.connect(func(m: String) -> void: EventBus.status_message.emit(m, false))
 	video_loader.stage.connect(func(s: String) -> void: EventBus.video_job_changed.emit(s, "", ""))
 	video_loader.failed.connect(_on_loader_failed)
+	video_loader.progress.connect(func(st: String, f: float) -> void: EventBus.video_progress.emit(st, f))
 	video_loader.ready_to_play.connect(func(path: String) -> void:
 		EventBus.video_job_changed.emit("ready", "Ready: %s" % path.get_file(), "")
+		EventBus.ready_videos_changed.emit()
 		_play_file(path))
+	video_loader.prepared.connect(func(path: String) -> void:
+		EventBus.video_job_changed.emit("prepared", "Ready to play: it's in Ready videos below.", "")
+		EventBus.ready_videos_changed.emit()
+		EventBus.status_message.emit("Video ready (%s). Play it from Ready videos." % path.get_file(), false))
 
 	capture_server.video_frame_ready.connect(_on_capture_frame)
 	capture_server.webcam_frame_ready.connect(_on_webcam_frame)
@@ -119,6 +125,10 @@ func _ready() -> void:
 	EventBus.file_sync_requested.connect(_on_file_sync_requested)
 	EventBus.live_feed_changed.connect(_on_live_feed_changed)
 	EventBus.file_stop_requested.connect(stop_file)
+	EventBus.file_ready_requested.connect(func(input: String) -> void:
+		video_loader.max_height = AppState.get_setting("max_height")
+		video_loader.request(input, false))
+	EventBus.file_cancel_requested.connect(func() -> void: video_loader.cancel())
 	EventBus.file_pause_toggle_requested.connect(_on_file_pause_toggle)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
 	EventBus.setting_changed.connect(_on_setting_changed)
@@ -220,6 +230,14 @@ func _on_file_prepare_requested(input: String) -> void:
 ## VideoLoader failed: plain message on the message line, raw log in the Details fold
 ## (video_job_changed), and tell a streaming-together session the prepare failed.
 func _on_loader_failed(message: String) -> void:
+	if message == VIDEO_LOADER.CANCELLED:
+		EventBus.status_message.emit("Stopped the video download.", false)
+		EventBus.video_job_changed.emit("cancelled", "Stopped.", "")
+		if _prepare_input != "":
+			var was := _prepare_input
+			_prepare_input = ""
+			EventBus.file_prepare_failed.emit(was, "Stopped on this PC.")
+		return
 	var plain: String = VIDEO_LOADER.plain_error(message)
 	EventBus.status_message.emit(plain, true)
 	if not video_loader.busy:     # (busy: a second Play while one runs; the running one carries on)

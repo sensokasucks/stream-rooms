@@ -1,13 +1,13 @@
 class_name CameraRig
 extends Camera3D
-## Camera presets from the room's CAM_* markers, with smooth moves between them,
-## plus free-look (hold right mouse, WASD / Q-E, Shift = faster).
+## Camera presets from the room's CAM_* markers plus the streamer's own saved views ("Saved
+## views" below), with smooth moves between them, plus free-look (hold right mouse, WASD / Q-E,
+## Shift = faster).
 ## During a react pause it can jump to the room's "Reaction" preset and return after.
 ## The CameraRig node in core/main.tscn. main.gd hands it each new room (set_presets, set_room);
-## the number keys arrive as EventBus.camera_preset_requested (hotkeys.gd).
+## the number keys arrive as EventBus.camera_key_requested (hotkeys.gd); camera_preset_requested
+## still means "the n-th view in the full list" (the room's markers first), which the tests use.
 
-## Seconds a smooth move between presets takes.
-@export var move_time: float = 0.9
 ## Radians of turn per pixel of mouse movement while right-dragging.
 @export var look_sensitivity: float = 0.0025
 ## Free-look flying speed in metres per second (Shift = 3x).
@@ -37,10 +37,14 @@ var _shake_total: float = 0.0
 var _shake_strength: float = 0.0
 var _probes: Array[Vector3] = []       # points inside the room (camera markers)
 var _last_inside: Variant = null       # last camera position that was inside the room
+var _ids: PackedStringArray = []       # view id per _presets entry: "b<n>" = the room's marker n, "s<...>" = saved
+var _room_id: String = ""              # the room the views belong to (setting camera_views is per room)
 
 
 func _ready() -> void:
 	EventBus.camera_preset_requested.connect(go_to_preset)
+	EventBus.camera_key_requested.connect(go_to_key)
+	EventBus.camera_view_action.connect(view_action)
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
 	EventBus.camera_shake_requested.connect(shake)
 	EventBus.setting_changed.connect(func(k: String, _v: Variant) -> void:
@@ -80,21 +84,32 @@ func set_room(room: Room) -> void:
 ## markers in order (key 1 = first). Jumps to the first preset.
 func set_presets(markers: Array[Node3D], labels: PackedStringArray) -> void:
 	_presets.clear()
-	_labels = labels
+	_labels = labels.duplicate()
+	_ids.clear()
 	_reaction_index = -1
+	_room_id = String(AppState.get_setting("room_id"))
 	for i in markers.size():
 		_presets.append(markers[i].global_transform.orthonormalized())
+		_ids.append("b%d" % i)
 		if labels[i].to_lower().contains("reaction"):
 			_reaction_index = i
+	_add_saved_views()
 	_pre_react_valid = false
 	if not _presets.is_empty():
-		go_to_preset(0, false)
+		var first := _visible_index(0)
+		go_to_preset(first if first >= 0 else 0, false)
+	_emit_views()
 
 
 ## Moves to preset `index` (0-based; out of range is ignored). Also EventBus.camera_preset_requested.
 func go_to_preset(index: int, smooth: bool = true) -> void:
 	if index < 0 or index >= _presets.size():
 		return
+	if index < _ids.size() and _ids[index].begins_with("s"):
+		# a saved view keeps its zoom too
+		var v: Variant = (_room_views().get("saved", {}) as Dictionary).get(_ids[index], {})
+		if v is Dictionary and ((v as Dictionary).get("fov") is float or (v as Dictionary).get("fov") is int):
+			AppState.set_setting("camera_fov", clampf(float(v["fov"]), FOV_MIN, FOV_MAX))
 	_move_to(_presets[index], smooth)
 
 
@@ -107,6 +122,202 @@ func shake(strength: float, seconds: float) -> void:
 	_shake_strength = clampf(strength, 0.0, 2.0) * 0.06
 	_shake_total = clampf(seconds, 0.05, 3.0)
 	_shake_left = _shake_total
+
+
+# ── Saved views ──────────────────────────────────────────────
+## The streamer's own camera views per room, next to the room's built-in ones (Room tab >
+## Cameras, and Core's Stream Rooms card). "Save this view" keeps where the camera is now; each
+## view can be renamed, moved up / down (the number keys follow the order), hidden (no button, no
+## key) or updated to the camera's place now; saved ones can also be deleted. Built-in ones can
+## only be renamed, moved and hidden, so a room's own cameras always come back.
+## Stored in the "camera_views" setting (JSON, see AppState.DEFAULTS), one entry per room.
+
+## Most saved views per room.
+const MAX_SAVED: int = 20
+
+
+## This room's entry of the camera_views setting ({} = never changed).
+func _room_views() -> Dictionary:
+	var raw := String(AppState.get_setting("camera_views")).strip_edges()
+	if raw == "":
+		return {}
+	var data: Variant = JSON.parse_string(raw)
+	if data is Dictionary and (data as Dictionary).get(_room_id) is Dictionary:
+		return data[_room_id]
+	return {}
+
+
+## Writes this room's entry back (the other rooms' are kept).
+func _store_room_views(entry: Dictionary) -> void:
+	var raw := String(AppState.get_setting("camera_views")).strip_edges()
+	var data: Variant = JSON.parse_string(raw) if raw != "" else {}
+	var all: Dictionary = data if data is Dictionary else {}
+	all[_room_id] = entry
+	AppState.set_setting("camera_views", JSON.stringify(all))
+
+
+## Adds this room's saved views to _presets / _ids / _labels (after the room's markers).
+func _add_saved_views() -> void:
+	var saved: Variant = _room_views().get("saved", {})
+	if not saved is Dictionary:
+		return
+	for id: String in (saved as Dictionary).keys():
+		var t: Variant = _transform_from(saved[id].get("o", []) if saved[id] is Dictionary else [])
+		if t == null:
+			continue
+		_presets.append(t as Transform3D)
+		_ids.append(id)
+		_labels.append(String(saved[id].get("name", "My view")).left(40))
+
+
+## 12 numbers (basis x, y, z, origin) -> Transform3D, or null when they aren't that.
+static func _transform_from(o: Variant) -> Variant:
+	if not o is Array or (o as Array).size() != 12:
+		return null
+	var f: Array = o
+	for x: Variant in f:
+		if not (x is float or x is int):
+			return null
+	return Transform3D(Vector3(f[0], f[1], f[2]), Vector3(f[3], f[4], f[5]), Vector3(f[6], f[7], f[8]),
+		Vector3(f[9], f[10], f[11])).orthonormalized()
+
+
+static func _transform_to(t: Transform3D) -> Array:
+	return [t.basis.x.x, t.basis.x.y, t.basis.x.z, t.basis.y.x, t.basis.y.y, t.basis.y.z,
+		t.basis.z.x, t.basis.z.y, t.basis.z.z, t.origin.x, t.origin.y, t.origin.z]
+
+
+## Every view of this room in its order: [{id, name, hidden, saved, key, index}] (index into
+## _presets; key 1-10 for the first ten visible ones, 0 = none). Ids the order doesn't name yet
+## (a new room marker, a new saved view) go at the end.
+func get_views() -> Array[Dictionary]:
+	var entry := _room_views()
+	var names: Dictionary = entry.get("names", {}) if entry.get("names") is Dictionary else {}
+	var hidden: Array = entry.get("hidden", []) if entry.get("hidden") is Array else []
+	var order: Array = []
+	for id: Variant in (entry.get("order", []) if entry.get("order") is Array else []):
+		if _ids.has(String(id)) and not order.has(String(id)):
+			order.append(String(id))
+	for id in _ids:
+		if not order.has(id):
+			order.append(id)
+	var out: Array[Dictionary] = []
+	var key := 0
+	for id: String in order:
+		var i := _ids.find(id)
+		var is_hidden := hidden.has(id)
+		if not is_hidden:
+			key += 1
+		out.append({"id": id, "index": i, "name": String(names.get(id, _labels[i])).left(40),
+			"hidden": is_hidden, "saved": id.begins_with("s"), "key": key if not is_hidden and key <= 10 else 0})
+	return out
+
+
+## Index into _presets of the n-th visible view (0-based), or -1.
+func _visible_index(n: int) -> int:
+	var k := 0
+	for v in get_views():
+		if bool(v["hidden"]):
+			continue
+		if k == n:
+			return int(v["index"])
+		k += 1
+	return -1
+
+
+## Number key n (0 = key 1): the n-th visible view. Also EventBus.camera_key_requested.
+func go_to_key(n: int) -> void:
+	var i := _visible_index(n)
+	if i >= 0:
+		go_to_preset(i)
+
+
+## Tells the panel and Core the views (camera_views_changed) and the visible names in key order
+## (camera_presets_changed).
+func _emit_views() -> void:
+	var views := get_views()
+	var names := PackedStringArray()
+	for v in views:
+		if not bool(v["hidden"]):
+			names.append(String(v["name"]))
+	EventBus.camera_views_changed.emit(views)
+	EventBus.camera_presets_changed.emit(names)
+
+
+## Changes a view (EventBus.camera_view_action; see there for the actions). "save" keeps the
+## camera's place and field of view now under the name in arg. Unknown ids are ignored.
+func view_action(action: String, id: String, arg: String = "") -> void:
+	if _room_id == "":
+		return
+	var entry := _room_views()
+	var saved: Dictionary = entry.get("saved", {}) if entry.get("saved") is Dictionary else {}
+	var names: Dictionary = entry.get("names", {}) if entry.get("names") is Dictionary else {}
+	var hidden: Array = entry.get("hidden", []) if entry.get("hidden") is Array else []
+	var order: Array = []
+	for v in get_views():
+		order.append(String(v["id"]))
+	var at := order.find(id)
+	if action != "save" and at < 0:
+		return
+	match action:
+		"go":
+			go_to_preset(_ids.find(id))
+			return
+		"save":
+			if saved.size() >= MAX_SAVED:
+				EventBus.status_message.emit("A room keeps up to %d saved views. Delete one first." % MAX_SAVED, true)
+				return
+			var nid := "s%d" % Time.get_ticks_usec()
+			var label := arg.strip_edges().left(40)
+			if label == "":
+				label = "My view %d" % (saved.size() + 1)
+			saved[nid] = {"name": label, "o": _transform_to(global_transform), "fov": fov}
+			order.append(nid)
+			EventBus.status_message.emit("Saved this view as \"%s\"." % label, false)
+		"update":
+			if saved.has(id):
+				saved[id]["o"] = _transform_to(global_transform)
+				saved[id]["fov"] = fov
+			else:
+				EventBus.status_message.emit("A room's own camera can't move. Save this view as a new one instead.", false)
+				return
+		"rename":
+			var nn := arg.strip_edges().left(40)
+			if nn == "":
+				return
+			if saved.has(id):
+				saved[id]["name"] = nn
+			else:
+				names[id] = nn
+		"up", "down":
+			var to := at + (-1 if action == "up" else 1)
+			if to < 0 or to >= order.size():
+				return
+			order[at] = order[to]
+			order[to] = id
+		"hide":
+			if not hidden.has(id):
+				hidden.append(id)
+		"show":
+			hidden.erase(id)
+		"delete":
+			if not saved.has(id):
+				return           # (a room's own camera can be hidden, not deleted)
+			saved.erase(id)
+			order.erase(id)
+			hidden.erase(id)
+		_:
+			return
+	_store_room_views({"order": order, "hidden": hidden, "names": names, "saved": saved})
+	# rebuild _presets from the room's markers (kept) and the saved views
+	var keep := 0
+	while keep < _ids.size() and _ids[keep].begins_with("b"):
+		keep += 1
+	_presets.resize(keep)
+	_ids.resize(keep)
+	_labels.resize(keep)
+	_add_saved_views()
+	_emit_views()
 
 
 # ── Input: free-look ─────────────────────────────────────────
@@ -169,17 +380,22 @@ func _on_react_pause_changed(paused: bool) -> void:
 		_move_to(_pre_react_transform, true)
 
 
-## Jumps or glides (move_time, sine ease) to a transform. Free-look or flying cancels a glide.
+## Jumps or glides ("camera_glide" seconds, sine ease) to a transform. Free-look or flying cancels a glide.
 func _move_to(target: Transform3D, smooth: bool) -> void:
 	_kill_tween()
 	if not smooth:
 		global_transform = target
 		_sync_angles()
 		return
+	var glide := float(AppState.get_setting("camera_glide"))
+	if glide <= 0.0:
+		global_transform = target         # (Glide time 0: cut straight to it)
+		_sync_angles()
+		return
 	var from := global_transform
 	_tween = create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	_tween.tween_method(func(t: float) -> void:
-		global_transform = from.interpolate_with(target, t), 0.0, 1.0, move_time)
+		global_transform = from.interpolate_with(target, t), 0.0, 1.0, glide)
 	_tween.tween_callback(_sync_angles)
 
 

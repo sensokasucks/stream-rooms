@@ -34,6 +34,9 @@ func _check(ok: bool, what: String) -> void:
 func _process(_d: float) -> void:
 	if _peer == null and _server.is_connection_available():
 		_peer = WebSocketPeer.new()
+		# the game's rooms_settings packet (every panel setting for Core, ~90 KB) is bigger than
+		# the default 64 KB; real Core takes up to 16 MB
+		_peer.inbound_buffer_size = 1 << 20
 		_peer.accept_stream(_server.take_connection())
 	if _peer:
 		_peer.poll()

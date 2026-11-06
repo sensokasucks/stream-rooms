@@ -5,6 +5,7 @@ extends Node3D
 
 @export var room_host: RoomHost
 @export var camera_rig: CameraRig
+var _picker: PeoplePicker
 
 
 ## Picks the start room (the saved room_id, or the first room in RoomCatalog if that one is gone),
@@ -13,6 +14,10 @@ func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
 	add_child(NetMarkers.new())     # the others' cameras while streaming together
 	add_child(EscMenu.new())        # the Esc menu; it also puts the window where Display says
+	_picker = PeoplePicker.new()     # Shift+click (or P, click) on people in the room: their menu
+	_picker.name = "PeoplePicker"
+	_picker.camera = camera_rig
+	add_child(_picker)
 	get_tree().auto_accept_quit = false     # closing the window goes through AppState.request_quit
 
 	var start_id: String = AppState.get_setting("room_id")
@@ -48,3 +53,4 @@ func _on_room_ready(room: Room, _info: RoomInfo) -> void:
 		labels.append(room.get_camera_label(m))
 	camera_rig.set_presets(markers, labels)
 	camera_rig.set_room(room)
+	_picker.set_room(room)

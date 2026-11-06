@@ -11,7 +11,10 @@ extends Node
 ## ".part.ogv" file first, so a stopped one never leaves a broken video in the cache.
 ## The VideoLoader node under ScreenFeed in core/main.tscn; ScreenFeed calls request() and
 ## listens to the signals below. Tools are found by _find_tool (tools/get_tools.ps1 fetches them).
-## No class_name: ScreenFeed preloads this script to reach plain_error().
+## No class_name: ScreenFeed preloads this script to reach plain_error(); the Source tab preloads it
+## for the ready-videos list (list_ready / delete_ready / cache_dir, all static).
+## Each finished video gets a small "<video>.json" next to it ({title, source}) for that list.
+## A job reports how far it got (progress: 0..1 per step, -1 = can't tell) and can be cancelled.
 
 ## Progress text for the panel's message line (EventBus.status_message).
 signal status(message: String)
@@ -20,7 +23,15 @@ signal stage(name: String)
 ## The .ogv to play (a cache path, or the user's own .ogv).
 signal ready_to_play(path: String)
 ## The job failed. message is raw (may hold the tool's log); see plain_error for a short version.
+## A cancelled job fails with CANCELLED.
 signal failed(message: String)
+## How far the step in `stage` has got: 0..1, or -1 when the tool doesn't say (a plain file link).
+signal progress(stage_name: String, fraction: float)
+## "Just get it ready": the .ogv is in the cache, not played (request with play = false).
+signal prepared(path: String)
+
+## failed() text for a job the streamer stopped with Cancel.
+const CANCELLED: String = "Stopped."
 
 ## (A copy started with --mp-profile keeps its own cache, so two copies on one PC never convert
 ## into the same file at once.)
@@ -37,15 +48,25 @@ const MAX_DOWNLOAD := "2G"
 const MAX_DURATION_S := 14400
 
 var _thread: Thread
-## Set on quit: the job's tool is stopped and the job ends early.
+## Set on quit or Cancel: the job's tool is stopped and the job ends early.
 var _cancel: bool = false
+## Set by cancel(): the job ends with failed(CANCELLED) (on quit it just ends).
+var _cancel_by_user: bool = false
+## The running job plays its video when ready (false = "Just get it ready").
+var _play: bool = true
+## Job thread: the step whose progress _run reads from the tool's output ("" = none), and the
+## video's length in seconds once ffmpeg said it (for the convert percentage).
+var _progress_stage: String = ""
+var _duration_s: float = 0.0
+var _last_fraction: float = -2.0
 ## The tool the job is running now (0 = none), so quitting can stop it.
 var _pid: int = 0
 
 
 ## Starts work on what the user typed: a URL, a file path (quotes from Windows' "Copy as path"
-## are trimmed) or a .ogv. Ends with ready_to_play or failed, unless the app quits first.
-func request(raw: String) -> void:
+## are trimmed) or a .ogv. Ends with ready_to_play (or prepared, with play = false) or failed,
+## unless the app quits first.
+func request(raw: String, play: bool = true) -> void:
 	var input := raw.strip_edges().trim_prefix("\"").trim_suffix("\"")
 	if input == "":
 		failed.emit("Paste a YouTube URL or a path to a video file first.")
@@ -56,6 +77,7 @@ func request(raw: String) -> void:
 	DirAccess.make_dir_recursive_absolute(_cache_dir)
 
 	if input.begins_with("http://") or input.begins_with("https://"):
+		_play = play
 		_start(_job_url.bind(input))
 		return
 
@@ -66,13 +88,19 @@ func request(raw: String) -> void:
 		failed.emit("File not found: %s" % input)
 		return
 	if path.get_extension().to_lower() == "ogv":
-		ready_to_play.emit(path)
+		if play:
+			ready_to_play.emit(path)
+		else:
+			prepared.emit(path)
 	else:
+		_play = play
 		_start(_job_local.bind(path))
 
 
 func _start(job: Callable) -> void:
 	busy = true
+	_cancel = false
+	_cancel_by_user = false
 	_thread = Thread.new()
 	_thread.start(job)
 
@@ -83,10 +111,23 @@ func _finish(ok: bool, payload: String) -> void:
 		_thread.wait_to_finish()
 		_thread = null
 	busy = false
-	if ok:
+	if ok and _play:
 		ready_to_play.emit(payload)
+	elif ok:
+		prepared.emit(payload)
 	else:
 		failed.emit(payload)
+
+
+## Cancel (Source tab): stops the running download / convert; the job ends with failed(CANCELLED).
+## Nothing half-done stays in the cache (the convert writes to a .part file, the download is deleted).
+func cancel() -> void:
+	if not busy:
+		return
+	_cancel_by_user = true
+	_cancel = true
+	if _pid > 0:
+		OS.kill(_pid)
 
 
 ## Quitting: stop the running tool so the thread ends now instead of after the convert.
@@ -113,6 +154,24 @@ func _done(ok: bool, payload: String) -> void:
 	_finish.call_deferred(ok, payload)
 
 
+## After a tool ran: true when the job was stopped. On Cancel it ends the job (failed(CANCELLED));
+## on quit it just stops (nobody is listening any more).
+func _stopped() -> bool:
+	if not _cancel:
+		return false
+	if _cancel_by_user:
+		_done(false, CANCELLED)
+	return true
+
+
+## Writes "<video>.json" next to a finished video, for the ready-videos list.
+func _write_meta(out: String, title: String, source: String) -> void:
+	var f := FileAccess.open(out.get_basename() + ".json", FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify({"title": title.left(200), "source": source.left(500)}))
+		f.close()
+
+
 ## Thread job: convert a local file. The cache name comes from the full path and modified time,
 ## so an edited file is converted again.
 func _job_local(path: String) -> void:
@@ -129,6 +188,10 @@ func _job_local(path: String) -> void:
 	_stage("converting")
 	_say("Converting %s to .ogv (this can take a while for long videos)..." % path.get_file())
 	var err := _convert(ffmpeg, abs_src, out)
+	if _stopped():
+		return
+	if err == "":
+		_write_meta(out, path.get_file().get_basename(), path)
 	_done(err == "", out if err == "" else err)
 
 
@@ -154,24 +217,35 @@ func _job_url(url: String) -> void:
 	var template := ProjectSettings.globalize_path("%s/%s_src.%%(ext)s" % [_cache_dir, key])
 	var fmt := "bv*[height<=%d]+ba/b[height<=%d]/b" % [max_height, max_height]
 	# "<?" lets a plain file link through: yt-dlp can't tell its length, and "<" would skip it.
+	# progress: one "SRPROG <percent>" line per update (--newline), read by _watch_output
 	var args := PackedStringArray([
-		"--no-playlist", "--no-progress", "--no-warnings",
+		"--no-playlist", "--newline", "--no-warnings",
+		"--progress-template", "download:SRPROG %(progress._percent_str)s",
 		"-f", fmt, "--merge-output-format", "mkv",
 		"--max-filesize", MAX_DOWNLOAD, "--match-filter", "duration<?%d" % MAX_DURATION_S,
 		"-o", template,
-		"--print", "after_move:filepath", "--no-simulate",
+		"--print", "after_move:SRTITLE %(title)s", "--print", "after_move:filepath", "--no-simulate",
 	])
 	if ffmpeg.contains("/") or ffmpeg.contains("\\"):
 		args.append_array(["--ffmpeg-location", ffmpeg])
 	args.append(url)
 	var output := []
+	_progress_stage = "downloading"
 	var code := _run(ytdlp, args, output)
+	_progress_stage = ""
 	if _cancel:
+		for f in DirAccess.get_files_at(_cache_dir):      # (a half-done download)
+			if f.begins_with(key + "_src."):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(_cache_dir.path_join(f)))
+		_stopped()
 		return
 	var ytlog := "\n".join(output)
 	var src := ""
+	var title := ""
 	for line in ytlog.split("\n"):
 		var l := line.strip_edges()
+		if l.begins_with("SRTITLE "):
+			title = l.trim_prefix("SRTITLE ")
 		# only the file this job asked for (a stray line naming another file must never be
 		# picked: it gets deleted after the convert)
 		if l != "" and l.replace("\\", "/").get_file().begins_with(key + "_src.") and FileAccess.file_exists(l):
@@ -190,6 +264,10 @@ func _job_url(url: String) -> void:
 	_say("Converting download to .ogv (this can take a while for long videos)...")
 	var err := _convert(ffmpeg, src, out)
 	DirAccess.remove_absolute(src) # keep only the converted copy
+	if _stopped():
+		return
+	if err == "":
+		_write_meta(out, title if title != "" else url, url)
 	_done(err == "", out if err == "" else err)
 
 
@@ -198,8 +276,11 @@ func _job_url(url: String) -> void:
 func _convert(ffmpeg: String, src: String, out: String) -> String:
 	var part := out.get_basename() + ".part.ogv"
 	var abs_part := ProjectSettings.globalize_path(part)
+	# "-progress pipe:1" prints out_time_us=... as it goes; loglevel info prints the length
+	# ("Duration: 00:01:30.00") that _watch_output turns it into a percentage with
+	_duration_s = 0.0
 	var args := PackedStringArray([
-		"-y", "-hide_banner", "-loglevel", "error",
+		"-y", "-hide_banner", "-loglevel", "info", "-nostats", "-progress", "pipe:1",
 		"-i", src,
 		"-vf", "scale=-2:'min(%d,ih)'" % max_height,
 		"-c:v", "libtheora", "-q:v", "7",
@@ -207,10 +288,17 @@ func _convert(ffmpeg: String, src: String, out: String) -> String:
 		abs_part,
 	])
 	var output := []
+	_progress_stage = "converting"
 	var code := _run(ffmpeg, args, output)
+	_progress_stage = ""
 	if _cancel or code != 0 or not FileAccess.file_exists(part):
 		DirAccess.remove_absolute(abs_part)
-		return "ffmpeg failed (code %d):\n%s" % [code, _tail("\n".join(output))]
+		# (leave out the -progress lines such as "frame=12" / "progress=end": the error is what matters)
+		var lines := PackedStringArray()
+		for l in "\n".join(output).split("\n"):
+			if not RegEx.create_from_string("^[a-z_0-9]+=").search(l.strip_edges()):
+				lines.append(l)
+		return "ffmpeg failed (code %d):\n%s" % [code, _tail("\n".join(lines))]
 	DirAccess.rename_absolute(abs_part, ProjectSettings.globalize_path(out))
 	return ""
 
@@ -251,11 +339,16 @@ func _run(exe: String, args: PackedStringArray, output: Array) -> int:
 	_pid = int(info["pid"])
 	var pipes: Array[FileAccess] = [info["stdio"], info["stderr"]]
 	var text := ""
+	var seen := 0
+	_last_fraction = -2.0
 	while OS.is_process_running(_pid):
 		if _cancel:
 			OS.kill(_pid)
 			break
 		text += _drain(pipes)
+		if text.length() > seen:
+			_watch_output(text.substr(maxi(seen - 200, 0)))
+			seen = text.length()
 		OS.delay_msec(50)
 	text += _drain(pipes)
 	var code := -1 if _cancel else OS.get_process_exit_code(_pid)
@@ -264,6 +357,37 @@ func _run(exe: String, args: PackedStringArray, output: Array) -> int:
 		f.close()
 	output.append(text)
 	return code
+
+
+## Job thread: the tool's newest output -> progress(). yt-dlp prints "SRPROG  42.0%" lines (see
+## the --progress-template in _job_url); ffmpeg prints "Duration: h:mm:ss.cc" once and then
+## "out_time_us=..." lines. Only a change of a whole percent is sent on.
+func _watch_output(chunk: String) -> void:
+	if _progress_stage == "":
+		return
+	var fraction := -1.0
+	if _progress_stage == "downloading":
+		var at := chunk.rfind("SRPROG")
+		if at < 0:
+			return
+		var pct := chunk.substr(at + 6).strip_edges().get_slice("%", 0).strip_edges()
+		if pct.is_valid_float():
+			fraction = clampf(float(pct) / 100.0, 0.0, 1.0)
+	else:
+		var d := chunk.find("Duration: ")
+		if d >= 0 and _duration_s <= 0.0:
+			var hms := chunk.substr(d + 10, 11).split(":")
+			if hms.size() == 3:
+				_duration_s = float(hms[0]) * 3600.0 + float(hms[1]) * 60.0 + float(hms[2])
+		var t := chunk.rfind("out_time_us=")
+		if t < 0 or _duration_s <= 0.0:
+			return
+		var us := chunk.substr(t + 12).get_slice("\n", 0).strip_edges()
+		if us.is_valid_int():
+			fraction = clampf(float(us) / 1000000.0 / _duration_s, 0.0, 1.0)
+	if absf(fraction - _last_fraction) >= 0.01:
+		_last_fraction = fraction
+		progress.emit.call_deferred(_progress_stage, fraction)
 
 
 ## Reads whatever the tool printed so far, so its pipes never fill up and block it.
@@ -304,3 +428,39 @@ func _missing_msg(tool: String) -> String:
 func _tail(text: String, lines := 6) -> String:
 	var parts := text.strip_edges().split("\n")
 	return "\n".join(parts.slice(maxi(parts.size() - lines, 0)))
+
+
+# ------------------------------------------------------------ ready videos
+## Where this copy keeps its finished videos (a profile copy has its own, see _cache_dir).
+static func cache_dir() -> String:
+	return "user://video_cache" if AppState.get_profile().is_empty() else "user://video_cache_%s" % AppState.get_profile()
+
+
+## The finished videos in the cache, newest first: [{path, title, source, bytes, modified}]
+## (Source tab > Ready videos). Half-done ".part" files are left out.
+static func list_ready() -> Array[Dictionary]:
+	var out: Array[Dictionary] = []
+	var dir := cache_dir()
+	for f in DirAccess.get_files_at(dir):
+		if f.get_extension() != "ogv" or f.ends_with(".part.ogv"):
+			continue
+		var path := dir.path_join(f)
+		var info: Dictionary = {}
+		if FileAccess.file_exists(path.get_basename() + ".json"):
+			var meta: Variant = JSON.parse_string(FileAccess.get_file_as_string(path.get_basename() + ".json"))
+			if meta is Dictionary:
+				info = meta
+		var fa := FileAccess.open(path, FileAccess.READ)
+		var size := fa.get_length() if fa else 0
+		out.append({"path": path, "title": String(info.get("title", f)), "source": String(info.get("source", "")),
+			"bytes": size, "modified": FileAccess.get_modified_time(path)})
+	out.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["modified"]) > int(b["modified"]))
+	return out
+
+
+## Deletes a ready video (and its .json) from the cache. Only paths inside the cache are touched.
+static func delete_ready(path: String) -> bool:
+	if not path.begins_with(cache_dir() + "/") or path.contains(".."):
+		return false
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path.get_basename() + ".json"))
+	return DirAccess.remove_absolute(ProjectSettings.globalize_path(path)) == OK
