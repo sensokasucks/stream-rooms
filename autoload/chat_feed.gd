@@ -280,6 +280,15 @@ func _handle(text: String) -> void:
 				})
 			else:
 				EventBus.chat_highlight_changed.emit({})
+		"tts_speaking":
+			# Stream Core started reading this chatter's line aloud (core/tts.py process there)
+			var sp: Variant = (msg as Dictionary).get("data")
+			if sp is Dictionary:
+				var uname := _str((sp as Dictionary).get("username")).strip_edges().to_lower()
+				if uname != "":
+					EventBus.chat_speaking.emit({"platform": _str((sp as Dictionary).get("platform")),
+						"names": PackedStringArray([uname]),
+						"seconds": clampf(float((sp as Dictionary).get("seconds", 3.0)), 1.0, 30.0)})
 		"chat_user_hidden":
 			# Stream Core red-flagged someone (Chat history > Red flags on its dashboard)
 			var h: Variant = (msg as Dictionary).get("data")

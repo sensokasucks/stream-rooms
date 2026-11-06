@@ -72,6 +72,15 @@ func _ready() -> void:
 	picker._on_item(PeoplePicker.ID_GLOW)
 	_check(glows.size() == 2 and not (glows[0] as Dictionary).is_empty() and (glows[1] as Dictionary).is_empty(), "Highlight / glow turns on, then off")
 
+	# Stream Core reads Clicky's line aloud: their seat glows blue for a while (tts_speaking packet)
+	AppState.set_setting("audience_tts_glow", true)
+	ChatFeed._handle(JSON.stringify({"type": "tts_speaking", "data": {"platform": "twitch", "username": "Clicky", "seconds": 1.2}}))
+	await get_tree().process_frame
+	var seat_root := (view._seats[slot] as Dictionary)["root"] as Node3D
+	_check(seat_root.get_node_or_null("SpeakingGlow") != null, "a chatter read aloud glows")
+	await _secs(1.8)
+	_check(seat_root.get_node_or_null("SpeakingGlow") == null, "and stops glowing after their line")
+
 	# the big screen, and nothing at all
 	var screen: Dictionary = layer._screen
 	rig.global_transform = Transform3D.IDENTITY.translated((screen["pos"] as Vector3) + (screen["normal"] as Vector3) * 6.0).looking_at(screen["pos"])

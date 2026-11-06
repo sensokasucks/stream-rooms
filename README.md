@@ -619,6 +619,9 @@ Rooms with audience seats (Home Theater, Lecture Hall, Old Classroom) can fill u
   chatter's seat gets a slow purple glow while their message is on screen. It moves to the next
   highlight and goes away when Core clears it. In photosensitive-safe mode the glow is steady.
   Only chatters with a seat glow. Needs Stream Core v2026.11.2 or newer.
+- **Glow while read aloud** (Audience tab, on by default): while Stream Core's **Read aloud (TTS)**
+  reads a chatter's line, their seat gets a soft blue glow that fades in and out (no flashing).
+  Only chatters with a seat glow. Needs the matching Stream Core build.
 - **Colour paid and highlighted messages** (Audience tab, on by default): Super Chats, Kicks and
   Bits get a gold bubble and a gold box on the chat windows; Twitch messages highlighted with
   channel points ("Highlight My Message") get a purple one, like on Twitch; a "Gigantify an

@@ -63,6 +63,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"audience_bubble_animated": true,     # animated emotes move in bubbles (off: their first frame, lighter)
 	"audience_names": true,      # name tags over the silhouettes
 	"audience_highlight_glow": true,  # the chatter on Stream Core's Highlighted message overlay gets a glowing seat
+	"audience_tts_glow": true,     # a chatter's silhouette glows while Stream Core reads their line aloud (EventBus.chat_speaking)
 	"audience_show_empty": true, # dim placeholders on empty seats
 	"audience_hide_commands": true,   # !commands seat the chatter but show no bubble
 	"audience_color_by": "chat", # silhouette / name colours: chat (the chatter's own chat colour) | name (picked from the name) | platform

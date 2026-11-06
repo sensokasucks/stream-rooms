@@ -74,6 +74,13 @@ func _ready() -> void:
 	# Setup > Stream Rooms pages: the panel's settings, described for Core
 	var data := remote.refresh_schema()
 	var schema: Array = data.get("schema", [])
+	# a copy for looking at Core's pages with the real list (outside the project folder)
+	var args := OS.get_cmdline_user_args()
+	if args.size() > 0 and not args[0].begins_with("--"):
+		var f := FileAccess.open(args[0].path_join("rooms_settings.json"), FileAccess.WRITE)
+		if f != null:
+			f.store_string(JSON.stringify(data))
+			f.close()
 	_check(schema.size() >= 150, "the panel describes its settings for Core (%d)" % schema.size())
 	var tabs := {}
 	var no_tip: Array = []

@@ -130,6 +130,10 @@ signal chat_user_hidden(info: Dictionary)
 ## name)} of the chatter on screen, or {} when nothing is highlighted. AudienceView makes that
 ## chatter's seat glow ("audience_highlight_glow").
 signal chat_highlight_changed(info: Dictionary)
+## Stream Core started reading a chatter's line aloud (its "tts_speaking" packet, core/tts.py there):
+## {"platform", "names" (lower-case login), "seconds" (about how long it plays)}. AudienceView
+## makes that chatter's silhouette glow for that long ("audience_tts_glow").
+signal chat_speaking(info: Dictionary)
 ## Stream Core answered a chat command (its API-free reply path: {message, platform,
 ## reply_to_user, source, timestamp, history}). Shown on the reply screen.
 signal core_reply_received(reply: Dictionary)
