@@ -71,6 +71,24 @@ func _ready() -> void:
 	_check(rig.global_position.distance_to(before) > 1.0, "a camera view button moves the camera (%s)" % str(rig.global_position))
 	_check(not remote.run_command("format_disk", "now"), "an unknown action is refused")
 
+	# Big screen picker: the state lists what can go on the screen, and each pick sends the same
+	# EventBus request the Source tab's Show / Play buttons send
+	var src: Dictionary = remote.build_state().get("sources", {})
+	_check(src.has("ndi") and src.has("spout") and String(src.get("sender_url", "")).begins_with("http://127.0.0.1:"),
+		"the state has the source lists and the sender page address (%s)" % str(src))
+	var asked: Array = []
+	var on_ndi := func(n: String) -> void: asked.append("ndi:" + n)
+	var on_spout := func(n: String) -> void: asked.append("spout:" + n)
+	EventBus.ndi_connect_requested.connect(on_ndi)
+	EventBus.spout_connect_requested.connect(on_spout)
+	remote.run_command("ndi", "No Such Source (test)")
+	remote.run_command("spout", "No Such Sender (test)")
+	EventBus.ndi_connect_requested.disconnect(on_ndi)
+	EventBus.spout_connect_requested.disconnect(on_spout)
+	_check(asked == ["ndi:No Such Source (test)", "spout:No Such Sender (test)"], "NDI and Spout picks ask ScreenFeed to show them (%s)" % str(asked))
+	_check(not remote.run_command("ndi", "") and not remote.run_command("video", "  "), "an empty pick is refused")
+	_check(remote.run_command("stop", ""), "Stop is taken whatever shows")
+
 	# Setup > Stream Rooms pages: the panel's settings, described for Core
 	var data := remote.refresh_schema()
 	var schema: Array = data.get("schema", [])
@@ -101,7 +119,7 @@ func _ready() -> void:
 	for e: Dictionary in schema:
 		if bool(e["adv"]):
 			adv += 1
-	_check(adv > 20 and adv < schema.size(), "Advanced ▸ settings are marked (%d)" % adv)
+	_check(adv > 20 and adv < schema.size(), "Advanced â–¸ settings are marked (%d)" % adv)
 	_check(JSON.stringify(data).length() < 900000, "the packet fits the socket buffer (%d chars)" % JSON.stringify(data).length())
 	_check(remote.set_from_core("volume", 0.55) and is_equal_approx(float(AppState.get_setting("volume")), 0.55), "Core sets a slider")
 	_check(not by_key.has("together_password") and not by_key.has("together_address"), "the co-stream password and address stay on this PC")

@@ -12,7 +12,10 @@ class_name RoomsRemote
 ##       screen {mode, text, ok} (the big screen line, like the panel's status strip),
 ##       sender {connected, sharing, label, fps, audio},
 ##       volume, ambience (0..1 settings), presenters [{n, on, source}] (only rooms with podiums),
-##       costream {role, text, remote, has_remote, guests}.
+##       costream {role, text, remote, has_remote, guests},
+##       sources {ndi [names], ndi_ok, ndi_on, spout [names], spout_ok, spout_on, sender_url}
+##         (the card's "Big screen" picker: what can go on the big screen, and the sender page's
+##         address for the "Open the sender page" link; ndi_on / spout_on = the name showing now).
 ##  2. Runs the commands Core's card sends back. They arrive as the existing "stage" packet,
 ##     {action, value}; ChatFeed hands every action except "curtain" to run_command() here.
 ##
@@ -42,6 +45,13 @@ var _podiums: int = 0             # podiums in the room on now (room_presenters_
 var _schema_keys: Dictionary = {} # setting keys Core may change (from the last schema sent)
 var _changed: Dictionary = {}     # schema keys changed since the last rooms_values packet
 var _send_schema: bool = false    # a full rooms_settings packet is due (after a (re)connect)
+var _ndi_names: PackedStringArray = []    # NDI sources found (EventBus.ndi_sources_changed)
+var _ndi_ok: bool = false                 # false = the NDI add-on isn't loaded
+var _spout_names: PackedStringArray = []  # Spout senders running (EventBus.spout_senders_changed)
+var _spout_ok: bool = false               # false = the Spout add-on isn't loaded
+
+## Most names sent per source list (Core keeps the same cap; a busy network can list many NDI sources).
+const MAX_SOURCE_NAMES: int = 40
 
 
 func _ready() -> void:
@@ -58,6 +68,15 @@ func _ready() -> void:
 	EventBus.camera_views_changed.connect(_on_views)
 	EventBus.capture_status_changed.connect(_on_capture_status)
 	EventBus.setting_changed.connect(_on_setting_changed)
+	# the Big screen picker on Core's card lists these
+	EventBus.ndi_sources_changed.connect(func(names: PackedStringArray, ok: bool) -> void:
+		_ndi_names = names
+		_ndi_ok = ok
+		_mark())
+	EventBus.spout_senders_changed.connect(func(names: PackedStringArray, ok: bool) -> void:
+		_spout_names = names
+		_spout_ok = ok
+		_mark())
 
 
 func _process(delta: float) -> void:
@@ -215,6 +234,23 @@ func build_state() -> Dictionary:
 		"ambience": snappedf(float(AppState.get_setting("ambience_volume")), 0.01),
 		"presenters": presenters,
 		"costream": _costream_line(),
+		"sources": _sources_line(),
+	}
+
+
+## What the card's Big screen picker can offer: the NDI sources and Spout senders found, whether
+## each add-on is loaded, which one shows now, and the sender page's address (for a browser tab
+## the tab itself is picked on that page, in the browser's share dialog).
+func _sources_line() -> Dictionary:
+	var mode := AppState.get_source_mode()
+	return {
+		"ndi": Array(_ndi_names).slice(0, MAX_SOURCE_NAMES),
+		"ndi_ok": _ndi_ok,
+		"ndi_on": String(AppState.get_setting("ndi_source")) if mode == "ndi" else "",
+		"spout": Array(_spout_names).slice(0, MAX_SOURCE_NAMES),
+		"spout_ok": _spout_ok,
+		"spout_on": String(AppState.get_setting("spout_source")) if mode == "spout" else "",
+		"sender_url": "http://127.0.0.1:%d/" % AppState.get_capture_port("capture_http_port"),
 	}
 
 
@@ -304,6 +340,26 @@ func run_command(action: String, value: Variant) -> bool:
 				NetSession.pass_remote(1)
 			elif v == "ask":
 				NetSession.ask_remote(true)
+		# Big screen picker (the Source tab's Show / Play / Stop buttons, same signals):
+		"ndi":
+			if v == "":
+				return false
+			EventBus.ndi_connect_requested.emit(v)
+		"spout":
+			if v == "":
+				return false
+			EventBus.spout_connect_requested.emit(v)
+		"video":
+			# a video link or a file path on this PC; ScreenFeed downloads / converts it first
+			if v.strip_edges() == "":
+				return false
+			EventBus.file_play_requested.emit(v.strip_edges())
+		"stop":
+			# whatever shows now; a browser tab is stopped on the sender page itself
+			match AppState.get_source_mode():
+				"file": EventBus.file_stop_requested.emit()
+				"ndi": EventBus.ndi_stop_requested.emit()
+				"spout": EventBus.spout_stop_requested.emit()
 		"refresh":
 			pass
 		_:

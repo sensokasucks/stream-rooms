@@ -357,6 +357,10 @@ While Stream Rooms is connected to Stream Core, Core's **Live** page shows a **S
   whether it has sound),
 - press **Pause to react**, **Focus view**, **Clean feed** and **Play / pause video** (a lit button
   is on),
+- pick what the **Big screen** shows: a **Browser tab or window** (**Show** opens the sender page,
+  where you click Share and pick the tab; this only works in a browser on the PC that runs Stream
+  Rooms), a **Video link or file**, any **NDI** source or **Spout** program the game can see
+  (VTube Studio, VSeeFace...). **Stop** stops a video, NDI or Spout source,
 - open or close the curtain (**Reveal**, **Close**, **Open**),
 - change the **Room**, jump to a camera view (the same list as your number keys),
 - move the **Stream sound** and **Room sound** sliders,
