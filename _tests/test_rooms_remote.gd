@@ -70,6 +70,27 @@ func _ready() -> void:
 	await _secs(0.5)
 	_check(rig.global_position.distance_to(before) > 1.0, "a camera view button moves the camera (%s)" % str(rig.global_position))
 	_check(not remote.run_command("format_disk", "now"), "an unknown action is refused")
+	# Core's picker on another device asks this PC to open the sender page: "sender" only takes
+	# "open" (not run here: it would open a browser)
+	_check(not remote.run_command("sender", "close"), "the sender action only takes open")
+
+	# Big screen picker: the state lists what can go on the screen, and each pick sends the same
+	# EventBus request the Source tab's Show / Play buttons send
+	var src: Dictionary = remote.build_state().get("sources", {})
+	_check(src.has("ndi") and src.has("spout") and String(src.get("sender_url", "")).begins_with("http://127.0.0.1:"),
+		"the state has the source lists and the sender page address (%s)" % str(src))
+	var asked: Array = []
+	var on_ndi := func(n: String) -> void: asked.append("ndi:" + n)
+	var on_spout := func(n: String) -> void: asked.append("spout:" + n)
+	EventBus.ndi_connect_requested.connect(on_ndi)
+	EventBus.spout_connect_requested.connect(on_spout)
+	remote.run_command("ndi", "No Such Source (test)")
+	remote.run_command("spout", "No Such Sender (test)")
+	EventBus.ndi_connect_requested.disconnect(on_ndi)
+	EventBus.spout_connect_requested.disconnect(on_spout)
+	_check(asked == ["ndi:No Such Source (test)", "spout:No Such Sender (test)"], "NDI and Spout picks ask ScreenFeed to show them (%s)" % str(asked))
+	_check(not remote.run_command("ndi", "") and not remote.run_command("video", "  "), "an empty pick is refused")
+	_check(remote.run_command("stop", ""), "Stop is taken whatever shows")
 
 	# Setup > Stream Rooms pages: the panel's settings, described for Core
 	var data := remote.refresh_schema()
