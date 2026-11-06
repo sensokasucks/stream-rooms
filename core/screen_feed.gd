@@ -882,6 +882,7 @@ func start_spout(sender_name: String) -> void:
 		video_player.stop()
 		_file_path = ""
 	_spout_tex = SpoutReceiver.make_texture(sender_name)
+	DebugLog.note("spout", "big screen receives %s" % sender_name)
 	_spout_name = sender_name
 	_spout_size = Vector2i.ZERO
 	AppState.set_setting("spout_source", sender_name)
@@ -948,9 +949,13 @@ func _sync_spout_presenters() -> void:
 		if not cur.is_empty():
 			_spout_presenters.erase(n)
 			EventBus.presenter_texture_changed.emit(n, null)
+			# troubleshooting log: Spout lives in native code, so these lines are the only trace
+			# of what it was doing if the app dies (2026-11-06 crash hunt)
+			DebugLog.note("spout", "podium %d stops receiving %s" % [n, String(cur["name"])])
 		if want == "" or not _spout.has_sender(want):
 			continue
 		var tex := SpoutReceiver.make_texture(want)
 		if tex == null:
 			continue
 		_spout_presenters[n] = {"name": want, "tex": tex, "size": Vector2i.ZERO}
+		DebugLog.note("spout", "podium %d receives %s" % [n, want])

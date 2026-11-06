@@ -15,8 +15,18 @@ compiled in; their licences are in `licenses/`.
   (tests, snapshots). Note that `get_image()` hands back the BGRA data as if it were RGBA
   (red and blue swapped); drawing the texture shows the right colours.
 
+- **Crash fix (2026-11-06):** upstream threw the whole receiver away whenever one frame's copy
+  failed and built a new one the next frame. Each new receiver opens its own Direct3D 11 device,
+  and each release waits for the GPU to go idle and sleeps 67 ms, so a sender that is busy for a
+  moment (VTube Studio) made that happen up to 60 times a second. On the owner's PC that crashed
+  inside NVIDIA's D3D11 driver, corrupted the heap or froze the app, 1 to 2 minutes after a
+  podium was put on Spout. Now a failed copy just skips that frame, the receiver is only released
+  when the sender is gone, and a new connect is tried at most once a second
+  (`SpoutTexture::_receive_texture`, `RETRY_MS`). The PC-wide "active sender" is also only set
+  for a receiver's first connect, not every frame (`SpoutVulkanBackend::update_receiver`).
+
 `stream_rooms_patch/stream-rooms.diff` is the change to `src/` and `CMakeLists.txt`; the changed
-files are in `stream_rooms_patch/src/`.
+files are in `stream_rooms_patch/src/` (`SpoutTexture.*` and `SpoutVulkanBackend.*`).
 
 ## Rebuilding (Windows, Visual Studio 2022 Build Tools)
 ```

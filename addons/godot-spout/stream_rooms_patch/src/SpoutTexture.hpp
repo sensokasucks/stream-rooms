@@ -35,6 +35,11 @@ private:
 
   // Properties
   String _channel_name;
+
+  // Stream Rooms patch: after a failed connect / a sender that went away, the next attempt waits
+  // until this time (Time.get_ticks_msec(), 0 = no wait). See _receive_texture.
+  uint64_t _retry_at_ms = 0;
+  static constexpr uint64_t RETRY_MS = 1000;
 };
 
 } // namespace godot
