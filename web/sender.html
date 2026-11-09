@@ -31,8 +31,6 @@
   .err { color: var(--err); }
   video { width: 100%; border-radius: 8px; background:#05070a; margin-top: 6px; border:1px solid var(--border); aspect-ratio: 16 / 9; object-fit: contain; }
   small { color: var(--muted); }
-  details.more > summary { cursor:pointer; color: var(--muted); font-size:13px; margin-top:4px; }
-  details.more[open] > summary { margin-bottom: 4px; }
   .pres { display:grid; grid-template-columns: 96px 1fr; gap: 10px; align-items:center; padding: 8px 0; border-top: 1px solid var(--border); }
   .pres:first-of-type { border-top: 0; }
   .pres video { width: 96px; height: 54px; object-fit: cover; margin: 0; }
@@ -54,19 +52,25 @@
   body.in-core { background: transparent; }
   body.in-core main { max-width: none; padding: 0; }
   body.in-core header.top { display: none; }
-  /* the card is already a box: the sections inside are just stacked parts of it, split by a line */
-  body.in-core section { background: transparent; border: 0; border-radius: 0; padding: 8px 0 0; margin: 0 0 8px; }
-  body.in-core section section { padding-top: 0; }
+  /* The boxes stay boxes inside the card (the first sender page's look), on the dashboard's own panel
+     colours. A wide card (Arrange > full width) puts them side by side: the big screen box is the
+     tall one, so it takes the first column and the others stack beside it. */
+  body.in-core main { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; align-items: start; }
+  body.in-core section { margin: 0; background: #1c212b; }
+  body.in-core #shareSection { grid-row: span 3; }
 </style>
 </head>
 <body>
 <main>
   <header class="top"><b>Stream Rooms sender</b> · keep this window open while sharing</header>
 
-  <section>
+  <!-- One box per job, like the first sender page (Sen liked that layout): the link to the game,
+       Co-stream, the big screen's share, the webcam, my avatar and the presenter feeds. -->
+  <section id="linkSection">
     <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span>
       <!-- shown when another sender page took over (close code 4002, see "replaced" in the script) -->
       <button id="takeBackBtn" class="hidden" title="Make this page the one that sends to the big screen again">Use this page</button></div>
+  </section>
 
   <section id="liveSection" class="hidden">
     <div class="row"><b>Co-stream</b></div>
@@ -79,18 +83,12 @@
     <div id="liveStatus" class="status"></div>
   </section>
 
+  <section id="shareSection">
+    <div class="row"><b>Big screen</b></div>
     <div class="row">
       <button id="shareBtn" class="primary">Share a tab or window</button>
       <button id="stopBtn" disabled>Stop</button>
     </div>
-    <div id="shareStatus" class="status">Not sharing.</div>
-    <video id="preview" muted playsinline></video>
-    <div class="row">
-      <button id="camBtn">Start webcam</button>
-      <span id="camStatus" class="status">Webcam off.</span>
-    </div>
-    <details class="more">
-      <summary>Quality and sound</summary>
     <div class="row">
       <label>Quality
         <select id="quality">
@@ -106,8 +104,8 @@
       </label>
       <label><input type="checkbox" id="sendAudio" checked> Send tab audio to the game</label>
     </div>
-    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
-    </details>
+    <div id="shareStatus" class="status">Not sharing.</div>
+    <video id="preview" muted playsinline></video>
     <!-- Shown when the last Share froze or closed the browser, so the page now shares the safer way
          (see "Freeze guard" in the script). The button turns that off again. -->
     <div id="safeNote" class="row hidden">
@@ -118,6 +116,14 @@
     <!-- Warns when the pick films the game itself (whole screen, or the game's own window). -->
     <div id="surfaceWarn" class="status"></div>
     <div id="audioStatus" class="status"></div>
+  </section>
+
+  <section id="camSection">
+    <div class="row">
+      <button id="camBtn">Start webcam</button>
+      <span id="camStatus" class="status">Webcam off.</span>
+    </div>
+    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
   </section>
 
   <section id="avatarSection" class="hidden">
