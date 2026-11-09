@@ -11,7 +11,9 @@ class_name RoomsRemote
 ##       views [{id, name, key}] (the visible camera views, from CameraRig's camera_views_changed),
 ##       screen {mode, text, ok} (the big screen line, like the panel's status strip),
 ##       sender {connected, sharing, label, fps, audio},
-##       volume, ambience (0..1 settings), presenters [{n, on, source}] (only rooms with podiums),
+##       volume, ambience (0..1 settings), presenters [{n, on, source, feed}] (only rooms with
+##         podiums; feed {active, label, error} is that podium's row on the sender page, so Core's
+##         Presenter cards can say "Live: <tab>" or that a tab still has to be picked),
 ##       costream {role, text, remote, has_remote, guests},
 ##       sources {ndi [names], ndi_ok, ndi_on, spout [names], spout_ok, spout_on, sender_url}
 ##         (the card's "Big screen" picker: what can go on the big screen, and the sender page's
@@ -40,6 +42,7 @@ var _dirty: bool = false
 var _wait: float = 0.0
 var _views: Array = []            # last camera_views_changed list (CameraRig)
 var _sender: Dictionary = {}      # summary of the last capture_status_changed
+var _feeds: Array = []            # its presenter rows, [{active, label, error}] per podium (build_state)
 var _last_sent: String = ""       # JSON of the last packet: an unchanged state isn't sent again
 var _podiums: int = 0             # podiums in the room on now (room_presenters_changed)
 var _schema_keys: Dictionary = {} # setting keys Core may change (from the last schema sent)
@@ -128,8 +131,17 @@ func _on_capture_status(info: Dictionary) -> void:
 	var s := {"connected": bool(info.get("connected", false)), "sharing": bool(info.get("capturing", false)),
 		"label": String(info.get("label", "")).left(60), "audio": bool(info.get("has_audio", false)),
 		"fps": int(info.get("fps", 0)) / 5 * 5}
-	if s != _sender:
+	# each podium's row on the sender page (its "presenters" list, slot 0..3): live or not, what it
+	# shows, and its error text. Cut short: Core only shows them as one line per Presenter card.
+	var feeds: Array = []
+	var rows: Array = info.get("presenters", []) if info.get("presenters") is Array else []
+	for r: Variant in rows.slice(0, AppState.PRESENTER_COUNT):
+		var d: Dictionary = r if r is Dictionary else {}
+		feeds.append({"active": bool(d.get("active", false)), "label": String(d.get("label", "")).left(60),
+			"error": String(d.get("error", "")).left(120)})
+	if s != _sender or feeds != _feeds:
 		_sender = s
+		_feeds = feeds
 		_mark()
 
 
@@ -217,8 +229,10 @@ func build_state() -> Dictionary:
 	var presenters: Array = []
 	if _room_has_podiums():
 		for n in range(1, AppState.PRESENTER_COUNT + 1):
+			# feed: this podium's row on the sender page (see _on_capture_status); {} while no sender is open
 			presenters.append({"n": n, "on": bool(AppState.get_setting(AppState.presenter_key(n, "on"))),
-				"source": String(AppState.get_setting(AppState.presenter_key(n, "source")))})
+				"source": String(AppState.get_setting(AppState.presenter_key(n, "source"))),
+				"feed": _feeds[n - 1] if n - 1 < _feeds.size() and bool(_sender.get("connected", false)) else {}})
 	return {
 		"room": String(AppState.get_setting("room_id")),
 		"rooms": rooms,

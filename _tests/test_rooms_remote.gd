@@ -38,6 +38,19 @@ func _ready() -> void:
 	_check(String((st.get("screen", {}) as Dictionary).get("text", "")) != "", "and a big screen line")
 	_check(is_equal_approx(float(st.get("volume", 0)), 0.8), "and the stream volume")
 	_check((st.get("presenters", []) as Array).size() == 4, "the panel lecture hall has podiums, so presenters are listed")
+	# a podium's row on the sender page reaches Core as that presenter's "feed" (Core's Presenter
+	# cards show "Live: <tab>" from it, or offer "Pick a tab or window")
+	EventBus.capture_status_changed.emit({"connected": true, "capturing": false, "fps": 0, "presenters": [
+		{"slot": 0, "want": "tab", "active": true, "kind": "tab", "label": "Avatar window", "error": ""},
+		{"slot": 1, "want": "tab", "active": false, "kind": "", "label": "", "error": "Sharing was cancelled"}]})
+	st = remote.build_state()
+	var feed1: Dictionary = ((st.get("presenters", []) as Array)[0] as Dictionary).get("feed", {})
+	var feed2: Dictionary = ((st.get("presenters", []) as Array)[1] as Dictionary).get("feed", {})
+	_check(bool(feed1.get("active", false)) and String(feed1.get("label", "")) == "Avatar window", "presenter 1's feed is live with its tab's name")
+	_check(not bool(feed2.get("active", true)) and String(feed2.get("error", "")) == "Sharing was cancelled", "presenter 2's feed carries its error")
+	EventBus.capture_status_changed.emit({"connected": false, "capturing": false, "fps": 0, "presenters": []})
+	st = remote.build_state()
+	_check(((st.get("presenters", []) as Array)[0] as Dictionary).get("feed", null) == {}, "no sender page: the feeds are empty")
 	_check(JSON.stringify(st).length() < 8000, "the packet stays small (%d chars)" % JSON.stringify(st).length())
 
 	AppState.set_source_mode("file")

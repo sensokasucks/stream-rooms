@@ -43,6 +43,9 @@
      (renderPresenter marks it .unused), and the whole Presenter feeds box hides
      while no row is in use and no camera permission is asked for. */
   .pres.unused { display: none; }
+  /* A podium row Stream Core pointed at (window.SenderPage.pickPresenter could not open the picker
+     by itself): outlined for a few seconds so it's easy to find which button to click. */
+  .pres.called { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   #presSection:not(:has(#presList .pres:not(.unused))):has(#camPermRow.hidden) { display: none; }
   .hidden { display: none !important; }
   /* Inside Stream Core's dashboard (see "Inside Stream Core" in the script): the dashboard card has
@@ -126,8 +129,9 @@
 
   <section id="presSection">
     <div class="row"><b>Presenter feeds</b> <small>(rooms with podiums)</small></div>
-    <small>Choose each presenter's source in the game (Presenters tab). Cameras start by themselves;
-      for a tab or window, click its button here and pick it.</small>
+    <small>Choose each presenter's source in Stream Core (Setup &gt; Stream Rooms &gt; Presenters &amp; Co-stream)
+      or the game's Presenters tab. Cameras start by themselves; for a tab or window, click its button
+      here (or Pick a tab or window in Core) and pick it.</small>
     <div class="row hidden" id="camPermRow">
       <button id="camPermBtn" class="primary">Allow cameras</button>
       <span class="status">The browser needs permission once before cameras can start.</span>
@@ -147,6 +151,9 @@
 //   fetchKey() -> Promise<string>  this run's key, through Core (the game's /key can't be read
 //                                  from the dashboard's address: no CORS, on purpose)
 //   params                         the dashboard's ?query (?testshare, ?safeshare... for tests)
+// and the dashboard calls window.SenderPage (defined after the presenter code below):
+//   pickPresenter(n)               a podium's "Pick a tab or window", from Core's Setup > Stream
+//                                  Rooms > Presenters card or its Live page (n = 1..4)
 // Opened on its own (http://127.0.0.1:8765/, the fallback when Core isn't connected) there is no
 // host and the page works exactly as before. Keep in step with admin/rooms-sender.js.
 let HOST = null;
@@ -1296,6 +1303,31 @@ if (navigator.mediaDevices) {
   pres.forEach((_, i) => renderPresenter(i));
   refreshCameras();
 }
+
+// ── Called by Stream Core ─────────────────────────────────────
+// Stream Core's "Pick a tab or window" buttons for a podium (fridge-stream-core admin/rooms-sender.js
+// pickPresenter, used by admin/rooms-setup.js's Presenter cards and admin.js's Live card) call this
+// through the frame. The browser only opens its share picker right after a click, and the click
+// in the dashboard counts for this same-origin frame too, so it normally opens straight away. If the
+// click is too old (the frame was still loading) or the podium isn't set to a tab, the row is
+// outlined and scrolled to instead, and the person clicks its own button. n = podium 1..4.
+// Returns "picking" | "click" (outlined, needs a click here) | "no-row" (n out of range).
+window.SenderPage = {
+  pickPresenter(n) {
+    const i = Number(n) - 1;
+    if (!(i >= 0 && i < PRESENTERS)) return "no-row";
+    const p = pres[i];
+    const ua = navigator.userActivation;
+    if (p.want.kind === "tab" && (!ua || ua.isActive) && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      startPresenterTab(i);
+      return "picking";
+    }
+    p.row.classList.add("called");
+    p.row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => p.row.classList.remove("called"), 6000);
+    return "click";
+  },
+};
 
 $("shareBtn").onclick = startShare;
 // Freeze guard: show the safe-mode note, and let the button turn safe mode off for good.
