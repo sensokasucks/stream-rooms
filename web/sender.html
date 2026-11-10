@@ -31,8 +31,6 @@
   .err { color: var(--err); }
   video { width: 100%; border-radius: 8px; background:#05070a; margin-top: 6px; border:1px solid var(--border); aspect-ratio: 16 / 9; object-fit: contain; }
   small { color: var(--muted); }
-  details.more > summary { cursor:pointer; color: var(--muted); font-size:13px; margin-top:4px; }
-  details.more[open] > summary { margin-bottom: 4px; }
   .pres { display:grid; grid-template-columns: 96px 1fr; gap: 10px; align-items:center; padding: 8px 0; border-top: 1px solid var(--border); }
   .pres:first-of-type { border-top: 0; }
   .pres video { width: 96px; height: 54px; object-fit: cover; margin: 0; }
@@ -43,6 +41,9 @@
      (renderPresenter marks it .unused), and the whole Presenter feeds box hides
      while no row is in use and no camera permission is asked for. */
   .pres.unused { display: none; }
+  /* A podium row Stream Core pointed at (window.SenderPage.pickPresenter could not open the picker
+     by itself): outlined for a few seconds so it's easy to find which button to click. */
+  .pres.called { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   #presSection:not(:has(#presList .pres:not(.unused))):has(#camPermRow.hidden) { display: none; }
   .hidden { display: none !important; }
   /* Inside Stream Core's dashboard (see "Inside Stream Core" in the script): the dashboard card has
@@ -51,19 +52,25 @@
   body.in-core { background: transparent; }
   body.in-core main { max-width: none; padding: 0; }
   body.in-core header.top { display: none; }
-  /* the card is already a box: the sections inside are just stacked parts of it, split by a line */
-  body.in-core section { background: transparent; border: 0; border-radius: 0; padding: 8px 0 0; margin: 0 0 8px; }
-  body.in-core section section { padding-top: 0; }
+  /* The boxes stay boxes inside the card (the first sender page's look), on the dashboard's own panel
+     colours. A wide card (Arrange > full width) puts them side by side: the big screen box is the
+     tall one, so it takes the first column and the others stack beside it. */
+  body.in-core main { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 8px; align-items: start; }
+  body.in-core section { margin: 0; background: #1c212b; }
+  body.in-core #shareSection { grid-row: span 3; }
 </style>
 </head>
 <body>
 <main>
   <header class="top"><b>Stream Rooms sender</b> · keep this window open while sharing</header>
 
-  <section>
+  <!-- One box per job, like the first sender page (Sen liked that layout): the link to the game,
+       Co-stream, the big screen's share, the webcam, my avatar and the presenter feeds. -->
+  <section id="linkSection">
     <div class="row"><span id="linkDot" class="dot"></span><span id="linkText">Connecting to the game...</span>
       <!-- shown when another sender page took over (close code 4002, see "replaced" in the script) -->
       <button id="takeBackBtn" class="hidden" title="Make this page the one that sends to the big screen again">Use this page</button></div>
+  </section>
 
   <section id="liveSection" class="hidden">
     <div class="row"><b>Co-stream</b></div>
@@ -76,18 +83,12 @@
     <div id="liveStatus" class="status"></div>
   </section>
 
+  <section id="shareSection">
+    <div class="row"><b>Big screen</b></div>
     <div class="row">
       <button id="shareBtn" class="primary">Share a tab or window</button>
       <button id="stopBtn" disabled>Stop</button>
     </div>
-    <div id="shareStatus" class="status">Not sharing.</div>
-    <video id="preview" muted playsinline></video>
-    <div class="row">
-      <button id="camBtn">Start webcam</button>
-      <span id="camStatus" class="status">Webcam off.</span>
-    </div>
-    <details class="more">
-      <summary>Quality and sound</summary>
     <div class="row">
       <label>Quality
         <select id="quality">
@@ -103,8 +104,8 @@
       </label>
       <label><input type="checkbox" id="sendAudio" checked> Send tab audio to the game</label>
     </div>
-    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
-    </details>
+    <div id="shareStatus" class="status">Not sharing.</div>
+    <video id="preview" muted playsinline></video>
     <!-- Shown when the last Share froze or closed the browser, so the page now shares the safer way
          (see "Freeze guard" in the script). The button turns that off again. -->
     <div id="safeNote" class="row hidden">
@@ -117,6 +118,14 @@
     <div id="audioStatus" class="status"></div>
   </section>
 
+  <section id="camSection">
+    <div class="row">
+      <button id="camBtn">Start webcam</button>
+      <span id="camStatus" class="status">Webcam off.</span>
+    </div>
+    <small>The webcam shows up on the in-room picture frame (or a corner overlay).</small>
+  </section>
+
   <section id="avatarSection" class="hidden">
     <div class="row"><b>My avatar</b> <small>(Co-stream)</small></div>
     <small>What the others in the session can show of you (Co-stream tab > My avatar in the game). The host
@@ -126,8 +135,9 @@
 
   <section id="presSection">
     <div class="row"><b>Presenter feeds</b> <small>(rooms with podiums)</small></div>
-    <small>Choose each presenter's source in the game (Presenters tab). Cameras start by themselves;
-      for a tab or window, click its button here and pick it.</small>
+    <small>Choose each presenter's source in Stream Core (Setup &gt; Stream Rooms &gt; Presenters &amp; Co-stream)
+      or the game's Presenters tab. Cameras start by themselves; for a tab or window, click its button
+      here (or Pick a tab or window in Core) and pick it.</small>
     <div class="row hidden" id="camPermRow">
       <button id="camPermBtn" class="primary">Allow cameras</button>
       <span class="status">The browser needs permission once before cameras can start.</span>
@@ -147,6 +157,9 @@
 //   fetchKey() -> Promise<string>  this run's key, through Core (the game's /key can't be read
 //                                  from the dashboard's address: no CORS, on purpose)
 //   params                         the dashboard's ?query (?testshare, ?safeshare... for tests)
+// and the dashboard calls window.SenderPage (defined after the presenter code below):
+//   pickPresenter(n)               a podium's "Pick a tab or window", from Core's Setup > Stream
+//                                  Rooms > Presenters card or its Live page (n = 1..4)
 // Opened on its own (http://127.0.0.1:8765/, the fallback when Core isn't connected) there is no
 // host and the page works exactly as before. Keep in step with admin/rooms-sender.js.
 let HOST = null;
@@ -1296,6 +1309,31 @@ if (navigator.mediaDevices) {
   pres.forEach((_, i) => renderPresenter(i));
   refreshCameras();
 }
+
+// ── Called by Stream Core ─────────────────────────────────────
+// Stream Core's "Pick a tab or window" buttons for a podium (fridge-stream-core admin/rooms-sender.js
+// pickPresenter, used by admin/rooms-setup.js's Presenter cards and admin.js's Live card) call this
+// through the frame. The browser only opens its share picker right after a click, and the click
+// in the dashboard counts for this same-origin frame too, so it normally opens straight away. If the
+// click is too old (the frame was still loading) or the podium isn't set to a tab, the row is
+// outlined and scrolled to instead, and the person clicks its own button. n = podium 1..4.
+// Returns "picking" | "click" (outlined, needs a click here) | "no-row" (n out of range).
+window.SenderPage = {
+  pickPresenter(n) {
+    const i = Number(n) - 1;
+    if (!(i >= 0 && i < PRESENTERS)) return "no-row";
+    const p = pres[i];
+    const ua = navigator.userActivation;
+    if (p.want.kind === "tab" && (!ua || ua.isActive) && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      startPresenterTab(i);
+      return "picking";
+    }
+    p.row.classList.add("called");
+    p.row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => p.row.classList.remove("called"), 6000);
+    return "click";
+  },
+};
 
 $("shareBtn").onclick = startShare;
 // Freeze guard: show the safe-mode note, and let the button turn safe mode off for good.
