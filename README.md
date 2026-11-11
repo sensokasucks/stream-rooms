@@ -1278,14 +1278,20 @@ Included rooms:
   - Brass and iron pipework with valves and gauges runs along the ledges and down the walls.
     Under the ceiling, between the two rows of windows (so it never blocks them), hang a square
     air duct with grilles and a fan unit, a round duct and a run of pipes.
-  - **Time of day**: the windows look out on a sky the room draws itself: a sun by day, a
-    moon, stars and a faint milky band by night, warm colours at sunrise and sunset. The
+  - **Time of day**: the windows look out on a sky the room draws itself, with a dark fantasy
+    look: a deep blue day sky with billowing clouds lit by the sun and rays fanning out from
+    it, pink and orange clouds at sunrise and sunset, and at night a moon, a dense field of
+    stars with a few that sparkle, and purple and blue nebula clouds. The
     sunbeams and the barred patches of light on the floor follow the sun (pale and blue under
     the moon), and the room's own daylight dims at night so the inlays and the fire carry it.
     Room tab:
     - **Time of day**: 0 to 24 hours (6 = sunrise, 12 = noon, 18 = sunset).
     - **Day length**: how many minutes a whole day and night take when the clock runs by
       itself. **Clock stopped** (0) keeps the time where the slider is.
+    - **Clouds**: how much cloud drifts across the sky (0% = clear, 200% = heavy).
+    - **Nebula**: how strong the night's nebula clouds are (0% = stars only).
+    - **Stars**: how bright the stars are (0% = none).
+    - **Clouds** and **Nebula** at 0% are the lightest settings for a slow graphics card.
     - **Light rays**: the sunbeams and floor patches (0% = off).
   - **Please stand by**: this room has no curtain. Closing the curtain (the **Curtain** button,
     its hotkey or Stream Core) fades a "please stand by" test card in over the big screen

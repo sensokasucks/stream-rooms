@@ -53,6 +53,9 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_art_13": "",
 	"forge_neon_bloom": true,    # Forge Hall light inlays: true = they glow with a halo (bloom), false = crisp lines with no halo
 	"forge_time": 9.5,           # Forge Hall time of day, hours 0..24 (sky, sun, moon, stars, the light through the windows)
+	"forge_clouds": 1.0,         # Forge Hall sky: how much cloud (0 = clear sky, 1 = the room's look, 2 = heavy)
+	"forge_nebula": 1.0,         # Forge Hall night sky: how strong the purple and blue nebula is (0 = stars only)
+	"forge_stars": 1.0,          # Forge Hall night sky: how bright the stars are (0 = none)
 	"forge_day_minutes": 0.0,    # Forge Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at forge_time
 	"forge_lift_up": false,      # Forge Hall: the small live screen in the floor is raised
 	"forge_live_1_source": "webcam",   # Forge Hall small live screens: what each shows: off / webcam / podium1..podium4

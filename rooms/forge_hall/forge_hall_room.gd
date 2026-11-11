@@ -147,7 +147,7 @@ const FIRE_MATERIALS: PackedStringArray = ["Embers"]
 @export var day_ambient: Color = Color(0.5, 0.44, 0.42)
 @export var day_ambient_energy: float = 0.26
 ## The window glass by night and by day (alpha = how much it hides the sky).
-@export var night_glass: Color = Color(0.1, 0.14, 0.25, 0.3)
+@export var night_glass: Color = Color(0.1, 0.12, 0.25, 0.14)
 @export var day_glass: Color = Color(0.8, 0.9, 1.0, 0.1)
 ## The sky's brightness through the windows (1 = as the sky shader draws it).
 @export var sky_exposure: float = 0.9
@@ -294,6 +294,12 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "The hour in the hall, 0 to 24: the sky, the sun, the moon and stars, and the light through the windows. 6 = sunrise, 12 = noon, 18 = sunset. The sun shines in from the left in the morning and from the right in the afternoon."},
 		{"key": "forge_day_minutes", "label": "Day length", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d min", "zero": "Clock stopped",
 			"tooltip": "Lets the clock run: how many minutes a full day and night takes, starting from the Time of day. 0 = the clock stands still."},
+		{"key": "forge_clouds", "label": "Clouds", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much cloud drifts across the sky outside the windows. 0% = a clear sky (and the lightest on a slow graphics card), 200% = heavy cloud."},
+		{"key": "forge_nebula", "label": "Nebula", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How strong the purple and blue nebula clouds in the night sky are. 0% = stars only (and lighter on a slow graphics card)."},
+		{"key": "forge_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How bright the stars in the night sky are. 0% = none."},
 	]
 	if _shafts != null:
 		out.append({"key": "sun_rays", "label": "Light rays", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
@@ -364,6 +370,8 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 			_apply_neon()
 		"forge_time":
 			_hour = fposmod(float(AppState.get_setting("forge_time")), 24.0)
+		"forge_clouds", "forge_nebula", "forge_stars":
+			_hour_drawn = -100.0    # _run_clock redraws the sky next frame (_apply_time sets these)
 		"forge_lift_up":
 			_move_lift(true)
 		"sun_rays":
@@ -821,6 +829,8 @@ func get_hour() -> float:
 
 
 ## Everything that follows the hour (_hour, 0..24; 6 = sunrise, 12 = noon, 18 = sunset).
+## Also hands the sky its Clouds / Nebula / Stars amounts ("forge_clouds", "forge_nebula",
+## "forge_stars").
 ## The sun climbs from the left wall's side (the room's -X), passes high over the hall and
 ## sets on the right; the moon is opposite it. Sets the sky shader's uniforms, the ambient
 ## light and the window glass, then the beams: from the sun while it is up, from the moon at
@@ -842,6 +852,9 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("dusk", dusk)
 		sky.set_shader_parameter("exposure", sky_exposure)
 		sky.set_shader_parameter("twinkle", 0.0 if bool(AppState.get_setting("photosensitive_safe")) else 1.0)
+		sky.set_shader_parameter("cloud_amount", float(AppState.get_setting("forge_clouds")))
+		sky.set_shader_parameter("nebula_amount", float(AppState.get_setting("forge_nebula")))
+		sky.set_shader_parameter("star_amount", float(AppState.get_setting("forge_stars")))
 		env.ambient_light_color = night_ambient.lerp(day_ambient, day)
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, day)
 	if _glass_mat:
