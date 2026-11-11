@@ -6,6 +6,7 @@ extends Node3D
 @export var room_host: RoomHost
 @export var camera_rig: CameraRig
 var _picker: PeoplePicker
+var _lasers: LaserPointers
 
 
 ## Picks the start room (the saved room_id, or the first room in RoomCatalog if that one is gone),
@@ -13,6 +14,8 @@ var _picker: PeoplePicker
 func _ready() -> void:
 	room_host.room_ready.connect(_on_room_ready)
 	add_child(NetMarkers.new())     # the others' cameras while streaming together
+	_lasers = LaserPointers.new()    # hold L: everyone's laser pointer (core/laser_pointers.gd)
+	add_child(_lasers)
 	add_child(EscMenu.new())        # the Esc menu; it also puts the window where Display says
 	_picker = PeoplePicker.new()     # Shift+click (or P, click) on people in the room: their menu
 	_picker.name = "PeoplePicker"
@@ -54,3 +57,4 @@ func _on_room_ready(room: Room, _info: RoomInfo) -> void:
 	camera_rig.set_presets(markers, labels)
 	camera_rig.set_room(room)
 	_picker.set_room(room)
+	_lasers.set_room(room)

@@ -2081,6 +2081,26 @@ func _build_together_tab() -> Control:
 	var cams := _check("together_show_cameras", "Show the others' cameras")
 	cams.tooltip_text = "A small floating camera with a name shows where each of the others is looking."
 	v.add_child(cams)
+
+	# Laser pointer (core/laser_pointers.gd): every one of these is this PC's own, never shared;
+	# the others get the colour and beam with each laser update (NetSession.send_laser).
+	v.add_child(_heading("Laser pointer"))
+	v.add_child(_hint("Hold L in the room window and point with the mouse. Everyone in the session sees your laser in your colour, and you see theirs. It works without a session too."))
+	var lc := _color("laser_color", "Laser colour")
+	lc.tooltip_text = "The colour of your dot and beam. Pick one the others don't use, so viewers can tell whose laser is whose."
+	v.add_child(lc)
+	var lb := _check("laser_beam", "Show the beam")
+	lb.tooltip_text = "On: a thin beam runs from you to the dot. Off: only the dot shows."
+	v.add_child(lb)
+	var lf := _option("laser_from", "Beam starts at", [["camera", "My camera"], ["podium", "My podium avatar"]])
+	lf.tooltip_text = "Where your beam comes from. My camera: just beside your camera, like a pointer in your hand. My podium avatar: from your avatar's picture on the podium (your camera is used when that podium isn't on set)."
+	v.add_child(lf)
+	var lp := _option("laser_podium", "Podium", [[0, "My podium"], [1, "Podium 1"], [2, "Podium 2"], [3, "Podium 3"], [4, "Podium 4"]])
+	lp.tooltip_text = "For My podium avatar: which podium. My podium = the one you claimed as a guest; for the host, the first podium on set that no guest claimed."
+	v.add_child(lp)
+	var lt := _check("laser_toggle", "L turns it on and off")
+	lt.tooltip_text = "On: press L once to turn the laser on and again to turn it off. Off: the laser shows while you hold L."
+	v.add_child(lt)
 	return v
 
 

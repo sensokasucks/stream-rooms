@@ -2459,6 +2459,97 @@ func _net_guest_camera(x: Transform3D) -> void:
 			_net_camera.rpc_id(other, id, x)
 
 
+# ── Laser pointers ───────────────────────────────────────────
+## Everyone's laser pointer (core/laser_pointers.gd) travels like the cameras: a guest sends its own
+## to the host, the host shows it and passes it on to the other guests, and sends its own to all.
+## The packet is [on, from, to, color, beam]: where the beam starts and where the dot is (both
+## worked out on the sender's PC, since the room is the same on every PC), the colour and whether
+## the beam shows. Channel 2: updates are unreliable (a lost one is fine, the next follows), the
+## "off" is reliable on the same channel so it can't be overtaken by an older update. (The session
+## runs over WebSocket, which keeps everything in order anyway; the channel says what's meant.)
+
+## Called by LaserPointers whenever this PC's laser moves (at most LaserPointers.SEND_GAP apart),
+## while it stays on (a keep-alive every LaserPointers.KEEP_ALIVE_S) and once when it goes off.
+## Does nothing outside a session.
+func send_laser(on: bool, from: Vector3, to: Vector3, color: Color, beam: bool) -> void:
+	if _role == "off" or not _connected():
+		return
+	var packet: Array = [on, from, to, color, beam]
+	if _role == "host":
+		for id: int in _peers:
+			if id != 1:
+				if on:
+					_net_laser.rpc_id(id, 1, packet)
+				else:
+					_net_laser_off.rpc_id(id, 1)
+	elif _admitted:
+		if on:
+			_net_guest_laser.rpc_id(1, packet)
+		else:
+			_net_guest_laser_off.rpc_id(1)
+
+
+## A laser packet from the wire as {on, from, to, color, beam}, or {} when it isn't one (wrong
+## types, positions far outside any room). Both sides check what they receive.
+static func laser_state(packet: Variant) -> Dictionary:
+	if not packet is Array or (packet as Array).size() != 5:
+		return {}
+	var a := packet as Array
+	if not (a[0] is bool and a[1] is Vector3 and a[2] is Vector3 and a[3] is Color and a[4] is bool):
+		return {}
+	var limit := 500.0       # metres; the rooms are far smaller
+	for v: Vector3 in [a[1], a[2]]:
+		if not v.is_finite() or absf(v.x) > limit or absf(v.y) > limit or absf(v.z) > limit:
+			return {}
+	var c := a[3] as Color
+	return {"on": bool(a[0]), "from": a[1], "to": a[2], "color": Color(clampf(c.r, 0.0, 1.0), clampf(c.g, 0.0, 1.0), clampf(c.b, 0.0, 1.0)),
+		"beam": bool(a[4])}
+
+
+## Guest: someone's laser (the host's own, or another guest's passed on by the host).
+@rpc("authority", "call_remote", "unreliable_ordered", 2)
+func _net_laser(peer_id: int, packet: Array) -> void:
+	if not _from_host() or peer_id == multiplayer.get_unique_id():
+		return
+	var st := laser_state(packet)
+	if not st.is_empty():
+		EventBus.net_laser_changed.emit(peer_id, _peer_name(peer_id), st)
+
+
+## Guest: someone's laser went off.
+@rpc("authority", "call_remote", "reliable", 2)
+func _net_laser_off(peer_id: int) -> void:
+	if _from_host() and peer_id != multiplayer.get_unique_id():
+		EventBus.net_laser_changed.emit(peer_id, _peer_name(peer_id), {"on": false})
+
+
+## Host: a guest's laser moved; shown here and passed on to the other guests.
+@rpc("any_peer", "call_remote", "unreliable_ordered", 2)
+func _net_guest_laser(packet: Array) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	var st := laser_state(packet)
+	if st.is_empty():
+		return
+	EventBus.net_laser_changed.emit(id, _peer_name(id), st)
+	for other: int in _peers:
+		if other != 1 and other != id:
+			_net_laser.rpc_id(other, id, packet)
+
+
+## Host: a guest's laser went off; passed on like the updates.
+@rpc("any_peer", "call_remote", "reliable", 2)
+func _net_guest_laser_off() -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id):
+		return
+	EventBus.net_laser_changed.emit(id, _peer_name(id), {"on": false})
+	for other: int in _peers:
+		if other != 1 and other != id:
+			_net_laser_off.rpc_id(other, id)
+
+
 # ── Letting a guest in (both sides confirm) ──────────────────
 ## Guest: the host introduces itself right after the password check. The guest confirms it's the
 ## right person before anything else happens.
