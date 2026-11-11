@@ -8,6 +8,11 @@ signal screen_texture_changed(texture: Texture2D)
 signal screen_colors_changed(left: Color, center: Color, right: Color)
 ## Webcam texture from the browser sender (null when the webcam stops).
 signal webcam_texture_changed(texture: Texture2D)
+## Asks ScreenFeed to send the pictures it has right now again (screen_texture_changed,
+## webcam_texture_changed and presenter_texture_changed for every running feed). A room emits
+## this after it loads when it has screens of its own that show those feeds (the Forge Hall's
+## small live screens): the signals otherwise only fire when a feed starts or stops.
+signal feed_textures_requested()
 ## Which source feeds the screen: "none", "file", "capture" or "ndi".
 signal source_changed(mode: String)
 

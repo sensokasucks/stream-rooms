@@ -3,19 +3,23 @@
     exec(open(r"C:\\Users\\jonza\\Documents\\RedotHomeTheater\\stream_rooms\\blender\\forge_hall_gen.py").read())
     build_all(); export_glb()
 
-A tall workshop hall in polished stone with a little science fiction in it (from the owner's
-reference picture and cross-section sketch): pillars and walls carved from single slabs, with
-cyan, orange and purple light inlaid flush in them like the traces on a circuit board; a wide
-alcove with pipes across its top where the hologram screen floats; a forge fireplace built out
-from the right wall with a second fire slot under the hearth; wood-panelled alcoves between the
-pillars, each with a spot for an art frame; a ledge at the top of the walls, slanted windows
-above it, and a raised ceiling of dark diamond plate on steel girders; hexagonal lanterns close
-under the ceiling; steam pipes with hand wheels and gauges round the hall. Three stepped rows
-of benches seat 30 chatters, and four podiums stand beside the screen.
+A long, tall workshop hall in polished granite with a little science fiction in it (from the
+owner's reference picture, cross-section sketch and notes): pillars and walls carved from single
+slabs, with cyan, orange and purple light inlaid flush in them like the traces on a circuit
+board, over a finer, dimmer second layer of circuit lines; a wide alcove with pipes across its
+top where the hologram screen floats; a forge fireplace built out from the right wall, covered
+in steam-age machinery (gears, pistons, coils, a control panel); wood-panelled alcoves between
+the pillars down both side walls and on the back wall, each with a spot for an art frame; a
+ledge at the top of the walls, slanted windows above it (none round the forge), and a raised
+ceiling of dark diamond plate on steel girders with air ducts and pipes hung under it;
+hexagonal lanterns close under the ceiling; steam pipes with hand wheels and gauges round the
+hall. Three stepped rows of benches seat 30 chatters in the front half, four podiums stand
+beside the screen, and the back half holds a workbench, a steam engine and stores.
 
-The fire, the sunbeams from the windows and their patches on the floor, the art frames and the
-screen's shape are built by the room script (rooms/forge_hall/forge_hall_room.gd) from the
-FIRE_, SHAFT_ and ART_ markers and the TVScreen rectangle.
+The fire, the sky, the sunbeams from the windows and their patches on the floor, the art
+frames, the three small live screens and the big screen's shape are built by the room script
+(rooms/forge_hall/forge_hall_room.gd) from the FIRE_, SHAFT_, ART_ and SCREEN_ markers and
+the TVScreen rectangle.
 
 Textures come from blender/make_forge_textures.py (rooms/forge_hall/textures).
 Output: rooms/forge_hall/forge_hall.glb. ROOT below is the owner's PC; set ROOT before exec on
@@ -368,6 +372,70 @@ def traces(mb, S, paths, m, w=0.06, lift=0.006, pads=True):
                 flat([c + Vector((math.cos(k * math.pi / 4 + math.pi / 8), math.sin(k * math.pi / 4 + math.pi / 8))) * w * 1.5 for k in range(8)])
 
 
+def fine_circuit(mb, S, rect, seed, per_m2=0.35, avoid=(), w=0.014, lift=0.003, upright=0.5):
+    """The fine second layer of circuit lines (round 3): bundles of two to five thin parallel
+    lines scattered over a surface, each bundle running straight, jogging 45 degrees together
+    and running on, every line ending in a small square pad. S = the surface (as for traces()),
+    rect = (u0, u1, v0, v1) on it, avoid = rectangles (same form) no line may enter (alcoves,
+    pillars, doors), per_m2 = bundles per square metre, upright = the share of bundles that run
+    along v instead of u. The same seed always gives the same pattern. They lie under the main
+    inlays (lift is smaller), so where the two cross the main line wins."""
+    import random
+    rng = random.Random(seed)
+    u0, u1, v0, v1 = rect
+
+    def ok(p):
+        if not (u0 <= p[0] <= u1 and v0 <= p[1] <= v1):
+            return False
+        return not any(a[0] <= p[0] <= a[1] and a[2] <= p[1] <= a[3] for a in avoid)
+
+    def flat(pts2, m):
+        mid = sum((Vector(q) for q in pts2), Vector((0, 0))) / len(pts2)
+        face_to(mb, [S(q[0], q[1], lift) for q in pts2], m, [(0, 0)] * len(pts2), S(mid.x, mid.y, lift + 1.0))
+
+    for _ in range(int((u1 - u0) * (v1 - v0) * per_m2)):
+        d = Vector((0, 1)) if rng.random() < upright else Vector((1, 0))
+        if rng.random() < 0.5:
+            d = -d
+        n = Vector((-d.y, d.x))
+        start = Vector((round(rng.uniform(u0, u1) / 0.05) * 0.05, round(rng.uniform(v0, v1) / 0.05) * 0.05))
+        run1, run2 = rng.uniform(0.35, 1.7), rng.uniform(0.3, 1.4)
+        jog = rng.choice((-1, 1)) * rng.uniform(0.1, 0.35)
+        m = "Neon_Fine_Amber" if rng.random() < 0.25 else "Neon_Fine_Cyan"
+        lines = []
+        for i in range(rng.randint(2, 5)):
+            a = start + n * (0.045 * i) + d * (0.05 * i)
+            b = a + d * run1
+            c = b + d * abs(jog) + n * jog
+            e = c + d * max(run2 - 0.09 * i, 0.15)
+            lines.append([a, b, c, e])
+        if not all(ok(q) and ok((q + r) / 2) for ln in lines for q, r in zip(ln, ln[1:] + ln[-1:])):
+            continue
+        for ln in lines:
+            for q, r in zip(ln[:-1], ln[1:]):
+                t = (r - q).normalized()
+                side = Vector((-t.y, t.x)) * (w / 2)
+                q2, r2 = q - t * (w / 2), r + t * (w / 2)
+                flat([q2 - side, r2 - side, r2 + side, q2 + side], m)
+            for c in (ln[0], ln[-1]):
+                h = w * 1.3
+                flat([c + Vector((-h, -h)), c + Vector((h, -h)), c + Vector((h, h)), c + Vector((-h, h))], m)
+
+
+def gear(mb, pos, r, teeth, m="Dark_Iron", t=0.08):
+    """A toothed wheel lying against a wall that faces -X or +X (its axle along X), centred on
+    pos: a disc, a square tooth every 360 / teeth degrees and a brass hub."""
+    pos = Vector(pos)
+    cyl(mb, pos, r, t, m, axis="x", segs=max(teeth, 10))
+    for k in range(teeth):
+        a = 2 * math.pi * k / teeth
+        box(mb, pos + Vector((0, math.cos(a) * (r + 0.03), math.sin(a) * (r + 0.03))), (t, 0.11, 2 * math.pi * r / teeth * 0.5), m, rot=(a, 0, 0))
+    cyl(mb, pos, r * 0.28, t + 0.06, "Brass", axis="x", segs=10)
+    for k in range(4):                                     # four round holes' worth of dark spokes
+        a = math.pi / 4 + math.pi / 2 * k
+        cyl(mb, pos + Vector((-t / 2 - 0.004, math.cos(a) * r * 0.6, math.sin(a) * r * 0.6)), r * 0.16, 0.01, "Soot", axis="x", segs=8)
+
+
 def valve(mb, pos, axis="x", r=0.17):
     """A red hand wheel on a short stem, its spindle along axis ("x" or "y"), centred on pos."""
     pos = Vector(pos)
@@ -398,27 +466,29 @@ def gauge(mb, pos, axis="x", facing=1, r=0.13):
 #    a chamfer in to CEIL_HW and the flat ceiling at CEIL_Z.
 # ════════════════════════════════════════════════════════════════
 HALF_W = 9.0
-BACK_Y = -17.0
+BACK_Y = -34.0                     # (round 3: the hall is twice as long as it was)
 LEDGE_Z = 6.0
 SLANT_X, SHELF_Z = 7.35, 9.0
 UPPER_X, UPPER_Z = 5.0, 11.0
 CEIL_HW, CEIL_Z = 4.0, 12.0
-FRAME_YS = (-0.2, -3.0, -5.8, -8.6, -11.4, -14.2, -16.8)   # the steel portal frames down the hall
+FRAME_YS = tuple(-0.2 - 2.8 * k for k in range(13))        # the steel portal frames down the hall (the last at -33.8)
 WAINSCOT_H = 1.2                   # the wood panelling inside the alcoves
 ALC_HW, ALC_D, ALC_TOP = 5.0, 0.6, 7.6     # the screen alcove: half width, depth, height
 SCREEN_W, SCREEN_H = 8.6, 4.8375   # same picture as the Lecture Hall (Panel)
 SCREEN_Y, SCREEN_Z0 = -0.1, 1.9    # the picture floats just proud of the wall, bottom 1.9 m up
 PILLAR_D = 0.8                     # a pillar is 1.3 m wide and stands this far out from its wall
 PILLAR_TOP, PILLAR_TOP_TALL = LEDGE_Z - 0.1, 8.2     # side / back pillars stop under the ledge
+SIDE_PILLAR_YS = tuple(-5.4 - 4.4 * k for k in range(7))    # a side-wall pillar every 4.4 m (the last at -31.8)
 # pillars: (x, y, yaw, tall). Built facing -Y; yaw turns the face into the room.
 PILLARS = ([(s * (ALC_HW + 0.65), -PILLAR_D / 2, 0.0, True) for s in (-1, 1)]                    # beside the screen alcove
-           + [(-HALF_W + PILLAR_D / 2, y, math.pi / 2, False) for y in (-5.4, -9.8, -14.2)]      # left wall
-           + [(HALF_W - PILLAR_D / 2, y, -math.pi / 2, False) for y in (-9.8, -14.2)]            # right wall
+           + [(-HALF_W + PILLAR_D / 2, y, math.pi / 2, False) for y in SIDE_PILLAR_YS]           # left wall
+           + [(HALF_W - PILLAR_D / 2, y, -math.pi / 2, False) for y in SIDE_PILLAR_YS[1:]]       # right wall (the forge takes the first)
            + [(s * 5.65, BACK_Y + PILLAR_D / 2, math.pi, False) for s in (-1, 1)])               # back wall
 # wall alcoves between the pillars: (wall, centre along the wall, half width). Walls: "L", "R"
 # (centre = y) and "B" the back wall (centre = x). One art frame hangs in each (ART_n markers,
 # numbered in this order).
-ALCOVES = [("L", -7.6, 1.2), ("L", -12.0, 1.2), ("R", -12.0, 1.2), ("B", -3.55, 1.0), ("B", 3.55, 1.0)]
+ALCOVES = ([("L", y - 2.2, 1.2) for y in SIDE_PILLAR_YS[:-1]] + [("R", y - 2.2, 1.2) for y in SIDE_PILLAR_YS[1:-1]]
+           + [("B", -3.55, 1.0), ("B", 3.55, 1.0)])        # 6 left, 5 right, 2 back = 13 (ART_COUNT in the room script)
 ALCOVE_Z0, ALCOVE_Z1, ALCOVE_D = 0.35, 4.5, 0.5
 ART_Z = 2.65                       # middle of the art frames
 # the forge: built out from the right wall, centred on y = FORGE_Y
@@ -426,9 +496,13 @@ FORGE_Y, FORGE_D = -5.4, 1.5       # FORGE_D = how far the chimney breast stands
 FORGE_HW, STACK_HW = 2.6, 1.7      # half width of the body / of the stack above the shoulders
 HEARTH_Z = 1.1                     # the firebox floor (top of the base)
 FIREBOX_HW, FIREBOX_TOP = 1.0, 2.9
-# the two window bays the sunbeams come through (left side): centre along the hall and half
-# width; the room script's sunbeams need the half sizes (forge_hall_room.gd: skylight_half).
-SKY_YS = (-1.6, -4.4)
+# the window bays the sunbeams come through: centre along the hall, per side (SHAFT_SkyL_n /
+# SHAFT_SkyR_n markers; the morning sun uses the left ones, the afternoon sun the right ones),
+# and half width; the room script's sunbeams need the half sizes (forge_hall_room.gd:
+# skylight_half). The right side has no glass from the screen wall to SOLID_TO (round 3: no
+# window round the forge), so its bays start behind the seats.
+SKY_YS = {"L": (-1.6, -4.4, -18.4, -24.0, -29.6), "R": (-15.6, -21.2, -26.8)}
+SOLID_TO = -8.6                    # right side: stone instead of glass from y = 0 back to here
 SKY_HW = 1.25
 SKY_HALF_SLANT = 1.37
 # seating: three rows either side of a centre aisle, each row a step higher than the one in front
@@ -444,8 +518,15 @@ PRESENTER_W, PRESENTER_H = 1.3, 1.25         # the feed plane behind each podium
 PRESENTER_BACK, PRESENTER_LIFT = 0.45, 0.75  # plane: this far behind the podium, bottom this high
 # lanterns: centre of each lantern, on a short chain from the shelf (the outer four) or the
 # ceiling (the two down the middle) straight above it
-LANTERNS = [Vector(p) for p in ((-6.2, -3.6, 8.05), (6.2, -3.6, 8.05), (-6.2, -11.0, 8.05), (6.2, -11.0, 8.05),
-                                (0.0, -7.0, 10.9), (0.0, -14.5, 10.9))]
+LANTERNS = ([Vector((s * 6.2, y, 8.05)) for y in (-3.6, -12.4, -21.2, -30.0) for s in (-1, 1)]
+            + [Vector((0.0, y, 10.9)) for y in (-8.0, -17.0, -26.0)])
+MID_LANTERN = 8                    # index of the first lantern down the middle (TARGET_Lantern)
+# the three small live screens the room script builds (forge_hall_room.gd, _build_live_screens):
+# one rises out of the floor chip's inner square, two hang on the screen wall above the alcove
+CHIP = (0.0, -4.6)                 # centre of the floor chip (and of SCREEN_Lift)
+UPPER_SCREENS = ((-2.6, 10.1), (2.6, 10.1))      # (x, z) of the middle of each upper screen
+# the second floor chip, in the back half of the hall
+CHIP2 = (0.0, -24.0)
 
 
 def ceil_z(x):
@@ -478,8 +559,8 @@ W_SURF = {"L": S_LEFT, "R": S_RIGHT, "B": S_BACK}
 def setup_materials():
     """Every material the hall uses. Names must stay in step with forge_hall_room.gd (its neon
     and ember lists) and the room scene's glow_materials."""
-    tex_mat("Stone_Slab", "slab_marble.png", 0.3, 0.25)        # polished, with a metallic cast
-    tex_mat("Floor_Tiles", "floor_slab.png", 0.22, 0.2)
+    tex_mat("Stone_Slab", "slab_granite.png", 0.16, 0.0)       # polished granite
+    tex_mat("Floor_Tiles", "floor_slab.png", 0.12, 0.0)
     tex_mat("Diamond_Plate", "diamond_plate.png", 0.5, 0.9)
     tex_mat("Wood_Panel", "wood_panel.png", 0.6)
     tex_mat("Roof_Planks", "roof_planks.png", 0.85)
@@ -499,6 +580,11 @@ def setup_materials():
     mat("Neon_Cyan", (0.1, 0.9, 1.0), 0.3, 0.0, (0.1, 0.85, 1.0), 4.0)
     mat("Neon_Orange", (1.0, 0.45, 0.08), 0.3, 0.0, (1.0, 0.42, 0.06), 4.0)
     mat("Neon_Purple", (0.7, 0.25, 1.0), 0.3, 0.0, (0.65, 0.2, 1.0), 4.0)
+    # the fine second layer of circuit lines: dimmer than the main inlays
+    mat("Neon_Fine_Cyan", (0.1, 0.7, 0.8), 0.3, 0.0, (0.1, 0.8, 1.0), 1.6)
+    mat("Neon_Fine_Amber", (0.8, 0.45, 0.1), 0.3, 0.0, (1.0, 0.5, 0.1), 1.6)
+    mat("Duct_Metal", (0.36, 0.38, 0.41), 0.38, 0.9)          # galvanised ducting
+    mat("Copper", (0.62, 0.3, 0.16), 0.3, 1.0)
     mat("Pipe_Glow", (1.0, 0.4, 0.1), 0.3, 0.0, (1.0, 0.36, 0.06), 2.5)
     mat("Lantern_Glass", (1.0, 0.8, 0.5), 0.2, 0.0, (1.0, 0.7, 0.36), 2.2)
     mat("Sky_Glass", (1.0, 0.9, 0.7), 0.3, 0.0, (1.0, 0.85, 0.6), 1.6)
@@ -528,14 +614,30 @@ def build_floor():
         for i, off in enumerate((-0.16, 0.0, 0.16)):
             leads.append([(s * (d + off), cy + d - off), (s * (2.5 + off), cy + d + (2.5 - d) - off), (s * (2.5 + off), -0.45 - 0.2 * i)])
         # down the side aisles to the back of the hall
-        leads.append([(s * d, cy - d), (s * 2.4, cy - d - (2.4 - d)), (s * 6.0, cy - d - (2.4 - d)), (s * 7.4, cy - d - (2.4 - d) - 1.4), (s * 7.4, -16.0)])
+        leads.append([(s * d, cy - d), (s * 2.4, cy - d - (2.4 - d)), (s * 6.0, cy - d - (2.4 - d)), (s * 7.4, cy - d - (2.4 - d) - 1.4), (s * 7.4, BACK_Y + 1.2)])
         # up the centre aisle as far as the first step
         leads.append([(s * 0.2, cy - r), (s * 0.2, -9.25)])
     # to the forge hearth and to the boiler
     for off in (-0.16, 0.0, 0.16):
         leads.append([(r, cy + off), (4.0 + off, cy + off), (4.8 + off, cy - 0.8 + off), (6.55, cy - 0.8 + off)])
     leads.append([(-r, cy), (-4.0, cy), (-6.2, cy + 2.2), (-6.2, -1.9), (-7.4, -1.9)])
+    # the second chip, in the back half: leads out to both side aisles, on to the back door,
+    # forward to the seats, and to the engine and the workbench
+    c2x, c2y = CHIP2
+    ring2 = [(c2x + (px - cx), c2y + (py - cy)) for (px, py) in ring]
+    traces(mb, S_FLOOR, [ring2], "Neon_Orange", 0.08, pads=False)
+    traces(mb, S_FLOOR, [[(c2x - 0.5, c2y - 0.5), (c2x + 0.5, c2y - 0.5), (c2x + 0.5, c2y + 0.5), (c2x - 0.5, c2y + 0.5), (c2x - 0.5, c2y - 0.5)]], "Neon_Orange", 0.05, pads=False)
+    for s in (-1, 1):
+        for off in (-0.16, 0.0, 0.16):
+            leads.append([(s * r, c2y + off), (s * (5.4 + off), c2y + off), (s * (6.4 + off), c2y - 1.0 + off), (s * 7.25, c2y - 1.0 + off)])
+        leads.append([(s * 0.2, c2y - r), (s * 0.2, BACK_Y + 0.6)])
+        leads.append([(s * 0.2, c2y + r), (s * 0.2, TIER_BACK - 0.5)])
+        leads.append([(s * d, c2y + d), (s * 3.2, c2y + d + (3.2 - d)), (s * 3.2, -17.2), (s * 4.4, -16.0), (s * 6.6, -16.0)])
     traces(mb, S_FLOOR, leads, "Neon_Cyan", 0.06)
+    # the fine layer over the whole floor (not under the stepped seats, the forge or the chips)
+    fine_circuit(mb, S_FLOOR, (-HALF_W + 0.3, HALF_W - 0.3, BACK_Y + 0.3, -0.3), 101, 0.36,
+                 avoid=[(-TIER_HW - 0.1, TIER_HW + 0.1, TIER_BACK - 0.1, -9.4), (HALF_W - FORGE_D - 0.8, HALF_W, FORGE_Y - FORGE_HW - 0.3, FORGE_Y + FORGE_HW + 0.3),
+                        (cx - 1.7, cx + 1.7, cy - 1.7, cy + 1.7), (c2x - 1.7, c2x + 1.7, c2y - 1.7, c2y + 1.7)])
     mb.done()
 
 
@@ -605,10 +707,26 @@ def build_walls():
     for (w, c, hw) in ALCOVES:
         _alcove(mb, w, c, hw)
     # the cyan bus lines, bay by bay between the pillars (none behind the forge)
-    for k, (a0, a1) in enumerate(((-0.4, -4.6), (-6.2, -9.0), (-10.6, -13.4), (-15.0, -16.7))):
+    bays = [(a - 0.8, b + 0.8) for a, b in zip(SIDE_PILLAR_YS[:-1], SIDE_PILLAR_YS[1:])] + [(SIDE_PILLAR_YS[-1] - 0.8, BACK_Y + 0.3)]
+    for k, (a0, a1) in enumerate([(-0.4, SIDE_PILLAR_YS[0] + 0.8)] + bays):
         _wall_bus(mb, S_LEFT, a0, a1, k % 2 == 1)
-    for k, (a0, a1) in enumerate(((-0.4, FORGE_Y + FORGE_HW + 0.2), (-10.6, -13.4), (-15.0, -16.7))):
+    for k, (a0, a1) in enumerate([(-0.4, FORGE_Y + FORGE_HW + 0.2)] + bays[1:]):
         _wall_bus(mb, S_RIGHT, a0, a1, k % 2 == 0)
+    # the fine layer on the lower walls, clear of the alcoves, the pillars, the forge and the door
+    for wall, S in (("L", S_LEFT), ("R", S_RIGHT)):
+        keep_off = [(c - hw - 0.2, c + hw + 0.2, 0.0, ALCOVE_Z1 + 0.22) for (w, c, hw) in ALCOVES if w == wall]
+        keep_off += [(y - 0.68, y + 0.68, 0.0, LEDGE_Z) for y in SIDE_PILLAR_YS]
+        if wall == "R":
+            keep_off.append((FORGE_Y - FORGE_HW - 0.4, FORGE_Y + FORGE_HW + 0.4, 0.0, LEDGE_Z))
+        else:
+            keep_off.append((-4.6, 0.0, 0.0, LEDGE_Z))       # the boiler corner's pipes and sign
+        fine_circuit(mb, S, (BACK_Y + 0.3, -0.3, 0.3, 5.85), 201 if wall == "L" else 202, 1.6, keep_off, upright=0.35)
+    fine_circuit(mb, S_BACK, (-HALF_W + 0.3, HALF_W - 0.3, 0.3, 5.0), 203, 0.5,
+                 [(c - hw - 0.3, c + hw + 0.3, 0.0, ALCOVE_Z1 + 0.3) for (w, c, hw) in ALCOVES if w == "B"]
+                 + [(-2.3, 2.3, 0.0, 5.0), (-6.6, -4.7, 0.0, LEDGE_Z), (4.7, 6.6, 0.0, LEDGE_Z), (6.2, HALF_W, 0.0, 2.2)], upright=0.6)
+    for s in (-1, 1):       # the screen wall either side of the tall pillars, and a strip over the alcove
+        fine_circuit(mb, S_FRONT, (min(s * 6.45, s * 8.8), max(s * 6.45, s * 8.8), 0.4, 5.8), 204 + s, 0.6, upright=0.7)
+    fine_circuit(mb, S_FRONT, (-4.4, 4.4, ALC_TOP + 0.28, 8.12), 206, 1.2, upright=0.2)
     for (a0, a1) in ((-8.7, -6.5), (-4.8, -2.5), (2.5, 4.8), (6.5, 8.7)):
         _wall_bus(mb, S_BACK, a0, a1, a0 > 0)
     # the end walls above the ledge follow the cross-section: three pieces each
@@ -645,7 +763,9 @@ def build_walls():
         paths.append([(s * 4.6, ALC_TOP + 0.14), (s * 4.6, 9.2), (s * 4.2, 9.6), (s * 4.2, 10.6)])
         paths.append([(s * 4.75, ALC_TOP + 0.14), (s * 4.75, 9.9), (s * 4.5, 10.15), (s * 4.5, 10.6)])
     traces(mb, S_FRONT, paths, "Neon_Cyan", 0.06)
-    traces(mb, S_FRONT, [[(-1.6, 10.2), (-0.5, 10.2), (0, 10.7), (0.5, 10.2), (1.6, 10.2)], [(-3.6, 9.8), (-2.2, 9.8)], [(2.2, 9.8), (3.6, 9.8)]], "Neon_Orange", 0.06)
+    # (the wall between those branches is left clear for the reply screen and the two small
+    # live screens the room script hangs there: UPPER_SCREENS)
+    traces(mb, S_FRONT, [[(-0.9, 11.25), (-0.3, 11.25), (0, 11.55), (0.3, 11.25), (0.9, 11.25)]], "Neon_Orange", 0.06)
     # the two pipes across the top of the alcove (as in the reference)
     pipe_run(mb, [(-ALC_HW, 0.3, 7.28), (ALC_HW, 0.3, 7.28)], 0.11, "Pipe_Metal", collar="Brass")
     pipe_run(mb, [(-ALC_HW, 0.36, 7.0), (ALC_HW, 0.36, 7.0)], 0.07, "Pipe_Metal", collar="Dark_Iron")
@@ -684,14 +804,21 @@ def build_upper():
         box(mb, (s * (HALF_W - 0.175), yc, LEDGE_Z), (0.35, L, 0.2), "Stone_Slab", uvs=6.0)
         # the slanted window: one long pane, steel glazing bars over it
         a, b = Vector((s * HALF_W, 0, LEDGE_Z)), Vector((s * SLANT_X, 0, SHELF_Z))
-        face_to(mb, [(a.x, y0, a.z), (a.x, y1, a.z), (b.x, y1, b.z), (b.x, y0, b.z)], "Sky_Glass", [(0, 0), (1, 0), (1, 1), (0, 1)], inside)
+        # (the right side is solid stone from the screen wall back past the forge: SOLID_TO)
+        g1 = SOLID_TO if s > 0 else y1                    # the glass runs from the back wall to here
+        face_to(mb, [(a.x, y0, a.z), (a.x, g1, a.z), (b.x, g1, b.z), (b.x, y0, b.z)], "Sky_Glass", [(0, 0), (1, 0), (1, 1), (0, 1)], inside)
+        if g1 < y1:
+            sl = (b - a).length
+            face_to(mb, [(a.x, g1, a.z), (a.x, y1, a.z), (b.x, y1, b.z), (b.x, g1, b.z)], "Stone_Slab",
+                    [(g1 / 6, 0), (y1 / 6, 0), (y1 / 6, sl / 6), (g1 / 6, sl / 6)], inside)
         n = Vector((-s * (SHELF_Z - LEDGE_Z), 0, -(HALF_W - SLANT_X))).normalized()      # into the room
         for t in (0.34, 0.67):
             p = a.lerp(b, t) + n * 0.04
-            bar(mb, (p.x, y0, p.z), (p.x, y1, p.z), 0.08, "Steel_Girder")
+            bar(mb, (p.x, y0, p.z), (p.x, g1, p.z), 0.08, "Steel_Girder")
         for k in range(len(FRAME_YS) - 1):
             ym = (FRAME_YS[k] + FRAME_YS[k + 1]) / 2
-            bar(mb, (a.x + n.x * 0.04, ym, a.z + n.z * 0.04), (b.x + n.x * 0.04, ym, b.z + n.z * 0.04), 0.08, "Steel_Girder")
+            if ym < g1:
+                bar(mb, (a.x + n.x * 0.04, ym, a.z + n.z * 0.04), (b.x + n.x * 0.04, ym, b.z + n.z * 0.04), 0.08, "Steel_Girder")
         # shelf (underside), upper wall, chamfer
         face_to(mb, [(s * SLANT_X, y0, SHELF_Z), (s * SLANT_X, y1, SHELF_Z), (s * UPPER_X, y1, SHELF_Z), (s * UPPER_X, y0, SHELF_Z)], "Diamond_Plate",
                 [(0, y0 / 2), (0, y1 / 2), ((SLANT_X - UPPER_X) / 2, y1 / 2), ((SLANT_X - UPPER_X) / 2, y0 / 2)], inside)
@@ -739,6 +866,7 @@ def _pillar_mesh(name, top):
     traces(mb, face, [[(-0.3, 1.4), (-0.3, 2.6), (-0.1, 2.8), (-0.1, zt)]], "Neon_Cyan", 0.06)
     traces(mb, face, [[(0.1, 1.4), (0.1, 3.3), (0.3, 3.5), (0.3, zt)]], "Neon_Orange", 0.06)
     traces(mb, face, [[(0.3, 1.4), (0.3, 2.9)], [(-0.3, 3.2), (-0.3, zt)]], "Neon_Purple", 0.06)
+    fine_circuit(mb, face, (-0.58, 0.58, 1.3, zt + 0.1), 301 + int(top * 10), 1.6, upright=0.9)
     head = lambda x, z, l: Vector((x, -hd - 0.15 - l, z))
     traces(mb, head, [[(-0.6, top - 0.2), (0, top - 0.5), (0.6, top - 0.2)]], "Neon_Cyan", 0.06, pads=False)
     return mb.done()
@@ -821,7 +949,73 @@ def build_forge():
         for k in range(n):
             tube(mb, (xc - 0.25 + 0.3 * k, yc - hw, z + 0.1), (xc - 0.4 + 0.3 * k, yc + hw, z + 0.1), 0.09, "Log_Wood", segs=8)
         box(mb, (xc - 0.1, yc, z + 0.03), (0.9, 2 * hw - 0.2, 0.06), "Embers")
+    fine_circuit(mb, S_FORGE, (yc - STACK_HW + 0.1, yc + STACK_HW - 0.1, 4.7, 8.6), 401, 1.4, upright=0.8)
+    _forge_machinery(mb, xf, xc, yc)
     mb.done()
+
+
+def _forge_machinery(mb, xf, xc, yc):
+    """Round 3: the steam-age and science-fiction machinery on the forge. xf = the body's front
+    face (x), xc = the middle of its depth, yc = its centre along the wall. On the stack:
+    riveted bands, a pair of meshing gears, a brass ring round the big gauge and a louvred vent.
+    From the shoulders: a piston either side. On the hearth slab: two glowing cells in brass
+    cages. Round the risers: copper coils. On the side facing the seats: a control panel with
+    lit buttons, two gauges and a lever."""
+    # riveted bands round the stack
+    for z in (5.0, 6.45, 7.85):
+        box(mb, (xf - 0.03, yc, z), (0.06, 2 * STACK_HW + 0.08, 0.22), "Metal_Plate", uvs=1.0)
+        y = yc - STACK_HW + 0.15
+        while y < yc + STACK_HW - 0.1:
+            for dz in (-0.07, 0.07):
+                cyl(mb, (xf - 0.07, y, z + dz), 0.028, 0.03, "Brass", axis="x", segs=6)
+            y += 0.34
+    # two gears that mesh, between the upper bands
+    gear(mb, (xf - 0.08, yc - 0.48, 7.15), 0.5, 14)
+    gear(mb, (xf - 0.08, yc + 0.5, 7.1), 0.3, 9, "Brass")
+    # a brass ring with six lit studs round the big gauge (the gauge itself is in build_pipes)
+    torus(mb, (xf - 0.05, yc, 5.6), 0.36, 0.04, "Brass", axis="x", segs=18, rsegs=5)
+    for k in range(6):
+        a = math.pi / 3 * k + math.pi / 6
+        cyl(mb, (xf - 0.06, yc + math.cos(a) * 0.5, 5.6 + math.sin(a) * 0.5), 0.04, 0.04, "Neon_Fine_Amber", axis="x", segs=6)
+    # the louvred vent at the top of the stack
+    box(mb, (xf - 0.03, yc, 8.35), (0.06, 1.5, 0.5), "Dark_Iron")
+    for k in range(5):
+        box(mb, (xf - 0.08, yc, 8.17 + 0.09 * k), (0.07, 1.36, 0.02), "Metal_Plate", rot=(0, 0.5, 0), uvs=1.0)
+    for s in (-1, 1):
+        # a piston from each shoulder up to the stack: iron barrel, brass collars, bright rod
+        a = Vector((xf - 0.2, yc + s * 2.3, 3.75))
+        b = Vector((xf - 0.2, yc + s * 1.5, 5.25))
+        mid = a.lerp(b, 0.55)
+        tube(mb, a, mid, 0.12, "Dark_Iron", segs=10)
+        tube(mb, mid, b, 0.045, "Pipe_Metal", segs=8)
+        for q in (a.lerp(b, 0.06), a.lerp(b, 0.5)):
+            tube(mb, q, q + (b - a).normalized() * 0.07, 0.15, "Brass", segs=10)
+        for q in (a, b):
+            cyl(mb, q, 0.1, 0.3, "Dark_Iron", axis="x", segs=8)
+        # a glowing cell in a brass cage on each end of the hearth slab
+        cx, cy = xf - 0.4, yc + s * 2.5
+        z0 = HEARTH_Z + 0.05
+        cyl(mb, (cx, cy, z0 + 0.3), 0.1, 0.5, "Neon_Fine_Cyan", segs=10)
+        for z in (z0 + 0.03, z0 + 0.57):
+            cyl(mb, (cx, cy, z), 0.15, 0.06, "Brass", segs=10)
+        for k in range(4):
+            ang = math.pi / 4 + math.pi / 2 * k
+            bar(mb, (cx + 0.14 * math.cos(ang), cy + 0.14 * math.sin(ang), z0 + 0.05), (cx + 0.14 * math.cos(ang), cy + 0.14 * math.sin(ang), z0 + 0.55), 0.025, "Brass")
+        # copper coils round the risers beside the body
+        for k in range(7):
+            torus(mb, (xf + 0.4, yc + s * (FORGE_HW + 0.25), 2.0 + 0.13 * k), 0.15, 0.03, "Copper", segs=12, rsegs=4)
+    # the control panel on the side that faces the seats (the body's -Y side)
+    py = yc - FORGE_HW - 0.04
+    box(mb, (xc, py, 1.95), (1.0, 0.08, 1.1), "Metal_Plate", uvs=1.0)
+    for r in range(3):
+        for c in range(4):
+            m = ("Neon_Fine_Amber", "Neon_Fine_Cyan", "Valve_Red", "Neon_Fine_Cyan")[(r + c) % 4]
+            box(mb, (xc - 0.33 + 0.14 * c, py - 0.05, 1.62 + 0.13 * r), (0.07, 0.03, 0.07), m)
+    for dx in (0.12, 0.34):
+        gauge(mb, (xc + dx - 0.02, py - 0.04, 2.25), "y", -1, r=0.09)
+    bar(mb, (xc + 0.3, py - 0.05, 1.6), (xc + 0.36, py - 0.22, 1.85), 0.03, "Brass")            # the lever
+    sphere(mb, (xc + 0.36, py - 0.22, 1.87), 0.05, "Valve_Red", subdiv=1)
+    box(mb, (xc - 0.1, py - 0.05, 2.3), (0.5, 0.02, 0.12), "Neon_Fine_Cyan")                    # a readout strip
 
 
 def build_lanterns():
@@ -861,10 +1055,10 @@ def build_pipes():
     for s in (-1, 1):
         x = s * (HALF_W - 0.52)
         pipe_run(mb, [(x, -0.25, zl), (x, BACK_Y + 0.5, zl)], 0.13, "Pipe_Metal", collar="Brass")
-        tube(mb, (x, -3.4, zl), (x, -3.9, zl), 0.2, "Brass", segs=12)                  # a fat coupling
-        tube(mb, (x, -11.2, zl), (x, -11.7, zl), 0.2, "Brass", segs=12)
+        for y in (-3.4, -11.2, -20.0, -28.4):                                         # fat couplings
+            tube(mb, (x, y, zl), (x, y - 0.5, zl), 0.2, "Brass", segs=12)
         pipe_run(mb, [(s * (HALF_W - 0.2), -0.25, zl + 0.5), (s * (HALF_W - 0.2), BACK_Y + 0.2, zl + 0.5)], 0.06, "Pipe_Glow" if s > 0 else "Pipe_Metal")
-        for y in (-7.2, -13.0):
+        for y in (-7.2, -13.0, -19.2, -25.6, -31.0):
             valve(mb, (x - s * 0.24, y, zl), "x")
             gauge(mb, (x - s * 0.2, y - 0.6, zl + 0.05), "x", -s)
         # along the upper wall
@@ -874,7 +1068,7 @@ def build_pipes():
     # the two ledge mains meet across the back wall
     pipe_run(mb, [(-HALF_W + 0.52, BACK_Y + 0.5, zl), (HALF_W - 0.52, BACK_Y + 0.5, zl)], 0.13, "Pipe_Metal", collar="Brass")
     # drops beside the left pillars: from the main down the wall, then into it
-    for py in (-5.4, -9.8, -14.2):
+    for py in SIDE_PILLAR_YS:
         y = py + 0.95
         pipe_run(mb, [(-HALF_W + 0.52, y, zl), (-HALF_W + 0.2, y, zl - 0.3), (-HALF_W + 0.2, y, 5.75), (-HALF_W, y, 5.75)], 0.06, "Pipe_Metal")
     # risers on the forge stack, bending in over the shoulders
@@ -903,6 +1097,59 @@ def build_pipes():
         cyl(mb, (tx + sx * 0.3, ty, 0.85), 0.47, 0.08, "Brass", axis="x", segs=14)
     pipe_run(mb, [(tx, ty, 1.3), (tx, ty, zl - 0.1), (tx, BACK_Y + 0.5, zl)], 0.07, "Pipe_Metal", collar="Brass")
     gauge(mb, (tx, ty + 0.47, 0.95), "y", 1)
+    mb.done()
+
+
+def build_ducts():
+    """Round 3: ducting and more pipework hung under the flat ceiling, down the whole hall, all
+    of it inside the upper level (|x| under 4 m, above 10.7 m) so nothing crosses the slanted
+    windows. Left of centre: a rectangular galvanised air duct with a flange at every bay,
+    grilles underneath, a fan unit, and round branches out to the left upper wall. Right of
+    centre: a round duct with flanges, and three pipes side by side (one copper) with hand
+    wheels, tied across to the left at three of the frames."""
+    mb = MB("Ducts")
+    y0, y1 = -0.6, BACK_Y + 0.6
+    yc, L = (y0 + y1) / 2, y0 - y1
+    dx, dz = -2.2, 11.25
+    box(mb, (dx, yc, dz), (1.0, L, 0.6), "Duct_Metal")
+    for k in range(len(FRAME_YS) - 1):
+        ym = (FRAME_YS[k] + FRAME_YS[k + 1]) / 2
+        box(mb, (dx, ym, dz), (1.08, 0.06, 0.68), "Duct_Metal")                    # flange
+        for sx in (-0.42, 0.42):                                                   # hangers up to the ceiling
+            bar(mb, (dx + sx, ym, dz + 0.3), (dx + sx, ym, CEIL_Z - 0.02), 0.03, "Dark_Iron")
+        if k % 2 == 1:                                                             # a grille underneath
+            box(mb, (dx, ym + 0.9, dz - 0.31), (0.7, 1.0, 0.03), "Dark_Iron")
+            for j in range(5):
+                box(mb, (dx, ym + 0.5 + 0.2 * j, dz - 0.34), (0.62, 0.03, 0.04), "Duct_Metal")
+    # the fan unit, with a round grille underneath
+    fy = -17.0
+    box(mb, (dx, fy, dz - 0.05), (1.3, 1.7, 0.8), "Metal_Plate", uvs=1.0)
+    cyl(mb, (dx, fy, dz - 0.47), 0.48, 0.06, "Dark_Iron", segs=14)
+    for k in range(3):
+        box(mb, (dx, fy, dz - 0.5), (0.9, 0.05, 0.03), "Duct_Metal", rot=(0, 0, math.pi / 3 * k))
+    # round branches to the left upper wall, ending in a cone-shaped outlet pointing down
+    for by in (-10.0, -21.2, -29.6):
+        pipe_run(mb, [(dx - 0.5, by, dz), (-4.25, by, dz), (-4.25, by, 9.75)], 0.2, "Duct_Metal", collar="Duct_Metal")
+        cyl(mb, (-4.25, by, 9.62), 0.2, 0.26, "Duct_Metal", segs=12, r2=0.36)
+    # the round duct right of centre
+    rx, rz = 1.6, 11.32
+    tube(mb, (rx, y0, rz), (rx, y1, rz), 0.3, "Duct_Metal", segs=14)
+    y = y0 - 0.7
+    while y > y1:
+        cyl(mb, (rx, y, rz), 0.34, 0.05, "Duct_Metal", axis="y", segs=14)
+        y -= 1.4
+    for k in range(0, len(FRAME_YS) - 1, 2):
+        ym = (FRAME_YS[k] + FRAME_YS[k + 1]) / 2
+        bar(mb, (rx, ym, rz + 0.3), (rx, ym, CEIL_Z - 0.02), 0.03, "Dark_Iron")
+    # three pipes side by side
+    for (x, r, m) in ((2.65, 0.07, "Pipe_Metal"), (2.9, 0.05, "Copper"), (3.2, 0.09, "Pipe_Metal")):
+        pipe_run(mb, [(x, y0, 11.5), (x, y1, 11.5)], r, m, collar="Brass")
+    for y in (-6.0, -15.0, -24.0, -31.0):
+        valve(mb, (3.2, y, 11.3), "y", r=0.14)
+        box(mb, (2.92, y - 0.8, 11.62), (0.8, 0.08, 0.06), "Dark_Iron")            # a pipe bracket
+    for y in (-11.6, -22.8, -31.2):                 # ties across the hall, under the ducts
+        pipe_run(mb, [(3.2, y, 11.5), (3.2, y, 10.75), (-3.7, y, 10.75), (-3.7, y, 11.6)], 0.06, "Pipe_Metal", collar="Brass")
+        gauge(mb, (0.6, y - 0.08, 10.75), "y", -1, r=0.11)
     mb.done()
 
 
@@ -1010,8 +1257,8 @@ def _crate(mb, x, y, z, size, yaw=0.0):
 def build_props():
     """What fills the rest of the room. Front left corner: a boiler with pipes running up and
     along the wall (one of them glowing orange) and the round cyan sign. Out on the floor: an
-    anvil on a stump. Back of the hall: a workbench against the right wall, a small side door in
-    the left wall, barrels and crates."""
+    anvil on a stump. The back half: a free-standing workbench, a steam engine with a flywheel,
+    barrels and crates."""
     mb = MB("Props")
     xl = -HALF_W
     # boiler in the front-left corner
@@ -1046,20 +1293,42 @@ def build_props():
     pipe_run(mb, [(xr - 0.25, -0.9, LEDGE_Z - 0.1), (xr - 0.25, -0.9, 3.6), (xr - 0.25, -2.2, 3.6), (xr - 0.25, -2.2, 1.4)], 0.06, "Pipe_Glow")
     valve(mb, (xr - 0.52, -1.6, 4.4), "x")
     gauge(mb, (xr - 0.44, -0.5, 1.8), "x", -1)
-    # the workbench against the right wall, in the last bay (no tools on the wall)
-    wy = -15.9
-    box(mb, (xr - 0.6, wy, 0.92), (1.0, 1.8, 0.1), "Bench_Wood")
-    for dy in (-0.75, 0.75):
-        for dx in (0.2, 1.0):
-            box(mb, (xr - dx, wy + dy, 0.435), (0.12, 0.12, 0.87), "Beam_Wood")
-    box(mb, (xr - 0.6, wy, 0.3), (0.9, 1.6, 0.05), "Beam_Wood")
-    box(mb, (xr - 0.6, wy + 0.5, 1.05), (0.3, 0.5, 0.16), "Metal_Plate", uvs=1.0)       # a vice block
-    _crate(mb, xr - 0.6, wy - 0.45, 0.33, 0.45, 0.3)
-    # the side door, left wall in the last bay
-    dy = -15.9
-    box(mb, (xl + 0.05, dy, 1.2), (0.1, 1.3, 2.4), "Bench_Wood")
-    for (c, sz) in (((xl + 0.08, dy - 0.72, 1.25), (0.16, 0.14, 2.5)), ((xl + 0.08, dy + 0.72, 1.25), (0.16, 0.14, 2.5)), ((xl + 0.08, dy, 2.5), (0.16, 1.58, 0.16))):
-        box(mb, c, sz, "Metal_Plate", uvs=1.0)
+    # the workbench: free-standing in the back half (every wall bay there is an art alcove)
+    wx, wy = 5.0, -19.6
+    box(mb, (wx, wy, 0.92), (1.0, 2.2, 0.1), "Bench_Wood")
+    for dy in (-0.95, 0.95):
+        for ddx in (-0.4, 0.4):
+            box(mb, (wx + ddx, wy + dy, 0.435), (0.12, 0.12, 0.87), "Beam_Wood")
+    box(mb, (wx, wy, 0.3), (0.9, 2.0, 0.05), "Beam_Wood")
+    box(mb, (wx, wy + 0.7, 1.05), (0.3, 0.5, 0.16), "Metal_Plate", uvs=1.0)       # a vice block
+    _crate(mb, wx, wy - 0.5, 0.33, 0.45, 0.3)
+    _crate(mb, wx + 1.0, wy + 0.3, 0.0, 0.6, 0.4)
+    # the steam engine in the back half, left of the aisle: a bed plate, a copper cylinder with
+    # its piston rod, and a spoked flywheel
+    ex, ey = -5.0, -20.6
+    box(mb, (ex, ey, 0.2), (1.3, 2.8, 0.4), "Metal_Plate", uvs=1.0)
+    cyl(mb, (ex, ey - 0.7, 0.85), 0.34, 1.1, "Copper", axis="y", segs=14, smooth=True)
+    for dy in (-1.27, -0.13):
+        cyl(mb, (ex, ey + dy, 0.85), 0.37, 0.07, "Brass", axis="y", segs=14)
+    box(mb, (ex, ey - 0.7, 0.5), (0.5, 0.9, 0.22), "Dark_Iron")
+    tube(mb, (ex, ey - 0.1, 0.85), (ex, ey + 0.75, 1.05), 0.04, "Pipe_Metal", segs=8)          # the piston rod
+    fy = ey + 0.95
+    torus(mb, (ex - 0.25, fy, 1.25), 0.82, 0.07, "Dark_Iron", axis="x", segs=24, rsegs=6)
+    for k in range(6):
+        a = math.pi / 3 * k
+        bar(mb, (ex - 0.25, fy, 1.25), (ex - 0.25, fy + 0.8 * math.cos(a), 1.25 + 0.8 * math.sin(a)), 0.05, "Dark_Iron")
+    cyl(mb, (ex - 0.05, fy, 1.25), 0.13, 0.6, "Brass", axis="x", segs=10)
+    for sx in (-0.42, 0.35):
+        prism(mb, [(fy - 0.35, 0.4), (fy + 0.35, 0.4), (fy + 0.12, 1.3), (fy - 0.12, 1.3)], "yz", ex + sx - 0.05, ex + sx + 0.05, "Dark_Iron")
+    gauge(mb, (ex + 0.36, ey - 0.7, 1.1), "x", 1)
+    valve(mb, (ex, ey - 1.45, 0.85), "y")
+    pipe_run(mb, [(ex, ey - 0.7, 1.19), (ex, ey - 0.7, 1.9), (ex - 0.6, ey - 0.7, 1.9), (ex - 0.6, ey - 0.7, 0.4)], 0.05, "Pipe_Metal", collar="Brass")
+    # more barrels and crates down the back half
+    for (bx2, by2) in ((7.6, -22.6), (7.0, -23.1), (-7.4, -27.2)):
+        _barrel(mb, bx2, by2)
+    _crate(mb, -7.3, -26.2, 0.0, 0.8, 0.2)
+    _crate(mb, -7.2, -26.25, 0.8, 0.5, -0.3)
+    _crate(mb, 7.2, -30.6, 0.0, 0.7, 0.1)
     # barrels and crates along the back wall, left of the left-hand back pillar
     _barrel(mb, -7.5, BACK_Y + 0.6)
     _barrel(mb, -6.7, BACK_Y + 0.65)
@@ -1083,17 +1352,25 @@ def build_markers():
     for i, p in enumerate(LANTERNS):
         empty("LAMP_Lantern_%d" % (i + 1), p + Vector((0, 0, -0.5)), parent=lh)
     for s, n in ((-1, "L"), (1, "R")):
-        empty("LAMP_Neon_%s" % n, (s * 7.4, -12.0, 4.4), parent=lh)
-    # sunbeam windows (left side): the marker sits in the middle of the pane. Its X axis runs
+        for k, y in enumerate((-12.0, -26.0)):
+            empty("LAMP_Neon_%s%d" % (n, k + 1), (s * 7.4, y, 4.4), parent=lh)
+    # sunbeam windows, both sides: the marker sits in the middle of the pane. Its X axis runs
     # along the hall, its Y axis up the slant and its Z axis into the room; the room script
     # reads the pane's outline from those (X and -Z of the node in Redot) and skylight_half.
-    d = Vector((HALF_W - SLANT_X, 0, SHELF_Z - LEDGE_Z))
-    up = d.normalized()
-    n = Vector((SHELF_Z - LEDGE_Z, 0, -(HALF_W - SLANT_X))).normalized()
-    for i, yc in enumerate(SKY_YS):
-        c = Vector((-HALF_W, yc, LEDGE_Z)) + d * 0.5 + n * 0.1
-        sk = empty("SHAFT_Sky_%d" % (i + 1), c)
-        sk.rotation_euler = Matrix((Vector((0, 1, 0)), up, n)).transposed().to_euler()
+    for s, side in ((-1, "L"), (1, "R")):
+        d = Vector((-s * (HALF_W - SLANT_X), 0, SHELF_Z - LEDGE_Z))
+        up = d.normalized()
+        n = Vector((-s * (SHELF_Z - LEDGE_Z), 0, -(HALF_W - SLANT_X))).normalized()
+        for i, yc in enumerate(SKY_YS[side]):
+            c = Vector((s * HALF_W, yc, LEDGE_Z)) + d * 0.5 + n * 0.1
+            sk = empty("SHAFT_Sky%s_%d" % (side, i + 1), c)
+            sk.rotation_euler = Matrix((Vector((0, -s, 0)), up, n)).transposed().to_euler()
+    # the small live screens: SCREEN_Lift on the floor in the middle of the chip (the screen
+    # rises out of the floor there), SCREEN_Upper_n at the middle of each screen on the wall
+    # above the alcove; all face the audience
+    aim(empty("SCREEN_Lift", (CHIP[0], CHIP[1], 0.0)), (CHIP[0], -30.0, 0.0), forward='-Y')
+    for i, (x, z) in enumerate(UPPER_SCREENS):
+        aim(empty("SCREEN_Upper_%d" % (i + 1), (x, -0.08, z)), (x, -30.0, z), forward='-Y')
     # the two fires: bottom centre of the flames, facing into the room
     xm = HALF_W - FORGE_D * 0.55
     for name, z in (("FIRE_Main", HEARTH_Z + 0.1), ("FIRE_Slot", 0.3)):
@@ -1107,7 +1384,7 @@ def build_markers():
             ("CAM_02_Forge_Corner", Vector((-7.2, -11.2, 2.3)), Vector((3.2, -2.0, 3.4))),
             ("CAM_03_Front_Row", Vector((0.0, -6.8, 1.4)), screen_c),
             ("CAM_04_Fireside", Vector((6.6, -9.0, 1.7)), Vector((-1.5, 0.0, 3.6))),
-            ("CAM_05_Rafters", Vector((2.6, -16.0, 8.2)), Vector((0.0, 0.0, 3.6))),
+            ("CAM_05_Rafters", Vector((2.6, -31.0, 8.4)), Vector((0.0, -4.0, 3.0))),
             ("CAM_06_Skylight", Vector((-7.7, -8.0, 5.2)), Vector((7.0, -4.2, 1.4))),
             ("CAM_07_Panel_Wide", Vector((0.0, -7.2, 2.2)), Vector((0.0, 0.0, 2.6))),
             ("CAM_08_Panel_Left", Vector((-2.2, -5.4, 1.7)), Vector((-6.3, -1.6, 1.5))),
@@ -1124,8 +1401,8 @@ def build_markers():
     aim(empty("REPLY_Screen", rtop), rtop + Vector((0.0, -10.0, 0.0)), forward='-Y')
     # reaction targets (!tomato forge ...)
     for name, p, to in (("TARGET_Forge", (HALF_W - FORGE_D - 0.1, FORGE_Y, 3.9), (0, FORGE_Y, 3.9)),
-                        ("TARGET_Lantern", tuple(LANTERNS[4]), (LANTERNS[4].x, -20, LANTERNS[4].z)),
-                        ("TARGET_Anvil", (-6.9, -5.9, 1.1), (-6.9, -20, 1.1)),
+                        ("TARGET_Lantern", tuple(LANTERNS[MID_LANTERN]), (LANTERNS[MID_LANTERN].x, -30, LANTERNS[MID_LANTERN].z)),
+                        ("TARGET_Anvil", (-6.9, -5.9, 1.1), (-6.9, -30, 1.1)),
                         ("TARGET_Boiler", (-HALF_W + 1.3, -1.5, 1.5), (0, -1.5, 1.5))):
         aim(empty(name, p), to, forward='-Y')
     # the seats: on the bench tops
@@ -1152,6 +1429,7 @@ def build_all():
     build_forge()
     build_lanterns()
     build_pipes()
+    build_ducts()
     build_screen()
     build_podiums()
     build_seating()

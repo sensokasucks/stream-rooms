@@ -154,7 +154,7 @@ func get_chat_screen_marker() -> Node3D:
 ## The room's own meshes (walls, floors, furniture), not the things the app adds at runtime
 ## (audience, curtain, screens, effects).
 func get_static_meshes() -> Array[MeshInstance3D]:
-	var skip := ["StageCurtain", "Audience", "Reactions", "Presenters", "ScreenLights", "ReplyScreen",
+	var skip := ["StageCurtain", "StandbyCard", "Audience", "Reactions", "Presenters", "ScreenLights", "ReplyScreen",
 		"ChatScreen", "WebcamDisplay", "SunShafts", "SideChats"]
 	var out: Array[MeshInstance3D] = []
 	for n in find_children("*", "MeshInstance3D", true, false):

@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://hka11d307slk"
-path="res://.godot/imported/forge_hall_slab_marble.png-3ef88145c0988c73143c27bb3b89693c.ctex"
+uid="uid://be8gcpq1h657f"
+path="res://.godot/imported/standby_card.png-42f63119fd35d64aa638f8d7773e99ce.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "6fb7d037cc4513efcb3294204a35949d"
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/forge_hall_slab_marble.png"
-dest_files=["res://.godot/imported/forge_hall_slab_marble.png-3ef88145c0988c73143c27bb3b89693c.ctex"]
+source_file="res://rooms/forge_hall/textures/standby_card.png"
+dest_files=["res://.godot/imported/standby_card.png-42f63119fd35d64aa638f8d7773e99ce.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

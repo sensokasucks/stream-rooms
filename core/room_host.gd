@@ -159,14 +159,22 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 		lights.name = "ScreenLights"
 		_room.add_child(lights)
 		lights.setup(screen, info, screen_feed.get_texture(), _room.get_projector_marker(), _room.get_mirror_screens())
-		# stage curtain in front of the screen (B / Shift+B, Room tab)
-		var curtain := StageCurtain.new()
-		curtain.name = "StageCurtain"
-		_room.add_child(curtain)
-		curtain.setup(_room, screen)
-		# how far in front of the screen the curtain hangs (the side chat windows go in front of it)
-		var sbox := screen.global_transform * screen.get_aabb()
-		curtain_front = absf((curtain.global_position - sbox.get_center()).dot(curtain.global_basis.z.normalized()))
+		if info.standby_card:
+			# this room hides its screen behind a "please stand by" card instead of a curtain
+			var card := StandbyCard.new()
+			card.name = "StandbyCard"
+			_room.add_child(card)
+			card.setup(screen, info.standby_card)
+			curtain_front = card.offset
+		else:
+			# stage curtain in front of the screen (B / Shift+B, Room tab)
+			var curtain := StageCurtain.new()
+			curtain.name = "StageCurtain"
+			_room.add_child(curtain)
+			curtain.setup(_room, screen)
+			# how far in front of the screen the curtain hangs (the side chat windows go in front of it)
+			var sbox := screen.global_transform * screen.get_aabb()
+			curtain_front = absf((curtain.global_position - sbox.get_center()).dot(curtain.global_basis.z.normalized()))
 	else:
 		EventBus.status_message.emit("Room '%s' has no TVScreen mesh." % info.display_name, true)
 

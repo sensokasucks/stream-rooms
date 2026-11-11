@@ -1264,16 +1264,34 @@ Included rooms:
     textures come from `blender/make_throne_textures.py`, which paints the crest picture you
     give it onto the banner (`rooms/throne_hall/textures/crest_source.png`; swap that file and
     run the script again for another crest).
-- **Forge Hall**: a tall hall of carved stone with a little science fiction in it, modelled on
-  a reference picture and a cross-section sketch.
-  - Walls, pillars and floor are big single slabs of dark polished stone with a few fine
-    cracks. Lines of cyan, orange and purple light are set flush into them like the traces of
-    a circuit board, running to a "chip" in the floor in front of the screen.
+- **Forge Hall**: a long, tall hall of polished granite with a little science fiction in it,
+  modelled on a reference picture and a cross-section sketch.
+  - Walls, pillars and floor are big slabs of dark polished granite (fine speckle, a mirror
+    shine). Lines of cyan, orange and purple light are set flush into them like the traces of
+    a circuit board, running to a "chip" in the floor in front of the screen and a second one
+    halfway down the hall. A layer of much finer traces runs between the main lines on the
+    floor, the walls and the forge.
   - Above the walls a ledge carries tall slanted windows that lean in to an upper level of
     stone and steel, under a ceiling of dark diamond plate on steel girders. Short-chained
-    hexagonal lanterns hang close to the ceiling, and two of the windows throw sunbeams and
-    barred patches of light onto the floor.
+    hexagonal lanterns hang close to the ceiling. There is no window next to the forge.
   - Brass and iron pipework with valves and gauges runs along the ledges and down the walls.
+    Under the ceiling, between the two rows of windows (so it never blocks them), hang a square
+    air duct with grilles and a fan unit, a round duct and a run of pipes.
+  - **Time of day**: the windows look out on a sky the room draws itself: a sun by day, a
+    moon, stars and a faint milky band by night, warm colours at sunrise and sunset. The
+    sunbeams and the barred patches of light on the floor follow the sun (pale and blue under
+    the moon), and the room's own daylight dims at night so the inlays and the fire carry it.
+    Room tab:
+    - **Time of day**: 0 to 24 hours (6 = sunrise, 12 = noon, 18 = sunset).
+    - **Day length**: how many minutes a whole day and night take when the clock runs by
+      itself. **Clock stopped** (0) keeps the time where the slider is.
+    - **Light rays**: the sunbeams and floor patches (0% = off).
+  - **Please stand by**: this room has no curtain. Closing the curtain (the **Curtain** button,
+    its hotkey or Stream Core) fades a "please stand by" test card in over the big screen
+    instead, the kind TV stations showed when they went off the air, and opening it fades the
+    card away. The stream sound mutes the same way, **Curtain speed** sets how fast it fades and
+    the **Sign** text shows across the bottom of the card. The curtain's colour, sound and
+    reveal settings do nothing here.
   - The screen hangs in a wide alcove. It can show LED dots and the hologram look like Neon
     City's, and it can be bent, resized and moved. Room tab:
     - **LED dots**: how strongly the picture is broken into dots (0% = smooth). The same slider
@@ -1284,36 +1302,51 @@ Included rooms:
       middle bulges out (convex).
     - **Size**, **Move left/right**, **Move up/down**: the screen stays inside its alcove, so
       make it smaller to move it further. The room reloads a moment after you let go of one of
-      these four, so the screen's light and the curtain follow.
-  - Five alcoves are cut into the walls between the pillars, lined with wood panelling. Each
-    holds a framed picture. Room tab, **Alcove art**:
-    - **Frame**: Brass, Steel, Dark wood, Marble, Light strip (glows, follows **Light strips**)
-      or No frame.
+      these four, so the screen's light and the stand-by card follow.
+  - **Small live screens**: three extra screens, each about a quarter of the big screen's
+    width. One rises out of the square in the middle of the floor chip; two hang above the big
+    screen. Room tab, **Small live screens**:
+    - **Raise the floor screen**: brings the floor screen up, or lowers it back into the floor.
+    - **Floor screen**, **Upper left screen**, **Upper right screen**: what each one shows:
+      Off, Webcam (the webcam from the sender page; the corner overlay steps aside while a
+      screen shows it), Podium 1 to 4's feed (whatever that podium shows live; the podium has
+      to be on in the Presenters tab), Copy of the big screen, or Picture file.
+    - **Floor screen picture** (and the two others): the file used for Picture file.
+    - These three screens are yours only: they are not sent to co-stream guests.
+  - Thirteen alcoves are cut into the walls between the pillars, lined with wood panelling.
+    Each holds a framed picture. Room tab, **Alcove art**:
+    - **Frame**: Brass, Steel, Dark wood, Granite, Light strip (glows, follows **Inlay
+      brightness**) or No frame.
     - **Art style**: Picture (flat on the wall, lit by the room) or Hologram (see-through and
       glowing, floating in front of the wall).
-    - **Art 1** to **Art 5**: a picture file for each alcove (PNG, JPG, WebP or GIF, up to
-      3 MB; **Browse...** picks one, **Clear** brings the built-in poster back). They count
-      from the front of the left wall, then the right wall, then the back wall.
+    - **Art 1** to **Art 13**: a picture file for each alcove (PNG, JPG, WebP or GIF, up to
+      3 MB; **Browse...** picks one, **Clear** brings the built-in poster back). 1 to 6 are the
+      left wall counted from the front, 7 to 11 the right wall, 12 and 13 the back wall.
   - A big forge fireplace is built out from the right wall, with a second fire slot under the
-    hearth. Its flames and flickering light are drawn by the room (the flicker is gentle and
-    stops in photosensitive-safe mode).
+    hearth. Its chimney carries riveted iron bands, turning-gear shapes, a brass porthole,
+    pistons, glowing power cells, copper coils and a small control panel. The flames and
+    flickering light are drawn by the room (the flicker is gentle and stops in
+    photosensitive-safe mode).
   - Room tab: **Fire** (flames, their light and the crackle, 0-200%, 0% = out),
-    **Light strips** (how bright the light inlays and glowing pipes are, 0% = off) and
-    **Light rays** (the sunbeams and floor patches, 0% = off).
+    **Inlay brightness** (the light inlays, both the main lines and the fine layer, and the
+    glowing pipes, 0-300%, 0% = off) and **Inlay glow (halo round the lines)** (untick it and
+    the inlays stay sharp lines without the soft bloom round them, at any brightness).
   - A podium room: four stone podiums, two each side of the screen (see *Presenters*). No
-    webcam frame: the webcam uses the corner overlay.
+    webcam frame: the webcam uses the corner overlay, or one of the small live screens.
   - Seats for 30: three rows of benches either side of a centre aisle, each row a step higher.
-    There is no filler crowd.
+    There is no filler crowd. The back half of the hall is open floor.
   - The rest of the room: a boiler with pipes and a round cyan sign, a workbench, an anvil,
-    barrels and crates, a side door and a tall double door at the back.
+    barrels and crates, and in the back half a second workbench, a small steam engine with a
+    flywheel and a tall double door.
   - Cameras: the centre aisle (the default), the forge corner (the reference picture's view),
-    the front row, beside the fire, up under the ceiling, by the slanted windows, three podium views
-    and a Reaction camera looking at the fire. Press **0** for the 10th.
+    the front row, beside the fire, up under the ceiling at the back (the whole length of the
+    hall), by the slanted windows, three podium views and a Reaction camera looking at the
+    fire. Press **0** for the 10th.
   - Reaction targets: `!tomato forge`, `lantern`, `anvil`, `boiler`.
   - A medium stone-room reverb and the sound of the fire.
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
-    writes the `.glb`). The stone, wood, metal, sign and sun-patch textures come from
-    `blender/make_forge_textures.py`.
+    writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
+    come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

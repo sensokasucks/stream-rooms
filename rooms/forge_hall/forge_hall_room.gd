@@ -10,9 +10,12 @@ extends Room
 ##     and the crackle; 0 puts the fire out. The flicker is gentle (a few percent, slow) and
 ##     stops in photosensitive-safe mode.
 ##   - The light inlays (materials Neon_Cyan / Neon_Orange / Neon_Purple: lines set flush into
-##     the floor, walls and pillars like the traces of a circuit board; plus the glowing pipes
-##     and the round sign) are scaled by the Light strips slider ("forge_neon"). Like the
-##     lantern glass they also dim with the house lights (glow_materials on the room scene).
+##     the floor, walls and pillars like the traces of a circuit board; a finer, dimmer second
+##     layer, Neon_Fine_Cyan / Neon_Fine_Amber; plus the glowing pipes and the round sign) are
+##     scaled by the Inlay brightness slider ("forge_neon"). With Inlay glow ("forge_neon_bloom")
+##     off they are held just under the brightness where the picture's bloom starts, so they
+##     stay crisp lines with no halo. Like the lantern glass they also dim with the house
+##     lights (glow_materials on the room scene).
 ##   - The screen: the model only has a flat TVScreen rectangle. _shape_screen() swaps its mesh
 ##     for one that is moved, resized and bent from the "forge_screen_*" settings (Room tab >
 ##     Screen shape). The LED dots and hologram look are the app's own (RoomInfo.screen_led_amount
@@ -22,9 +25,21 @@ extends Room
 ##     canvas; the frame material ("forge_art_frame"), the style ("forge_art_style": a lit
 ##     picture or a see-through hologram, art_holo.gdshader) and each picture ("forge_art_n",
 ##     blank = the built-in poster textures/art_n.png) are settings on the Room tab.
-##   - Sunbeams fall from two of the slanted windows (SHAFT_Sky_n markers) to the floor, drawn with the
-##     Lecture Hall's sun_shaft.gdshader, and each leaves a soft barred patch of light on the
-##     floor. The Light rays slider ("sun_rays", shared with the Lecture Hall) scales both.
+##   - Time of day ("forge_time", hours; "forge_day_minutes" lets the clock run): _apply_time()
+##     moves the sun and the moon across the sky seen through the slanted windows
+##     (forge_sky.gdshader on the room's Environment, with stars at night), changes the room's
+##     ambient light, and makes the light through the windows follow: sunbeams (the Lecture
+##     Hall's sun_shaft.gdshader) and barred patches on the floor come through the left windows
+##     in the morning and the right ones in the afternoon (SHAFT_SkyL_n / SHAFT_SkyR_n
+##     markers), warm at sunrise and sunset, and pale blue moonbeams at night. The Light rays
+##     slider ("sun_rays", shared with the Lecture Hall) scales them.
+##   - Three small live screens (_build_live_screens): one rises out of the floor at the
+##     SCREEN_Lift marker when "forge_lift_up" is ticked, two hang above the big screen
+##     (SCREEN_Upper_n). Each shows what its "forge_live_n_source" setting says: the webcam,
+##     a podium's live feed, a copy of the big screen or a picture file. They are this PC's
+##     only: none of their settings are shared in a co-stream.
+##   - A "please stand by" card replaces the curtain (RoomInfo.standby_card on room_info.tres;
+##     core/standby_card.gd), and a ReflectionProbe gives the polished granite its reflections.
 ##   - A generated fire sound (a low roar with crackles) on the Ambience bus.
 
 const MIX_RATE: float = 22050.0
@@ -32,16 +47,26 @@ const SHAFT_SHADER := preload("res://rooms/lecture_hall/sun_shaft.gdshader")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const SUN_PATCH := preload("res://rooms/forge_hall/textures/sun_patch.png")
 const ART_HOLO_SHADER := preload("res://rooms/forge_hall/art_holo.gdshader")
-const MARBLE := preload("res://rooms/forge_hall/textures/slab_marble.png")
-## The built-in posters (blender/make_forge_textures.py), %d = the frame's number.
+const SKY_SHADER := preload("res://rooms/forge_hall/forge_sky.gdshader")
+const GRANITE := preload("res://rooms/forge_hall/textures/slab_granite.png")
+## The built-in posters (blender/make_forge_textures.py), %d = 1..ART_POSTERS; the frames take
+## them in turn.
 const ART_BUILTIN: String = "res://rooms/forge_hall/textures/art_%d.png"
-## How many art frames there can be: must match the "forge_art_1".."forge_art_5" settings in
+const ART_POSTERS: int = 6
+## How many art frames there can be: must match the "forge_art_1".."forge_art_13" settings in
 ## AppState.DEFAULTS and the ALCOVES list in blender/forge_hall_gen.py.
-const ART_COUNT: int = 5
+const ART_COUNT: int = 13
+## The small live screens: [marker name, rises from the floor]. Screen n (1..3) uses the
+## "forge_live_n_source" / "forge_live_n_picture" settings in AppState.DEFAULTS.
+const LIVE_SCREENS: Array = [["SCREEN_Lift", true], ["SCREEN_Upper_1", false], ["SCREEN_Upper_2", false]]
+## The glow (emission energy times the colour's brightest channel) the inlays are held under
+## while Inlay glow is off. The room's Environment starts its bloom at 1.0 (glow_hdr_threshold
+## in room_info.tres), so this must stay below that.
+const NO_BLOOM_GLOW: float = 0.8
 ## Columns the bent screen is cut into (a flat screen uses the same mesh).
 const SCREEN_COLUMNS: int = 40
 ## Imported material names (blender/forge_hall_gen.py, setup_materials) that the two sliders scale.
-const NEON_MATERIALS: PackedStringArray = ["Neon_Cyan", "Neon_Orange", "Neon_Purple", "Pipe_Glow", "Rune_Sign"]
+const NEON_MATERIALS: PackedStringArray = ["Neon_Cyan", "Neon_Orange", "Neon_Purple", "Neon_Fine_Cyan", "Neon_Fine_Amber", "Pipe_Glow", "Rune_Sign"]
 const FIRE_MATERIALS: PackedStringArray = ["Embers"]
 
 @export_group("Light groups")
@@ -75,9 +100,15 @@ const FIRE_MATERIALS: PackedStringArray = ["Embers"]
 ## Half the window pane the sun comes through: x = along the hall, y = up the slanted glass
 ## (metres). Must match SKY_HW and SKY_HALF_SLANT in blender/forge_hall_gen.py.
 @export var skylight_half: Vector2 = Vector2(1.25, 1.37)
-## The way the sunlight travels, in the room's own space (down, across the hall towards the
-## forge and a little towards the back).
-@export var sun_direction: Vector3 = Vector3(0.7, -1.0, 0.12)
+## How far the sun's path leans towards the screen end of the hall (0 = it passes straight
+## overhead). It sends the beams a little towards the back of the hall.
+@export var sun_lean: float = 0.28
+## The steepest slant a beam may have: metres across the hall per metre it drops. Keeps the
+## low sun's beams landing on the floor instead of on the far wall.
+@export var beam_max_slant: float = 1.8
+@export var moon_color: Color = Color(0.55, 0.68, 1.0)
+## Moonbeams' strength as a share of the midday sunbeams'.
+@export_range(0.0, 1.0) var moon_strength: float = 0.35
 @export_range(0.0, 1.0) var shaft_intensity: float = 0.3
 @export var shaft_color: Color = Color(1.0, 0.82, 0.55)
 ## Brightness of the patches of sunlight on the floor at Light rays 100%.
@@ -102,6 +133,35 @@ const FIRE_MATERIALS: PackedStringArray = ["Embers"]
 @export var art_holo_tint: Color = Color(0.45, 0.95, 1.0)
 ## Glow of the "neon" frame material at Light strips 100% with the house lights up.
 @export var art_neon_energy: float = 2.5
+
+@export_group("Time of day")
+## The room's ambient light at night and by day (colour, energy); _apply_time() mixes them.
+@export var night_ambient: Color = Color(0.28, 0.34, 0.6)
+@export var night_ambient_energy: float = 0.14
+@export var day_ambient: Color = Color(0.5, 0.44, 0.42)
+@export var day_ambient_energy: float = 0.26
+## The window glass by night and by day (alpha = how much it hides the sky).
+@export var night_glass: Color = Color(0.1, 0.14, 0.25, 0.3)
+@export var day_glass: Color = Color(0.8, 0.9, 1.0, 0.1)
+## The sky's brightness through the windows (1 = as the sky shader draws it).
+@export var sky_exposure: float = 0.9
+## How far the clock must move (hours) before the sky and the beams are redrawn.
+@export var time_step: float = 0.02
+
+@export_group("Live screens")
+## The picture area of each small screen (metres). A feed keeps its own shape inside it.
+@export var live_screen_size: Vector2 = Vector2(2.6, 1.4625)
+## The floor screen when raised: height of its bottom edge above the floor (metres).
+@export var lift_height: float = 1.0
+## Seconds the floor screen takes to rise or sink.
+@export var lift_seconds: float = 2.5
+
+@export_group("Reflections")
+## The box the reflection probe covers, in the room's own space (the whole hall: must match
+## HALF_W, BACK_Y and CEIL_Z in blender/forge_hall_gen.py).
+@export var probe_center: Vector3 = Vector3(0.0, 6.0, 17.0)
+@export var probe_size: Vector3 = Vector3(18.2, 12.2, 34.4)
+@export_range(0.0, 1.0) var probe_intensity: float = 0.7
 
 @export_group("Sound")
 @export var ambience_enabled: bool = true
@@ -129,6 +189,26 @@ var _screen_has_box: bool = false
 ## path: String (the picture file that was asked for last, "" = the built-in poster)}.
 var _art: Array[Dictionary] = []
 var _art_frame_mat: StandardMaterial3D     # shared by every frame's bars
+var _hour: float = 9.5           # the room's clock, hours 0..24 (starts at "forge_time")
+var _hour_drawn: float = -99.0   # the hour the sky and beams were last drawn for
+var _env_drawn: int = 0          # instance id of the Environment they were drawn on
+var _glass_mat: BaseMaterial3D   # the slanted windows' glass (Sky_Glass in the model)
+## The window panes the beams can come through: each pane's transform in the room's space.
+var _panes_left: Array[Transform3D] = []
+var _panes_right: Array[Transform3D] = []
+var _beam_strength: float = 1.0  # 0..1: how strong the sun / moon makes the beams right now
+var _beam_color: Color = Color(1.0, 0.82, 0.55)
+var _beam_side: int = 0          # -1 = the left windows are lit, 1 = the right ones, 0 = none (rebuild when it changes)
+var _beam_dir: Vector3 = Vector3.ZERO      # the direction the beams were last built for
+## One entry per small live screen: {n: int (1..3), lift: bool, root: Node3D, body: Node3D
+## (what moves up and down; the root itself for a wall screen), panel: MeshInstance3D,
+## mat: StandardMaterial3D, path: String (the picture file asked for last), pic: Texture2D}.
+var _live: Array[Dictionary] = []
+## The feeds' pictures as ScreenFeed last announced them: "webcam", "screen", "podium1".."podium4".
+var _feed_tex: Dictionary = {}
+var _lift_tween: Tween
+var _retired: bool = false       # another room has taken over (retire()): leave the sky alone
+var _webcam_claimed: bool = false   # this room told AppState a live screen shows the webcam
 var _time: float = 0.0
 var _last_level: float = -1.0    # the house light level the patches / fire were last set for
 
@@ -145,20 +225,40 @@ func _ready() -> void:
 	_fx = Node3D.new()
 	_fx.name = "SunShafts"          # Room.get_static_meshes() skips everything under this name
 	add_child(_fx)
+	_setup_glass()
+	_build_probe()
 	_build_art()
 	_build_fire()
 	_build_sunbeams()
+	_build_live_screens()
 	_apply_neon()
 	_apply_fire()
+	_hour = fposmod(float(AppState.get_setting("forge_time")), 24.0)
 	if ambience_enabled:
 		_amb_playback = _start_generated_ambience(MIX_RATE, 0.3)
 	EventBus.setting_changed.connect(_on_fh_setting_changed)
+	EventBus.webcam_texture_changed.connect(_on_webcam_texture)
+	EventBus.screen_texture_changed.connect(_on_screen_texture)
+	EventBus.presenter_texture_changed.connect(_on_presenter_texture)
+	# the feeds only announce themselves when they start: ask for what is running now (after
+	# RoomHost has finished setting this room up)
+	EventBus.feed_textures_requested.emit.call_deferred()
 
 
-## The room is freed on a room swap: drop the EventBus connection with it.
+## The room is freed on a room swap: drop the EventBus connections with it.
 func _exit_tree() -> void:
 	if EventBus.setting_changed.is_connected(_on_fh_setting_changed):
 		EventBus.setting_changed.disconnect(_on_fh_setting_changed)
+		EventBus.webcam_texture_changed.disconnect(_on_webcam_texture)
+		EventBus.screen_texture_changed.disconnect(_on_screen_texture)
+		EventBus.presenter_texture_changed.disconnect(_on_presenter_texture)
+
+
+## RoomHost calls this (through propagate_call) when another room replaces this one, three
+## seconds before it is freed: stop touching the sky and the feeds, which are the new room's now.
+func retire() -> void:
+	_retired = true         # (the room keeps processing: see RoomHost._retire for why)
+	_exit_tree()
 
 
 ## The screen's place, size and bend change where RoomHost puts the screen's lights and the
@@ -175,8 +275,15 @@ func get_controls() -> Array[Dictionary]:
 		{"heading": "Forge Hall"},
 		{"key": "forge_fire", "label": "Fire", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How big the forge fire is: its flames, the light it throws and its crackle. 0% = out."},
-		{"key": "forge_neon", "label": "Light strips", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How bright the cyan, orange and purple light strips and the glowing pipes are. 0% = off."},
+		{"key": "forge_neon", "label": "Inlay brightness", "min": 0.0, "max": 3.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How bright the cyan, orange and purple light inlays and the glowing pipes are. 0% = off. With Inlay glow off, 100% is as bright as they get."},
+		{"key": "forge_neon_bloom", "label": "Inlay glow (halo round the lines)", "type": "check",
+			"tooltip": "On: the light inlays glow with a soft halo. Off: they are crisp lit lines with no halo."},
+		{"heading": "Time of day"},
+		{"key": "forge_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
+			"tooltip": "The hour in the hall, 0 to 24: the sky, the sun, the moon and stars, and the light through the windows. 6 = sunrise, 12 = noon, 18 = sunset. The sun shines in from the left in the morning and from the right in the afternoon."},
+		{"key": "forge_day_minutes", "label": "Day length", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d min", "zero": "Clock stopped",
+			"tooltip": "Lets the clock run: how many minutes a full day and night takes, starting from the Time of day. 0 = the clock stands still."},
 	]
 	if _shafts != null:
 		out.append({"key": "sun_rays", "label": "Light rays", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
@@ -190,18 +297,32 @@ func get_controls() -> Array[Dictionary]:
 		"tooltip": "Slides the screen along its wall: left (-) or right (+), in metres. It stops at the alcove's edges, so make it smaller first to move it further."})
 	out.append({"key": "forge_screen_y", "label": "Move up/down", "min": -2.0, "max": 2.0, "step": 0.05, "format": "%.2f m",
 		"tooltip": "Slides the screen down (-) or up (+) its wall, in metres. It stops at the alcove's edges."})
+	if not _live.is_empty():
+		out.append({"heading": "Small live screens"})
+		out.append({"key": "forge_lift_up", "label": "Raise the floor screen", "type": "check",
+			"tooltip": "Raises the small screen out of the floor in front of the big screen, or lowers it back in."})
+		var names: PackedStringArray = ["Floor screen", "Upper left screen", "Upper right screen"]
+		for a in _live:
+			var n := int(a["n"])
+			out.append({"key": "forge_live_%d_source" % n, "label": names[n - 1], "type": "option",
+				"options": [["off", "Off"], ["webcam", "Webcam"], ["podium1", "Podium 1's feed"], ["podium2", "Podium 2's feed"],
+					["podium3", "Podium 3's feed"], ["podium4", "Podium 4's feed"], ["screen", "Copy of the big screen"], ["picture", "Picture file"]],
+				"tooltip": "What this small screen shows. Webcam = the webcam from the sender page. A podium's feed = whatever that podium shows live (it has to be on, in the Presenters tab). These screens are not sent to co-stream guests."})
+			out.append({"key": "forge_live_%d_picture" % n, "label": "%s picture" % names[n - 1], "type": "picture",
+				"placeholder": "used when it shows Picture file",
+				"tooltip": "The picture this screen shows when it is set to Picture file. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB."})
 	if not _art.is_empty():
 		out.append({"heading": "Alcove art"})
 		out.append({"key": "forge_art_frame", "label": "Frame", "type": "option",
-			"options": [["brass", "Brass"], ["steel", "Steel"], ["wood", "Dark wood"], ["marble", "Marble"], ["neon", "Light strip"], ["none", "No frame"]],
-			"tooltip": "What the frames round the alcove art are made of. Light strip glows and follows the Light strips slider."})
+			"options": [["brass", "Brass"], ["steel", "Steel"], ["wood", "Dark wood"], ["granite", "Granite"], ["neon", "Light strip"], ["none", "No frame"]],
+			"tooltip": "What the frames round the alcove art are made of. Light strip glows and follows the Inlay brightness slider."})
 		out.append({"key": "forge_art_style", "label": "Art style", "type": "option",
 			"options": [["picture", "Picture"], ["hologram", "Hologram"]],
 			"tooltip": "Picture: flat on the wall, lit by the room. Hologram: see-through and glowing, floating in front of the wall with scan lines."})
 		for a in _art:
 			out.append({"key": "forge_art_%d" % int(a["n"]), "label": "Art %d" % int(a["n"]), "type": "picture",
 				"placeholder": "blank = the built-in poster",
-				"tooltip": "The picture in alcove %d (counted from the front of the left wall, then the right wall, then the back wall). PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. Blank = the built-in poster." % int(a["n"])})
+				"tooltip": "The picture in alcove %d (1 to 6 = the left wall from the front, 7 to 11 = the right wall, 12 and 13 = the back wall). PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB. Blank = a built-in poster." % int(a["n"])})
 	return out
 
 
@@ -209,8 +330,12 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 	match key:
 		"forge_fire":
 			_apply_fire()
-		"forge_neon":
+		"forge_neon", "forge_neon_bloom":
 			_apply_neon()
+		"forge_time":
+			_hour = fposmod(float(AppState.get_setting("forge_time")), 24.0)
+		"forge_lift_up":
+			_move_lift(true)
 		"sun_rays":
 			_apply_sun_rays()
 		"forge_screen_x", "forge_screen_y", "forge_screen_size", "forge_screen_bend":
@@ -224,12 +349,18 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 				for a in _art:
 					if key == "forge_art_%d" % int(a["n"]):
 						_load_art(a)
+			elif key.begins_with("forge_live_"):
+				for a in _live:
+					if key == "forge_live_%d_picture" % int(a["n"]):
+						_load_live_picture(a)
+				_refresh_live()
 
 
 ## The sunbeams and the fire follow the house lights; the fire flickers; the sound keeps playing.
 func _process(delta: float) -> void:
 	super._process(delta)
 	_time += delta
+	_run_clock(delta)
 	if not is_equal_approx(_level, _last_level):
 		_last_level = _level
 		if _shaft_mat:
@@ -263,23 +394,28 @@ func _tune_lights() -> void:
 		o.light_energy = float(_base_energy[l]) * _level
 
 
-## "forge_neon" (AppState.DEFAULTS, 0..2): scales the glow of the NEON_MATERIALS and the two cyan
-## wash lights. Room._process then keeps dimming them with the house lights from the new value.
+## "forge_neon" (AppState.DEFAULTS, 0..3): scales the glow of the NEON_MATERIALS and the cyan
+## wash lights. With "forge_neon_bloom" off the glow is also capped at NO_BLOOM_GLOW, under
+## the brightness where bloom starts. Room._process then keeps dimming them with the house
+## lights from the new value.
 func _apply_neon() -> void:
-	var amount := clampf(float(AppState.get_setting("forge_neon")), 0.0, 2.0)
-	_scale_glow(NEON_MATERIALS, amount * neon_strength)
+	var amount := clampf(float(AppState.get_setting("forge_neon")), 0.0, 3.0)
+	var top := INF if bool(AppState.get_setting("forge_neon_bloom")) else NO_BLOOM_GLOW
+	_scale_glow(NEON_MATERIALS, amount * neon_strength, top)
 	for o in _neon_lights:
 		_base_energy[o] = neon_energy * amount
 		o.light_energy = neon_energy * amount * _level
 	_apply_art_level()          # the "Light strip" art frames follow this slider too
 
 
-## Sets the glow of every glow material named in `names` to its own brightness times amount.
-func _scale_glow(names: PackedStringArray, amount: float) -> void:
+## Sets the glow of every glow material named in `names` to its own brightness times amount,
+## but never brighter than `top` (energy times the emission colour's brightest channel).
+func _scale_glow(names: PackedStringArray, amount: float, top: float = INF) -> void:
 	for g in _glow:
 		var m := g["mat"] as BaseMaterial3D
 		if names.has(m.resource_name):
-			g["energy"] = float(g["base"]) * amount
+			var peak := maxf(maxf(m.emission.r, m.emission.g), maxf(m.emission.b, 0.01))
+			g["energy"] = minf(float(g["base"]) * amount, top / peak)
 			m.emission_energy_multiplier = float(g["energy"]) * _level
 
 
@@ -406,12 +542,12 @@ func _apply_art_frame() -> void:
 			m.albedo_color = Color(0.3, 0.18, 0.09)
 			m.metallic = 0.0
 			m.roughness = 0.7
-		"marble":
-			m.albedo_color = Color(1.0, 1.0, 1.0)
-			m.albedo_texture = MARBLE
+		"granite":
+			m.albedo_color = Color(1.6, 1.6, 1.6)     # a shade lighter than the walls, so it reads as a frame
+			m.albedo_texture = GRANITE
 			m.uv1_triplanar = true      # the bars have no useful UVs of their own
-			m.metallic = 0.25
-			m.roughness = 0.25
+			m.metallic = 0.0
+			m.roughness = 0.16
 		"neon":
 			m.albedo_color = Color(0.05, 0.12, 0.14)
 			m.metallic = 0.0
@@ -427,8 +563,11 @@ func _apply_art_frame() -> void:
 func _apply_art_level() -> void:
 	if _art_frame_mat == null:
 		return
-	var strips := clampf(float(AppState.get_setting("forge_neon")), 0.0, 2.0)
-	_art_frame_mat.emission_energy_multiplier = art_neon_energy * strips * _level
+	var strips := clampf(float(AppState.get_setting("forge_neon")), 0.0, 3.0)
+	var glow := art_neon_energy * strips
+	if not bool(AppState.get_setting("forge_neon_bloom")):
+		glow = minf(glow, NO_BLOOM_GLOW)
+	_art_frame_mat.emission_energy_multiplier = glow * _level
 	for a in _art:
 		var sm := (a["canvas"] as MeshInstance3D).material_override as ShaderMaterial
 		if sm:
@@ -443,7 +582,8 @@ func _load_art(a: Dictionary) -> void:
 	var path := String(AppState.get_setting("forge_art_%d" % n)).strip_edges()
 	a["path"] = path
 	if path == "":
-		a["tex"] = load(ART_BUILTIN % n) if ResourceLoader.exists(ART_BUILTIN % n) else null
+		var poster := ART_BUILTIN % ((n - 1) % ART_POSTERS + 1)
+		a["tex"] = load(poster) if ResourceLoader.exists(poster) else null
 		_apply_art(a)
 		return
 	var bytes := PictureFile.read_file(path)
@@ -588,27 +728,189 @@ func _flicker_fire() -> void:
 	_fire_light.light_energy = fire_light_energy * amount * lerpf(fire_dimmed, 1.0, _level) * waver
 
 
-# ── Sunbeams ─────────────────────────────────────────────────
+# ── Time of day, sky and sunbeams ────────────────────────────
 func _is_compatibility_renderer() -> bool:
 	return RenderingServer.get_rendering_device() == null    # only the GL renderer has none
 
 
-## One beam per SHAFT_Sky_n marker: the pane's outline pushed along sun_direction down to the
-## floor (four side faces, UV.y 0 at the glass and 1 at the floor, as sun_shaft.gdshader
-## expects), plus a flat patch of light where it lands. The marker's X axis runs along the
-## hall and its -Z axis up the roof slope (see build_markers in the generator).
+## The slanted windows' glass (material Sky_Glass in the model) becomes clear glass the sky
+## shows through. It is one of the scene's glow_materials only so that Room hands us the copy
+## that is actually on the meshes; its glow is switched off here.
+func _setup_glass() -> void:
+	for g in _glow:
+		var m := g["mat"] as BaseMaterial3D
+		if m.resource_name == "Sky_Glass":
+			_glass_mat = m
+			g["energy"] = 0.0
+			g["base"] = 0.0
+			m.emission_enabled = false
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m.roughness = 0.05
+			m.metallic = 0.0
+
+
+## One reflection probe over the whole hall, so the polished granite mirrors the lights and
+## inlays round it. Drawn once when the room loads (it does not follow the fire or the clock).
+func _build_probe() -> void:
+	var probe := ReflectionProbe.new()
+	probe.name = "Reflections"
+	probe.size = probe_size
+	probe.interior = true                 # no sky in the reflections: this is indoors
+	probe.box_projection = true
+	probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED     # the ambient light stays the Environment's
+	probe.intensity = probe_intensity
+	probe.max_distance = probe_size.length()
+	add_child(probe)
+	probe.position = probe_center
+
+
+## Called every frame. Moves the clock on while "forge_day_minutes" is above 0, and redraws
+## the sky, the ambient light and the beams when the hour has moved by time_step, or when the
+## app swapped the Environment (a graphics setting changed).
+func _run_clock(delta: float) -> void:
+	if _retired:
+		return
+	var day_minutes := float(AppState.get_setting("forge_day_minutes"))
+	if day_minutes > 0.0:
+		_hour = fposmod(_hour + delta * 24.0 / (day_minutes * 60.0), 24.0)
+	var env := get_world_3d().environment if is_inside_tree() else null
+	var env_id := env.get_instance_id() if env else 0
+	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn:
+		_hour_drawn = _hour
+		_env_drawn = env_id
+		_apply_time(env)
+
+
+## The hour the room's clock shows now, 0..24 (for tests; "forge_time" only says where it started).
+func get_hour() -> float:
+	return _hour
+
+
+## Everything that follows the hour (_hour, 0..24; 6 = sunrise, 12 = noon, 18 = sunset).
+## The sun climbs from the left wall's side (the room's -X), passes high over the hall and
+## sets on the right; the moon is opposite it. Sets the sky shader's uniforms, the ambient
+## light and the window glass, then the beams: from the sun while it is up, from the moon at
+## night, through the windows on the side the light comes from.
+## env = the Environment in use; it is only touched when it is this room's own (its sky uses
+## forge_sky.gdshader), never another room's.
+func _apply_time(env: Environment) -> void:
+	var a := (_hour - 6.0) / 12.0 * PI
+	var sun := Vector3(-cos(a), sin(a) * 0.92, -sun_lean).normalized()      # pointing AT the sun
+	var moon := Vector3(-sun.x, -sun.y * 0.9 + 0.08, sun_lean).normalized()
+	var day := smoothstep(-0.12, 0.22, sun.y)
+	var dusk := (1.0 - smoothstep(0.0, 0.4, absf(sun.y))) * smoothstep(-0.3, -0.05, sun.y)
+	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
+		var sky := env.sky.sky_material as ShaderMaterial
+		var turn := global_basis.orthonormalized()                   # the sky shader works in world space
+		sky.set_shader_parameter("sun_dir", turn * sun)
+		sky.set_shader_parameter("moon_dir", turn * moon)
+		sky.set_shader_parameter("day", day)
+		sky.set_shader_parameter("dusk", dusk)
+		sky.set_shader_parameter("exposure", sky_exposure)
+		sky.set_shader_parameter("twinkle", 0.0 if bool(AppState.get_setting("photosensitive_safe")) else 1.0)
+		env.ambient_light_color = night_ambient.lerp(day_ambient, day)
+		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, day)
+	if _glass_mat:
+		_glass_mat.albedo_color = night_glass.lerp(day_glass, day)
+	# the light through the windows
+	var travel := Vector3.ZERO
+	_beam_strength = 0.0
+	if sun.y > 0.04:
+		travel = -sun
+		_beam_strength = smoothstep(0.04, 0.25, sun.y)
+		_beam_color = Color(1.0, 0.5, 0.22).lerp(shaft_color, smoothstep(0.1, 0.5, sun.y))
+	elif moon.y > 0.1:
+		travel = -moon
+		_beam_strength = moon_strength * smoothstep(0.1, 0.3, moon.y)
+		_beam_color = moon_color
+	# straight overhead no light gets in through the side windows
+	_beam_strength *= clampf(absf(travel.x) * 2.2, 0.0, 1.0)
+	_rebuild_beams(travel)
+	_apply_sun_rays()
+
+
+## Makes the (empty) beam and floor patch meshes and remembers every window pane the light can
+## come through. The marker's X axis runs along the hall and its -Z axis up the slanted glass
+## (see build_markers in the generator); _rebuild_beams() fills the meshes in.
 func _build_sunbeams() -> void:
-	var dir := sun_direction.normalized()
-	if dir.y > -0.05:
-		return                      # the sun has to shine downwards
+	var inv := global_transform.affine_inverse()
+	for n in find_children("SHAFT_Sky*", "Node3D", true, false):
+		var xf := inv * (n as Node3D).global_transform
+		if String(n.name).begins_with("SHAFT_SkyR"):
+			_panes_right.append(xf)
+		else:
+			_panes_left.append(xf)
+	if _panes_left.is_empty() and _panes_right.is_empty():
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = SHAFT_SHADER
+	mat.set_shader_parameter("color", shaft_color)
+	mat.set_shader_parameter("intensity", shaft_intensity)
+	mat.set_shader_parameter("light_level", _level)
+	mat.set_shader_parameter("dust_amount", 0.8)
+	# the Compatibility renderer has no depth texture for spatial shaders in every version,
+	# so the soft fade into geometry is only used on Forward+ / Mobile
+	mat.set_shader_parameter("depth_fade", not _is_compatibility_renderer())
+	var screen := find_screen()
+	if screen:
+		var box := screen.get_aabb()
+		var sxf := screen.global_transform
+		# the main screen's rectangle, so the shader keeps the beams from washing over the picture
+		mat.set_shader_parameter("screen_c", sxf * box.get_center())
+		mat.set_shader_parameter("screen_x", sxf.basis * Vector3(box.size.x * 0.5, 0.0, 0.0))
+		mat.set_shader_parameter("screen_y", sxf.basis * Vector3(0.0, box.size.y * 0.5, 0.0))
+	var mi := MeshInstance3D.new()
+	mi.name = "Beams"
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fx.add_child(mi)
+	_shafts = mi
+	_shaft_mat = mat
+	# the patches: the barred-window picture added onto the floor
+	_patch_mat = StandardMaterial3D.new()
+	_patch_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_patch_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_patch_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_patch_mat.albedo_texture = SUN_PATCH
+	var pmi := MeshInstance3D.new()
+	pmi.name = "Patches"
+	pmi.material_override = _patch_mat
+	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fx.add_child(pmi)
+	_patches = pmi
+
+
+## Builds the beams for light travelling along `travel` (the room's space; zero = none): one
+## beam per pane on the side the light comes from: the pane's outline pushed along the light
+## down to the floor (four side faces, UV.y 0 at the glass and 1 at the floor, as
+## sun_shaft.gdshader expects), plus a flat patch of light where it lands. Only rebuilt when
+## the direction has changed enough to see.
+func _rebuild_beams(travel: Vector3) -> void:
+	if _shafts == null:
+		return
+	var side := 0
+	if travel.y < -0.02 and absf(travel.x) > 0.03 and _beam_strength > 0.0:
+		side = -1 if travel.x > 0.0 else 1       # light travelling right came in on the left
+	var dir := Vector3.ZERO
+	if side != 0:
+		# keep a low sun's beams on the floor: no flatter than beam_max_slant across per metre down
+		dir = Vector3(travel.x, minf(travel.y, -absf(travel.x) / beam_max_slant), travel.z).normalized()
+	if side == _beam_side and dir.distance_to(_beam_dir) < 0.004:
+		return
+	_beam_side = side
+	_beam_dir = dir
+	if side == 0:
+		_shafts.mesh = null
+		_patches.mesh = null
+		return
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
 	var uvs := PackedVector2Array()
 	var pverts := PackedVector3Array()
 	var puvs := PackedVector2Array()
-	var inv := global_transform.affine_inverse()
-	for n in find_children("SHAFT_Sky*", "Node3D", true, false):
-		var xf := inv * (n as Node3D).global_transform
+	for xf: Transform3D in (_panes_left if side < 0 else _panes_right):
 		var hx := xf.basis.x.normalized() * skylight_half.x
 		var hy := -xf.basis.z.normalized() * skylight_half.y
 		var c := xf.origin
@@ -632,8 +934,6 @@ func _build_sunbeams() -> void:
 		for k in 6:
 			pverts.append(pq[k] + lift)
 			puvs.append(pu[k])
-	if verts.is_empty():
-		return
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -641,71 +941,200 @@ func _build_sunbeams() -> void:
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	var mat := ShaderMaterial.new()
-	mat.shader = SHAFT_SHADER
-	mat.set_shader_parameter("color", shaft_color)
-	mat.set_shader_parameter("intensity", shaft_intensity)
-	mat.set_shader_parameter("light_level", _level)
-	mat.set_shader_parameter("dust_amount", 0.8)
-	# the Compatibility renderer has no depth texture for spatial shaders in every version,
-	# so the soft fade into geometry is only used on Forward+ / Mobile
-	mat.set_shader_parameter("depth_fade", not _is_compatibility_renderer())
-	var screen := find_screen()
-	if screen:
-		var box := screen.get_aabb()
-		var sxf := screen.global_transform
-		# the main screen's rectangle, so the shader keeps the beams from washing over the picture
-		mat.set_shader_parameter("screen_c", sxf * box.get_center())
-		mat.set_shader_parameter("screen_x", sxf.basis * Vector3(box.size.x * 0.5, 0.0, 0.0))
-		mat.set_shader_parameter("screen_y", sxf.basis * Vector3(0.0, box.size.y * 0.5, 0.0))
-	var mi := MeshInstance3D.new()
-	mi.name = "Beams"
-	mi.mesh = mesh
-	mi.material_override = mat
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_fx.add_child(mi)
-	_shafts = mi
-	_shaft_mat = mat
-	# the patches: the barred-window picture added onto the floor
+	_shafts.mesh = mesh
 	var parrays := []
 	parrays.resize(Mesh.ARRAY_MAX)
 	parrays[Mesh.ARRAY_VERTEX] = pverts
 	parrays[Mesh.ARRAY_TEX_UV] = puvs
 	var pmesh := ArrayMesh.new()
 	pmesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, parrays)
-	_patch_mat = StandardMaterial3D.new()
-	_patch_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_patch_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_patch_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_patch_mat.albedo_texture = SUN_PATCH
-	var pmi := MeshInstance3D.new()
-	pmi.name = "Patches"
-	pmi.mesh = pmesh
-	pmi.material_override = _patch_mat
-	pmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_fx.add_child(pmi)
-	_patches = pmi
-	_apply_sun_rays()
+	_patches.mesh = pmesh
 
 
-## "sun_rays" (AppState.DEFAULTS, 0..2) times shaft_intensity; 0 hides the beams and patches.
+## "sun_rays" (AppState.DEFAULTS, 0..2) times shaft_intensity times what the sun or moon gives
+## right now (_beam_strength, _beam_color from _apply_time); 0 hides the beams and patches.
 func _apply_sun_rays() -> void:
 	if _shafts == null:
 		return
-	var amount := clampf(float(AppState.get_setting("sun_rays")), 0.0, 2.0)
-	_shafts.visible = amount > 0.005
+	var amount := clampf(float(AppState.get_setting("sun_rays")), 0.0, 2.0) * _beam_strength
+	_shafts.visible = amount > 0.005 and _shafts.mesh != null
 	_patches.visible = _shafts.visible
 	_shaft_mat.set_shader_parameter("intensity", shaft_intensity * amount)
+	_shaft_mat.set_shader_parameter("color", _beam_color)
 	_apply_sun_patches()
 
 
-## The floor patches' brightness: Light rays times patch_strength times the house light level.
+## The floor patches' brightness: Light rays times patch_strength times the sun's or moon's
+## strength times the house light level.
 func _apply_sun_patches() -> void:
 	if _patch_mat == null:
 		return
-	var amount := clampf(float(AppState.get_setting("sun_rays")), 0.0, 2.0)
+	var amount := clampf(float(AppState.get_setting("sun_rays")), 0.0, 2.0) * _beam_strength
 	var k := patch_strength * amount * _level
-	_patch_mat.albedo_color = Color(shaft_color.r * k, shaft_color.g * k, shaft_color.b * k)
+	_patch_mat.albedo_color = Color(_beam_color.r * k, _beam_color.g * k, _beam_color.b * k)
+
+
+# ── Small live screens ───────────────────────────────────────
+## Builds the three small screens at their markers (LIVE_SCREENS): a dark bezel with the
+## picture on its front, facing the marker's +Z. The floor screen also gets a mast and sits on
+## a body that _move_lift() slides up out of the floor; the marker is on the floor under it.
+## The wall screens' markers are at the middle of the picture.
+func _build_live_screens() -> void:
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.03, 0.032, 0.04)
+	dark.metallic = 0.8
+	dark.roughness = 0.4
+	for i in LIVE_SCREENS.size():
+		var marker := find_child(String(LIVE_SCREENS[i][0]), true, false) as Node3D
+		if marker == null:
+			continue
+		var lift := bool(LIVE_SCREENS[i][1])
+		var root := Node3D.new()
+		root.name = "LiveScreen%d" % (i + 1)
+		_fx.add_child(root)
+		root.global_transform = Transform3D(marker.global_basis.orthonormalized(), marker.global_position)
+		var body := root
+		var mid := Vector3.ZERO                    # the middle of the picture, in the body's space
+		if lift:
+			body = Node3D.new()
+			body.name = "Body"
+			root.add_child(body)
+			mid = Vector3(0.0, lift_height + live_screen_size.y * 0.5, 0.0)
+			var mast := MeshInstance3D.new()
+			mast.name = "Mast"
+			var mast_mesh := BoxMesh.new()
+			mast_mesh.size = Vector3(0.34, lift_height + 0.2, 0.16)
+			mast.mesh = mast_mesh
+			mast.material_override = dark
+			mast.position = Vector3(0.0, (lift_height + 0.2) * 0.5 - 0.1, -0.02)
+			body.add_child(mast)
+		var bezel := MeshInstance3D.new()
+		bezel.name = "Bezel"
+		var bezel_mesh := BoxMesh.new()
+		bezel_mesh.size = Vector3(live_screen_size.x + 0.14, live_screen_size.y + 0.14, 0.08)
+		bezel.mesh = bezel_mesh
+		bezel.material_override = dark
+		bezel.position = mid
+		body.add_child(bezel)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		var panel := MeshInstance3D.new()
+		panel.name = "Picture"
+		panel.mesh = QuadMesh.new()
+		panel.material_override = mat
+		panel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		panel.position = mid + Vector3(0.0, 0.0, 0.045)
+		body.add_child(panel)
+		var a := {"n": i + 1, "lift": lift, "root": root, "body": body, "panel": panel, "mat": mat, "path": "", "pic": null}
+		_live.append(a)
+		_load_live_picture(a)
+	_move_lift(false)
+	_refresh_live()
+
+
+## "forge_lift_up": slides the floor screen up out of the floor or back down into it (the floor
+## hides it once it is under). animate = false puts it straight where it belongs (room load).
+func _move_lift(animate: bool) -> void:
+	for a in _live:
+		if not bool(a["lift"]):
+			continue
+		var body := a["body"] as Node3D
+		var down := -(lift_height + live_screen_size.y + 0.3)
+		var target := 0.0 if bool(AppState.get_setting("forge_lift_up")) else down
+		if _lift_tween and _lift_tween.is_valid():
+			_lift_tween.kill()
+		if not animate:
+			body.position.y = target
+		else:
+			_lift_tween = create_tween()
+			_lift_tween.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			_lift_tween.tween_property(body, "position:y", target, lift_seconds * absf(target - body.position.y) / absf(down))
+	_claim_webcam()
+
+
+## ScreenFeed's pictures (EventBus): remembered by source name, then shown where they belong.
+func _on_webcam_texture(tex: Texture2D) -> void:
+	_feed_tex["webcam"] = tex
+	_refresh_live()
+
+
+func _on_screen_texture(tex: Texture2D) -> void:
+	_feed_tex["screen"] = tex
+	_refresh_live()
+
+
+func _on_presenter_texture(n: int, tex: Texture2D) -> void:
+	_feed_tex["podium%d" % n] = tex
+	_refresh_live()
+
+
+## Gives every small screen the picture its "forge_live_n_source" setting asks for ("off"
+## hides the whole screen). A source with no picture yet shows a dark panel. The picture keeps
+## its own shape inside live_screen_size.
+func _refresh_live() -> void:
+	for a in _live:
+		var src := String(AppState.get_setting("forge_live_%d_source" % int(a["n"])))
+		(a["root"] as Node3D).visible = src != "off"
+		var tex: Texture2D = a["pic"] if src == "picture" else _feed_tex.get(src)
+		var mat := a["mat"] as StandardMaterial3D
+		mat.albedo_texture = tex
+		mat.albedo_color = Color(1.0, 1.0, 1.0) if tex else Color(0.015, 0.02, 0.035)
+		var size := live_screen_size
+		if tex and tex.get_height() > 0:
+			var shape := float(tex.get_width()) / float(tex.get_height())
+			size = Vector2(minf(live_screen_size.x, live_screen_size.y * shape), 0.0)
+			size.y = size.x / shape
+		((a["panel"] as MeshInstance3D).mesh as QuadMesh).size = size
+	_claim_webcam()
+
+
+## While a small screen shows the webcam (the floor screen only counts when raised), the app is
+## told the room has a webcam screen, so the corner webcam picture steps aside (it does that
+## for rooms with a webcam frame, when "Show webcam in the room" is ticked). The overlay only
+## looks again when a webcam picture is announced, so one is asked for when the answer changes.
+func _claim_webcam() -> void:
+	var showing := false
+	for a in _live:
+		var src := String(AppState.get_setting("forge_live_%d_source" % int(a["n"])))
+		if src == "webcam" and (not bool(a["lift"]) or bool(AppState.get_setting("forge_lift_up"))):
+			showing = true
+	if showing == _webcam_claimed and AppState.room_has_webcam_frame() == showing:
+		return
+	_webcam_claimed = showing
+	AppState.set_room_has_webcam_frame(showing)
+	EventBus.feed_textures_requested.emit.call_deferred()
+
+
+## Reads screen a's picture file ("forge_live_n_picture") off the main thread, like the alcove art.
+func _load_live_picture(a: Dictionary) -> void:
+	var n := int(a["n"])
+	var path := String(AppState.get_setting("forge_live_%d_picture" % n)).strip_edges()
+	if path == String(a["path"]):
+		return
+	a["path"] = path
+	a["pic"] = null
+	if path == "":
+		return
+	var bytes := PictureFile.read_file(path)
+	if bytes.is_empty():
+		@warning_ignore("integer_division")
+		EventBus.status_message.emit("Small screen %d: couldn't read that picture (png, jpg, webp or gif, up to %d MB)." % [n, PictureFile.MAX_BYTES / (1024 * 1024)], true)
+		return
+	var out: Array = [null]
+	var task := WorkerThreadPool.add_task(func() -> void: out[0] = PictureFile.texture_from_bytes(bytes), false, "small screen picture")
+	_finish_live_picture.call_deferred(task, a, path, out)
+
+
+## Main thread, after the decode: keep the picture unless another was asked for meanwhile.
+func _finish_live_picture(task: int, a: Dictionary, path: String, out: Array) -> void:
+	WorkerThreadPool.wait_for_task_completion(task)
+	if not is_inside_tree() or path != String(a["path"]):
+		return
+	if out[0] == null:
+		EventBus.status_message.emit("Small screen %d: that picture couldn't be decoded." % int(a["n"]), true)
+		return
+	a["pic"] = out[0]
+	_refresh_live()
 
 
 # ── Sound ────────────────────────────────────────────────────

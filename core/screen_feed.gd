@@ -133,6 +133,7 @@ func _ready() -> void:
 	EventBus.react_pause_changed.connect(_on_react_pause_changed)
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.room_presenters_changed.connect(_on_room_presenters)
+	EventBus.feed_textures_requested.connect(_resend_textures)
 
 	_gpu_sampler = GpuFrameSampler.new()
 	_gpu_sampler.name = "GpuFrameSampler"
@@ -181,6 +182,21 @@ func _process(delta: float) -> void:
 		if now - float(_presenter_last_s.get(n, 0.0)) > limit:
 			_clear_presenter(n)
 	_update_playback_active(now)
+
+
+## EventBus.feed_textures_requested: tells every listener again which pictures are live now
+## (the big screen's, the webcam's and each podium feed's), for a room that just built screens
+## of its own. Only feeds that are running are sent, so nothing is cleared by this.
+func _resend_textures() -> void:
+	var tex := get_texture()
+	if tex:
+		EventBus.screen_texture_changed.emit(tex)
+	if _webcam_texture:
+		EventBus.webcam_texture_changed.emit(_webcam_texture)
+	for n in range(1, AppState.PRESENTER_COUNT + 1):
+		var ptex := _presenter_texture_now(n)
+		if ptex:
+			EventBus.presenter_texture_changed.emit(n, ptex)
 
 
 # ── Public API ───────────────────────────────────────────────

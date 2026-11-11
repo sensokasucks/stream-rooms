@@ -5,9 +5,11 @@
 The PNGs go into rooms/forge_hall/textures, where forge_hall_gen.py (tex_mat) picks them up
 by these names. Needs numpy and Pillow; it runs in plain Python, not inside Blender.
 
-    slab_marble.png  1024x1024  one unbroken slab of dark polished marble: soft clouding, pale veins
-                                and a few fine cracks, no joints (walls, pillars, forge; = 6 m)
-    floor_slab.png   1024x1024  2 x 2 big polished floor slabs with hairline joints (= 6 m)
+    slab_granite.png 1024x1024  one unbroken slab of dark polished granite: fine crystal speckle
+                                and a few hairline cracks, no joints (walls, pillars, forge; = 6 m)
+    floor_slab.png   1024x1024  2 x 2 big polished granite floor slabs with hairline joints (= 6 m)
+    standby_card.png 1280x720   the "please stand by" card shown over the screen instead of a
+                                curtain (core/standby_card.gd; RoomInfo.standby_card)
     diamond_plate.png 512x512   very dark steel tread plate (the ceiling; = 1 m)
     art_1..6.png     512x640    six poster pictures for the alcove art frames (shown until the
                                 owner picks their own)
@@ -135,26 +137,102 @@ def veins(h, w, count, seed, step=20, width=(1, 3)):
     return np.clip(fine * 0.6 + wide * 0.5, 0, 1)
 
 
-def slab_marble():
-    """Wall and pillar stone: one unbroken slab of dark polished marble with a metallic cast.
-    Soft clouding, pale veins and a few fine cracks; no joints (one texture = 6 m)."""
-    h = w = 1024
-    cloud = smooth_noise(h, w, 4, 4, 31) * 0.55 + smooth_noise(h, w, 14, 14, 32) * 0.3 + smooth_noise(h, w, 80, 80, 33) * 0.15
-    img = lerp_rgb((40, 40, 46), (86, 84, 88), np.clip((cloud - 0.25) / 0.55, 0, 1))
-    img = lerp_rgb(img, (150, 146, 140), veins(h, w, 7, 5) * 0.45)
-    img = cracks(img, 4, 7, 0.55)
-    save("slab_marble.png", img)
+def granite(h, w, seed, base, grains):
+    """Polished granite: a dark ground packed with small crystals. grains = [(colour, share of
+    the surface 0..1, crystal size in pixels)]: each is a layer of random specks, blurred to the
+    crystal size and cut off so that `share` of the surface shows it. At 1024 px for 6 m a pixel
+    is about 6 mm, so sizes of 1 to 3 px read as real granite grain from across the room."""
+    rng = np.random.default_rng(seed)
+    cloud = smooth_noise(h, w, 5, 5, seed + 1) * 0.6 + smooth_noise(h, w, 24, 24, seed + 2) * 0.4
+    img = lerp_rgb(np.asarray(base, np.float32) * 0.8, np.asarray(base, np.float32) * 1.25, cloud)
+    for k, (colour, share, size) in enumerate(grains):
+        speck = Image.fromarray((rng.random((h, w)) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(size))
+        a = np.asarray(speck, np.float32)
+        cut = np.quantile(a, 1.0 - share)
+        soft = max(float(a.std()) * 0.35, 1e-3)
+        img = lerp_rgb(img, colour, np.clip((a - cut) / soft, 0, 1) * 0.6)
+    return img
+
+
+# the crystals in the hall's granite: grey and white quartz, black mica, a little warm feldspar
+GRANITE_GRAINS = [((78, 80, 88), 0.3, 1.1), ((10, 10, 13), 0.22, 0.9), ((128, 128, 136), 0.09, 0.8),
+                  ((190, 188, 182), 0.025, 0.6), ((104, 78, 70), 0.04, 1.0), ((58, 72, 88), 0.04, 1.5)]
+
+
+def slab_granite():
+    """Wall and pillar stone: one unbroken slab of dark polished granite (fine speckle, no
+    joints, a few hairline cracks). One texture = 6 m."""
+    img = granite(1024, 1024, 31, (34, 35, 40), GRANITE_GRAINS)
+    img = cracks(img, 3, 7, 0.5)
+    save("slab_granite.png", img)
 
 
 def floor_slab():
-    """Floor: 2 x 2 big polished slabs with hairline joints (one texture = 6 m, so slabs are 3 m)."""
-    h = w = 1024
-    cloud = smooth_noise(h, w, 5, 5, 41) * 0.6 + smooth_noise(h, w, 20, 20, 42) * 0.4
-    img = lerp_rgb((34, 33, 38), (74, 72, 76), np.clip((cloud - 0.2) / 0.6, 0, 1))
-    img = lerp_rgb(img, (128, 124, 120), veins(h, w, 5, 9) * 0.35)
+    """Floor: 2 x 2 big slabs of the same granite, a shade darker, with hairline joints (one
+    texture = 6 m, so slabs are 3 m)."""
+    img = granite(1024, 1024, 41, (26, 27, 31), GRANITE_GRAINS)
     img = bevel_blocks(img, [(0, 0, 512, 512), (512, 0, 1024, 512), (0, 512, 512, 1024), (512, 512, 1024, 1024)], groove=3, hi=0.05, lo=0.08)
-    img = cracks(img, 3, 11, 0.4)
+    img = cracks(img, 2, 11, 0.4)
     save("floor_slab.png", img)
+
+
+def _font(size):
+    """A bold font at `size` px: DejaVu or Arial where there is one, else PIL's built-in."""
+    from PIL import ImageFont
+    for name in ("DejaVuSans-Bold.ttf", "arialbd.ttf", "Arial Bold.ttf", "LiberationSans-Bold.ttf"):
+        try:
+            return ImageFont.truetype(name, size)
+        except OSError:
+            pass
+    return ImageFont.load_default(size)
+
+
+def standby_card():
+    """The "please stand by" card the hall shows over its screen instead of a curtain (an
+    original design in the spirit of old TV test cards: a grid, a big circle of colour bars and
+    grey steps, corner circles and a caption band). 1280 x 720, the screen's 16:9."""
+    w, h = 1280, 720
+    im = Image.new("RGB", (w, h), (24, 26, 32))
+    d = ImageDraw.Draw(im)
+    for x in range(0, w + 1, 80):
+        d.line([(x, 0), (x, h)], fill=(150, 154, 160), width=2)
+    for y in range(0, h + 1, 80):
+        d.line([(0, y), (w, y)], fill=(150, 154, 160), width=2)
+    for (cx, cy) in ((120, 120), (w - 120, 120), (120, h - 120), (w - 120, h - 120)):      # corner circles
+        d.ellipse([cx - 84, cy - 84, cx + 84, cy + 84], fill=(24, 26, 32), outline=(230, 230, 225), width=5)
+        for k in range(12):
+            a = k * math.pi / 6
+            d.line([(cx, cy), (cx + 80 * math.cos(a), cy + 80 * math.sin(a))], fill=(230, 230, 225) if k % 2 == 0 else (90, 92, 98), width=3)
+    # the big circle: colour bars on top, grey steps below, cut to a disc
+    r = 300
+    disc = Image.new("RGB", (2 * r, 2 * r), (0, 0, 0))
+    dd = ImageDraw.Draw(disc)
+    bars = [(235, 235, 230), (235, 215, 40), (40, 210, 220), (50, 200, 70), (205, 60, 200), (215, 50, 45), (45, 70, 205)]
+    bw = 2 * r / len(bars)
+    for k, c in enumerate(bars):
+        dd.rectangle([k * bw, 0, (k + 1) * bw, r * 1.1], fill=c)
+    for k in range(10):
+        g = int(20 + 235 * k / 9)
+        dd.rectangle([k * 2 * r / 10, r * 1.5, (k + 1) * 2 * r / 10, 2 * r], fill=(g, g, g))
+    for k in range(40):                                                    # fine black / white lines
+        dd.rectangle([k * 2 * r / 40, r * 1.1, (k + 1) * 2 * r / 40, r * 1.26], fill=(240, 240, 240) if k % 2 else (10, 10, 10))
+    mask = Image.new("L", (2 * r, 2 * r), 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, 2 * r - 1, 2 * r - 1], fill=255)
+    im.paste(disc, (w // 2 - r, h // 2 - r), mask)
+    d.ellipse([w // 2 - r, h // 2 - r, w // 2 + r, h // 2 + r], outline=(240, 240, 235), width=6)
+    # the caption band across the middle of the circle
+    d.rectangle([w // 2 - r - 40, h // 2 + 42, w // 2 + r + 40, h // 2 + 132], fill=(12, 12, 16), outline=(240, 240, 235), width=4)
+    f = _font(58)
+    text = "PLEASE STAND BY"
+    tw = d.textlength(text, font=f)
+    d.text((w // 2 - tw / 2, h // 2 + 52), text, fill=(245, 245, 240), font=f)
+    f2 = _font(26)
+    for text, y in (("FORGE HALL", 28), ("TRANSMISSION WILL RESUME SHORTLY", h - 62)):
+        tw = d.textlength(text, font=f2)
+        d.rectangle([w // 2 - tw / 2 - 16, y - 6, w // 2 + tw / 2 + 16, y + 38], fill=(12, 12, 16))
+        d.text((w // 2 - tw / 2, y), text, fill=(120, 235, 255), font=f2)
+    im.save(os.path.join(OUT, "standby_card.png"))
+    print("wrote standby_card.png")
 
 
 def diamond_plate():
@@ -331,8 +409,9 @@ def sun_patch():
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    slab_marble()
+    slab_granite()
     floor_slab()
+    standby_card()
     diamond_plate()
     art()
     wood_panel()

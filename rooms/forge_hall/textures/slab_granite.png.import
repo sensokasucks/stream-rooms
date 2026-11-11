@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bafsxxq0mid2f"
-path="res://.godot/imported/slab_marble.png-8ed4661de0664605b6875a0abbede351.ctex"
+uid="uid://darubme07wws4"
+path="res://.godot/imported/slab_granite.png-efe64703bea8d0d82cb6efb418ca7f71.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/textures/slab_marble.png"
-dest_files=["res://.godot/imported/slab_marble.png-8ed4661de0664605b6875a0abbede351.ctex"]
+source_file="res://rooms/forge_hall/textures/slab_granite.png"
+dest_files=["res://.godot/imported/slab_granite.png-efe64703bea8d0d82cb6efb418ca7f71.ctex"]
 
 [params]
 

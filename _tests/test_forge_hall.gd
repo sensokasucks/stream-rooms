@@ -1,11 +1,13 @@
 extends Node
 ## Forge Hall: the room loads with everything its markers promise (screen, ten cameras, four
 ## podiums, chat and reply screens, reaction targets, 30 bench seats in three stepped rows, the
-## fire, the sunbeams, five art frames) and the Room tab's controls do their job: Fire, Light
-## strips, Light rays, the alcove art's frame / style / picture, the LED dots and the screen's
-## bend, size and place (which reload the room). Saves one screenshot per camera and a few of
-## the bent screen and hologram art into the output folder (look at them: the look is not
-## checked here).
+## fire, the sunbeams, thirteen art frames, three small live screens) and the Room tab's
+## controls do their job: Fire, Inlay brightness and Inlay glow, Light rays, Time of day and
+## Day length (sky, sun and moon beams), the "please stand by" card that replaces the curtain,
+## the floor screen rising, the small screens' sources, the alcove art's frame / style /
+## picture, the LED dots and the big screen's bend, size and place (which reload the room).
+## Saves one screenshot per camera and a few of the other looks into the output folder (look
+## at them: the look is not checked here).
 ##   <redot console exe> --path . _tests/test_forge_hall.tscn -- C:/temp/sr_tests --mp-profile=test
 
 var _fails: int = 0
@@ -51,6 +53,17 @@ func _ready() -> void:
 	AppState.set_setting("forge_neon", 1.0)
 	AppState.set_setting("sun_rays", 1.0)
 	AppState.set_setting("led_look", 1.0)
+	AppState.set_setting("forge_neon_bloom", true)
+	AppState.set_setting("forge_time", 9.5)
+	AppState.set_setting("forge_day_minutes", 0.0)
+	AppState.set_setting("forge_lift_up", false)
+	AppState.set_setting("forge_live_1_source", "webcam")
+	AppState.set_setting("forge_live_2_source", "off")
+	AppState.set_setting("forge_live_3_source", "off")
+	AppState.set_setting("forge_live_2_picture", "")
+	AppState.set_setting("curtain_enabled", true)
+	AppState.set_setting("curtain_sign", "")
+	AppState.set_setting("curtain_speed", 1.0)
 	AppState.set_setting("holo_amount", 0.0)
 	AppState.set_setting("holo_transparency", 0.0)
 	AppState.set_setting("forge_screen_x", 0.0)
@@ -59,7 +72,7 @@ func _ready() -> void:
 	AppState.set_setting("forge_screen_bend", 0.0)
 	AppState.set_setting("forge_art_frame", "brass")
 	AppState.set_setting("forge_art_style", "picture")
-	for n in range(1, 6):
+	for n in range(1, 14):
 		AppState.set_setting("forge_art_%d" % n, "")
 	var main: Node = load("res://core/main.tscn").instantiate()
 	add_child(main)
@@ -111,7 +124,8 @@ func _ready() -> void:
 	var patches := fx.get_node_or_null("Patches") as MeshInstance3D if fx else null
 	var fire_light := room.find_child("FireLight", false, false) as OmniLight3D
 	_check(flames.size() == 4 and fire_light != null and fire_light.visible, "four flame rectangles (three in the firebox, one in the slot) and the fire's light (%d)" % flames.size())
-	_check(beams != null and beams.visible and beams.mesh.get_faces().size() == 48, "two sunbeams, each an open box (%d vertices)" % (beams.mesh.get_faces().size() if beams else -1))
+	_check(beams != null and beams.visible and beams.mesh != null and beams.mesh.get_faces().size() == 120,
+		"at 9:30 the sun shines through the five left windows, each beam an open box (%d vertices)" % (beams.mesh.get_faces().size() if beams and beams.mesh else -1))
 	_check(patches != null and patches.visible, "the patches of sunlight on the floor")
 	_check(beams != null and not room.get_static_meshes().has(beams) and not room.get_static_meshes().has(flames[0] if flames.size() > 0 else null),
 		"the beams and flames are not counted as the room's own meshes")
@@ -119,11 +133,13 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	_check(keys.has("forge_fire") and keys.has("forge_neon") and keys.has("sun_rays"), "the Room tab gets Fire, Light strips and Light rays (%s)" % str(keys))
+	_check(keys.has("forge_fire") and keys.has("forge_neon") and keys.has("sun_rays"), "the Room tab gets Fire, Inlay brightness and Light rays (%s)" % str(keys))
+	_check(keys.has("forge_neon_bloom") and keys.has("forge_time") and keys.has("forge_day_minutes"), "and Inlay glow, Time of day and Day length")
+	_check(keys.has("forge_lift_up") and keys.has("forge_live_1_source") and keys.has("forge_live_3_picture"), "and the small live screens' controls")
 	_check(keys.has("forge_screen_bend") and keys.has("forge_screen_size") and keys.has("forge_screen_x") and keys.has("forge_screen_y"),
 		"the Room tab gets the screen's Bend, Size and Move sliders")
-	_check(keys.has("forge_art_frame") and keys.has("forge_art_style") and keys.has("forge_art_1") and keys.has("forge_art_5"),
-		"the Room tab gets the alcove art's Frame, Art style and five picture boxes")
+	_check(keys.has("forge_art_frame") and keys.has("forge_art_style") and keys.has("forge_art_1") and keys.has("forge_art_13"),
+		"the Room tab gets the alcove art's Frame, Art style and thirteen picture boxes")
 	_check(room.reload_keys().has("forge_screen_bend") and room.reload_keys().has("forge_screen_x"), "the screen's shape settings ask for a room reload")
 	# the control panel builds all of them (dropdowns and picture boxes are new kinds of room control)
 	var panel: Node = main.get_node("ControlPanel")
@@ -142,7 +158,7 @@ func _ready() -> void:
 		if cv != null and cv.visible and cv.material_override is StandardMaterial3D and (cv.material_override as StandardMaterial3D).albedo_texture != null \
 				and (f.get_node("Bar0") as MeshInstance3D).visible:
 			canvases += 1
-	_check(frames.size() == 5 and canvases == 5, "five framed posters in the wall alcoves (%d / %d)" % [frames.size(), canvases])
+	_check(frames.size() == 13 and canvases == 13, "thirteen framed posters in the wall alcoves (%d / %d)" % [frames.size(), canvases])
 
 	# screenshots from every camera
 	for i in cams.size():
@@ -157,7 +173,7 @@ func _ready() -> void:
 	AppState.set_setting("forge_fire", 0.0)
 	AppState.set_setting("sun_rays", 0.0)
 	await _secs(0.3)
-	_check(neon_full > 0.5 and is_zero_approx(_glow_of(room, "Neon_Cyan")), "Light strips 0%% turns the strips off (%.2f -> %.2f)" % [neon_full, _glow_of(room, "Neon_Cyan")])
+	_check(neon_full > 0.5 and is_zero_approx(_glow_of(room, "Neon_Cyan")), "Inlay brightness 0%% turns the inlays off (%.2f -> %.2f)" % [neon_full, _glow_of(room, "Neon_Cyan")])
 	_check(embers_full > 0.5 and is_zero_approx(_glow_of(room, "Embers")) and not (flames[0] as MeshInstance3D).visible and not fire_light.visible,
 		"Fire 0% puts the fire out (flames, embers and light)")
 	_check(not beams.visible and not patches.visible, "Light rays 0% hides the sunbeams and patches")
@@ -169,6 +185,97 @@ func _ready() -> void:
 	AppState.set_setting("sun_rays", 1.0)
 	await _secs(0.3)
 	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and (flames[0] as MeshInstance3D).visible and beams.visible, "back at 100% everything is on again")
+
+	# Inlay glow off: the inlays stay under the brightness where bloom starts, however high the slider
+	AppState.set_setting("forge_neon_bloom", false)
+	AppState.set_setting("forge_neon", 3.0)
+	await _secs(0.3)
+	var capped := _glow_of(room, "Neon_Cyan")
+	_check(capped > 0.3 and capped <= 0.81, "Inlay glow off keeps the inlays under the bloom threshold even at 300%% (%.2f)" % capped)
+	EventBus.camera_preset_requested.emit(1)
+	await _secs(1.0)
+	await _shot(_out + "/forge_no_bloom.png")
+	AppState.set_setting("forge_neon_bloom", true)
+	await _secs(0.2)
+	_check(_glow_of(room, "Neon_Cyan") > neon_full * 2.0, "with the glow back on, 300% is three times as bright")
+	AppState.set_setting("forge_neon", 1.0)
+
+	# time of day: the sky, and which windows the light comes through
+	var sky_env := get_viewport().world_3d.environment
+	var sky := sky_env.sky.sky_material as ShaderMaterial if sky_env and sky_env.sky else null
+	_check(sky != null and float(sky.get_shader_parameter("day")) > 0.9, "the room has its own sky, and at 9:30 it is day")
+	AppState.set_setting("forge_time", 12.0)
+	await _secs(0.3)
+	_check(not beams.visible, "at noon the sun is overhead: no beams through the side windows")
+	AppState.set_setting("forge_time", 15.0)
+	await _secs(0.3)
+	_check(beams.visible and beams.mesh.get_faces().size() == 72, "at 15:00 the sun shines through the three right windows (%d vertices)" % (beams.mesh.get_faces().size() if beams.mesh else -1))
+	AppState.set_setting("forge_time", 18.2)
+	await _secs(0.3)
+	EventBus.camera_preset_requested.emit(4)
+	await _secs(1.0)
+	await _shot(_out + "/forge_sunset.png")
+	AppState.set_setting("forge_time", 22.0)
+	await _secs(0.3)
+	_check(sky != null and float(sky.get_shader_parameter("day")) < 0.05, "at 22:00 it is night")
+	_check(beams.visible and beams.mesh.get_faces().size() == 120, "and moonbeams come through the left windows")
+	for shot: Array in [[4, "forge_night_windows"], [1, "forge_night"]]:
+		EventBus.camera_preset_requested.emit(int(shot[0]))
+		await _secs(1.0)
+		await _shot(_out + "/%s.png" % String(shot[1]))
+	AppState.set_setting("forge_day_minutes", 1.0)        # a whole day in a minute: 0.4 hours a second
+	await _secs(1.5)
+	var ran: float = fposmod(room.get_hour() - 22.0, 24.0)
+	_check(ran > 0.3 and ran < 1.2, "Day length 1 min lets the clock run (%.2f hours in 1.5 s)" % ran)
+	AppState.set_setting("forge_day_minutes", 0.0)
+	AppState.set_setting("forge_time", 9.5)
+	await _secs(0.3)
+
+	# the "please stand by" card stands in for the curtain
+	var card := room.find_child("StandbyCard", false, false) as StandbyCard
+	_check(card != null and room.find_child("StageCurtain", false, false) == null, "the room has a stand-by card and no curtain")
+	if card:
+		AppState.set_curtain(true)
+		await _secs(1.5)
+		_check(is_equal_approx(card.get_shown_amount(), 1.0) and AppState.is_curtain_covering(), "closing the curtain fades the card in over the screen")
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(1.0)
+		await _shot(_out + "/forge_standby.png")
+		AppState.set_curtain(false)
+		await _secs(1.5)
+		_check(is_zero_approx(card.get_shown_amount()) and not AppState.is_curtain_covering(), "opening it fades the card away")
+
+	# the small live screens
+	var lives := fx.find_children("LiveScreen*", "Node3D", false, false) if fx else []
+	_check(lives.size() == 3, "three small live screens (%d)" % lives.size())
+	if lives.size() == 3:
+		var body := lives[0].get_node("Body") as Node3D
+		_check(lives[0].visible and body.position.y < -2.0, "the floor screen starts down in the floor (%.2f m)" % body.position.y)
+		_check(not lives[1].visible and not lives[2].visible, "the two upper screens are off until given a source")
+		AppState.set_setting("forge_lift_up", true)
+		await _secs(3.2)
+		_check(is_zero_approx(body.position.y), "Raise the floor screen brings it up")
+		var pic2 := _out + "/forge_test_live.png"
+		var img2 := Image.create(160, 120, false, Image.FORMAT_RGBA8)     # 4:3
+		img2.fill(Color(0.2, 0.7, 0.3))
+		img2.save_png(pic2)
+		AppState.set_setting("forge_live_2_picture", pic2)
+		AppState.set_setting("forge_live_2_source", "picture")
+		AppState.set_setting("forge_live_3_source", "screen")
+		await _secs(1.0)
+		var panel2 := lives[1].get_node("Picture") as MeshInstance3D
+		var psize := (panel2.mesh as QuadMesh).size
+		_check(lives[1].visible and (panel2.material_override as StandardMaterial3D).albedo_texture != null and absf(psize.x / psize.y - 4.0 / 3.0) < 0.01,
+			"an upper screen shows a picture file in its own shape (%.2f x %.2f m)" % [psize.x, psize.y])
+		_check(lives[2].visible, "the other upper screen is on as a copy of the big screen")
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(1.0)
+		await _shot(_out + "/forge_live_screens.png")
+		AppState.set_setting("forge_live_2_source", "off")
+		AppState.set_setting("forge_live_3_source", "off")
+		AppState.set_setting("forge_lift_up", false)
+		await _secs(0.3)
+		_check(not lives[1].visible, "Off hides it again")
 
 	# alcove art: hologram style, another frame, a picture file of the owner's
 	var canvas1 := frames[0].get_node("Canvas") as MeshInstance3D if frames.size() > 0 else null

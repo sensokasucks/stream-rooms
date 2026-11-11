@@ -2634,7 +2634,8 @@ func _on_room_controls(controls: Array) -> void:
 				"Empty the box again (back to what the room shows by default)."))
 		else:
 			w = _slider(key, String(spec.get("label", key)), float(spec.get("min", 0.0)), float(spec.get("max", 1.0)),
-				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)))
+				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)),
+				String(spec.get("zero", "")))      # "zero": the text shown at 0 (e.g. "Clock stopped")
 		w.tooltip_text = String(spec.get("tooltip", ""))
 		_room_box.add_child(w)
 		_room_keys.append(key)

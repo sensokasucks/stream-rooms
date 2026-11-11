@@ -1,10 +1,22 @@
-[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
 
+[ext_resource type="Shader" path="res://rooms/forge_hall/forge_sky.gdshader" id="2_sky"]
+[ext_resource type="Texture2D" path="res://rooms/forge_hall/textures/standby_card.png" id="3_card"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("2_sky")
+
+[sub_resource type="Sky" id="Sky_forge"]
+sky_material = SubResource("ShaderMaterial_sky")
+process_mode = 1
+radiance_size = 1
+
 [sub_resource type="Environment" id="Environment_forge"]
-background_mode = 1
-background_color = Color(0.02, 0.015, 0.012, 1)
+background_mode = 2
+sky = SubResource("Sky_forge")
+reflected_light_source = 1
 ambient_light_source = 2
 ambient_light_color = Color(0.5, 0.42, 0.4, 1)
 ambient_light_energy = 0.22
@@ -13,6 +25,7 @@ tonemap_white = 6.0
 ssao_enabled = true
 sdfgi_enabled = true
 sdfgi_use_occlusion = true
+sdfgi_read_sky_light = false
 sdfgi_energy = 1.1
 glow_enabled = true
 glow_intensity = 0.7
@@ -36,6 +49,7 @@ screen_led_amount = 0.6
 screen_led_count = Vector2(256, 144)
 screen_matte = 0.0
 screen_hologram = true
+standby_card = ExtResource("3_card")
 reverb_room_size = 0.6
 reverb_damping = 0.4
 reverb_wet = 0.16

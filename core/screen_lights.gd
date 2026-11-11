@@ -148,11 +148,11 @@ func _on_colors(left: Color, center: Color, right: Color) -> void:
 	_targets = [left, center, right]
 
 
-## Curtain closed: a dim warm glow instead of the picture's light (nothing on the screen leaks
+## Curtain closed (or stand-by card up): a dim glow instead of the picture's light (nothing on the screen leaks
 ## into the room). Open: back to the picture's colours.
 func _on_curtain(covering: bool) -> void:
 	if covering:
-		var glow: Color = (AppState.get_setting("curtain_color") as Color).lightened(0.25) * 0.35
+		var glow: Color = AppState.get_cover_glow()     # curtain cloth colour, or a stand-by card's own
 		_targets = [glow, glow, glow]
 	elif _last_screen.size() == 3:
 		_targets.assign(_last_screen)      # (assign: a plain duplicate() isn't an Array[Color])
