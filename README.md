@@ -1328,6 +1328,12 @@ Included rooms:
         front (`listen:rtmp://0.0.0.0:1935/live/cam`) and the screen waits for it to connect
         to this PC; point the app at `rtmp://<this PC's address>:1935/live/cam`. Windows may
         ask once to let ffmpeg through the firewall.
+    - **Wall screens: place**: the two screens above the big screen can be moved, resized,
+      tilted and turned. Each has **left/right**, **up/down**, **size**, **tilt** (+ leans the
+      top towards the seats) and **turn** (+ turns its face to the right) sliders.
+      **Keep the two wall screens aligned** (ticked by default) makes the upper right screen a
+      mirror image of the upper left one, so you only set the left one; untick it to place
+      each screen on its own.
     - These three screens are yours only: they are not sent to co-stream guests.
   - Thirteen alcoves are cut into the walls between the pillars, lined with wood panelling.
     Each holds a framed picture. Room tab, **Alcove art**:

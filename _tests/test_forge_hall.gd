@@ -64,6 +64,11 @@ func _ready() -> void:
 	AppState.set_setting("forge_live_2_picture", "")
 	for n in range(1, 4):
 		AppState.set_setting("forge_live_%d_address" % n, "")
+	for n in [2, 3]:
+		for part: String in ["x", "y", "tilt", "turn"]:
+			AppState.set_setting("forge_live_%d_%s" % [n, part], 0.0)
+		AppState.set_setting("forge_live_%d_size" % n, 1.0)
+	AppState.set_setting("forge_live_align", true)
 	NdiReceiver.mock_finder = load("res://_tests/mock_ndi/mock_finder.gd")     # stands in for the NDI plugin
 	AppState.set_setting("curtain_enabled", true)
 	AppState.set_setting("curtain_sign", "")
@@ -332,6 +337,40 @@ func _ready() -> void:
 			AppState.set_setting("forge_live_2_source", "off")
 			await _secs(0.5)
 			_check(not feeds.get("_slots").has("forge_live_2"), "Off stops the stream")
+		# the wall screens' place sliders; aligned, the right one mirrors the left one
+		var l0: Vector3 = lives[1].global_position
+		var r0: Vector3 = lives[2].global_position
+		AppState.set_setting("forge_live_2_x", -0.5)
+		AppState.set_setting("forge_live_2_y", 0.4)
+		AppState.set_setting("forge_live_2_size", 1.5)
+		AppState.set_setting("forge_live_2_tilt", 20.0)
+		AppState.set_setting("forge_live_2_turn", 30.0)
+		AppState.set_setting("forge_live_3_y", -1.0)       # ignored while aligned
+		await _secs(0.3)
+		var l1: Vector3 = lives[1].global_position
+		var r1: Vector3 = lives[2].global_position
+		_check((l1 - l0).is_equal_approx(Vector3(-0.5, 0.4, 0.0)), "the upper left screen moves with its sliders (%s)" % str(l1 - l0))
+		_check((r1 - r0).is_equal_approx(Vector3(0.5, 0.4, 0.0)), "aligned, the upper right screen mirrors it (%s)" % str(r1 - r0))
+		var lz: Vector3 = lives[1].global_basis.z.normalized()
+		var rz: Vector3 = lives[2].global_basis.z.normalized()
+		_check(absf(lives[1].global_basis.get_scale().x - 1.5) < 0.01 and lz.y < -0.2 and lz.x > 0.2 and absf(rz.x + lz.x) < 0.01 and absf(rz.y - lz.y) < 0.01,
+			"size, tilt and turn apply, mirrored on the right (left faces %s, right %s)" % [str(lz.snappedf(0.01)), str(rz.snappedf(0.01))])
+		AppState.set_setting("forge_live_2_source", "screen")
+		AppState.set_setting("forge_live_3_source", "screen")
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(0.8)
+		await _shot(_out + "/forge_wall_screens_moved.png")
+		AppState.set_setting("forge_live_align", false)
+		await _secs(0.3)
+		_check((lives[2].global_position - r0).is_equal_approx(Vector3(0.0, -1.0, 0.0)), "unticked, the right screen uses its own sliders")
+		AppState.set_setting("forge_live_2_source", "off")
+		AppState.set_setting("forge_live_3_source", "off")
+		for part: String in ["x", "y", "tilt", "turn"]:
+			AppState.set_setting("forge_live_2_%s" % part, 0.0)
+		AppState.set_setting("forge_live_3_y", 0.0)
+		AppState.set_setting("forge_live_2_size", 1.0)
+		AppState.set_setting("forge_live_align", true)
+		await _secs(0.3)
 		# the upper screens sit lower on the wall than in round 3 (their middle under 9.6 m)
 		_check(lives[1].global_position.y < 9.6 and lives[1].global_position.y > 8.9, "the upper screens sit lower (%.2f m)" % lives[1].global_position.y)
 

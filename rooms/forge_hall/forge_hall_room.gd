@@ -38,7 +38,8 @@ extends Room
 ##     (SCREEN_Upper_n). Each shows what its "forge_live_n_source" setting says: the webcam,
 ##     a podium's live feed, a copy of the big screen, a picture file, or a feed of its own
 ##     named by "forge_live_n_address": an NDI source, a Spout sender or a stream address
-##     (RTMP, RTSP, a video file...; core/extra_feeds.gd). They are this PC's
+##     (RTMP, RTSP, a video file...; core/extra_feeds.gd). The two wall screens can be
+##     moved, resized, tilted and turned (_place_wall_screens). They are this PC's
 ##     only: none of their settings are shared in a co-stream.
 ##   - A "please stand by" card replaces the curtain (RoomInfo.standby_card on room_info.tres;
 ##     core/standby_card.gd), and a ReflectionProbe gives the polished granite its reflections.
@@ -324,6 +325,22 @@ func get_controls() -> Array[Dictionary]:
 			out.append({"key": "forge_live_%d_picture" % n, "label": "%s picture" % names[n - 1], "type": "picture",
 				"placeholder": "used when it shows Picture file",
 				"tooltip": "The picture this screen shows when it is set to Picture file. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB."})
+		out.append({"heading": "Wall screens: place"})
+		out.append({"key": "forge_live_align", "label": "Keep the two wall screens aligned", "type": "check",
+			"tooltip": "Ticked: the upper right screen copies the upper left one as a mirror image (same height, size and tilt, the opposite sideways move and turn), so you only set the left one. Unticked: each screen has its own sliders."})
+		for n: int in [2, 3]:
+			var who := "Upper left" if n == 2 else "Upper right"
+			var note := "" if n == 2 else " Ignored while Keep the two wall screens aligned is ticked."
+			out.append({"key": "forge_live_%d_x" % n, "label": "%s: left/right" % who, "min": -5.0, "max": 5.0, "step": 0.05, "format": "%.2f m",
+				"tooltip": "Slides this screen left (-) or right (+) along the wall, in metres." + note})
+			out.append({"key": "forge_live_%d_y" % n, "label": "%s: up/down" % who, "min": -3.0, "max": 3.0, "step": 0.05, "format": "%.2f m",
+				"tooltip": "Slides this screen down (-) or up (+) the wall, in metres." + note})
+			out.append({"key": "forge_live_%d_size" % n, "label": "%s: size" % who, "min": 0.3, "max": 2.5, "step": 0.01, "format": "%d%%", "scale": 100.0,
+				"tooltip": "How big this screen is. 100% = 2.6 m wide." + note})
+			out.append({"key": "forge_live_%d_tilt" % n, "label": "%s: tilt" % who, "min": -45.0, "max": 45.0, "step": 1.0, "format": "%d°",
+				"tooltip": "Leans the top of this screen towards the seats (+), so it looks down at them, or back (-)." + note})
+			out.append({"key": "forge_live_%d_turn" % n, "label": "%s: turn" % who, "min": -60.0, "max": 60.0, "step": 1.0, "format": "%d°",
+				"tooltip": "Turns this screen's face to the right (+) or the left (-), as seen from the seats." + note})
 	if not _art.is_empty():
 		out.append({"heading": "Alcove art"})
 		out.append({"key": "forge_art_frame", "label": "Frame", "type": "option",
@@ -366,6 +383,7 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 				for a in _live:
 					if key == "forge_live_%d_picture" % int(a["n"]):
 						_load_live_picture(a)
+				_place_wall_screens()
 				_request_feeds()
 				_refresh_live()
 
@@ -1007,6 +1025,7 @@ func _build_live_screens() -> void:
 		root.name = "LiveScreen%d" % (i + 1)
 		_fx.add_child(root)
 		root.global_transform = Transform3D(marker.global_basis.orthonormalized(), marker.global_position)
+		var home := root.transform                 # where the model puts it (_place_wall_screens moves it from here)
 		var body := root
 		var mid := Vector3.ZERO                    # the middle of the picture, in the body's space
 		if lift:
@@ -1039,12 +1058,38 @@ func _build_live_screens() -> void:
 		panel.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		panel.position = mid + Vector3(0.0, 0.0, 0.045)
 		body.add_child(panel)
-		var a := {"n": i + 1, "lift": lift, "root": root, "body": body, "panel": panel, "mat": mat, "path": "", "pic": null}
+		var a := {"n": i + 1, "lift": lift, "root": root, "body": body, "panel": panel, "mat": mat, "path": "", "pic": null, "home": home}
 		_live.append(a)
 		_load_live_picture(a)
 	_move_lift(false)
+	_place_wall_screens()
 	_request_feeds()
 	_refresh_live()
+
+
+## Hangs the two wall screens where their sliders say, measured from the spot the model gives
+## them (a["home"]): "forge_live_n_x" / "_y" metres right / up along the wall, "_size" (1.0 =
+## as built), "_tilt" degrees (+ leans the top towards the seats) and "_turn" degrees (+ turns
+## the face to the audience's right). With "forge_live_align" ticked the upper right screen
+## (3) takes the upper left one's (2) numbers as a mirror image: same height, size and tilt,
+## the opposite sideways move and turn. Called when the screens are built and whenever a
+## forge_live_ setting changes. The screen's local axes: x = the audience's right, y = up,
+## z = out of the wall towards the seats.
+func _place_wall_screens() -> void:
+	var align := bool(AppState.get_setting("forge_live_align"))
+	for a in _live:
+		if bool(a["lift"]):
+			continue
+		var n := int(a["n"])
+		var mirror := align and n == 3
+		var from := 2 if mirror else n
+		var side := -1.0 if mirror else 1.0
+		var get_f := func(part: String) -> float: return float(AppState.get_setting("forge_live_%d_%s" % [from, part]))
+		var turn := Basis(Vector3.UP, deg_to_rad(side * float(get_f.call("turn"))))
+		var tilt := Basis(Vector3.RIGHT, deg_to_rad(float(get_f.call("tilt"))))
+		var size: float = clampf(float(get_f.call("size")), 0.2, 3.0)
+		var move := Transform3D((turn * tilt).scaled(Vector3.ONE * size), Vector3(side * float(get_f.call("x")), float(get_f.call("y")), 0.0))
+		(a["root"] as Node3D).transform = (a["home"] as Transform3D) * move
 
 
 ## "forge_lift_up": slides the floor screen up out of the floor or back down into it (the floor

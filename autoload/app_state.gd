@@ -65,6 +65,12 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_live_1_address": "",  # Forge Hall small live screens: for source ndi / spout the source's name (or part
 	"forge_live_2_address": "",  # of it), for source stream an address ffmpeg can open (rtmp://, rtsp://, a video
 	"forge_live_3_address": "",  # file; "listen:" in front waits for the camera to connect). core/extra_feeds.gd.
+	# Forge Hall: where the two wall screens (2 = upper left, 3 = upper right) hang, from the spot the model gives
+	# them. _x / _y: metres right / up along the wall. _size: 1.0 = the built size. _tilt: degrees, + leans the top
+	# towards the seats. _turn: degrees, + turns the screen's face to the audience's right.
+	"forge_live_2_x": 0.0, "forge_live_2_y": 0.0, "forge_live_2_size": 1.0, "forge_live_2_tilt": 0.0, "forge_live_2_turn": 0.0,
+	"forge_live_3_x": 0.0, "forge_live_3_y": 0.0, "forge_live_3_size": 1.0, "forge_live_3_tilt": 0.0, "forge_live_3_turn": 0.0,
+	"forge_live_align": true,    # the upper right screen mirrors the upper left one's place (its own five are ignored)
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
