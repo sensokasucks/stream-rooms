@@ -1264,6 +1264,33 @@ Included rooms:
     textures come from `blender/make_throne_textures.py`, which paints the crest picture you
     give it onto the banner (`rooms/throne_hall/textures/crest_source.png`; swap that file and
     run the script again for another crest).
+- **Forge Hall**: a tall stone workshop with a little science fiction in it, modelled on a
+  reference picture. A first version: more is planned.
+  - Chunky stone pillars carry cyan, orange and purple light strips, bands of cyan light run
+    round the walls, hexagonal lanterns hang on chains from a timber roof, and two skylights
+    throw sunbeams and barred patches of light onto the stone floor.
+  - The screen (the same size as the Lecture Hall (Panel)'s) hangs in a wide alcove with pipes
+    across its top. The chat screen sits under it and the reply screen up in the gable.
+  - A big forge fireplace is built out from the right wall, with a second fire slot under the
+    hearth. Its flames and flickering light are drawn by the room (the flicker is gentle and
+    stops in photosensitive-safe mode).
+  - Room tab: **Fire** (flames, their light and the crackle, 0-200%, 0% = out),
+    **Light strips** (how bright the coloured strips and glowing pipes are, 0% = off) and
+    **Light rays** (the sunbeams and floor patches, 0% = off).
+  - A podium room: four stone podiums, two each side of the screen (see *Presenters*). No
+    webcam frame: the webcam uses the corner overlay.
+  - Seats for 30: three rows of benches either side of a centre aisle, each row a step higher.
+    There is no filler crowd.
+  - The rest of the room: a boiler with pipes and a round cyan sign, a workbench with a tool
+    board, an anvil, barrels and crates, a side door and a tall double door at the back.
+  - Cameras: the centre aisle (the default), the forge corner (the reference picture's view),
+    the front row, beside the fire, up in the rafters, under the skylights, three podium views
+    and a Reaction camera looking at the fire. Press **0** for the 10th.
+  - Reaction targets: `!tomato forge`, `lantern`, `anvil`, `boiler`.
+  - A medium stone-room reverb and the sound of the fire.
+  - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
+    writes the `.glb`). The stone, wood, metal, sign and sun-patch textures come from
+    `blender/make_forge_textures.py`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

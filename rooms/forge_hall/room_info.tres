@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+
+[sub_resource type="Environment" id="Environment_forge"]
+background_mode = 1
+background_color = Color(0.02, 0.015, 0.012, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.5, 0.42, 0.4, 1)
+ambient_light_energy = 0.22
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_energy = 1.1
+glow_enabled = true
+glow_intensity = 0.7
+glow_bloom = 0.08
+glow_hdr_threshold = 1.0
+volumetric_fog_enabled = true
+volumetric_fog_density = 0.012
+volumetric_fog_albedo = Color(1, 0.86, 0.7, 1)
+volumetric_fog_length = 40.0
+
+[resource]
+script = ExtResource("1_ri")
+id = "forge_hall"
+display_name = "Forge Hall"
+scene_path = "res://rooms/forge_hall/forge_hall_room.tscn"
+sort_order = 9
+environment = SubResource("Environment_forge")
+screen_light_multiplier = 1.6
+screen_light_range = 24.0
+screen_matte = 0.0
+reverb_room_size = 0.6
+reverb_damping = 0.4
+reverb_wet = 0.16

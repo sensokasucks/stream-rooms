@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/forge_hall/forge_hall_room.gd" id="1_fh"]
+[ext_resource type="PackedScene" path="res://rooms/forge_hall/forge_hall.glb" id="2_glb"]
+
+[node name="ForgeHallRoom" type="Node3D"]
+script = ExtResource("1_fh")
+dimmed_level = 0.2
+fade_speed = 0.5
+reply_screen_raise = 0.0
+side_chat_forward = 1.0
+glow_materials = PackedStringArray("Lantern_Glass", "Sky_Glass", "Neon_Cyan", "Neon_Orange", "Neon_Purple", "Pipe_Glow", "Rune_Sign", "Embers")
+lamp_color = Color(1, 0.74, 0.45, 1)
+lamp_energy = 3.0
+lamp_range = 13.0
+
+[node name="Model" parent="." instance=ExtResource("2_glb")]
