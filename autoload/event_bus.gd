@@ -13,6 +13,13 @@ signal webcam_texture_changed(texture: Texture2D)
 ## this after it loads when it has screens of its own that show those feeds (the Forge Hall's
 ## small live screens): the signals otherwise only fire when a feed starts or stops.
 signal feed_textures_requested()
+## A room asks for a picture feed of its own for one of its screens (core/extra_feeds.gd, a
+## ScreenFeed child). slot: any name the room picks, one feed per slot. kind: "ndi" (address =
+## an NDI source name or part of one), "spout" (a Spout sender name or part of one), "stream"
+## (an address ffmpeg can open: rtmp://, rtsp://, a video file...) or "" to stop the slot.
+signal extra_feed_requested(slot: String, kind: String, address: String)
+## That feed's picture; null while it has none (not connected yet, or stopped).
+signal extra_feed_texture_changed(slot: String, texture: Texture2D)
 ## Which source feeds the screen: "none", "file", "capture" or "ndi".
 signal source_changed(mode: String)
 

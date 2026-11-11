@@ -2624,6 +2624,9 @@ func _on_room_controls(controls: Array) -> void:
 		elif kind == "option":
 			# a dropdown: "options" is [[value, "Label"], ...] like _option's items
 			w = _option(key, String(spec.get("label", key)), spec.get("options", []))
+		elif kind == "text":
+			# a line of text (applied on Enter or when the box loses focus)
+			w = _text_setting(key, String(spec.get("label", key)), String(spec.get("placeholder", "")))
 		elif kind == "picture":
 			# a picture file: a text box for the path with Browse and Clear, like a podium picture
 			w = _text_setting(key, String(spec.get("label", key)), String(spec.get("placeholder", "a png, jpg, webp or gif")))

@@ -1266,8 +1266,9 @@ Included rooms:
     run the script again for another crest).
 - **Forge Hall**: a long, tall hall of polished granite with a little science fiction in it,
   modelled on a reference picture and a cross-section sketch.
-  - Walls, pillars and floor are big slabs of dark polished granite (fine speckle, a mirror
-    shine). Lines of cyan, orange and purple light are set flush into them like the traces of
+  - Walls and floor are big slabs of dark polished granite (fine speckle, a mirror shine).
+    The pillars are a shade lighter, in veined marble, and the forge is a steelier granite
+    with a metallic glint. Lines of cyan, orange and purple light are set flush into them like the traces of
     a circuit board, running to a "chip" in the floor in front of the screen and a second one
     halfway down the hall. A layer of much finer traces runs between the main lines on the
     floor, the walls and the forge.
@@ -1310,8 +1311,23 @@ Included rooms:
     - **Floor screen**, **Upper left screen**, **Upper right screen**: what each one shows:
       Off, Webcam (the webcam from the sender page; the corner overlay steps aside while a
       screen shows it), Podium 1 to 4's feed (whatever that podium shows live; the podium has
-      to be on in the Presenters tab), Copy of the big screen, or Picture file.
+      to be on in the Presenters tab), Copy of the big screen, Picture file, or a feed of the
+      screen's own: **NDI source**, **Spout sender** or **Stream address**. The three screens
+      can each have a different one. These feeds are picture only (no sound).
     - **Floor screen picture** (and the two others): the file used for Picture file.
+    - **Floor screen address** (and the two others): what the screen's own feed connects to.
+      Press Enter to apply.
+      - For NDI source or Spout sender: the source's name as the Source tab lists it, or just
+        part of it (`cam 2` finds `STUDIO-PC (cam 2)`). The screen lights up by itself when the
+        source appears.
+      - For Stream address: an `rtmp://`, `rtsp://`, `srt://` or `http` stream address (an IP
+        camera, a media server, a phone camera app), or a video file, which loops. This needs
+        `ffmpeg` in the `tools` folder (`tools/get_tools.ps1`). A stream that drops is tried
+        again every few seconds.
+      - A camera or phone app that *sends* RTMP needs somewhere to send it. Put `listen:` in
+        front (`listen:rtmp://0.0.0.0:1935/live/cam`) and the screen waits for it to connect
+        to this PC; point the app at `rtmp://<this PC's address>:1935/live/cam`. Windows may
+        ask once to let ffmpeg through the firewall.
     - These three screens are yours only: they are not sent to co-stream guests.
   - Thirteen alcoves are cut into the walls between the pillars, lined with wood panelling.
     Each holds a framed picture. Room tab, **Alcove art**:

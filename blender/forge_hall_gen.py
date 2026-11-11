@@ -524,7 +524,7 @@ MID_LANTERN = 8                    # index of the first lantern down the middle 
 # the three small live screens the room script builds (forge_hall_room.gd, _build_live_screens):
 # one rises out of the floor chip's inner square, two hang on the screen wall above the alcove
 CHIP = (0.0, -4.6)                 # centre of the floor chip (and of SCREEN_Lift)
-UPPER_SCREENS = ((-2.6, 10.1), (2.6, 10.1))      # (x, z) of the middle of each upper screen
+UPPER_SCREENS = ((-2.6, 9.4), (2.6, 9.4))        # (x, z) of the middle of each upper screen
 # the second floor chip, in the back half of the hall
 CHIP2 = (0.0, -24.0)
 
@@ -560,6 +560,8 @@ def setup_materials():
     """Every material the hall uses. Names must stay in step with forge_hall_room.gd (its neon
     and ember lists) and the room scene's glow_materials."""
     tex_mat("Stone_Slab", "slab_granite.png", 0.16, 0.0)       # polished granite
+    tex_mat("Pillar_Marble", "pillar_marble.png", 0.14, 0.0)   # the pillars: lighter, veined marble
+    tex_mat("Forge_Granite", "forge_granite.png", 0.24, 0.55)  # the forge: granite with a metallic glint
     tex_mat("Floor_Tiles", "floor_slab.png", 0.12, 0.0)
     tex_mat("Diamond_Plate", "diamond_plate.png", 0.5, 0.9)
     tex_mat("Wood_Panel", "wood_panel.png", 0.6)
@@ -858,9 +860,9 @@ def _pillar_mesh(name, top):
     purple) run up its face like tracks on a circuit board, and a cyan chevron sits in the head."""
     mb = MB(name)
     hd = PILLAR_D / 2
-    prism(mb, [(-0.85, 0), (0.85, 0), (0.85, 0.75), (0.65, 1.15), (-0.65, 1.15), (-0.85, 0.75)], "xz", -hd - 0.1, hd, "Stone_Slab", uvs=6.0)
-    box(mb, (0, 0, (1.15 + top - 0.9) / 2), (1.3, PILLAR_D, top - 0.9 - 1.15), "Stone_Slab", uvs=6.0)
-    prism(mb, [(-0.65, top - 0.9), (0.65, top - 0.9), (0.9, top - 0.45), (0.9, top), (-0.9, top), (-0.9, top - 0.45)], "xz", -hd - 0.15, hd, "Stone_Slab", uvs=6.0)
+    prism(mb, [(-0.85, 0), (0.85, 0), (0.85, 0.75), (0.65, 1.15), (-0.65, 1.15), (-0.85, 0.75)], "xz", -hd - 0.1, hd, "Pillar_Marble", uvs=6.0)
+    box(mb, (0, 0, (1.15 + top - 0.9) / 2), (1.3, PILLAR_D, top - 0.9 - 1.15), "Pillar_Marble", uvs=6.0)
+    prism(mb, [(-0.65, top - 0.9), (0.65, top - 0.9), (0.9, top - 0.45), (0.9, top), (-0.9, top), (-0.9, top - 0.45)], "xz", -hd - 0.15, hd, "Pillar_Marble", uvs=6.0)
     face = lambda x, z, l: Vector((x, -hd - l, z))
     zt = top - 1.15
     traces(mb, face, [[(-0.3, 1.4), (-0.3, 2.6), (-0.1, 2.8), (-0.1, zt)]], "Neon_Cyan", 0.06)
@@ -897,7 +899,7 @@ def build_forge():
     mb = MB("Forge")
     xw, xf = HALF_W, HALF_W - FORGE_D          # the wall, and the front face of the body
     xc, yc = (xw + xf) / 2, FORGE_Y
-    B = lambda y0, y1, z0, z1, m="Stone_Slab": box(mb, (xc, yc + (y0 + y1) / 2, (z0 + z1) / 2), (FORGE_D, y1 - y0, z1 - z0), m, uvs=6.0)
+    B = lambda y0, y1, z0, z1, m="Forge_Granite": box(mb, (xc, yc + (y0 + y1) / 2, (z0 + z1) / 2), (FORGE_D, y1 - y0, z1 - z0), m, uvs=6.0)
     slot_hw, slot_z0, slot_z1 = 0.9, 0.25, 0.8
     # the base, leaving the low fire slot open
     B(-FORGE_HW, -slot_hw, 0, HEARTH_Z)
@@ -910,18 +912,18 @@ def build_forge():
     B(-FORGE_HW, FORGE_HW, FIREBOX_TOP, 3.4)
     for s in (-1, 1):       # the cut-off top corners of the firebox opening
         prism(mb, [(yc + s * FIREBOX_HW, FIREBOX_TOP), (yc + s * (FIREBOX_HW - 0.45), FIREBOX_TOP), (yc + s * FIREBOX_HW, FIREBOX_TOP - 0.45)],
-              "yz", xf, xw, "Stone_Slab", uvs=6.0)
+              "yz", xf, xw, "Forge_Granite", uvs=6.0)
     # shoulders and stack (the stack leaves through the slanted window)
-    prism(mb, [(yc - FORGE_HW, 3.4), (yc + FORGE_HW, 3.4), (yc + STACK_HW, 4.6), (yc - STACK_HW, 4.6)], "yz", xf, xw, "Stone_Slab", uvs=6.0)
+    prism(mb, [(yc - FORGE_HW, 3.4), (yc + FORGE_HW, 3.4), (yc + STACK_HW, 4.6), (yc - STACK_HW, 4.6)], "yz", xf, xw, "Forge_Granite", uvs=6.0)
     B(-STACK_HW, STACK_HW, 4.6, 8.8)
     # soot inside both openings
     wall_quad(mb, "x", xw - 0.02, yc - FIREBOX_HW, yc + FIREBOX_HW, HEARTH_Z, FIREBOX_TOP, "Soot", -1)
     wall_quad(mb, "x", xw - 0.02, yc - slot_hw, yc + slot_hw, slot_z0, slot_z1, "Soot", -1)
     floor_quad(mb, xf, xw, yc - FIREBOX_HW, yc + FIREBOX_HW, HEARTH_Z + 0.005, "Soot")
     # the hearth slab and its corbels
-    box(mb, (xf - 0.3, yc, HEARTH_Z - 0.05), (0.7, 2 * FORGE_HW + 0.4, 0.2), "Stone_Slab", uvs=6.0)
+    box(mb, (xf - 0.3, yc, HEARTH_Z - 0.05), (0.7, 2 * FORGE_HW + 0.4, 0.2), "Forge_Granite", uvs=6.0)
     for s in (-1, 1):
-        prism(mb, [(xf - 0.55, HEARTH_Z - 0.15), (xf, HEARTH_Z - 0.15), (xf, HEARTH_Z - 0.75)], "xz", yc + s * 1.9 - 0.2, yc + s * 1.9 + 0.2, "Stone_Slab", uvs=6.0)
+        prism(mb, [(xf - 0.55, HEARTH_Z - 0.15), (xf, HEARTH_Z - 0.15), (xf, HEARTH_Z - 0.75)], "xz", yc + s * 1.9 - 0.2, yc + s * 1.9 + 0.2, "Forge_Granite", uvs=6.0)
     # the metal arch round the firebox (proud of the stone), with bolts on the shoulders
     fx = xf - 0.07
     arch = lambda hw, top, cut: [(yc - hw, HEARTH_Z + 0.1), (yc - hw, top - cut), (yc - hw + cut, top), (yc + hw - cut, top), (yc + hw, top - cut), (yc + hw, HEARTH_Z + 0.1)]

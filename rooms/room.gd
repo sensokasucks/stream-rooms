@@ -189,6 +189,8 @@ func get_projector_marker() -> Node3D:
 ##   {"key": "rain_on", "label": "Rain", "type": "check"}             a tick box (a bool setting)
 ##   {"key": "forge_art_frame", "label": "Frame", "type": "option",
 ##    "options": [["brass", "Brass"], ...]}              a dropdown (a String setting)
+##   {"key": "forge_live_1_address", "label": "Address", "type": "text",
+##    "placeholder": "..."}                              a line of text (a String setting)
 ##   {"key": "forge_art_1", "label": "Art 1", "type": "picture",
 ##    "placeholder": "..."}                              a picture file box with Browse / Clear
 ## Any entry can carry a "tooltip". ui/control_panel.gd (_on_room_controls) builds them.

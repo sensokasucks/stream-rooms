@@ -4,7 +4,8 @@ extends Node
 ## fire, the sunbeams, thirteen art frames, three small live screens) and the Room tab's
 ## controls do their job: Fire, Inlay brightness and Inlay glow, Light rays, Time of day and
 ## Day length (sky, sun and moon beams), the "please stand by" card that replaces the curtain,
-## the floor screen rising, the small screens' sources, the alcove art's frame / style /
+## the floor screen rising, the small screens' sources (with an NDI mock and, when ffmpeg is
+## there, a stream address read through core/extra_feeds.gd), the alcove art's frame / style /
 ## picture, the LED dots and the big screen's bend, size and place (which reload the room).
 ## Saves one screenshot per camera and a few of the other looks into the output folder (look
 ## at them: the look is not checked here).
@@ -61,6 +62,9 @@ func _ready() -> void:
 	AppState.set_setting("forge_live_2_source", "off")
 	AppState.set_setting("forge_live_3_source", "off")
 	AppState.set_setting("forge_live_2_picture", "")
+	for n in range(1, 4):
+		AppState.set_setting("forge_live_%d_address" % n, "")
+	NdiReceiver.mock_finder = load("res://_tests/mock_ndi/mock_finder.gd")     # stands in for the NDI plugin
 	AppState.set_setting("curtain_enabled", true)
 	AppState.set_setting("curtain_sign", "")
 	AppState.set_setting("curtain_speed", 1.0)
@@ -277,6 +281,60 @@ func _ready() -> void:
 		await _secs(0.3)
 		_check(not lives[1].visible, "Off hides it again")
 
+		# a small screen with a feed of its own: an NDI source found by part of its name
+		var feeds := main.get_node("ScreenFeed/ExtraFeeds") as ExtraFeeds
+		var pic3 := lives[2].get_node("Picture") as MeshInstance3D
+		var finder: Node = main.get_node("ScreenFeed/NdiReceiver/NDIFinder")
+		AppState.set_setting("forge_live_3_address", "cam 2")
+		AppState.set_setting("forge_live_3_source", "ndi")
+		await _secs(0.5)
+		_check(lives[2].visible and (pic3.material_override as StandardMaterial3D).albedo_texture == null,
+			"an NDI source that isn't on the network yet shows a dark panel")
+		finder.call("set_sources", ["STUDIO-PC (Cam 2)", "STUDIO-PC (OBS)"])
+		await _secs(1.0)
+		_check((pic3.material_override as StandardMaterial3D).albedo_texture != null, "it shows as soon as the source appears (found by part of its name)")
+		_check(ExtraFeeds.match_name("obs", PackedStringArray(["A (Cam)", "B (OBS)"])) == "B (OBS)" and ExtraFeeds.match_name("x", PackedStringArray(["A"])) == "",
+			"names match on a part, whatever the letter case")
+		finder.call("set_sources", [])
+		await _secs(0.5)
+		_check((pic3.material_override as StandardMaterial3D).albedo_texture == null, "and goes dark again when the source leaves")
+		AppState.set_setting("forge_live_3_source", "off")
+		# a stream address: ffmpeg reads it (here a short test clip it makes itself, which loops)
+		var clip := _out + "/forge_test_clip.mp4"
+		var made := OS.execute("ffmpeg" if feeds.call("_find_ffmpeg") == "ffmpeg" else String(feeds.call("_find_ffmpeg")),
+			PackedStringArray(["-y", "-loglevel", "quiet", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=20", "-t", "2", "-pix_fmt", "yuv420p", clip])) \
+			if String(feeds.call("_find_ffmpeg")) != "" else -1
+		if made != 0:
+			print("SKIP the stream address checks: no ffmpeg here (tools/get_tools.ps1 fetches it)")
+		else:
+			AppState.set_setting("forge_live_2_address", clip)
+			AppState.set_setting("forge_live_2_source", "stream")
+			var mat2 := (lives[1].get_node("Picture") as MeshInstance3D).material_override as StandardMaterial3D
+			var waited := 0.0
+			while mat2.albedo_texture == null and waited < 12.0:
+				await _secs(0.25)
+				waited += 0.25
+			var stex := mat2.albedo_texture
+			_check(stex != null and Vector2i(stex.get_size()) == ExtraFeeds.STREAM_SIZE, "a stream address shows on its screen (after %.1f s)" % waited)
+			var before := stex.get_image().get_pixel(600, 20) if stex else Color.BLACK
+			await _secs(0.7)
+			var after := stex.get_image().get_pixel(600, 20) if stex else Color.BLACK
+			_check(stex != null and stex.get_image().get_pixel(320, 180).get_luminance() > 0.02, "the picture isn't black")
+			print("stream pixel before %s after %s" % [before, after])
+			EventBus.camera_preset_requested.emit(0)
+			await _secs(0.6)
+			await _shot(_out + "/forge_stream_screen.png")
+			# after a room change ExtraFeeds drops feeds nobody asks for again: the room asks again
+			EventBus.room_changed.emit("forge_hall")
+			await _secs(ExtraFeeds.STALE_S + 0.6)
+			_check(feeds.get("_slots").has("forge_live_2") and (feeds.get("_slots")["forge_live_2"] as Dictionary)["tex"] == stex,
+				"the stream keeps running through a room change that still wants it")
+			AppState.set_setting("forge_live_2_source", "off")
+			await _secs(0.5)
+			_check(not feeds.get("_slots").has("forge_live_2"), "Off stops the stream")
+		# the upper screens sit lower on the wall than in round 3 (their middle under 9.6 m)
+		_check(lives[1].global_position.y < 9.6 and lives[1].global_position.y > 8.9, "the upper screens sit lower (%.2f m)" % lives[1].global_position.y)
+
 	# alcove art: hologram style, another frame, a picture file of the owner's
 	var canvas1 := frames[0].get_node("Canvas") as MeshInstance3D if frames.size() > 0 else null
 	if canvas1:
@@ -350,4 +408,5 @@ func _ready() -> void:
 	await _secs(5.0)
 
 	print("DONE fails=%d" % _fails)
+	NdiReceiver.mock_finder = null
 	AppState.request_quit(0 if _fails == 0 else 1)

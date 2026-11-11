@@ -6,7 +6,9 @@ The PNGs go into rooms/forge_hall/textures, where forge_hall_gen.py (tex_mat) pi
 by these names. Needs numpy and Pillow; it runs in plain Python, not inside Blender.
 
     slab_granite.png 1024x1024  one unbroken slab of dark polished granite: fine crystal speckle
-                                and a few hairline cracks, no joints (walls, pillars, forge; = 6 m)
+                                and a few hairline cracks, no joints (walls, ledges, podiums; = 6 m)
+    pillar_marble.png 1024x1024 the pillars: lighter grey marble with pale and dark veins (= 6 m)
+    forge_granite.png 1024x1024 the forge: steelier granite with bright flakes (= 6 m)
     floor_slab.png   1024x1024  2 x 2 big polished granite floor slabs with hairline joints (= 6 m)
     standby_card.png 1280x720   the "please stand by" card shown over the screen instead of a
                                 curtain (core/standby_card.gd; RoomInfo.standby_card)
@@ -165,6 +167,34 @@ def slab_granite():
     img = granite(1024, 1024, 31, (34, 35, 40), GRANITE_GRAINS)
     img = cracks(img, 3, 7, 0.5)
     save("slab_granite.png", img)
+
+
+def pillar_marble():
+    """The pillars (round 4): a shade lighter than the granite walls and marble rather than
+    speckle: a soft cloudy grey ground, pale veins wandering across it, a few thin dark ones and
+    only a trace of grain. One texture = 6 m, like the slab, and a pillar's face is only
+    about 220 px of it across, so the veins are packed close."""
+    h = w = 1024
+    cloud = smooth_noise(h, w, 4, 4, 61) * 0.55 + smooth_noise(h, w, 14, 14, 62) * 0.3 + smooth_noise(h, w, 60, 60, 63) * 0.15
+    img = lerp_rgb((50, 52, 58), (88, 90, 97), cloud)
+    img = lerp_rgb(img, (188, 190, 196), veins(h, w, 46, 64, step=15, width=(1, 4)) * 0.8)
+    img = lerp_rgb(img, (20, 21, 25), veins(h, w, 22, 65, step=13, width=(1, 2)) * 0.6)
+    rng = np.random.default_rng(66)
+    img = np.clip(img + (rng.random((h, w, 1)) - 0.5) * 7.0, 0, 255)     # a trace of grain
+    save("pillar_marble.png", img)
+
+
+# the forge's granite: the hall's crystals plus bright steel-grey flakes that catch the light
+FORGE_GRAINS = GRANITE_GRAINS + [((168, 172, 182), 0.07, 0.7), ((214, 216, 222), 0.02, 0.5)]
+
+
+def forge_granite():
+    """The forge body (round 4): the hall's granite with a bluer, steelier ground and extra
+    bright flakes. The material is half metallic (forge_hall_gen.py, Forge_Granite), so the
+    flakes glint in the fire and the inlays."""
+    img = granite(1024, 1024, 71, (38, 41, 48), FORGE_GRAINS)
+    img = cracks(img, 2, 73, 0.4)
+    save("forge_granite.png", img)
 
 
 def floor_slab():
@@ -410,6 +440,8 @@ def sun_patch():
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     slab_granite()
+    pillar_marble()
+    forge_granite()
     floor_slab()
     standby_card()
     diamond_plate()

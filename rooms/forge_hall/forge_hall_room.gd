@@ -36,13 +36,18 @@ extends Room
 ##   - Three small live screens (_build_live_screens): one rises out of the floor at the
 ##     SCREEN_Lift marker when "forge_lift_up" is ticked, two hang above the big screen
 ##     (SCREEN_Upper_n). Each shows what its "forge_live_n_source" setting says: the webcam,
-##     a podium's live feed, a copy of the big screen or a picture file. They are this PC's
+##     a podium's live feed, a copy of the big screen, a picture file, or a feed of its own
+##     named by "forge_live_n_address": an NDI source, a Spout sender or a stream address
+##     (RTMP, RTSP, a video file...; core/extra_feeds.gd). They are this PC's
 ##     only: none of their settings are shared in a co-stream.
 ##   - A "please stand by" card replaces the curtain (RoomInfo.standby_card on room_info.tres;
 ##     core/standby_card.gd), and a ReflectionProbe gives the polished granite its reflections.
 ##   - A generated fire sound (a low roar with crackles) on the Ambience bus.
 
 const MIX_RATE: float = 22050.0
+## Small-screen sources that are a feed of the screen's own, fetched by ExtraFeeds
+## (core/extra_feeds.gd) from the screen's "forge_live_n_address".
+const OWN_FEEDS: Array[String] = ["ndi", "spout", "stream"]
 const SHAFT_SHADER := preload("res://rooms/lecture_hall/sun_shaft.gdshader")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const SUN_PATCH := preload("res://rooms/forge_hall/textures/sun_patch.png")
@@ -240,6 +245,8 @@ func _ready() -> void:
 	EventBus.webcam_texture_changed.connect(_on_webcam_texture)
 	EventBus.screen_texture_changed.connect(_on_screen_texture)
 	EventBus.presenter_texture_changed.connect(_on_presenter_texture)
+	EventBus.extra_feed_texture_changed.connect(_on_extra_texture)
+	EventBus.room_changed.connect(_on_fh_room_changed)
 	# the feeds only announce themselves when they start: ask for what is running now (after
 	# RoomHost has finished setting this room up)
 	EventBus.feed_textures_requested.emit.call_deferred()
@@ -252,6 +259,8 @@ func _exit_tree() -> void:
 		EventBus.webcam_texture_changed.disconnect(_on_webcam_texture)
 		EventBus.screen_texture_changed.disconnect(_on_screen_texture)
 		EventBus.presenter_texture_changed.disconnect(_on_presenter_texture)
+		EventBus.extra_feed_texture_changed.disconnect(_on_extra_texture)
+		EventBus.room_changed.disconnect(_on_fh_room_changed)
 
 
 ## RoomHost calls this (through propagate_call) when another room replaces this one, three
@@ -306,8 +315,12 @@ func get_controls() -> Array[Dictionary]:
 			var n := int(a["n"])
 			out.append({"key": "forge_live_%d_source" % n, "label": names[n - 1], "type": "option",
 				"options": [["off", "Off"], ["webcam", "Webcam"], ["podium1", "Podium 1's feed"], ["podium2", "Podium 2's feed"],
-					["podium3", "Podium 3's feed"], ["podium4", "Podium 4's feed"], ["screen", "Copy of the big screen"], ["picture", "Picture file"]],
-				"tooltip": "What this small screen shows. Webcam = the webcam from the sender page. A podium's feed = whatever that podium shows live (it has to be on, in the Presenters tab). These screens are not sent to co-stream guests."})
+					["podium3", "Podium 3's feed"], ["podium4", "Podium 4's feed"], ["screen", "Copy of the big screen"], ["picture", "Picture file"],
+					["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"]],
+				"tooltip": "What this small screen shows. Webcam = the webcam from the sender page. A podium's feed = whatever that podium shows live (it has to be on, in the Presenters tab). NDI source, Spout sender and Stream address give this screen a feed of its own, named in the box below (picture only, no sound). These screens are not sent to co-stream guests."})
+			out.append({"key": "forge_live_%d_address" % n, "label": "%s address" % names[n - 1], "type": "text",
+				"placeholder": "NDI or Spout name, or rtmp:// rtsp:// address",
+				"tooltip": "For NDI source or Spout sender: the source's name, or just part of it (cam 2 finds STUDIO-PC (cam 2)). For Stream address: an rtmp://, rtsp://, srt:// or http stream address, or a video file (it loops); needs ffmpeg in the tools folder. Put listen: in front (listen:rtmp://0.0.0.0:1935/live/cam) to wait for a camera or phone app to connect to this PC instead. Press Enter to apply."})
 			out.append({"key": "forge_live_%d_picture" % n, "label": "%s picture" % names[n - 1], "type": "picture",
 				"placeholder": "used when it shows Picture file",
 				"tooltip": "The picture this screen shows when it is set to Picture file. PNG, JPG, WebP or GIF (animated GIFs play), up to 3 MB."})
@@ -353,6 +366,7 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 				for a in _live:
 					if key == "forge_live_%d_picture" % int(a["n"]):
 						_load_live_picture(a)
+				_request_feeds()
 				_refresh_live()
 
 
@@ -1029,6 +1043,7 @@ func _build_live_screens() -> void:
 		_live.append(a)
 		_load_live_picture(a)
 	_move_lift(false)
+	_request_feeds()
 	_refresh_live()
 
 
@@ -1068,6 +1083,36 @@ func _on_presenter_texture(n: int, tex: Texture2D) -> void:
 	_refresh_live()
 
 
+## ExtraFeeds' picture for one of this room's slots ("forge_live_n"): a screen's own NDI
+## source, Spout sender or stream address.
+func _on_extra_texture(slot: String, tex: Texture2D) -> void:
+	_feed_tex[slot] = tex
+	_refresh_live()
+
+
+## EventBus.room_changed (RoomHost finished loading a room, this one or its replacement).
+## ExtraFeeds stops every feed that isn't asked for again shortly after a room change, so ask
+## again a frame later (unless this room is the one that just left).
+func _on_fh_room_changed(_room_id: String) -> void:
+	if not _retired:
+		_request_feeds.call_deferred()
+
+
+## Asks ExtraFeeds (core/extra_feeds.gd, through EventBus.extra_feed_requested) for each small
+## screen's own feed: slot "forge_live_n", kind = its source when that is ndi / spout / stream,
+## address = "forge_live_n_address". Any other source stops the slot. Called when the screens
+## are built, after a room change and whenever a forge_live_ setting changes.
+func _request_feeds() -> void:
+	if _retired or not is_inside_tree():
+		return
+	for a in _live:
+		var n := int(a["n"])
+		var src := String(AppState.get_setting("forge_live_%d_source" % n))
+		var own := src in OWN_FEEDS
+		EventBus.extra_feed_requested.emit("forge_live_%d" % n, src if own else "",
+			String(AppState.get_setting("forge_live_%d_address" % n)) if own else "")
+
+
 ## Gives every small screen the picture its "forge_live_n_source" setting asks for ("off"
 ## hides the whole screen). A source with no picture yet shows a dark panel. The picture keeps
 ## its own shape inside live_screen_size.
@@ -1075,7 +1120,7 @@ func _refresh_live() -> void:
 	for a in _live:
 		var src := String(AppState.get_setting("forge_live_%d_source" % int(a["n"])))
 		(a["root"] as Node3D).visible = src != "off"
-		var tex: Texture2D = a["pic"] if src == "picture" else _feed_tex.get(src)
+		var tex: Texture2D = a["pic"] if src == "picture" else _feed_tex.get("forge_live_%d" % int(a["n"]) if src in OWN_FEEDS else src)
 		var mat := a["mat"] as StandardMaterial3D
 		mat.albedo_texture = tex
 		mat.albedo_color = Color(1.0, 1.0, 1.0) if tex else Color(0.015, 0.02, 0.035)

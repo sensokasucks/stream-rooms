@@ -153,6 +153,12 @@ func _ready() -> void:
 	EventBus.spout_stop_requested.connect(stop_spout)
 	EventBus.ndi_stop_requested.connect(stop_ndi)
 
+	# feeds of their own for screens a room builds itself (the Forge Hall's small live screens)
+	var extra := ExtraFeeds.new()
+	extra.name = "ExtraFeeds"
+	extra.setup(_ndi, _spout)
+	add_child(extra)
+
 
 ## Every frame: release delayed browser frames and sound, sample room colours, watch NDI / Spout
 ## picture sizes, report file progress, top up NDI sound, and drop feeds that went quiet

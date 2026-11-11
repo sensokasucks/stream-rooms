@@ -56,11 +56,15 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_day_minutes": 0.0,    # Forge Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at forge_time
 	"forge_lift_up": false,      # Forge Hall: the small live screen in the floor is raised
 	"forge_live_1_source": "webcam",   # Forge Hall small live screens: what each shows: off / webcam / podium1..podium4
-	"forge_live_2_source": "off",      # (that podium's live feed) / screen (a copy of the big screen) / picture.
+	"forge_live_2_source": "off",      # (that podium's live feed) / screen (a copy of the big screen) / picture /
+	                                   # ndi / spout / stream (a feed of its own, named by forge_live_n_address).
 	"forge_live_3_source": "off",      # 1 = the one that rises from the floor, 2 and 3 = above the big screen (left, right)
 	"forge_live_1_picture": "",  # Forge Hall small live screens: the picture file for source "picture"
 	"forge_live_2_picture": "",
 	"forge_live_3_picture": "",
+	"forge_live_1_address": "",  # Forge Hall small live screens: for source ndi / spout the source's name (or part
+	"forge_live_2_address": "",  # of it), for source stream an address ffmpeg can open (rtmp://, rtsp://, a video
+	"forge_live_3_address": "",  # file; "listen:" in front waits for the camera to connect). core/extra_feeds.gd.
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible

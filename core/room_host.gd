@@ -303,14 +303,22 @@ func _screen_controls(info: RoomInfo) -> Array[Dictionary]:
 			"tooltip": "How strongly the picture is broken into LED dots, like a giant billboard. 0% = a smooth picture, 100% = the room's look."})
 	if info.screen_hologram:
 		out.append({"heading": "Hologram screen"})
-		out.append({"key": "holo_amount", "label": "Hologram", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0})
-		out.append({"key": "holo_transparency", "label": "Transparency", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0})
-		out.append({"key": "holo_glitch", "label": "Glitch", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0})
-		out.append({"key": "holo_lines", "label": "Scan lines", "min": 10.0, "max": 400.0, "step": 1.0, "format": "%d"})
-		out.append({"key": "holo_speed", "label": "Scroll speed", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%.2f"})
-		out.append({"key": "holo_noise", "label": "Noise", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0})
-		out.append({"key": "holo_color1", "label": "Line colour 1", "type": "color"})
-		out.append({"key": "holo_color2", "label": "Line colour 2", "type": "color"})
+		out.append({"key": "holo_amount", "label": "Hologram", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much of the hologram look the big screen gets. 0% = a plain screen."})
+		out.append({"key": "holo_transparency", "label": "Transparency", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How see-through the hologram picture is. 0% = solid."})
+		out.append({"key": "holo_glitch", "label": "Glitch", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How often and how strongly the hologram picture jumps and tears. 0% = steady."})
+		out.append({"key": "holo_lines", "label": "Scan lines", "min": 10.0, "max": 400.0, "step": 1.0, "format": "%d",
+			"tooltip": "How many scan lines run across the hologram picture. More = finer lines."})
+		out.append({"key": "holo_speed", "label": "Scroll speed", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%.2f",
+			"tooltip": "How fast the scan lines drift up the picture. 0 = they stand still."})
+		out.append({"key": "holo_noise", "label": "Noise", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much grainy flicker the hologram picture has. 0% = clean."})
+		out.append({"key": "holo_color1", "label": "Line colour 1", "type": "color",
+			"tooltip": "The first of the two colours the hologram's scan lines blend between."})
+		out.append({"key": "holo_color2", "label": "Line colour 2", "type": "color",
+			"tooltip": "The second of the two colours the hologram's scan lines blend between."})
 	return out
 
 
