@@ -2,19 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://od8abpias0jl"
-path="res://.godot/imported/forge_hall_floor_tiles.png-4f5e7f4386bf6896b02f1c301aaeebfa.ctex"
+uid="uid://c11p8b8kdvkxe"
+path="res://.godot/imported/art_3.png-d2519600b86db3cc54a744b7b39ecff3.ctex"
 metadata={
 "vram_texture": false
-}
-generator_parameters={
-"md5": "ce6530a183a97e468abc0183c478f780"
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/forge_hall_floor_tiles.png"
-dest_files=["res://.godot/imported/forge_hall_floor_tiles.png-4f5e7f4386bf6896b02f1c301aaeebfa.ctex"]
+source_file="res://rooms/forge_hall/textures/art_3.png"
+dest_files=["res://.godot/imported/art_3.png-d2519600b86db3cc54a744b7b39ecff3.ctex"]
 
 [params]
 
@@ -26,7 +23,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=true
+mipmaps/generate=false
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

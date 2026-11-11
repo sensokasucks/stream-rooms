@@ -288,6 +288,11 @@ func _screen_controls(info: RoomInfo) -> Array[Dictionary]:
 		out.append({"key": "film_look", "label": "Film look", "min": 0.0, "max": 2.0, "step": 0.01,
 			"format": "%d%%", "scale": 100.0,
 			"tooltip": "How much old-film dirt and fading the picture gets. 0% = clean, 100% = the room's look, 200% = extra dirty."})
+	if info.screen_led_amount > 0.0:
+		out.append({"heading": "LED screen"})
+		out.append({"key": "led_look", "label": "LED dots", "min": 0.0, "max": 1.0, "step": 0.01,
+			"format": "%d%%", "scale": 100.0,
+			"tooltip": "How strongly the picture is broken into LED dots, like a giant billboard. 0% = a smooth picture, 100% = the room's look."})
 	if info.screen_hologram:
 		out.append({"heading": "Hologram screen"})
 		out.append({"key": "holo_amount", "label": "Hologram", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0})

@@ -1,8 +1,10 @@
 extends Node
 ## Forge Hall: the room loads with everything its markers promise (screen, ten cameras, four
 ## podiums, chat and reply screens, reaction targets, 30 bench seats in three stepped rows, the
-## fire, the sunbeams) and the Room tab's Fire, Light strips and Light rays sliders do their
-## job. Saves one screenshot per camera into the output folder (look at them: the look is not
+## fire, the sunbeams, five art frames) and the Room tab's controls do their job: Fire, Light
+## strips, Light rays, the alcove art's frame / style / picture, the LED dots and the screen's
+## bend, size and place (which reload the room). Saves one screenshot per camera and a few of
+## the bent screen and hologram art into the output folder (look at them: the look is not
 ## checked here).
 ##   <redot console exe> --path . _tests/test_forge_hall.tscn -- C:/temp/sr_tests --mp-profile=test
 
@@ -48,6 +50,17 @@ func _ready() -> void:
 	AppState.set_setting("forge_fire", 1.0)
 	AppState.set_setting("forge_neon", 1.0)
 	AppState.set_setting("sun_rays", 1.0)
+	AppState.set_setting("led_look", 1.0)
+	AppState.set_setting("holo_amount", 0.0)
+	AppState.set_setting("holo_transparency", 0.0)
+	AppState.set_setting("forge_screen_x", 0.0)
+	AppState.set_setting("forge_screen_y", 0.0)
+	AppState.set_setting("forge_screen_size", 1.0)
+	AppState.set_setting("forge_screen_bend", 0.0)
+	AppState.set_setting("forge_art_frame", "brass")
+	AppState.set_setting("forge_art_style", "picture")
+	for n in range(1, 6):
+		AppState.set_setting("forge_art_%d" % n, "")
 	var main: Node = load("res://core/main.tscn").instantiate()
 	add_child(main)
 	main.get_node("ControlPanel").visible = false
@@ -107,6 +120,29 @@ func _ready() -> void:
 		if c.has("key"):
 			keys.append(String(c["key"]))
 	_check(keys.has("forge_fire") and keys.has("forge_neon") and keys.has("sun_rays"), "the Room tab gets Fire, Light strips and Light rays (%s)" % str(keys))
+	_check(keys.has("forge_screen_bend") and keys.has("forge_screen_size") and keys.has("forge_screen_x") and keys.has("forge_screen_y"),
+		"the Room tab gets the screen's Bend, Size and Move sliders")
+	_check(keys.has("forge_art_frame") and keys.has("forge_art_style") and keys.has("forge_art_1") and keys.has("forge_art_5"),
+		"the Room tab gets the alcove art's Frame, Art style and five picture boxes")
+	_check(room.reload_keys().has("forge_screen_bend") and room.reload_keys().has("forge_screen_x"), "the screen's shape settings ask for a room reload")
+	# the control panel builds all of them (dropdowns and picture boxes are new kinds of room control)
+	var panel: Node = main.get_node("ControlPanel")
+	var schema_keys := {}
+	for e: Dictionary in panel.settings_schema():
+		schema_keys[String(e["key"])] = String(e["type"])
+	_check(schema_keys.get("forge_art_frame", "") == "choice" and schema_keys.get("forge_art_1", "") == "text" and schema_keys.get("forge_screen_bend", "") == "range",
+		"the panel built a dropdown, a picture box and a slider for them")
+	_check(schema_keys.has("led_look") and schema_keys.has("holo_amount"), "the Room tab also gets LED dots and the Hologram screen sliders")
+
+	# the art frames: one per alcove, each with a built-in poster and four frame bars
+	var frames := fx.find_children("ArtFrame*", "Node3D", false, false) if fx else []
+	var canvases := 0
+	for f in frames:
+		var cv := f.get_node_or_null("Canvas") as MeshInstance3D
+		if cv != null and cv.visible and cv.material_override is StandardMaterial3D and (cv.material_override as StandardMaterial3D).albedo_texture != null \
+				and (f.get_node("Bar0") as MeshInstance3D).visible:
+			canvases += 1
+	_check(frames.size() == 5 and canvases == 5, "five framed posters in the wall alcoves (%d / %d)" % [frames.size(), canvases])
 
 	# screenshots from every camera
 	for i in cams.size():
@@ -133,6 +169,78 @@ func _ready() -> void:
 	AppState.set_setting("sun_rays", 1.0)
 	await _secs(0.3)
 	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and (flames[0] as MeshInstance3D).visible and beams.visible, "back at 100% everything is on again")
+
+	# alcove art: hologram style, another frame, a picture file of the owner's
+	var canvas1 := frames[0].get_node("Canvas") as MeshInstance3D if frames.size() > 0 else null
+	if canvas1:
+		var pic := _out + "/forge_test_art.png"
+		var img := Image.create(200, 100, false, Image.FORMAT_RGBA8)     # twice as wide as high
+		img.fill(Color(0.9, 0.3, 0.1))
+		img.save_png(pic)
+		AppState.set_setting("forge_art_1", pic)
+		await _secs(1.0)
+		var qsize := (canvas1.mesh as QuadMesh).size
+		_check(absf(qsize.x / qsize.y - 2.0) < 0.01 and qsize.x <= 1.41, "a picture file shows in frame 1 in its own shape (%.2f x %.2f m)" % [qsize.x, qsize.y])
+		AppState.set_setting("forge_art_1", "")
+		await _secs(0.3)
+		_check((canvas1.mesh as QuadMesh).size.y > 1.5, "blank brings the built-in poster back")
+		AppState.set_setting("forge_art_style", "hologram")
+		AppState.set_setting("forge_art_frame", "neon")
+		await _secs(0.3)
+		var bar := frames[0].get_node("Bar0") as MeshInstance3D
+		_check(canvas1.material_override is ShaderMaterial and canvas1.position.z > 0.05, "Art style Hologram floats a see-through picture off the wall")
+		_check((bar.material_override as StandardMaterial3D).emission_enabled, "Frame Light strip glows")
+		EventBus.camera_preset_requested.emit(5)
+		await _secs(1.0)
+		await _shot(_out + "/forge_art_hologram.png")
+		AppState.set_setting("forge_art_frame", "none")
+		await _secs(0.2)
+		_check(not bar.visible, "Frame No frame hides the bars")
+		AppState.set_setting("forge_art_frame", "brass")
+		AppState.set_setting("forge_art_style", "picture")
+
+	# LED dots: the slider scales the room's own dot strength on the screen material
+	var smat := room.find_screen().material_override as ShaderMaterial
+	var led_full := float(smat.get_shader_parameter("led_amount")) if smat else -1.0
+	AppState.set_setting("led_look", 0.0)
+	await _secs(0.2)
+	_check(led_full > 0.1 and smat != null and is_zero_approx(float(smat.get_shader_parameter("led_amount"))), "LED dots 0%% gives a smooth picture (%.2f -> 0)" % led_full)
+	AppState.set_setting("led_look", 1.0)
+
+	# the screen's shape: it bends at once, then the room reloads with the new shape
+	var flat_box := room.find_screen().get_aabb()
+	AppState.set_setting("forge_screen_bend", 0.8)
+	AppState.set_setting("forge_screen_size", 0.8)
+	AppState.set_setting("forge_screen_x", 3.0)      # further than the alcove allows
+	await _secs(0.2)
+	var bent := room.find_screen().get_aabb()
+	_check(flat_box.size.z < 0.01 and bent.size.z > 0.5 and is_equal_approx(bent.position.z, flat_box.position.z),
+		"Bend 80%% wraps the screen's edges forward, never into the wall (%.2f m deep)" % bent.size.z)
+	_check(bent.end.x <= 4.96 and bent.end.x > 4.5 and bent.size.x < flat_box.size.x, "smaller and moved right, it stops at the alcove's edge (right edge at %.2f m)" % bent.end.x)
+	await _secs(8.0)                                  # RoomHost reloads the room 0.8 s after the last change
+	var room2: Room = host.get_current_room()
+	_check(room2 != null and room2 != room and room2.find_screen().get_aabb().size.z > 0.5, "the room reloaded with the bent screen")
+	AppState.set_curtain(false, "instant")
+	for shot: Array in [[0, "forge_screen_concave"], [1, "forge_screen_concave_side"]]:
+		EventBus.camera_preset_requested.emit(int(shot[0]))
+		await _secs(1.0)
+		await _shot(_out + "/%s.png" % String(shot[1]))
+	AppState.set_setting("forge_screen_bend", -0.8)
+	AppState.set_setting("forge_screen_size", 1.0)
+	AppState.set_setting("forge_screen_x", 0.0)
+	await _secs(0.2)
+	var bulge := room2.find_screen().get_aabb()
+	_check(bulge.size.z > 0.5 and is_equal_approx(bulge.position.z, flat_box.position.z), "Bend -80%% bulges the middle forward (%.2f m deep)" % bulge.size.z)
+	await _secs(6.0)
+	AppState.set_curtain(false, "instant")
+	EventBus.camera_preset_requested.emit(1)
+	await _secs(1.0)
+	await _shot(_out + "/forge_screen_convex_side.png")
+	AppState.set_setting("forge_screen_bend", 0.0)
+	await _secs(0.2)
+	var room3: Room = host.get_current_room()
+	_check(room3 != null and room3.find_screen().get_aabb().size.is_equal_approx(flat_box.size), "Bend 0% is the flat screen again")
+	await _secs(5.0)
 
 	print("DONE fails=%d" % _fails)
 	AppState.request_quit(0 if _fails == 0 else 1)

@@ -186,6 +186,12 @@ func get_projector_marker() -> Node3D:
 ##   {"key": "rain_amount", "label": "Rain", "min": 0.0, "max": 2.0, "step": 0.01,
 ##    "format": "%d%%", "scale": 100.0}                  a slider for an AppState setting
 ##   {"key": "holo_color1", "label": "Line colour", "type": "color"}   a colour picker
+##   {"key": "rain_on", "label": "Rain", "type": "check"}             a tick box (a bool setting)
+##   {"key": "forge_art_frame", "label": "Frame", "type": "option",
+##    "options": [["brass", "Brass"], ...]}              a dropdown (a String setting)
+##   {"key": "forge_art_1", "label": "Art 1", "type": "picture",
+##    "placeholder": "..."}                              a picture file box with Browse / Clear
+## Any entry can carry a "tooltip". ui/control_panel.gd (_on_room_controls) builds them.
 ## The room reacts to its settings through EventBus.setting_changed.
 func get_controls() -> Array[Dictionary]:
 	return []

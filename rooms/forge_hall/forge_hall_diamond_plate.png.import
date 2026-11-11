@@ -2,16 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://srhvr8p24tgl"
-path="res://.godot/imported/floor_tiles.png-8f96d2a43a56787646bf5416cbf9da94.ctex"
+uid="uid://1knxqa6n6ff"
+path="res://.godot/imported/forge_hall_diamond_plate.png-fa25e69de97a29f4c8b9640219d0c477.ctex"
 metadata={
 "vram_texture": false
+}
+generator_parameters={
+"md5": "d89dd84aab224548738ddfcf5f53344a"
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/textures/floor_tiles.png"
-dest_files=["res://.godot/imported/floor_tiles.png-8f96d2a43a56787646bf5416cbf9da94.ctex"]
+source_file="res://rooms/forge_hall/forge_hall_diamond_plate.png"
+dest_files=["res://.godot/imported/forge_hall_diamond_plate.png-fa25e69de97a29f4c8b9640219d0c477.ctex"]
 
 [params]
 
@@ -23,7 +26,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

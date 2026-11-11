@@ -99,7 +99,7 @@ var _net_live: HBoxContainer
 var _net_live_label: Label
 var _net_copy_btn: Button
 var _pic_dialog: FileDialog
-var _pic_target: String = ""              # the presenter_<n>_picture setting the picture dialog is for
+var _pic_target: String = ""              # the setting the picture dialog is for (a presenter_<n>_picture, or a room's "picture" control)
 var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
@@ -477,7 +477,7 @@ func _build() -> void:
 	_pic_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_pic_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_pic_dialog.use_native_dialog = true
-	_pic_dialog.title = "Choose a podium picture"
+	_pic_dialog.title = "Choose a picture"
 	_pic_dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp, *.gif ; Pictures"])
 	_pic_dialog.file_selected.connect(func(p: String) -> void:
 		if _pic_target != "":
@@ -2602,6 +2602,8 @@ func _on_room_controls(controls: Array) -> void:
 		_sliders.erase(key)
 		_colors.erase(key)
 		_checks.erase(key)
+		_options.erase(key)
+		_texts.erase(key)
 	_room_keys.clear()
 	for c in _room_box.get_children():
 		c.queue_free()
@@ -2614,10 +2616,22 @@ func _on_room_controls(controls: Array) -> void:
 			push_warning("Room control for unknown setting: %s" % key)
 			continue
 		var w: Control
-		if String(spec.get("type", "slider")) == "color":
+		var kind := String(spec.get("type", "slider"))
+		if kind == "color":
 			w = _color(key, String(spec.get("label", key)))
-		elif String(spec.get("type", "slider")) == "check":
+		elif kind == "check":
 			w = _check(key, String(spec.get("label", key)))
+		elif kind == "option":
+			# a dropdown: "options" is [[value, "Label"], ...] like _option's items
+			w = _option(key, String(spec.get("label", key)), spec.get("options", []))
+		elif kind == "picture":
+			# a picture file: a text box for the path with Browse and Clear, like a podium picture
+			w = _text_setting(key, String(spec.get("label", key)), String(spec.get("placeholder", "a png, jpg, webp or gif")))
+			w.add_child(_tip(_button("Browse...", func() -> void:
+				_pic_target = key
+				_pic_dialog.popup_centered_ratio(0.7)), "Pick the picture file."))
+			w.add_child(_tip(_button("Clear", func() -> void: AppState.set_setting(key, "")),
+				"Empty the box again (back to what the room shows by default)."))
 		else:
 			w = _slider(key, String(spec.get("label", key)), float(spec.get("min", 0.0)), float(spec.get("max", 1.0)),
 				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)))

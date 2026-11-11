@@ -32,6 +32,18 @@ const BASE_DEFAULTS: Dictionary = {
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
 	"forge_neon": 1.0,           # Forge Hall light strips (cyan / orange / purple lines, glowing pipes): 0 = off, 1 = normal, 2 = bright
+	"forge_screen_x": 0.0,       # Forge Hall screen: moved left (-) / right (+) on its wall, metres (clamped to the alcove)
+	"forge_screen_y": 0.0,       # Forge Hall screen: moved down (-) / up (+), metres
+	"forge_screen_size": 1.0,    # Forge Hall screen: size, 1 = as built (8.6 m wide)
+	"forge_screen_bend": 0.0,    # Forge Hall screen: -1 = bulging out at the audience (convex), 0 = flat, 1 = edges wrapped towards the audience (concave)
+	"forge_art_frame": "brass",  # Forge Hall alcove art: frame material: brass / steel / wood / marble / neon
+	"forge_art_style": "picture",  # Forge Hall alcove art: "picture" (flat, lit by the room) or "hologram" (see-through, glowing)
+	"forge_art_1": "",           # Forge Hall alcove art 1..5: a picture file; blank = the built-in poster
+	"forge_art_2": "",
+	"forge_art_3": "",
+	"forge_art_4": "",
+	"forge_art_5": "",
+	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
 	"holo_glitch": 0.0,          # hologram screens: glitch strength

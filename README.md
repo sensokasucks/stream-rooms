@@ -1264,27 +1264,50 @@ Included rooms:
     textures come from `blender/make_throne_textures.py`, which paints the crest picture you
     give it onto the banner (`rooms/throne_hall/textures/crest_source.png`; swap that file and
     run the script again for another crest).
-- **Forge Hall**: a tall stone workshop with a little science fiction in it, modelled on a
-  reference picture. A first version: more is planned.
-  - Chunky stone pillars carry cyan, orange and purple light strips, bands of cyan light run
-    round the walls, hexagonal lanterns hang on chains from a timber roof, and two skylights
-    throw sunbeams and barred patches of light onto the stone floor.
-  - The screen (the same size as the Lecture Hall (Panel)'s) hangs in a wide alcove with pipes
-    across its top. The chat screen sits under it and the reply screen up in the gable.
+- **Forge Hall**: a tall hall of carved stone with a little science fiction in it, modelled on
+  a reference picture and a cross-section sketch.
+  - Walls, pillars and floor are big single slabs of dark polished stone with a few fine
+    cracks. Lines of cyan, orange and purple light are set flush into them like the traces of
+    a circuit board, running to a "chip" in the floor in front of the screen.
+  - Above the walls a ledge carries tall slanted windows that lean in to an upper level of
+    stone and steel, under a ceiling of dark diamond plate on steel girders. Short-chained
+    hexagonal lanterns hang close to the ceiling, and two of the windows throw sunbeams and
+    barred patches of light onto the floor.
+  - Brass and iron pipework with valves and gauges runs along the ledges and down the walls.
+  - The screen hangs in a wide alcove. It can show LED dots and the hologram look like Neon
+    City's, and it can be bent, resized and moved. Room tab:
+    - **LED dots**: how strongly the picture is broken into dots (0% = smooth). The same slider
+      now shows in Neon City.
+    - **Hologram**, **Transparency**, **Glitch**, **Scan lines**, **Scroll speed**, **Noise**,
+      **Line colour 1**, **Line colour 2**: the hologram look, shared with Neon City.
+    - **Bend**: above 0% the screen's edges wrap towards the audience (concave), below 0% its
+      middle bulges out (convex).
+    - **Size**, **Move left/right**, **Move up/down**: the screen stays inside its alcove, so
+      make it smaller to move it further. The room reloads a moment after you let go of one of
+      these four, so the screen's light and the curtain follow.
+  - Five alcoves are cut into the walls between the pillars, lined with wood panelling. Each
+    holds a framed picture. Room tab, **Alcove art**:
+    - **Frame**: Brass, Steel, Dark wood, Marble, Light strip (glows, follows **Light strips**)
+      or No frame.
+    - **Art style**: Picture (flat on the wall, lit by the room) or Hologram (see-through and
+      glowing, floating in front of the wall).
+    - **Art 1** to **Art 5**: a picture file for each alcove (PNG, JPG, WebP or GIF, up to
+      3 MB; **Browse...** picks one, **Clear** brings the built-in poster back). They count
+      from the front of the left wall, then the right wall, then the back wall.
   - A big forge fireplace is built out from the right wall, with a second fire slot under the
     hearth. Its flames and flickering light are drawn by the room (the flicker is gentle and
     stops in photosensitive-safe mode).
   - Room tab: **Fire** (flames, their light and the crackle, 0-200%, 0% = out),
-    **Light strips** (how bright the coloured strips and glowing pipes are, 0% = off) and
+    **Light strips** (how bright the light inlays and glowing pipes are, 0% = off) and
     **Light rays** (the sunbeams and floor patches, 0% = off).
   - A podium room: four stone podiums, two each side of the screen (see *Presenters*). No
     webcam frame: the webcam uses the corner overlay.
   - Seats for 30: three rows of benches either side of a centre aisle, each row a step higher.
     There is no filler crowd.
-  - The rest of the room: a boiler with pipes and a round cyan sign, a workbench with a tool
-    board, an anvil, barrels and crates, a side door and a tall double door at the back.
+  - The rest of the room: a boiler with pipes and a round cyan sign, a workbench, an anvil,
+    barrels and crates, a side door and a tall double door at the back.
   - Cameras: the centre aisle (the default), the forge corner (the reference picture's view),
-    the front row, beside the fire, up in the rafters, under the skylights, three podium views
+    the front row, beside the fire, up under the ceiling, by the slanted windows, three podium views
     and a Reaction camera looking at the fire. Press **0** for the 10th.
   - Reaction targets: `!tomato forge`, `lantern`, `anvil`, `boiler`.
   - A medium stone-room reverb and the sound of the fire.

@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://cydlvolb33sn"
-path="res://.godot/imported/forge_hall_stone_slab.png-19dc07baf902fdba14c4c246c8c6c55c.ctex"
+uid="uid://drfl1fr7ubfwr"
+path="res://.godot/imported/forge_hall_floor_slab.png-29f809cb49b0b3add17590b20e2cab0c.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "bab908fbd4825f4664668d911dab3f09"
+"md5": "876ad52e0ece5aec9f431aaf4c64e065"
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/forge_hall_stone_slab.png"
-dest_files=["res://.godot/imported/forge_hall_stone_slab.png-19dc07baf902fdba14c4c246c8c6c55c.ctex"]
+source_file="res://rooms/forge_hall/forge_hall_floor_slab.png"
+dest_files=["res://.godot/imported/forge_hall_floor_slab.png-29f809cb49b0b3add17590b20e2cab0c.ctex"]
 
 [params]
 

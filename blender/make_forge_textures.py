@@ -5,9 +5,12 @@
 The PNGs go into rooms/forge_hall/textures, where forge_hall_gen.py (tex_mat) picks them up
 by these names. Needs numpy and Pillow; it runs in plain Python, not inside Blender.
 
-    stone_slab.png   1024x1024  big warm-grey stone slabs with bevelled edges and a few cracks
-                                (walls, pillars, chimney; one texture = 4 m)
-    floor_tiles.png  1024x1024  2 x 2 worn floor flags (one texture = 3 m, so tiles are 1.5 m)
+    slab_marble.png  1024x1024  one unbroken slab of dark polished marble: soft clouding, pale veins
+                                and a few fine cracks, no joints (walls, pillars, forge; = 6 m)
+    floor_slab.png   1024x1024  2 x 2 big polished floor slabs with hairline joints (= 6 m)
+    diamond_plate.png 512x512   very dark steel tread plate (the ceiling; = 1 m)
+    art_1..6.png     512x640    six poster pictures for the alcove art frames (shown until the
+                                owner picks their own)
     wood_panel.png   1024x512   dark wood wainscot: two framed panels with rounded corners
                                 (one texture = 2.4 m wide, 1.2 m tall)
     roof_planks.png  512x512    dark roof boards (one texture = 2 m)
@@ -111,25 +114,138 @@ def cracks(img, count, seed, strength=0.6):
     return lerp_rgb(out, GROOVE, np.clip(c * strength, 0, 1))
 
 
-def stone_slab():
-    """Wall stone: a row of tall slabs over a row of wide ones (tiles both ways)."""
-    h = w = 1024
-    img = painted(h, w, 31, STONE_DARK, STONE_LIGHT)
-    rects = [(0, 0, 512, 512), (512, 0, 1024, 512),
-             (0, 512, 256, 1024), (256, 512, 768, 1024), (768, 512, 1024, 1024)]
-    img = bevel_blocks(img, rects)
-    img = cracks(img, 9, 5)
-    save("stone_slab.png", img)
+def veins(h, w, count, seed, step=20, width=(1, 3)):
+    """A 0..1 mask of a few long wandering lines (marble veins), soft-edged. Tiles badly on
+    purpose: the slabs are meant to read as single big pieces of stone."""
+    rng = np.random.default_rng(seed)
+    m = Image.new("L", (w, h), 0)
+    d = ImageDraw.Draw(m)
+    for _ in range(count):
+        x, y = rng.random() * w, rng.random() * h
+        ang = rng.random() * math.pi * 2
+        pts = []
+        for _s in range(70):
+            pts.append((x, y))
+            ang += (rng.random() - 0.5) * 0.7
+            x += math.cos(ang) * step
+            y += math.sin(ang) * step
+        d.line(pts, fill=255, width=int(width[0] + rng.random() * (width[1] - width[0])))
+    fine = np.asarray(m.filter(ImageFilter.GaussianBlur(1.5)), np.float32) / 255.0
+    wide = np.asarray(m.filter(ImageFilter.GaussianBlur(14)), np.float32) / 255.0
+    return np.clip(fine * 0.6 + wide * 0.5, 0, 1)
 
 
-def floor_tiles():
-    """Floor flags: 2 x 2 big tiles, worn lighter in the middle, darker in the joints."""
+def slab_marble():
+    """Wall and pillar stone: one unbroken slab of dark polished marble with a metallic cast.
+    Soft clouding, pale veins and a few fine cracks; no joints (one texture = 6 m)."""
     h = w = 1024
-    img = painted(h, w, 41, (50, 46, 46), (104, 98, 92))
-    rects = [(0, 0, 512, 512), (512, 0, 1024, 512), (0, 512, 512, 1024), (512, 512, 1024, 1024)]
-    img = bevel_blocks(img, rects, groove=6, hi=0.12, lo=0.2)
-    img = cracks(img, 6, 9, 0.45)
-    save("floor_tiles.png", img)
+    cloud = smooth_noise(h, w, 4, 4, 31) * 0.55 + smooth_noise(h, w, 14, 14, 32) * 0.3 + smooth_noise(h, w, 80, 80, 33) * 0.15
+    img = lerp_rgb((40, 40, 46), (86, 84, 88), np.clip((cloud - 0.25) / 0.55, 0, 1))
+    img = lerp_rgb(img, (150, 146, 140), veins(h, w, 7, 5) * 0.45)
+    img = cracks(img, 4, 7, 0.55)
+    save("slab_marble.png", img)
+
+
+def floor_slab():
+    """Floor: 2 x 2 big polished slabs with hairline joints (one texture = 6 m, so slabs are 3 m)."""
+    h = w = 1024
+    cloud = smooth_noise(h, w, 5, 5, 41) * 0.6 + smooth_noise(h, w, 20, 20, 42) * 0.4
+    img = lerp_rgb((34, 33, 38), (74, 72, 76), np.clip((cloud - 0.2) / 0.6, 0, 1))
+    img = lerp_rgb(img, (128, 124, 120), veins(h, w, 5, 9) * 0.35)
+    img = bevel_blocks(img, [(0, 0, 512, 512), (512, 0, 1024, 512), (0, 512, 512, 1024), (512, 512, 1024, 1024)], groove=3, hi=0.05, lo=0.08)
+    img = cracks(img, 3, 11, 0.4)
+    save("floor_slab.png", img)
+
+
+def diamond_plate():
+    """Ceiling: very dark steel tread plate, the raised diamonds in a herringbone (one texture = 1 m)."""
+    s = 512
+    big = Image.new("L", (s * 2, s * 2), 0)
+    d = ImageDraw.Draw(big)
+    n = 8
+    cell = s * 2 / n
+    for r in range(n):
+        for c in range(n):
+            cx, cy = (c + 0.5) * cell, (r + 0.5) * cell
+            a = math.radians(45 if (r + c) % 2 == 0 else -45)
+            dx, dy = math.cos(a) * cell * 0.36, math.sin(a) * cell * 0.36
+            px, py = -math.sin(a) * cell * 0.09, math.cos(a) * cell * 0.09
+            d.polygon([(cx - dx, cy - dy), (cx + px, cy + py), (cx + dx, cy + dy), (cx - px, cy - py)], fill=255)
+    lug = np.asarray(big.resize((s, s), Image.LANCZOS), np.float32) / 255.0
+    hi = np.clip(lug - np.roll(lug, 3, axis=0), 0, 1)          # lit upper edge of each diamond
+    base = lerp_rgb((14, 15, 18), (30, 32, 37), smooth_noise(s, s, 8, 8, 91))
+    img = lerp_rgb(base, (52, 55, 62), lug * 0.7)
+    img = lerp_rgb(img, (120, 124, 134), hi * 0.6)
+    save("diamond_plate.png", img)
+
+
+def _art_base(seed, top, bottom):
+    """A 512 x 640 canvas with a vertical colour wash and a little paint texture."""
+    h, w = 640, 512
+    t = np.linspace(0, 1, h)[:, None] * np.ones((1, w))
+    img = lerp_rgb(top, bottom, t.astype(np.float32))
+    img *= 0.85 + smooth_noise(h, w, 40, 32, seed)[..., None] * 0.3
+    return Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+
+
+def art():
+    """Six pictures for the alcove frames, shown until the owner picks their own
+    (art_1.png .. art_6.png, 512 x 640): simple poster designs on the room's themes."""
+    # 1: a gear with a glowing hub
+    im = _art_base(101, (22, 30, 44), (10, 12, 20)); d = ImageDraw.Draw(im)
+    c = (256, 320)
+    for k in range(12):
+        a = k * math.pi / 6
+        d.polygon([(c[0] + math.cos(a + s) * r, c[1] + math.sin(a + s) * r) for s, r in ((-0.11, 150), (-0.08, 200), (0.08, 200), (0.11, 150))], fill=(196, 150, 70))
+    d.ellipse([c[0] - 160, c[1] - 160, c[0] + 160, c[1] + 160], fill=(196, 150, 70))
+    d.ellipse([c[0] - 110, c[1] - 110, c[0] + 110, c[1] + 110], fill=(16, 20, 30))
+    d.ellipse([c[0] - 46, c[1] - 46, c[0] + 46, c[1] + 46], fill=(90, 235, 255))
+    im.save(os.path.join(OUT, "art_1.png"))
+    # 2: an anvil under a spark
+    im = _art_base(102, (60, 24, 14), (14, 8, 8)); d = ImageDraw.Draw(im)
+    d.polygon([(110, 330), (402, 330), (402, 372), (330, 392), (330, 452), (392, 500), (392, 540), (120, 540), (120, 500), (182, 452), (182, 392), (110, 372)], fill=(26, 26, 32))
+    d.polygon([(402, 336), (486, 348), (402, 366)], fill=(26, 26, 32))
+    for k in range(9):
+        a = -math.pi / 2 + (k - 4) * 0.28
+        d.line([(256 + math.cos(a) * 30, 300 + math.sin(a) * 30), (256 + math.cos(a) * (120 + 40 * (k % 2)), 300 + math.sin(a) * (120 + 40 * (k % 2)))], fill=(255, 190, 80), width=6)
+    d.ellipse([236, 280, 276, 320], fill=(255, 240, 190))
+    im.save(os.path.join(OUT, "art_2.png"))
+    # 3: a circuit sun over a horizon
+    im = _art_base(103, (44, 16, 70), (8, 10, 30)); d = ImageDraw.Draw(im)
+    d.ellipse([136, 150, 376, 390], fill=(255, 120, 40))
+    for y in range(270, 400, 22):
+        d.rectangle([120, y, 392, y + 8 + (y - 270) // 12], fill=(30, 12, 54))
+    for k in range(-6, 7):
+        d.line([(256 + k * 14, 420), (256 + k * 80, 640)], fill=(70, 235, 255), width=3)
+    for y in (420, 440, 470, 515, 580):
+        d.line([(0, y), (512, y)], fill=(70, 235, 255), width=3)
+    im.save(os.path.join(OUT, "art_3.png"))
+    # 4: a flame in three layers
+    im = _art_base(104, (16, 18, 26), (30, 12, 8)); d = ImageDraw.Draw(im)
+    for sc, colr in ((1.0, (190, 40, 16)), (0.72, (255, 130, 30)), (0.42, (255, 230, 150))):
+        pts = [(256, 560), (256 - 150 * sc, 470), (256 - 120 * sc, 330), (256 - 40 * sc, 380), (256 - 20 * sc, 560 - 440 * sc),
+               (256 + 70 * sc, 300), (256 + 60 * sc, 390), (256 + 140 * sc, 340), (256 + 150 * sc, 470)]
+        d.polygon(pts, fill=colr)
+    im.save(os.path.join(OUT, "art_4.png"))
+    # 5: a hammer crossed with a wrench
+    im = _art_base(105, (20, 40, 44), (8, 14, 18)); d = ImageDraw.Draw(im)
+    d.line([(130, 520), (360, 170)], fill=(150, 100, 60), width=30)
+    d.polygon([(300, 110), (440, 200), (410, 250), (270, 160)], fill=(170, 176, 190))
+    d.line([(382, 520), (160, 180)], fill=(196, 150, 70), width=26)
+    d.ellipse([110, 120, 210, 220], outline=(196, 150, 70), width=26)
+    d.rectangle([120, 100, 200, 150], fill=(14, 26, 30))
+    im.save(os.path.join(OUT, "art_5.png"))
+    # 6: stacked towers with lit windows
+    im = _art_base(106, (70, 40, 90), (16, 12, 30)); d = ImageDraw.Draw(im)
+    rng = np.random.default_rng(6)
+    for (x0, x1, y0) in ((40, 150, 300), (130, 260, 180), (240, 340, 260), (320, 470, 120), (430, 512, 340)):
+        d.rectangle([x0, y0, x1, 640], fill=(18, 16, 30))
+        for yy in range(y0 + 20, 620, 34):
+            for xx in range(x0 + 14, x1 - 14, 26):
+                if rng.random() < 0.45:
+                    d.rectangle([xx, yy, xx + 12, yy + 18], fill=(255, 200, 110) if rng.random() < 0.7 else (90, 235, 255))
+    im.save(os.path.join(OUT, "art_6.png"))
+    print("wrote art_1.png .. art_6.png")
 
 
 def wood_panel():
@@ -215,8 +331,10 @@ def sun_patch():
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    stone_slab()
-    floor_tiles()
+    slab_marble()
+    floor_slab()
+    diamond_plate()
+    art()
     wood_panel()
     roof_planks()
     metal_plate()

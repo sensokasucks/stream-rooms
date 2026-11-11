@@ -43,6 +43,7 @@ var _mirror_lights: Array[OmniLight3D] = []
 var _multiplier: float = 1.0    # the room's RoomInfo.screen_light_multiplier
 var _film: float = 0.0          # current film dirt (drives the light flicker)
 var _room_film: float = 0.0     # the room's own film amount (RoomInfo)
+var _room_led: float = 0.0      # the room's own LED-dot strength (RoomInfo.screen_led_amount)
 var _hologram: bool = false
 var _params: Dictionary = {}    # every shader parameter set, so a shader swap can restore them
 # _targets: colours the lights head for; _colors: where they are now (eased in _process);
@@ -62,7 +63,8 @@ func setup(screen: MeshInstance3D, info: RoomInfo, initial_texture: Texture2D,
 	_hologram = info.screen_hologram
 	_mat.shader = SCREEN_SHADER
 	_set_param("idle_color", ScreenFeed.IDLE_COLOR)
-	_set_param("led_amount", info.screen_led_amount)
+	_room_led = info.screen_led_amount
+	_apply_led()
 	_set_param("led_count", info.screen_led_count)
 	_set_param("film_tint", info.screen_film_tint)
 	_set_param("screen_matte", info.screen_matte)
@@ -165,8 +167,16 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 		_apply_glow()
 	elif key == "film_look":
 		_apply_film()
+	elif key == "led_look":
+		_apply_led()
 	elif _hologram and (HOLO_PARAMS.has(key) or key == "holo_transparency"):
 		_apply_holo(key)
+
+
+## LED dots setting ("led_look", 0..1, the LED dots slider RoomHost adds to the Room tab for
+## rooms with RoomInfo.screen_led_amount above 0): a share of the room's own dot strength.
+func _apply_led() -> void:
+	_set_param("led_amount", _room_led * clampf(float(AppState.get_setting("led_look")), 0.0, 1.0))
 
 
 ## Film look setting: up to 100% scales the whole look; above that only the dirt grows.

@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://0n04ivne01b7"
-path="res://.godot/imported/stone_slab.png-1d300fe7acb66b6d881417bac8adabe4.ctex"
+uid="uid://ddl66surff8i7"
+path="res://.godot/imported/diamond_plate.png-1e6d272d9238ac24f0fec9a0fc45ab57.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://rooms/forge_hall/textures/stone_slab.png"
-dest_files=["res://.godot/imported/stone_slab.png-1d300fe7acb66b6d881417bac8adabe4.ctex"]
+source_file="res://rooms/forge_hall/textures/diamond_plate.png"
+dest_files=["res://.godot/imported/diamond_plate.png-1e6d272d9238ac24f0fec9a0fc45ab57.ctex"]
 
 [params]
 
