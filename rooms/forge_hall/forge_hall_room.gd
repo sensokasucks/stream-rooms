@@ -46,9 +46,13 @@ extends Room
 ##   - A generated fire sound (a low roar with crackles) on the Ambience bus.
 
 const MIX_RATE: float = 22050.0
+## The small live screens' names (screen n = LIVE_NAMES[n - 1]): on their controls, and on the
+## sender page's "Extra screens" rows when a screen shows a browser tab.
+const LIVE_NAMES: PackedStringArray = ["Floor screen", "Upper left screen", "Upper right screen"]
 ## Small-screen sources that are a feed of the screen's own, fetched by ExtraFeeds
-## (core/extra_feeds.gd) from the screen's "forge_live_n_address".
-const OWN_FEEDS: Array[String] = ["ndi", "spout", "stream"]
+## (core/extra_feeds.gd) from the screen's "forge_live_n_address" (a browser tab, "tab", has
+## no address: the sender page asks which tab).
+const OWN_FEEDS: Array[String] = ["ndi", "spout", "stream", "tab"]
 const SHAFT_SHADER := preload("res://rooms/lecture_hall/sun_shaft.gdshader")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const SUN_PATCH := preload("res://rooms/forge_hall/textures/sun_patch.png")
@@ -317,14 +321,15 @@ func get_controls() -> Array[Dictionary]:
 		out.append({"heading": "Small live screens"})
 		out.append({"key": "forge_lift_up", "label": "Raise the floor screen", "type": "check",
 			"tooltip": "Raises the small screen out of the floor in front of the big screen, or lowers it back in."})
-		var names: PackedStringArray = ["Floor screen", "Upper left screen", "Upper right screen"]
+		var names := LIVE_NAMES
 		for a in _live:
 			var n := int(a["n"])
 			out.append({"key": "forge_live_%d_source" % n, "label": names[n - 1], "type": "option",
 				"options": [["off", "Off"], ["webcam", "Webcam"], ["podium1", "Podium 1's feed"], ["podium2", "Podium 2's feed"],
 					["podium3", "Podium 3's feed"], ["podium4", "Podium 4's feed"], ["screen", "Copy of the big screen"], ["picture", "Picture file"],
-					["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"]],
-				"tooltip": "What this small screen shows. Webcam = the webcam from the sender page. A podium's feed = whatever that podium shows live (it has to be on, in the Presenters tab). NDI source, Spout sender and Stream address give this screen a feed of its own, named in the box below (picture only, no sound). These screens are not sent to co-stream guests."})
+					["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"],
+					["tab", "Browser tab or window (pick it in the sender)"]],
+				"tooltip": "What this small screen shows. Webcam = the webcam from the sender page. A podium's feed = whatever that podium shows live (it has to be on, in the Presenters tab). NDI source, Spout sender and Stream address give this screen a feed of its own, named in the box below (picture only, no sound). Browser tab or window: a row for this screen appears under Extra screens on the sender page (Share to Stream Rooms in Stream Core); click its Pick a tab or window button there. These screens are not sent to co-stream guests."})
 			out.append({"key": "forge_live_%d_address" % n, "label": "%s address" % names[n - 1], "type": "text",
 				"placeholder": "NDI or Spout name, or rtmp:// rtsp:// address",
 				"tooltip": "For NDI source or Spout sender: the source's name, or just part of it (cam 2 finds STUDIO-PC (cam 2)). For Stream address: an rtmp://, rtsp://, srt:// or http stream address, or a video file (it loops); needs ffmpeg in the tools folder. Put listen: in front (listen:rtmp://0.0.0.0:1935/live/cam) to wait for a camera or phone app to connect to this PC instead. Press Enter to apply."})
@@ -1157,8 +1162,8 @@ func _on_fh_room_changed(_room_id: String) -> void:
 
 
 ## Asks ExtraFeeds (core/extra_feeds.gd, through EventBus.extra_feed_requested) for each small
-## screen's own feed: slot "forge_live_n", kind = its source when that is ndi / spout / stream,
-## address = "forge_live_n_address". Any other source stops the slot. Called when the screens
+## screen's own feed: slot "forge_live_n", kind = its source when that is ndi / spout / stream / tab,
+## address = "forge_live_n_address" (for a tab: the screen's name). Any other source stops the slot. Called when the screens
 ## are built, after a room change and whenever a forge_live_ setting changes.
 func _request_feeds() -> void:
 	if _retired or not is_inside_tree():
@@ -1167,8 +1172,9 @@ func _request_feeds() -> void:
 		var n := int(a["n"])
 		var src := String(AppState.get_setting("forge_live_%d_source" % n))
 		var own := src in OWN_FEEDS
-		EventBus.extra_feed_requested.emit("forge_live_%d" % n, src if own else "",
-			String(AppState.get_setting("forge_live_%d_address" % n)) if own else "")
+		# a browser tab has no address: ExtraFeeds gets the screen's name, shown on the sender page
+		var address := LIVE_NAMES[n - 1] if src == "tab" else String(AppState.get_setting("forge_live_%d_address" % n))
+		EventBus.extra_feed_requested.emit("forge_live_%d" % n, src if own else "", address if own else "")
 
 
 ## Gives every small screen the picture its "forge_live_n_source" setting asks for ("off"

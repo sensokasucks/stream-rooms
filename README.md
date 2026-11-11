@@ -1318,8 +1318,18 @@ Included rooms:
       Off, Webcam (the webcam from the sender page; the corner overlay steps aside while a
       screen shows it), Podium 1 to 4's feed (whatever that podium shows live; the podium has
       to be on in the Presenters tab), Copy of the big screen, Picture file, or a feed of the
-      screen's own: **NDI source**, **Spout sender** or **Stream address**. The three screens
-      can each have a different one. These feeds are picture only (no sound).
+      screen's own: **NDI source**, **Spout sender**, **Stream address** or **Browser tab or
+      window**. The three screens can each have a different one. These feeds are picture only
+      (no sound).
+    - **Browser tab or window**: each small screen can show a tab or window of its own, apart
+      from the big screen and the podiums. Pick the source, then look at the sender page
+      (**Share to Stream Rooms** on Stream Core's Live page, or the game's own sender page): a
+      box **Extra screens** appears with a row named after the screen. Click **Pick a tab or
+      window** on that row and choose what it shows. **Stop** on the row ends it, and the
+      screen goes dark. The sender page has to stay open, as for the big screen.
+    - Where these controls are: the game's **Room** tab, or in Stream Core under Setup > Stream
+      Rooms > Room & sound, in the last section (**More from Stream Rooms**), while the Forge
+      Hall is the room on screen.
     - **Floor screen picture** (and the two others): the file used for Picture file.
     - **Floor screen address** (and the two others): what the screen's own feed connects to.
       Press Enter to apply.

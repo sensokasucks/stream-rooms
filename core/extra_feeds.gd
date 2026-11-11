@@ -16,6 +16,12 @@ extends Node
 ##                     front ("listen:rtmp://0.0.0.0:1935/live/cam") to wait for a camera or
 ##                     phone app to connect to this PC instead of connecting out to a server.
 ##                     Needs ffmpeg (tools/ffmpeg.exe, see tools/get_tools.ps1).
+##            "tab"    a browser tab or window picked on the sender page (web/sender.html, also
+##                     inside Stream Core's "Share to Stream Rooms" card). address = the name
+##                     the page shows on that row ("Floor screen"). The page gets one "Extra
+##                     screens" row per tab slot (at most CaptureServer.MAX_EXTRA_TABS) with a
+##                     "Pick a tab or window" button; its pictures arrive through
+##                     CaptureServer / ScreenFeed (tab_frame). See tab_wishes.
 ##            ""       stop this slot
 ## An NDI source or Spout sender that isn't there yet is picked up when it appears. A stream
 ## that ends or can't be opened is tried again every RETRY_S seconds.
@@ -42,14 +48,25 @@ const START_DELAY_S: float = 0.4
 
 ## Seconds after a room change before feeds the new room didn't ask for are stopped.
 const STALE_S: float = 1.5
+## Seconds without a picture before a "tab" feed counts as gone. Long, because a tab that
+## doesn't change only gets its last picture sent again once a second by the sender page.
+const TAB_QUIET_S: float = 15.0
+
+## The set of "tab" feeds changed (one was asked for, renamed or stopped). ScreenFeed sends
+## the sender page its instructions again (ScreenFeed._sync_presenter_feeds reads tab_wishes).
+## Sent at most once a frame, from _process.
+signal tab_wishes_changed
 
 var _ndi: NdiReceiver
 var _spout: SpoutReceiver
 ## slot -> {"kind", "address", then per kind:
 ##   ndi:    "name" (the source found, "" = none yet), "player" (VideoStreamPlayer), "size"
 ##   spout:  "name", "tex" (the Spout texture), "size"
-##   stream: "pipe" (_Pipe), "tex" (ImageTexture or null), "wait" (seconds until ffmpeg starts)}
+##   stream: "pipe" (_Pipe), "tex" (ImageTexture or null), "wait" (seconds until ffmpeg starts)
+##   tab:    "tab" (which "Extra screens" row of the sender page, 0-based), "tex" (ImageTexture
+##           or null), "last_s" (when the last picture came, seconds of Time.get_ticks_msec)}
 var _slots: Dictionary = {}
+var _tabs_dirty: bool = false      # tab_wishes_changed is due (sent from _process)
 var _ffmpeg: String = ""           # found once (see _find_ffmpeg); "" = not looked for or missing
 var _ffmpeg_looked: bool = false
 
@@ -128,6 +145,13 @@ func _on_requested(slot: String, kind: String, address: String) -> void:
 			if _find_ffmpeg() == "":
 				EventBus.status_message.emit("A stream address needs ffmpeg: run tools/get_tools.ps1, or put ffmpeg in the tools folder.", true)
 				return
+		"tab":
+			var row := _free_tab()
+			if row < 0:
+				EventBus.status_message.emit("Only %d screens can show a browser tab of their own at a time." % CaptureServer.MAX_EXTRA_TABS, true)
+				return
+			e.merge({"tab": row, "tex": null, "last_s": 0.0})
+			_tabs_dirty = true
 		_:
 			push_warning("ExtraFeeds: unknown kind '%s'" % kind)
 			return
@@ -147,6 +171,8 @@ func _stop(slot: String, tell: bool) -> void:
 			_drop_ndi(e)
 		"stream":
 			_end_pipe(e["pipe"])
+		"tab":
+			_tabs_dirty = true
 	if tell:
 		EventBus.extra_feed_texture_changed.emit(slot, null)
 
@@ -156,9 +182,74 @@ func _texture_of(e: Dictionary) -> Texture2D:
 	match String(e["kind"]):
 		"ndi":
 			return (e["player"] as VideoStreamPlayer).get_video_texture() if e["player"] else null
-		"spout", "stream":
+		"spout", "stream", "tab":
 			return e["tex"]
 	return null
+
+
+# ── Browser tabs (kind "tab") ────────────────────────────────
+## The lowest "Extra screens" row of the sender page no slot uses yet, or -1 when all
+## CaptureServer.MAX_EXTRA_TABS are taken.
+func _free_tab() -> int:
+	var used: Array[int] = []
+	for slot: String in _slots:
+		var e: Dictionary = _slots[slot]
+		if String(e["kind"]) == "tab":
+			used.append(int(e["tab"]))
+	for row in CaptureServer.MAX_EXTRA_TABS:
+		if not used.has(row):
+			return row
+	return -1
+
+
+## The slot whose tab comes from "Extra screens" row `row` of the sender page, or "".
+func _slot_of_tab(row: int) -> String:
+	for slot: String in _slots:
+		var e: Dictionary = _slots[slot]
+		if String(e["kind"]) == "tab" and int(e["tab"]) == row:
+			return slot
+	return ""
+
+
+## What the sender page's "Extra screens" rows should do, one entry per row:
+## {"kind": "tab", "name": the address the room gave} or {"kind": "off"}. ScreenFeed puts it
+## into its "presenters" message as "extras" (ScreenFeed._sync_presenter_feeds).
+func tab_wishes() -> Array:
+	var out: Array = []
+	for row in CaptureServer.MAX_EXTRA_TABS:
+		var slot := _slot_of_tab(row)
+		out.append({"kind": "tab", "name": String((_slots[slot] as Dictionary)["address"])} if slot != "" else {"kind": "off"})
+	return out
+
+
+## A picture from "Extra screens" row `row` of the sender page (ScreenFeed._on_presenter_frame).
+## Pictures for a row nobody asked for are dropped.
+func tab_frame(row: int, img: Image) -> void:
+	var slot := _slot_of_tab(row)
+	if slot == "":
+		return
+	var e: Dictionary = _slots[slot]
+	e["last_s"] = Time.get_ticks_msec() / 1000.0
+	var tex := e["tex"] as ImageTexture
+	if tex == null or Vector2i(tex.get_size()) != img.get_size():
+		e["tex"] = ImageTexture.create_from_image(img)
+		EventBus.extra_feed_texture_changed.emit(slot, e["tex"])
+	else:
+		tex.update(img)
+
+
+## The sender page's status, once a second (ScreenFeed._on_sender_status): sharing[row] = that
+## "Extra screens" row has a tab running. Rows that don't (or a page that is gone: an empty
+## list) lose their picture, so the screen goes dark instead of freezing.
+func tabs_status(sharing: Array[bool]) -> void:
+	for slot: String in _slots:
+		var e: Dictionary = _slots[slot]
+		if String(e["kind"]) != "tab" or e["tex"] == null:
+			continue
+		var row := int(e["tab"])
+		if row >= sharing.size() or not sharing[row]:
+			e["tex"] = null
+			EventBus.extra_feed_texture_changed.emit(slot, null)
 
 
 ## EventBus.feed_textures_requested (a room just built its screens): announce what is running.
@@ -224,12 +315,20 @@ func _drop_ndi(e: Dictionary) -> void:
 	e["player"] = null
 
 
-## Every frame: start streams whose wait is over, show each stream's newest picture, and tell
+## Every frame: tell ScreenFeed when the tab feeds changed, start streams whose wait is over, show each stream's newest picture, and tell
 ## the room when an NDI or Spout picture changes size (its screen keeps the picture's shape).
 func _process(delta: float) -> void:
+	if _tabs_dirty:
+		_tabs_dirty = false
+		tab_wishes_changed.emit()
 	for slot: String in _slots:
 		var e: Dictionary = _slots[slot]
 		match String(e["kind"]):
+			"tab":
+				# pictures stopped coming without the page saying so (it froze or was closed hard)
+				if e["tex"] != null and Time.get_ticks_msec() / 1000.0 - float(e["last_s"]) > TAB_QUIET_S:
+					e["tex"] = null
+					EventBus.extra_feed_texture_changed.emit(slot, null)
 			"stream":
 				_process_stream(slot, e, delta)
 			"ndi", "spout":

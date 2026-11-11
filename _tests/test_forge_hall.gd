@@ -318,6 +318,56 @@ func _ready() -> void:
 		await _secs(0.5)
 		_check((pic3.material_override as StandardMaterial3D).albedo_texture == null, "and goes dark again when the source leaves")
 		AppState.set_setting("forge_live_3_source", "off")
+		# a browser tab of its own: the sender page gets an "Extra screens" row for it, and the
+		# row's pictures (podium-style packets with a slot past the avatar's) land on the screen
+		var sf := main.get_node("ScreenFeed")
+		AppState.set_setting("forge_live_3_source", "tab")
+		await _secs(0.3)
+		var wishes: Array = feeds.tab_wishes()
+		_check(wishes.size() == CaptureServer.MAX_EXTRA_TABS and String((wishes[0] as Dictionary).get("kind")) == "tab"
+			and String((wishes[0] as Dictionary).get("name")) == "Upper right screen" and String((wishes[1] as Dictionary).get("kind")) == "off",
+			"Browser tab asks the sender page for a row named after the screen")
+		_check((pic3.material_override as StandardMaterial3D).albedo_texture == null, "and shows a dark panel until a tab is picked")
+		var frame := Image.create(320, 180, false, Image.FORMAT_RGB8)
+		frame.fill(Color(0.1, 0.8, 0.3))
+		sf.call("_on_presenter_frame", CaptureServer.EXTRA_SLOT0, frame)
+		await _secs(0.2)
+		var ttex := (pic3.material_override as StandardMaterial3D).albedo_texture
+		_check(ttex != null and Vector2i(ttex.get_size()) == Vector2i(320, 180), "the picked tab's picture shows on that screen")
+		sf.call("_on_presenter_frame", CaptureServer.EXTRA_SLOT0 + 1, frame)      # a row nobody asked for
+		_check(not (feeds.get("_slots") as Dictionary).has("forge_live_2"), "a picture for a row no screen asked for is dropped")
+		# a second screen takes the next row; the first keeps its row and its picture
+		AppState.set_setting("forge_live_2_source", "tab")
+		await _secs(0.3)
+		wishes = feeds.tab_wishes()
+		_check(String((wishes[1] as Dictionary).get("name")) == "Upper left screen" and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
+			"a second screen gets the next row without disturbing the first")
+		EventBus.room_changed.emit("forge_hall")
+		await _secs(ExtraFeeds.STALE_S + 0.6)
+		_check((feeds.get("_slots") as Dictionary).has("forge_live_3") and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
+			"the tab keeps showing through a room change that still wants it")
+		# with a real sender page (run by hand or by a browser script: add --sender-wait after
+		# the output folder): wait for a tab picked on the page's "Upper left screen" row
+		if OS.get_cmdline_user_args().has("--sender-wait"):
+			EventBus.camera_preset_requested.emit(0)
+			var mat_l := (lives[1].get_node("Picture") as MeshInstance3D).material_override as StandardMaterial3D
+			var page_wait := 0.0
+			print("WAITING for the sender page at %s" % main.get_node("ScreenFeed/CaptureServer").call("get_sender_url"))
+			while mat_l.albedo_texture == null and page_wait < 90.0:
+				await _secs(0.5)
+				page_wait += 0.5
+			_check(mat_l.albedo_texture != null, "a tab picked on the real sender page shows on the upper left screen (after %.1f s)" % page_wait)
+			await _secs(1.0)
+			await _shot(_out + "/forge_tab_screen.png")
+		# the page says the row stopped sharing (or it disconnected): the screen goes dark
+		var none: Array[bool] = []
+		feeds.tabs_status(none)
+		await _secs(0.2)
+		_check((pic3.material_override as StandardMaterial3D).albedo_texture == null, "the screen goes dark when the page stops sharing")
+		AppState.set_setting("forge_live_2_source", "off")
+		AppState.set_setting("forge_live_3_source", "off")
+		await _secs(0.3)
+		_check(String((feeds.tab_wishes()[0] as Dictionary).get("kind")) == "off", "Off takes the row away again")
 		# a stream address: ffmpeg reads it (here a short test clip it makes itself, which loops)
 		var clip := _out + "/forge_test_clip.mp4"
 		var made := OS.execute("ffmpeg" if feeds.call("_find_ffmpeg") == "ffmpeg" else String(feeds.call("_find_ffmpeg")),

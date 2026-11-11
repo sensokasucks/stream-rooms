@@ -55,6 +55,7 @@ var _webcam_last_s: float = -1000.0
 var _presenter_textures: Dictionary = {}   # slot -> ImageTexture
 var _presenter_last_s: Dictionary = {}     # presenter -> time of the last frame
 var _presenter_live: Dictionary = {}       # presenter -> sender page says its feed is running
+var _extra: ExtraFeeds                     # feeds for screens a room builds itself (made in _ready)
 var _room_presenters: int = 0              # podiums in the current room
 var _sender_was_connected: bool = false
 var _ndi: NdiReceiver
@@ -154,10 +155,12 @@ func _ready() -> void:
 	EventBus.ndi_stop_requested.connect(stop_ndi)
 
 	# feeds of their own for screens a room builds itself (the Forge Hall's small live screens)
-	var extra := ExtraFeeds.new()
-	extra.name = "ExtraFeeds"
-	extra.setup(_ndi, _spout)
-	add_child(extra)
+	_extra = ExtraFeeds.new()
+	_extra.name = "ExtraFeeds"
+	_extra.setup(_ndi, _spout)
+	add_child(_extra)
+	# a small screen was set to (or taken off) a browser tab: tell the sender page its rows
+	_extra.tab_wishes_changed.connect(_sync_presenter_feeds)
 
 
 ## Every frame: release delayed browser frames and sound, sample room colours, watch NDI / Spout
@@ -431,8 +434,12 @@ func _on_webcam_frame(img: Image) -> void:
 		_webcam_texture.update(img)
 
 
-## slot is the sender's 0-based feed slot; presenters are numbered from 1.
+## slot is the sender's 0-based feed slot; presenters are numbered from 1. Slots from
+## CaptureServer.EXTRA_SLOT0 up are the sender page's "Extra screens" rows and go to ExtraFeeds.
 func _on_presenter_frame(slot: int, img: Image) -> void:
+	if slot >= CaptureServer.EXTRA_SLOT0:
+		_extra.tab_frame(slot - CaptureServer.EXTRA_SLOT0, img)
+		return
 	var n := slot + 1
 	_presenter_last_s[n] = Time.get_ticks_msec() / 1000.0
 	var tex: ImageTexture = _presenter_textures.get(n)
@@ -467,7 +474,9 @@ func _peer_slot(who: String) -> Dictionary:
 ## Streaming together with avatars on: the podium that's mine also goes out to the others
 ## ("publish"), and a podium that belongs to someone else shows their avatar ("view") instead of a
 ## capture here (the shader keys it here, so the key colour still travels along).
-## Message: {type: "presenters", slots: [one per podium], avatar, screen}; web/sender.html reads it.
+## "extras": the tabs that screens a room builds itself want (ExtraFeeds.tab_wishes: one
+## {kind: "tab" | "off", name} per "Extra screens" row of the page).
+## Message: {type: "presenters", slots: [one per podium], avatar, screen, extras}; web/sender.html reads it.
 func _sync_presenter_feeds() -> void:
 	var slots: Array = []
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
@@ -500,7 +509,8 @@ func _sync_presenter_feeds() -> void:
 	if screen_who != "":
 		var ps := _peer_slot(screen_who)
 		screen = {"kind": String(ps.get("kind", "wait")), "view": String(ps.get("view", "")), "who": screen_who}
-	capture_server.send_to_sender({"type": "presenters", "slots": slots, "avatar": avatar, "screen": screen})
+	capture_server.send_to_sender({"type": "presenters", "slots": slots, "avatar": avatar, "screen": screen,
+		"extras": _extra.tab_wishes() if _extra else []})
 
 
 ## Streaming together: the sender page sends the host's shared tab to the guests, or (on a guest)
@@ -565,6 +575,12 @@ func _on_sender_status(info: Dictionary) -> void:
 		_presenter_live[i + 1] = live
 		if not live:
 			_clear_presenter(i + 1)
+	# the "Extra screens" rows: which of them are sharing a tab right now
+	var extras: Array = info.get("extras", []) if info.get("extras") is Array else []
+	var sharing: Array[bool] = []
+	for e: Variant in extras:
+		sharing.append(bool(status["connected"]) and e is Dictionary and bool((e as Dictionary).get("active", false)))
+	_extra.tabs_status(sharing)
 	status["fps"] = capture_server.get_fps()
 	status["url"] = capture_server.get_sender_url()
 	EventBus.capture_status_changed.emit(status)
