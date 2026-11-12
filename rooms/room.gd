@@ -189,6 +189,10 @@ func get_projector_marker() -> Node3D:
 ##   {"key": "rain_on", "label": "Rain", "type": "check"}             a tick box (a bool setting)
 ##   {"key": "forge_art_frame", "label": "Frame", "type": "option",
 ##    "options": [["brass", "Brass"], ...]}              a dropdown (a String setting)
+##   (a "text" control may add "pick_feeds": the key of a source setting, for a Pick button
+##   listing the NDI sources and Spout senders found, which fills the box and sets that setting
+##   to "ndi" / "spout"; and "hide_login": true to show dots while an address with a login in
+##   it isn't being edited)
 ##   {"key": "forge_live_1_address", "label": "Address", "type": "text",
 ##    "placeholder": "..."}                              a line of text (a String setting)
 ##   {"key": "forge_art_1", "label": "Art 1", "type": "picture",

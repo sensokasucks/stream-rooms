@@ -1333,6 +1333,10 @@ Included rooms:
     - **Floor screen picture** (and the two others): the file used for Picture file.
     - **Floor screen address** (and the two others): what the screen's own feed connects to.
       Press Enter to apply.
+      **Pick** beside the box lists the NDI sources and Spout senders found right now;
+      choosing one fills in the name and switches the screen to it. An address with a login
+      in it (`rtsp://name:password@...`) shows as dots until you click into the box, so it
+      can't be read off the panel on stream. (Stream Core's page shows it in full.)
       - For NDI source or Spout sender: the source's name as the Source tab lists it, or just
         part of it (`cam 2` finds `STUDIO-PC (cam 2)`). The screen lights up by itself when the
         source appears.

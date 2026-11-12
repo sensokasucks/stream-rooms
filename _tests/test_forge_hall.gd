@@ -314,6 +314,36 @@ func _ready() -> void:
 		_check((pic3.material_override as StandardMaterial3D).albedo_texture != null, "it shows as soon as the source appears (found by part of its name)")
 		_check(ExtraFeeds.match_name("obs", PackedStringArray(["A (Cam)", "B (OBS)"])) == "B (OBS)" and ExtraFeeds.match_name("x", PackedStringArray(["A"])) == "",
 			"names match on a part, whatever the letter case")
+		# the Pick button beside an address box lists the sources found and fills the box
+		var cp: Node = main.get_node("ControlPanel")
+		var box1 := (cp.get("_texts") as Dictionary).get("forge_live_1_address") as LineEdit
+		var pick: MenuButton = null
+		if box1:
+			for c in box1.get_parent().get_children():
+				if c is MenuButton:
+					pick = c
+		_check(pick != null, "each small screen's address box has a Pick button")
+		if pick:
+			pick.about_to_popup.emit()
+			var pop := pick.get_popup()
+			var at := -1
+			for i in pop.item_count:
+				if pop.get_item_text(i) == "STUDIO-PC (OBS)":
+					at = i
+			_check(at >= 0, "Pick lists the NDI sources found right now")
+			if at >= 0:
+				pop.index_pressed.emit(at)
+				await _secs(1.0)
+				_check(String(AppState.get_setting("forge_live_1_address")) == "STUDIO-PC (OBS)" and String(AppState.get_setting("forge_live_1_source")) == "ndi"
+					and box1.text == "STUDIO-PC (OBS)", "picking one fills the box and switches the screen to NDI")
+			# an address with a login in it shows as dots while the box isn't being edited
+			AppState.set_setting("forge_live_1_address", "rtsp://name:secret@10.0.0.9/live")
+			await _secs(0.2)
+			_check(box1.secret, "an address with a login shows as dots")
+			AppState.set_setting("forge_live_1_address", "")
+			AppState.set_setting("forge_live_1_source", "off")
+			await _secs(0.2)
+			_check(not box1.secret, "a box without a login shows its text")
 		finder.call("set_sources", [])
 		await _secs(0.5)
 		_check((pic3.material_override as StandardMaterial3D).albedo_texture == null, "and goes dark again when the source leaves")
