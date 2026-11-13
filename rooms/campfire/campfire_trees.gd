@@ -105,7 +105,7 @@ static func materials(sway: float) -> Dictionary:
 		["pine", "card_pine.png", Color(0.9, 1.0, 0.85), sway],
 		["leaves", "card_leaves.png", Color(0.8, 0.95, 0.7), sway],
 		["leaves_birch", "card_leaves.png", Color(1.05, 1.15, 0.6), sway],
-		["leaves_maple", "card_leaves.png", Color(1.0, 0.95, 0.6), sway],
+		["leaves_maple", "card_leaves.png", Color(0.95, 1.02, 0.58), sway],
 		["grass", "card_grass.png", Color(0.8, 1.15, 0.5), 0.06],
 		["fern", "card_fern.png", Color(0.85, 1.0, 0.8), 0.04],
 	]

@@ -842,26 +842,36 @@ static func _build_detailed_plants(parent: Node3D, out: Dictionary, forest: Arra
 
 ## Which detailed tree stands on a low-poly tree's spot. kind = the low-poly tree there
 ## ("fir", "round" or "young"), xf = its place and size, is_close = it belongs to the close woods.
-## The forest is firs with pines, birches, maples and oaks mixed in. In the close woods the
-## trees that have to hide something stay firs (their boughs reach the ground): on the lake's
-## side, and wherever the low-poly fir was made slim to keep clear of the screen or the benches.
-static func species_at(p: Vector2, kind: String, xf: Transform3D, is_close: bool) -> String:
+## The owner asked for a temperate wood where the cameras look, so near the clearing (is_near)
+## and in the close woods about half the tall trees are oaks and maples, with birches, firs
+## and a few pines between them; the far hillsides stay more of a fir forest. Only behind the
+## screen do the close woods stay all firs: their boughs reach the ground and hide the lake,
+## and a leafy crown there would push through the picture. Young firs fill in under the
+## leafy trees' bare trunks everywhere else.
+static func species_at(p: Vector2, kind: String, _xf: Transform3D, is_close: bool) -> String:
 	if kind == "young":
 		return "young_fir"
 	var roll := fposmod(sin(p.x * 91.7 + p.y * 37.3) * 43758.5453, 1.0)      # 0..1, fixed for the spot
 	if kind == "round":
-		return "oak" if roll < 0.4 else ("maple" if roll < 0.7 else "birch")
-	var size := xf.basis.get_scale()
-	if is_close and (p.y < -1.0 or size.x < size.y * 0.5):
-		# a slim birch now and then down the sides, never behind the screen
-		return "birch" if (roll > 0.86 and p.y > -1.0) else "fir"
-	if roll < 0.58:
-		return "fir"
-	if roll < 0.7:
-		return "pine"
-	if roll < 0.82:
-		return "birch"
-	return "maple" if roll < 0.92 else "oak"
+		return "oak" if roll < 0.45 else ("maple" if roll < 0.85 else "birch")
+	if is_close:
+		if p.y < -1.0 and absf(p.x) < POST_X + 2.5:
+			return "fir"                              # the wall behind the screen
+		# the lake's side keeps more firs than the rest, so the water stays hidden
+		return _pick(roll, [0.6, 0.0, 0.17, 0.17, 0.06] if p.y < -1.0 else [0.26, 0.04, 0.28, 0.28, 0.14])
+	return _pick(roll, [0.28, 0.07, 0.26, 0.26, 0.13] if is_near(p) else [0.44, 0.1, 0.18, 0.17, 0.11])
+
+
+## The species for a spot's `roll` (0..1) from shares in the order fir, pine, oak, maple,
+## birch (they add up to 1).
+static func _pick(roll: float, shares: Array) -> String:
+	var names: Array[String] = ["fir", "pine", "oak", "maple", "birch"]
+	var upto := 0.0
+	for i in names.size():
+		upto += float(shares[i])
+		if roll < upto:
+			return names[i]
+	return "birch"
 
 
 ## A detailed tree's place and size from the low-poly tree's (`xf`: turned round y, `wide`
