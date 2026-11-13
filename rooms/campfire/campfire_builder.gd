@@ -72,6 +72,19 @@ const GROUND_CELL: float = 1.5
 const TREE_TRIES: int = 2600
 const TREE_MAX: int = 620
 const FOREST_RADIUS: float = 66.0
+## The close woods (_build_close_woods). The wall along the shore: half its length along x,
+## the nearest its front row comes to the screen (z) and the metres between trees. CLOSE_SLIM: how wide those firs are as a
+## share of their height (from, to); at most 0.3, or a 10 m fir's branches reach the screen.
+const CLOSE_WALL_HALF: float = 17.0
+const CLOSE_WALL_Z: float = -7.6
+const CLOSE_WALL_STEP: float = 0.5
+const CLOSE_SLIM: Vector2 = Vector2(0.22, 0.3)
+## The belt round the clearing: from / to as a radius in the clearing's oval, how many places
+## are tried, the least metres between two trunks, and the room kept clear round each camera.
+const CLOSE_RING: Vector2 = Vector2(8.4, 15.0)
+const CLOSE_TRIES: int = 2400
+const CLOSE_GAP: float = 1.25
+const CLOSE_CAMERA_GAP: float = 1.25
 ## Camera views: [name (after "CAM_"; the leading number sets the order), where it stands, what
 ## it looks at]. The one with "Reaction" in its name is used for react pauses.
 const CAMERAS: Array = [
@@ -84,7 +97,7 @@ const CAMERAS: Array = [
 	["07_Drone", Vector3(0.0, 15.0, 16.0), Vector3(0.0, 0.0, -3.0)],
 	["08_Marshmallows", Vector3(0.0, 0.95, 2.6), Vector3(0.0, 1.25, -2.4)],
 	["09_Reaction", Vector3(0.0, 1.7, 4.6), Vector3(0.0, 1.5, -2.6)],
-	["10_Lake_And_Sky", Vector3(0.0, 1.6, -8.0), Vector3(0.0, 5.5, -40.0)],
+	["10_Lake_And_Sky", Vector3(0.0, 1.6, -9.1), Vector3(0.0, 5.5, -40.0)],
 ]
 
 ## The noise the ground's bumps and hills come from (made once; the same on every PC).
@@ -312,7 +325,8 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##   ember_mat, bulb_mat (StandardMaterial3D): the fire's coals and the string lights' bulbs,
 ##   bulbs (MultiMeshInstance3D): the string lights,
 ##   screen (MeshInstance3D "TVScreen"), screen_back (MeshInstance3D): shown / hidden together,
-##   fire (Marker3D "FIRE_Camp"): bottom centre of the flames.
+##   fire (Marker3D "FIRE_Camp"): bottom centre of the flames,
+##   close_woods (Array[Node3D]): the close woods' trees, built hidden (see _build_close_woods).
 static func build(room: Node3D) -> Dictionary:
 	_setup_noise()
 	var rng := RandomNumberGenerator.new()
@@ -499,22 +513,160 @@ static func _build_forest(parent: Node3D, out: Dictionary, rng: RandomNumberGene
 			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
 	var tree_mat := _prop_material(0.02)       # sway: metres per unit of tree, so a 10 m fir's top moves 20 cm
 	out["tree_mat"] = tree_mat
-	for kind: Array in [["Firs", fir, spots_fir, tints_fir], ["RoundTrees", round_tree, spots_round, tints_round]]:
-		var spots: Array[Transform3D] = kind[2]
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_colors = true
-		mm.mesh = (kind[1] as Buf).to_mesh()
-		mm.instance_count = spots.size()
-		for i in spots.size():
-			mm.set_instance_transform(i, spots[i])
-			mm.set_instance_color(i, (kind[3] as PackedColorArray)[i])
-		var mmi := MultiMeshInstance3D.new()
-		mmi.name = String(kind[0])
-		mmi.multimesh = mm
-		mmi.material_override = tree_mat
-		parent.add_child(mmi)
+	_add_trees(parent, "Firs", fir, spots_fir, tints_fir, tree_mat)
+	_add_trees(parent, "RoundTrees", round_tree, spots_round, tints_round, tree_mat)
 	out["tree_count"] = spots_fir.size() + spots_round.size()
+	_build_close_woods(parent, out, fir, round_tree, tree_mat)
+
+
+## One kind of tree drawn many times in one go (a MultiMesh): `spots` is where each stands and
+## how big, `tints` its shade. Returns the node, so a group of trees can be shown and hidden.
+static func _add_trees(parent: Node3D, node_name: String, tree: Buf, spots: Array[Transform3D], tints: PackedColorArray, mat: Material) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = tree.to_mesh()
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		mm.set_instance_transform(i, spots[i])
+		mm.set_instance_color(i, tints[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = node_name
+	mmi.multimesh = mm
+	mmi.material_override = mat
+	parent.add_child(mmi)
+	return mmi
+
+
+## The close woods ("camp_close_woods", Room tab > Woods close around the camp): a thick belt of
+## trees right round the clearing and a wall of firs along the whole shore, so the lake can't be
+## seen and the camp sits in the forest. Built once with the rest of the set and left hidden;
+## campfire_room.gd's _apply_woods() shows and hides the nodes listed in out["close_woods"].
+## They use the forest's two tree shapes and its material (wet, wind).
+## Three passes: 1) the shore wall, two staggered rows of tall firs and a thinner third; 2) the belt, tall trees
+## scattered round the clearing; 3) young firs between them all, whose branches start at the
+## ground and close the gaps between the tall trees' bare trunks.
+## Its own random numbers (not the set's `rng`), so adding it changed nothing else in the set.
+static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_tree: Buf, tree_mat: Material) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261114
+	var spots_fir: Array[Transform3D] = []
+	var spots_round: Array[Transform3D] = []
+	var tints_fir := PackedColorArray()
+	var tints_round := PackedColorArray()
+	var taken: Array[Vector2] = []
+	var young: Array[Vector2] = []      # where the young firs of pass 3 go
+	# 1) the wall along the shore
+	var x := -CLOSE_WALL_HALF
+	var row := 0
+	while x <= CLOSE_WALL_HALF:
+		var front := minf(CLOSE_WALL_Z, shore_z(x) + 0.75)       # never nearer the screen than CLOSE_WALL_Z
+		var p := Vector2(x + rng.randf_range(-0.12, 0.12), front - 0.45 * float(row % 2) + rng.randf_range(-0.08, 0.08))
+		row += 1
+		x += CLOSE_WALL_STEP
+		# a young fir in front of every wall tree and a tall one now and then at the water's
+		# edge behind them: together they shut the gaps under and between the front rows
+		young.append(Vector2(p.x + 0.25, front + 0.25))
+		if row % 2 == 0:
+			young.append(Vector2(p.x - 0.2, front - 0.75))
+		if row % 3 == 0:
+			var back := Vector2(p.x, front - 1.0)
+			if _close_spot_free(back):
+				var back_tall := rng.randf_range(7.0, 9.5)
+				spots_fir.append(_close_tree(back, back_tall, back_tall * _close_width(back, rng)))
+				tints_fir.append(Color(0.75, 0.75, 0.75))
+		if not _close_spot_free(p):
+			continue
+		taken.append(p)
+		var tall := rng.randf_range(7.5, 10.5)
+		var shade := rng.randf_range(0.7, 1.05)
+		spots_fir.append(_close_tree(p, tall, tall * _close_width(p, rng)))
+		tints_fir.append(Color(shade, shade, shade))
+	# 2) the belt round the clearing, from just outside the tents and benches out to where the
+	#    ordinary forest starts
+	for i in CLOSE_TRIES:
+		var radius := lerpf(CLOSE_RING.x, CLOSE_RING.y, sqrt(rng.randf()))
+		var ang := rng.randf() * TAU
+		var p := Vector2(cos(ang) * radius * 1.25, sin(ang) * radius)     # the clearing's oval (see ground_height)
+		if not _close_spot_free(p) or shore_z(p.x) - p.y > -0.5:
+			continue
+		var ok := true
+		for q in taken:
+			if q.distance_squared_to(p) < CLOSE_GAP * CLOSE_GAP:
+				ok = false
+				break
+		if not ok:
+			continue
+		taken.append(p)
+		if rng.randf() < 0.6:
+			young.append(p + Vector2(rng.randf_range(-0.7, 0.7), rng.randf_range(-0.7, 0.7)))
+		var tall := rng.randf_range(5.0, 10.0)
+		var shade := rng.randf_range(0.7, 1.1)
+		# on the lake's side only firs: a round tree's bare trunk would leave the water in view
+		if p.y < -1.0 or rng.randf() < 0.8:
+			spots_fir.append(_close_tree(p, tall, tall * _close_width(p, rng)))
+			tints_fir.append(Color(shade, shade, shade))
+		else:
+			spots_round.append(_close_tree(p, tall, tall * rng.randf_range(0.5, 0.8)).scaled_local(Vector3(1.15, 0.8, 1.15)))
+			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
+	# 3) the young firs: 2.2 to 3.5 m tall and sunk a little, so their lowest branches brush the ground
+	for p in young:
+		if not _close_spot_free(p) or shore_z(p.x) - p.y > -0.3:
+			continue
+		var tall := rng.randf_range(2.2, 3.5)
+		var xf := _close_tree(p, tall, tall * rng.randf_range(0.6, 0.8))
+		xf.origin.y -= 0.25
+		var shade := rng.randf_range(0.8, 1.15)
+		spots_fir.append(xf)
+		tints_fir.append(Color(shade, shade, shade))
+	var nodes: Array[Node3D] = [
+		_add_trees(parent, "CloseFirs", fir, spots_fir, tints_fir, tree_mat),
+		_add_trees(parent, "CloseRoundTrees", round_tree, spots_round, tints_round, tree_mat)]
+	for n in nodes:
+		n.visible = false
+	out["close_woods"] = nodes
+	out["close_tree_count"] = spots_fir.size() + spots_round.size()
+
+
+## Where and how big one close-woods tree is: standing at p (x, z) on the ground, turned at
+## random (always the same way for the same spot), `tall` metres high and `wide` across.
+static func _close_tree(p: Vector2, tall: float, wide: float) -> Transform3D:
+	var turn := fposmod(p.x * 12.9898 + p.y * 78.233, TAU)
+	return Transform3D(Basis(Vector3.UP, turn).scaled(Vector3(wide, tall, wide)), Vector3(p.x, ground_height(p.x, p.y) - 0.15, p.y))
+
+
+## How wide a close-woods fir at p may be, as a share of its height. Behind the screen they are
+## slim (CLOSE_SLIM), a little fuller just beside it, and full further out: a wide fir close
+## behind the screen would push its branches through the picture.
+static func _close_width(p: Vector2, rng: RandomNumberGenerator) -> float:
+	if p.y < -4.5 and absf(p.x) < 5.0:
+		return rng.randf_range(CLOSE_SLIM.x, CLOSE_SLIM.y)
+	if p.y < -4.5 and absf(p.x) < 8.0:
+		return rng.randf_range(0.34, 0.44)
+	return rng.randf_range(0.5, 0.8)
+
+
+## True when a close-woods tree may stand at p (x, z): not on a tent, a light pole, the stream,
+## the path to the dock, a camera (CLOSE_CAMERA_GAP metres round each) or on the near side
+## between the benches' ends (the main camera looks along there, and at the tents past them).
+static func _close_spot_free(p: Vector2) -> bool:
+	for t: Array in TENTS:
+		if p.distance_to(Vector2(float(t[0]), float(t[1]))) < 3.3:
+			return false
+	for pole in LIGHT_POLES:
+		if p.distance_to(Vector2(pole.x, pole.z)) < 1.0:
+			return false
+	if stream_near(p.x, p.y).x < 1.1:
+		return false
+	if absf(p.x - DOCK_X) < 0.75 and p.y < -6.0:
+		return false
+	for c: Array in CAMERAS:
+		var at: Vector3 = c[1]
+		if p.distance_to(Vector2(at.x, at.z)) < CLOSE_CAMERA_GAP:
+			return false
+	if absf(p.x) < 9.5 and p.y > 4.0:
+		return false
+	return true
 
 
 ## The fire pit: a ring of stones, the logs leaning together, the bed of coals (its own mesh and

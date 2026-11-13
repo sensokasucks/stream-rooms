@@ -23,6 +23,8 @@ extends Room
 ##   - The big screen ("camp_screen"): switching it off hides the sheet and everything the app
 ##     hangs on it (its lights, the curtain, the side chat windows), which opens the view over
 ##     the lake. The posts stay: the string lights hang from them. The sound keeps playing.
+##   - The close woods ("camp_close_woods"): a thick belt of trees right round the clearing and
+##     behind the screen that hides the lake, for a camp deep in the forest. Off by default.
 ##   - String lights and tent lanterns ("camp_string_lights") are the room's house lights; they
 ##     glow weakly by day and fully at night, and dim for a video like any room's lamps.
 ##   - Fire games (campfire_games.gd, "camp_games"): hold M to roast a marshmallow on a stick
@@ -165,6 +167,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_camp_setting_changed)
 	EventBus.room_changed.connect(_on_camp_room_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
+	_apply_woods()
 	_apply_fire()
 	_apply_wet()
 
@@ -192,6 +195,8 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "How big the campfire is: its flames, the light it throws, its sparks and its crackle. 0% = out. Rain makes it smaller."},
 		{"key": "camp_screen", "label": "Big screen", "type": "check",
 			"tooltip": "On: the big screen hangs between the two posts. Off: the screen is taken down, which opens the view over the lake. The sound of whatever is playing carries on."},
+		{"key": "camp_close_woods", "label": "Woods close around the camp", "type": "check",
+			"tooltip": "On: thick trees stand right round the clearing and behind the screen, so the lake is hidden and the camp sits deep in the forest. Off: the open view over the lake."},
 		{"key": "camp_string_lights", "label": "String lights and lanterns", "type": "check",
 			"tooltip": "The string lights between the posts and the lanterns in the tents. They glow softly by day and fully at night, and follow the House lights slider."},
 		{"key": "camp_fireflies", "label": "Fireflies at night", "type": "check",
@@ -230,6 +235,8 @@ func _on_camp_setting_changed(key: String, _value: Variant) -> void:
 			_hour_drawn = -100.0        # _run_clock redraws the sky and lights next frame
 		"camp_screen":
 			_apply_screen()
+		"camp_close_woods":
+			_apply_woods()
 		"camp_storm":
 			_strike_wait = _rng.randf_range(2.0, 5.0)      # the first strike comes soon
 
@@ -271,6 +278,15 @@ func _apply_screen() -> void:
 	for n in _screen_nodes:
 		if is_instance_valid(n):
 			n.visible = on
+
+
+## "camp_close_woods": shows or hides the thick trees round the clearing and behind the screen
+## (built hidden by campfire_builder.gd's _build_close_woods). Called once when the room loads
+## and on every change of the setting.
+func _apply_woods() -> void:
+	var on := bool(AppState.get_setting("camp_close_woods"))
+	for n: Node3D in _parts["close_woods"]:
+		n.visible = on
 
 
 ## Called every frame. The app's own code may show a screen part again (the curtain opening,

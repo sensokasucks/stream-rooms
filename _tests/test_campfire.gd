@@ -54,6 +54,7 @@ func _ready() -> void:
 	AppState.set_setting("camp_mist", 0.4)
 	AppState.set_setting("camp_rain", 0.0)
 	AppState.set_setting("camp_storm", false)
+	AppState.set_setting("camp_close_woods", false)
 	AppState.set_setting("camp_string_lights", true)
 	AppState.set_setting("camp_fireflies", true)
 	AppState.set_setting("camp_games", true)
@@ -112,14 +113,14 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
+	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
 		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist", "camp_rain", "camp_storm"]
 	var all_there := true
 	for k in wanted:
 		all_there = all_there and keys.has(k) and AppState.DEFAULTS.has(k)
 	_check(all_there, "the Room tab gets every camp_ control, each with a default (%s)" % str(keys))
 	var shared := true
-	for k: String in ["camp_fire", "camp_screen", "camp_time", "camp_rain", "camp_storm"]:
+	for k: String in ["camp_fire", "camp_screen", "camp_time", "camp_rain", "camp_storm", "camp_close_woods"]:
 		shared = shared and NetSession.is_shared(k)
 	_check(shared and not NetSession.is_shared("camp_games"), "the fire, screen, hour and weather are shared in a co-stream; the games tick box is each PC's own")
 
@@ -162,6 +163,49 @@ func _ready() -> void:
 	AppState.set_setting("camp_screen", true)
 	await _secs(0.5)
 	_check(screen.visible and lights.visible, "Big screen on brings them back")
+
+	# ── the close woods ──
+	var close_firs := room.find_child("CloseFirs", true, false) as MultiMeshInstance3D
+	var close_round := room.find_child("CloseRoundTrees", true, false) as MultiMeshInstance3D
+	_check(close_firs != null and close_round != null and not close_firs.visible and not close_round.visible,
+		"the close woods are built and hidden by default")
+	AppState.set_setting("camp_close_woods", true)
+	await _secs(0.3)
+	_check(close_firs.visible and close_round.visible, "Woods close around the camp shows them")
+	_check(close_firs.multimesh.instance_count > 120, "the close woods are dense (%d firs, %d round trees)" % [close_firs.multimesh.instance_count, close_round.multimesh.instance_count])
+	# no trunk stands on a camera, and behind the screen the wall has no gap wider than 1.2 m
+	# (young firs, under 4 m, are left out of the count: the tall ones must do it alone)
+	var clear := true
+	var wall_xs: Array[float] = []
+	for i in close_firs.multimesh.instance_count:
+		var at := close_firs.multimesh.get_instance_transform(i).origin
+		for cam in cams:
+			if Vector2(at.x - cam.position.x, at.z - cam.position.z).length() < 1.2:
+				clear = false
+		if at.z < -7.0 and absf(at.x) < 6.0 and close_firs.multimesh.get_instance_transform(i).basis.get_scale().y > 4.0:
+			wall_xs.append(at.x)
+	_check(clear, "no close tree stands on a camera")
+	wall_xs.sort()
+	var widest := 0.0
+	for i in wall_xs.size() - 1:
+		widest = maxf(widest, wall_xs[i + 1] - wall_xs[i])
+	_check(wall_xs.size() > 15 and widest < 1.2, "a wall of firs behind the screen hides the lake (%d trees, widest gap %.2f m)" % [wall_xs.size(), widest])
+	await _shot("camp_woods")
+	AppState.set_setting("camp_screen", false)
+	await _secs(0.5)
+	await _shot("camp_woods_screen_off")
+	AppState.set_setting("camp_screen", true)
+	AppState.set_setting("camp_time", 12.0)
+	await _secs(2.5)
+	for i: int in [0, 1, 3, 4, 6]:
+		EventBus.camera_preset_requested.emit(i)
+		await _secs(1.2)
+		await _shot("camp_woods_noon_%s" % String(cams[i].name).trim_prefix("CAM_"))
+	EventBus.camera_preset_requested.emit(0)
+	AppState.set_setting("camp_time", 18.6)
+	AppState.set_setting("camp_close_woods", false)
+	await _secs(0.5)
+	_check(not close_firs.visible, "and off hides them again")
 
 	# ── the hour ──
 	var env := room.get_world_3d().environment
