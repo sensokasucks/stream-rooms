@@ -87,6 +87,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"camp_rain": 0.0,            # how hard it rains, 0..1 (0 = dry)
 	"camp_storm": false,         # a thunderstorm: heavy rain, wind, lightning and thunder
 	"camp_close_woods": false,   # thick trees right round the clearing and behind the screen, hiding the lake
+	"camp_detail": "auto",       # how detailed the camp is drawn on this PC: auto (from graphics_quality) | low | near | full
 	"camp_string_lights": true,  # the string lights and tent lanterns (this room's house lights)
 	"camp_fireflies": true,      # fireflies round the clearing on dry nights
 	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)

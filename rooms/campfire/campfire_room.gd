@@ -25,6 +25,9 @@ extends Room
 ##     the lake. The posts stay: the string lights hang from them. The sound keeps playing.
 ##   - The close woods ("camp_close_woods"): a thick belt of trees right round the clearing and
 ##     behind the screen that hides the lake, for a camp deep in the forest. Off by default.
+##   - Set detail ("camp_detail", each PC's own, not shared): the low-poly set, or the detailed
+##     one (photo textures, trees with leaf cards, grass and ferns) near the fire or everywhere.
+##     "auto" follows the Graphics quality. See _apply_detail().
 ##   - String lights and tent lanterns ("camp_string_lights") are the room's house lights; they
 ##     glow weakly by day and fully at night, and dim for a video like any room's lamps.
 ##   - Fire games (campfire_games.gd, "camp_games"): hold M to roast a marshmallow on a stick
@@ -167,7 +170,7 @@ func _ready() -> void:
 	EventBus.setting_changed.connect(_on_camp_setting_changed)
 	EventBus.room_changed.connect(_on_camp_room_changed)
 	EventBus.reaction_play.connect(_on_reaction_play)
-	_apply_woods()
+	_apply_detail()
 	_apply_fire()
 	_apply_wet()
 
@@ -197,6 +200,9 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "On: the big screen hangs between the two posts. Off: the screen is taken down, which opens the view over the lake. The sound of whatever is playing carries on."},
 		{"key": "camp_close_woods", "label": "Woods close around the camp", "type": "check",
 			"tooltip": "On: thick trees stand right round the clearing, behind the screen and down both sides of the fire, so the lake is hidden and the camp is a cul-de-sac deep in the forest. Off: the open view over the lake."},
+		{"key": "camp_detail", "label": "Set detail", "type": "option",
+			"options": [["auto", "Auto (follows Graphics quality)"], ["low", "Low-poly"], ["near", "Detailed near the fire"], ["full", "Detailed everywhere"]],
+			"tooltip": "How detailed the camp is drawn on this PC. Detailed: photo textures on the ground, bark, rocks and cloth, trees with real leaves and needles (firs, pines, oaks, birches, maples), grass tufts and ferns. Detailed near the fire: the same, but the far hillsides keep their simple trees, which is lighter. Low-poly: the simple flat-coloured set, the lightest. Auto picks from Graphics quality: High = everywhere, Medium = near the fire, Low = low-poly. Each PC in a co-stream chooses its own."},
 		{"key": "camp_string_lights", "label": "String lights and lanterns", "type": "check",
 			"tooltip": "The string lights between the posts and the lanterns in the tents. They glow softly by day and fully at night, and follow the House lights slider."},
 		{"key": "camp_fireflies", "label": "Fireflies at night", "type": "check",
@@ -235,8 +241,8 @@ func _on_camp_setting_changed(key: String, _value: Variant) -> void:
 			_hour_drawn = -100.0        # _run_clock redraws the sky and lights next frame
 		"camp_screen":
 			_apply_screen()
-		"camp_close_woods":
-			_apply_woods()
+		"camp_close_woods", "camp_detail", "graphics_quality":
+			_apply_detail()
 		"camp_storm":
 			_strike_wait = _rng.randf_range(2.0, 5.0)      # the first strike comes soon
 
@@ -280,13 +286,47 @@ func _apply_screen() -> void:
 			n.visible = on
 
 
-## "camp_close_woods": shows or hides the thick trees round the clearing and behind the screen
-## (built hidden by campfire_builder.gd's _build_close_woods). Called once when the room loads
-## and on every change of the setting.
-func _apply_woods() -> void:
-	var on := bool(AppState.get_setting("camp_close_woods"))
+## The look the set is drawn in on this PC: "low" (the low-poly set), "near" (detailed, but the
+## far forest stays low-poly) or "full" (detailed everywhere). From "camp_detail" (Room tab >
+## Set detail, each PC's own); its "auto" follows "graphics_quality": low = "low",
+## medium = "near", high and custom = "full".
+func detail_level() -> String:
+	var choice := String(AppState.get_setting("camp_detail"))
+	if choice in ["low", "near", "full"]:
+		return choice
+	match String(AppState.get_setting("graphics_quality")):
+		"low":
+			return "low"
+		"medium":
+			return "near"
+	return "full"
+
+
+## Shows the right lot of every group of plants and switches the photo textures on or off.
+## Called once when the room loads and whenever "camp_detail", "graphics_quality" or
+## "camp_close_woods" changes. campfire_builder.gd built both lots of everything, hidden or
+## not; nothing is built or loaded here, so switching is instant.
+##   the far forest: low-poly unless the level is "full"
+##   the near forest: low-poly only at "low"
+##   the close woods ("camp_close_woods": thick trees round the clearing and behind the
+##     screen): hidden while the setting is off, else low-poly at "low" and detailed otherwise
+##   grass tufts and ferns: only with the detailed looks
+func _apply_detail() -> void:
+	var level := detail_level()
+	var detailed := level != "low"
+	var woods := bool(AppState.get_setting("camp_close_woods"))
+	for n: Node3D in _parts["lowpoly_far"]:
+		n.visible = level != "full"
+	for n: Node3D in _parts["lowpoly_near"]:
+		n.visible = not detailed
 	for n: Node3D in _parts["close_woods"]:
-		n.visible = on
+		n.visible = woods and not detailed
+	(_parts["detail_far"] as Node3D).visible = level == "full"
+	(_parts["detail_near"] as Node3D).visible = detailed
+	(_parts["close_woods_detail"] as Node3D).visible = woods and detailed
+	(_parts["undergrowth"] as Node3D).visible = detailed
+	for m: ShaderMaterial in _parts["detail_mats"]:
+		m.set_shader_parameter("detail", 1.0 if detailed else 0.0)
 
 
 ## Called every frame. The app's own code may show a screen part again (the curtain opening,
@@ -708,9 +748,11 @@ func _apply_wet() -> void:
 	_rain.amount_ratio = _rain_now
 	_rain.emitting = _rain_now > 0.01
 	_rain.visible = _rain_now > 0.01
-	for key: String in ["ground_mat", "prop_mat", "tent_mat", "tree_mat"]:
-		(_parts[key] as ShaderMaterial).set_shader_parameter("wet", _rain_now)
-	(_parts["tree_mat"] as ShaderMaterial).set_shader_parameter("wind", 1.0 + 3.0 * _gloom)
+	# (campfire_builder.gd's _note_material lists every material that has these)
+	for m: ShaderMaterial in _parts["wet_mats"]:
+		m.set_shader_parameter("wet", _rain_now)
+	for m: ShaderMaterial in _parts["wind_mats"]:
+		m.set_shader_parameter("wind", 1.0 + 3.0 * _gloom)
 
 
 ## The rain: streaks falling in a box that follows the camera (_follow_camera), so it rains

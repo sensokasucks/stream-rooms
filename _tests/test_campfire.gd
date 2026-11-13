@@ -55,6 +55,10 @@ func _ready() -> void:
 	AppState.set_setting("camp_rain", 0.0)
 	AppState.set_setting("camp_storm", false)
 	AppState.set_setting("camp_close_woods", false)
+	# the low-poly set for everything but the "Set detail" part below: the detailed one takes
+	# the software renderer of the pull request check about ten seconds a frame
+	AppState.set_setting("camp_detail", "low")
+	AppState.set_setting("graphics_quality", "high")
 	AppState.set_setting("camp_string_lights", true)
 	AppState.set_setting("camp_fireflies", true)
 	AppState.set_setting("camp_games", true)
@@ -113,7 +117,7 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
+	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
 		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist", "camp_rain", "camp_storm"]
 	var all_there := true
 	for k in wanted:
@@ -122,7 +126,8 @@ func _ready() -> void:
 	var shared := true
 	for k: String in ["camp_fire", "camp_screen", "camp_time", "camp_rain", "camp_storm", "camp_close_woods"]:
 		shared = shared and NetSession.is_shared(k)
-	_check(shared and not NetSession.is_shared("camp_games"), "the fire, screen, hour and weather are shared in a co-stream; the games tick box is each PC's own")
+	_check(shared and not NetSession.is_shared("camp_games") and not NetSession.is_shared("camp_detail"),
+		"the fire, screen, hour and weather are shared in a co-stream; the games tick box and Set detail are each PC's own")
 
 	# ── the fire ──
 	var fx := room.find_child("SunShafts", false, false)
@@ -214,6 +219,67 @@ func _ready() -> void:
 	AppState.set_setting("camp_close_woods", false)
 	await _secs(0.5)
 	_check(not close_firs.visible, "and off hides them again")
+
+	# ── Set detail: the low-poly set, the detailed one near the fire, or everywhere ──
+	var parts: Dictionary = room.get("_parts")
+	var firs_near := room.find_child("FirsNear", true, false) as MultiMeshInstance3D
+	var detail_near := room.find_child("DetailNear", true, false) as Node3D
+	var detail_far := room.find_child("DetailFar", true, false) as Node3D
+	var close_detail := room.find_child("CloseWoodsDetail", true, false) as Node3D
+	var undergrowth := room.find_child("Undergrowth", true, false) as Node3D
+	var ground_mat := parts["ground_mat"] as ShaderMaterial
+	_check(String(AppState.DEFAULTS["camp_detail"]) == "auto", "Set detail starts on Auto")
+	_check(firs_near != null and detail_near != null and detail_far != null and close_detail != null and undergrowth != null,
+		"the detailed trees, close woods and undergrowth are built")
+	_check(firs.visible and firs_near.visible and not detail_near.visible and not detail_far.visible and not undergrowth.visible
+		and is_zero_approx(float(ground_mat.get_shader_parameter("detail"))),
+		"Low-poly: the simple trees everywhere, flat colours, no undergrowth")
+	_check(ground_mat.get_shader_parameter("tex_grass") is Texture2D and (parts["prop_mat"] as ShaderMaterial).get_shader_parameter("tex_bark") is Texture2D
+		and (parts["plant_mats"]["fir"] as ShaderMaterial).get_shader_parameter("card") is Texture2D, "the photo textures loaded (ground, bark, leaf cards)")
+	var species: Dictionary = parts["species_counts"]
+	var mixed := true
+	for kind: String in ["fir", "pine", "oak", "birch", "maple"]:
+		mixed = mixed and int(species.get(kind, 0)) >= 40
+	_check(mixed, "the detailed forest mixes firs, pines, oaks, birches and maples (%s)" % str(species))
+	var as_many := 0
+	for holder: Node3D in [detail_near, detail_far]:
+		for kid in holder.get_children():
+			as_many += (kid as MultiMeshInstance3D).multimesh.instance_count
+	_check(as_many == int(parts["tree_count"]), "one detailed tree for every low-poly one (%d / %d)" % [as_many, int(parts["tree_count"])])
+	AppState.set_setting("camp_detail", "near")
+	await _secs(0.3)
+	_check(firs.visible and not firs_near.visible and detail_near.visible and not detail_far.visible and undergrowth.visible
+		and float(ground_mat.get_shader_parameter("detail")) > 0.5,
+		"Detailed near the fire: detailed trees, textures and undergrowth close by, the far hills keep the simple trees")
+	await _shot("camp_detail_near")
+	AppState.set_setting("camp_detail", "full")
+	AppState.set_setting("camp_close_woods", true)
+	await _secs(0.3)
+	_check(not firs.visible and not firs_near.visible and detail_near.visible and detail_far.visible, "Detailed everywhere: no simple tree is left")
+	_check(close_detail.visible and not close_firs.visible and not close_round.visible, "with the close woods on, their detailed trees show instead of the simple ones")
+	await _shot("camp_detail_full_woods")
+	AppState.set_setting("camp_close_woods", false)
+	await _secs(0.3)
+	_check(not close_detail.visible, "and the close woods off hides those too")
+	AppState.set_setting("camp_time", 12.0)
+	EventBus.camera_preset_requested.emit(4)
+	await _secs(1.0)
+	await _shot("camp_detail_full_noon")
+	EventBus.camera_preset_requested.emit(0)
+	AppState.set_setting("camp_time", 18.6)
+	# Auto follows the Graphics quality
+	AppState.set_setting("camp_detail", "auto")
+	var auto_ok := String(room.call("detail_level")) == "full"
+	AppState.set_setting("graphics_quality", "medium")
+	await _secs(0.3)
+	auto_ok = auto_ok and String(room.call("detail_level")) == "near" and firs.visible and detail_near.visible
+	AppState.set_setting("graphics_quality", "low")
+	await _secs(0.3)
+	auto_ok = auto_ok and String(room.call("detail_level")) == "low" and firs_near.visible and not detail_near.visible
+	_check(auto_ok, "Auto follows Graphics quality: High = everywhere, Medium = near the fire, Low = low-poly")
+	AppState.set_setting("graphics_quality", "high")
+	AppState.set_setting("camp_detail", "low")
+	await _secs(0.5)
 
 	# ── the hour ──
 	var env := room.get_world_3d().environment

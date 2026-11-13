@@ -1432,6 +1432,14 @@ Included rooms:
     lake is hidden. The stream and the jetty still peek through a little, and
     the Lake and Sky camera stands at the water past the trees, so it keeps its view. In a
     co-stream it is the host's, like the weather.
+  - **Set detail** chooses how detailed the camp is drawn on this PC. **Detailed everywhere**:
+    photo textures on the ground, the logs, the rocks and the tents, trees with real needles
+    and leaves (firs, pines, oaks, birches and maples mixed together), grass tufts and ferns.
+    **Detailed near the fire**: the same round the camp, but the far hillsides keep their
+    simple trees, which is lighter on a slower graphics card. **Low-poly**: the simple
+    flat-coloured set, the lightest. **Auto (follows Graphics quality)**, the setting it starts
+    on, picks for you: High = everywhere, Medium = near the fire, Low = low-poly. Each PC in a
+    co-stream chooses its own.
   - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night
     and it burns lower in the rain.
   - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
@@ -1465,7 +1473,10 @@ Included rooms:
   - Almost no reverb (it is outdoors). The fire crackles, crickets sing at night, and the rain and
     the thunder have their own sound.
   - Source: the whole set is built in code when the room loads (`rooms/campfire/campfire_builder.gd`),
-    so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`.
+    so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`. The detailed
+    trees are built in `rooms/campfire/campfire_trees.gd`. The photo textures in
+    `rooms/campfire/textures/` come from [Poly Haven](https://polyhaven.com) (CC0, free for any
+    use); `make_textures.py` in that folder downloads them and makes the files again.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
@@ -1526,6 +1537,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- `rooms/campfire/textures/` (ground, bark, rock, plank, cloth and leaf pictures made from Poly Haven photos): CC0
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.

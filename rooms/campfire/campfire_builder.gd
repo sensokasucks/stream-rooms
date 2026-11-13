@@ -18,6 +18,10 @@ extends RefCounted
 const WATER_SHADER := preload("res://rooms/campfire/camp_water.gdshader")
 const GROUND_SHADER := preload("res://rooms/campfire/camp_ground.gdshader")
 const PROP_SHADER := preload("res://rooms/campfire/camp_prop.gdshader")
+## The detailed trees, grass tufts and ferns (see _build_detailed_plants).
+const Trees := preload("res://rooms/campfire/campfire_trees.gd")
+## The photo textures (CC0, made by textures/make_textures.py).
+const TEX := "res://rooms/campfire/textures/"
 
 # ── Layout ───────────────────────────────────────────────────
 ## The lake's surface (y). The ground dips below it north of shore_z().
@@ -72,6 +76,15 @@ const GROUND_CELL: float = 1.5
 const TREE_TRIES: int = 2600
 const TREE_MAX: int = 620
 const FOREST_RADIUS: float = 66.0
+## Tree sway: metres per unit of tree, so a 10 m fir's top moves 20 cm in a light breeze.
+const TREE_SWAY: float = 0.02
+## "Set detail: Detailed near the fire" draws the forest's trees detailed inside this radius
+## (metres from the fire, in the clearing's oval) and low-poly beyond it.
+const NEAR_RADIUS: float = 30.0
+## Grass tufts and ferns (detailed looks only): how many at most, and how far out they grow.
+const GRASS_MAX: int = 1500
+const FERN_MAX: int = 320
+const UNDERGROWTH_RADIUS: float = 21.0
 ## The close woods (_build_close_woods). The wall along the shore: half its length along x,
 ## the nearest its front row comes to the screen (z) and the metres between trees. CLOSE_SLIM: how wide those firs are as a
 ## share of their height (from, to); at most 0.3, or a 10 m fir's branches reach the screen.
@@ -94,6 +107,15 @@ const CLOSE_RING: Vector2 = Vector2(8.4, 15.0)
 const CLOSE_TRIES: int = 2400
 const CLOSE_GAP: float = 1.25
 const CLOSE_CAMERA_GAP: float = 1.25
+## Which photo "detail" texture a shape gets when the set is drawn detailed (Buf.mat; see
+## camp_prop.gdshader, which holds the matching list): 0 = none, plain colour.
+const MAT_PLAIN: float = 0.0
+const MAT_BARK: float = 1.0
+const MAT_ROCK: float = 2.0
+const MAT_PLANKS: float = 3.0
+const MAT_FABRIC: float = 4.0
+const MAT_BARK_OAK: float = 5.0
+const MAT_BARK_BIRCH: float = 6.0
 ## Camera views: [name (after "CAM_"; the leading number sets the order), where it stands, what
 ## it looks at]. The one with "Reaction" in its name is used for react pauses.
 const CAMERAS: Array = [
@@ -186,6 +208,23 @@ static func ground_height(x: float, z: float) -> float:
 	return h
 
 
+## What the ground is at a point, as the ground mesh's vertex colour (camp_ground.gdshader):
+## r = trodden dirt (round the fire, under the benches), g = sand and gravel (the shore, the
+## stream's bed), b = forest floor; all three 0 = grass. _build_ground colours the ground with
+## it and _build_undergrowth asks it where grass and ferns may grow.
+static func ground_kind(x: float, z: float) -> Color:
+	var from_fire := Vector2(x, z).length()
+	var oval := Vector2(x / 1.25, z).length()
+	var in_lake := shore_z(x) - z
+	var dirt := 1.0 - smoothstep(2.6, 4.2, from_fire)
+	for row: Array in ROWS:           # trodden ground under each bench row
+		dirt = maxf(dirt, (1.0 - smoothstep(0.5, 1.3, absf(from_fire - float(row[0])))) * smoothstep(-0.5, 1.0, z))
+	var sand := smoothstep(-2.2, -0.4, in_lake)
+	sand = maxf(sand, 1.0 - smoothstep(0.9, 2.2, stream_near(x, z).x))
+	var forest := smoothstep(11.5, 15.0, oval) * (1.0 - sand)
+	return Color(dirt, sand, forest)
+
+
 ## A point on a circle round the fire, on the ground: degrees as in CHAIR_DEGREES / ROW_ARC.
 static func ring_point(radius: float, degrees: float) -> Vector3:
 	var a := deg_to_rad(degrees)
@@ -201,6 +240,10 @@ class Buf:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	var uvs := PackedVector2Array()
+	## Which detail texture the shapes added from now on get (a MAT_ constant; it goes into
+	## every corner's UV.x, where camp_prop.gdshader reads it). Set it before adding shapes.
+	var mat: float = 0.0
 
 	## One triangle. The normal comes from the corner order, and the material draws both sides,
 	## so the order never makes a face vanish.
@@ -209,9 +252,24 @@ class Buf:
 		if n.length_squared() < 1e-12:
 			return
 		n = n.normalized()
+		tri_round(a, b, c, n, n, n, col)
+
+	## One triangle with a normal given for each corner (for round things: a log's side is
+	## shaded as a curve, not as flat strips).
+	func tri_round(a: Vector3, b: Vector3, c: Vector3, na: Vector3, nb: Vector3, nc: Vector3, col: Color) -> void:
+		# the side drawn as the front is the one (c - a) x (b - a) points out of: turn the
+		# triangle round if that isn't the side the given normals are on
+		if (c - a).cross(b - a).dot(na + nb + nc) < 0.0:
+			var keep := b
+			b = c
+			c = keep
+			var keep_n := nb
+			nb = nc
+			nc = keep_n
 		verts.append_array([a, b, c])
-		normals.append_array([n, n, n])
+		normals.append_array([na, nb, nc])
 		colors.append_array([col, col, col])
+		uvs.append_array([Vector2(mat, 0.0), Vector2(mat, 0.0), Vector2(mat, 0.0)])
 
 	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Color) -> void:
 		tri(a, c, b, col)
@@ -244,7 +302,17 @@ class Buf:
 			var b1 := xf * Vector3(cos(a1) * r0, 0.0, sin(a1) * r0)
 			var t0 := xf * Vector3(cos(a0) * r1, h, sin(a0) * r1)
 			var t1 := xf * Vector3(cos(a1) * r1, h, sin(a1) * r1)
-			quad(b0, t0, t1, b1, col)
+			# the side is shaded round: each corner's normal points straight out from the axis
+			# (tilted for a cone), except that a flat-sided look is kept for shapes of 5 sides
+			# or fewer (thin sticks and ropes, where it can't be seen)
+			if segs > 5:
+				var tilt := (r0 - r1) / maxf(h, 0.001)
+				var n0 := (xf.basis * Vector3(cos(a0), tilt, sin(a0))).normalized()
+				var n1 := (xf.basis * Vector3(cos(a1), tilt, sin(a1))).normalized()
+				tri_round(b0, t1, t0, n0, n1, n0, col)
+				tri_round(b0, b1, t1, n0, n1, n1, col)
+			else:
+				quad(b0, t0, t1, b1, col)
 			if r0 > 0.0:
 				tri(xf * Vector3.ZERO, b0, b1, end)
 			if r1 > 0.0:
@@ -291,17 +359,43 @@ class Buf:
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_TEX_UV] = uvs
 		var mesh := ArrayMesh.new()
 		if not verts.is_empty():
 			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		return mesh
 
 
+## A camp_prop.gdshader material with the detail textures on it. They only show while its
+## `detail` is 1: campfire_room.gd's _apply_detail() sets that on every material listed in
+## out["detail_mats"], so add each new one to that list (_note_material does it).
 static func _prop_material(sway: float = 0.0) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = PROP_SHADER
 	m.set_shader_parameter("sway", sway)
+	# the shader's sampler names and the pictures that go in them (the MAT_ numbers' order)
+	var pictures := {"tex_bark": "detail_bark_pine.jpg", "tex_rock": "detail_rock.jpg", "tex_planks": "detail_planks.jpg",
+		"tex_fabric": "detail_fabric.jpg", "tex_bark_oak": "detail_bark_oak.jpg", "tex_bark_birch": "detail_bark_birch.jpg"}
+	for key: String in pictures:
+		m.set_shader_parameter(key, load(TEX + String(pictures[key])))
 	return m
+
+
+## Puts a material on the lists the room script works through:
+##   out["detail_mats"]  get `detail` 0 / 1 from the Set detail choice (not the detailed plants'
+##                       own materials: those are only ever drawn detailed),
+##   out["wet_mats"]     get `wet` from the rain,
+##   out["wind_mats"]    get `wind` from the storm (only the ones that sway).
+static func _note_material(out: Dictionary, m: ShaderMaterial, detail: bool, windy: bool) -> void:
+	for key: String in ["detail_mats", "wet_mats", "wind_mats"]:
+		if not out.has(key):
+			var empty: Array[ShaderMaterial] = []
+			out[key] = empty
+	if detail:
+		(out["detail_mats"] as Array[ShaderMaterial]).append(m)
+	(out["wet_mats"] as Array[ShaderMaterial]).append(m)
+	if windy:
+		(out["wind_mats"] as Array[ShaderMaterial]).append(m)
 
 
 static func _add_mesh(parent: Node3D, node_name: String, mesh: Mesh, mat: Material, shadows: bool = true) -> MeshInstance3D:
@@ -335,7 +429,11 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##   bulbs (MultiMeshInstance3D): the string lights,
 ##   screen (MeshInstance3D "TVScreen"), screen_back (MeshInstance3D): shown / hidden together,
 ##   fire (Marker3D "FIRE_Camp"): bottom centre of the flames,
-##   close_woods (Array[Node3D]): the close woods' trees, built hidden (see _build_close_woods).
+##   close_woods (Array[Node3D]): the close woods' low-poly trees, built hidden (see _build_close_woods),
+##   lowpoly_near, lowpoly_far (Array[Node3D]): the forest's low-poly trees, near and far (is_near),
+##   detail_near, detail_far, close_woods_detail, undergrowth (Node3D): the detailed plants,
+##     built hidden (see _build_detailed_plants),
+##   detail_mats, wet_mats, wind_mats (Array[ShaderMaterial]): see _note_material.
 static func build(room: Node3D) -> Dictionary:
 	_setup_noise()
 	var rng := RandomNumberGenerator.new()
@@ -357,6 +455,7 @@ static func build(room: Node3D) -> Dictionary:
 	_build_camp_things(props, rng)
 	_build_screen(props, set_root, out)
 	out["prop_mat"] = _prop_material()
+	_note_material(out, out["prop_mat"], true, false)
 	_add_mesh(set_root, "CampProps", props.to_mesh(), out["prop_mat"])
 	_build_chairs(set_root, markers, out["prop_mat"])
 	_build_tents(set_root, out)
@@ -390,16 +489,7 @@ static func _build_ground(parent: Node3D, out: Dictionary) -> void:
 			var hu := heights[maxi(iz - 1, 0) * (n + 1) + ix]
 			var hd := heights[mini(iz + 1, n) * (n + 1) + ix]
 			normals.append(Vector3(hl - hr, 2.0 * GROUND_CELL, hu - hd).normalized())
-			var from_fire := Vector2(x, z).length()
-			var oval := Vector2(x / 1.25, z).length()
-			var in_lake := shore_z(x) - z
-			var dirt := 1.0 - smoothstep(2.6, 4.2, from_fire)
-			for row: Array in ROWS:           # trodden ground under each bench row
-				dirt = maxf(dirt, (1.0 - smoothstep(0.5, 1.3, absf(from_fire - float(row[0])))) * smoothstep(-0.5, 1.0, z))
-			var sand := smoothstep(-2.2, -0.4, in_lake)
-			sand = maxf(sand, 1.0 - smoothstep(0.9, 2.2, stream_near(x, z).x))
-			var forest := smoothstep(11.5, 15.0, oval) * (1.0 - sand)
-			colors.append(Color(dirt, sand, forest))
+			colors.append(ground_kind(x, z))
 	for iz in n:
 		for ix in n:
 			var i := iz * (n + 1) + ix
@@ -414,7 +504,10 @@ static func _build_ground(parent: Node3D, out: Dictionary) -> void:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var mat := ShaderMaterial.new()
 	mat.shader = GROUND_SHADER
+	for kind: String in ["grass", "forest", "dirt", "sand"]:
+		mat.set_shader_parameter("tex_" + kind, load(TEX + "ground_%s.jpg" % kind))
 	out["ground_mat"] = mat
+	_note_material(out, mat, true, false)
 	_add_mesh(parent, "Ground", mesh, mat, false)
 
 
@@ -477,10 +570,18 @@ static func _build_forest(parent: Node3D, out: Dictionary, rng: RandomNumberGene
 	round_tree.blob(Vector3(-0.14, 0.76, -0.1), Vector3(0.19, 0.17, 0.19), 8, 5, Color(0.18, 0.34, 0.1), Color(0.07, 0.17, 0.06), 0.16, crown_rng)
 	round_tree.alpha_by_height(1.0)
 
-	var spots_fir: Array[Transform3D] = []
-	var spots_round: Array[Transform3D] = []
-	var tints_fir := PackedColorArray()
-	var tints_round := PackedColorArray()
+	# Each kind is kept in two lots, so "Set detail: Detailed near the fire" can swap only the
+	# trees within NEAR_RADIUS for detailed ones: index 0 = far, 1 = near.
+	var firs_far: Array[Transform3D] = []
+	var firs_near: Array[Transform3D] = []
+	var round_far: Array[Transform3D] = []
+	var round_near: Array[Transform3D] = []
+	var spots_fir: Array = [firs_far, firs_near]
+	var spots_round: Array = [round_far, round_near]
+	var tints_fir: Array[PackedColorArray] = [PackedColorArray(), PackedColorArray()]
+	var tints_round: Array[PackedColorArray] = [PackedColorArray(), PackedColorArray()]
+	var placed := 0
+	var records: Array[Dictionary] = []      # every tree, for _build_detailed_plants
 	var taken: Array[Vector2] = []
 	# a few picked by hand close to the camp, so the clearing has an edge
 	var near: Array[Vector2] = [Vector2(-13.6, 5.0), Vector2(13.9, -4.6), Vector2(13.4, 8.6), Vector2(-12.4, 9.4),
@@ -505,27 +606,44 @@ static func _build_forest(parent: Node3D, out: Dictionary, rng: RandomNumberGene
 			if q.distance_squared_to(p) < 3.2:
 				ok = false
 				break
-		if not ok or spots_fir.size() + spots_round.size() >= TREE_MAX:
+		if not ok or placed >= TREE_MAX:
 			continue
+		placed += 1
 		taken.append(p)
 		var tall := rng.randf_range(5.5, 11.0)
 		var wide := tall * rng.randf_range(0.85, 1.2)
 		var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(wide, tall, wide)),
 			Vector3(p.x, ground_height(p.x, p.y) - 0.15, p.y))
 		var shade := rng.randf_range(0.75, 1.15)
+		var lot := 1 if is_near(p) else 0
 		if rng.randf() < 0.84:
-			spots_fir.append(xf)
-			tints_fir.append(Color(shade, shade, shade))
+			(spots_fir[lot] as Array[Transform3D]).append(xf)
+			tints_fir[lot].append(Color(shade, shade, shade))
+			records.append({"p": p, "xf": xf, "shade": shade, "kind": "fir"})
 		else:
+			records.append({"p": p, "xf": xf, "shade": shade, "kind": "round"})
 			xf = xf.scaled_local(Vector3(1.15, 0.8, 1.15))
-			spots_round.append(xf)
-			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
-	var tree_mat := _prop_material(0.02)       # sway: metres per unit of tree, so a 10 m fir's top moves 20 cm
+			(spots_round[lot] as Array[Transform3D]).append(xf)
+			tints_round[lot].append(Color(shade, shade * 1.05, shade * 0.9))
+	var tree_mat := _prop_material(TREE_SWAY)
 	out["tree_mat"] = tree_mat
-	_add_trees(parent, "Firs", fir, spots_fir, tints_fir, tree_mat)
-	_add_trees(parent, "RoundTrees", round_tree, spots_round, tints_round, tree_mat)
-	out["tree_count"] = spots_fir.size() + spots_round.size()
-	_build_close_woods(parent, out, fir, round_tree, tree_mat)
+	_note_material(out, tree_mat, false, true)     # (the low-poly trees have no textured parts)
+	var far: Array[Node3D] = [
+		_add_trees(parent, "Firs", fir, firs_far, tints_fir[0], tree_mat),
+		_add_trees(parent, "RoundTrees", round_tree, round_far, tints_round[0], tree_mat)]
+	var near_nodes: Array[Node3D] = [
+		_add_trees(parent, "FirsNear", fir, firs_near, tints_fir[1], tree_mat),
+		_add_trees(parent, "RoundTreesNear", round_tree, round_near, tints_round[1], tree_mat)]
+	out["lowpoly_far"] = far
+	out["lowpoly_near"] = near_nodes
+	out["tree_count"] = placed
+	var close_records := _build_close_woods(parent, out, fir, round_tree, tree_mat)
+	_build_detailed_plants(parent, out, records, close_records)
+
+
+## Whether a tree at p (x, z) counts as "near the fire" for the Set detail choice.
+static func is_near(p: Vector2) -> bool:
+	return Vector2(p.x / 1.25, p.y).length() < NEAR_RADIUS
 
 
 ## One kind of tree drawn many times in one go (a MultiMesh): `spots` is where each stands and
@@ -557,9 +675,12 @@ static func _add_trees(parent: Node3D, node_name: String, tree: Buf, spots: Arra
 ## scattered round the clearing; 3) young firs between them all, whose branches start at the
 ## ground and close the gaps between the tall trees' bare trunks.
 ## Its own random numbers (not the set's `rng`), so adding it changed nothing else in the set.
-static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_tree: Buf, tree_mat: Material) -> void:
+## Returns one record per tree (p, xf, shade, kind "fir" / "round" / "young") for
+## _build_detailed_plants, which builds the same woods again out of detailed trees.
+static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_tree: Buf, tree_mat: Material) -> Array[Dictionary]:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 20261114
+	var records: Array[Dictionary] = []
 	var spots_fir: Array[Transform3D] = []
 	var spots_round: Array[Transform3D] = []
 	var tints_fir := PackedColorArray()
@@ -585,6 +706,7 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 				var back_tall := rng.randf_range(7.0, 9.5)
 				spots_fir.append(_close_tree(back, back_tall, back_tall * _close_width(back, rng)))
 				tints_fir.append(Color(0.75, 0.75, 0.75))
+				records.append({"p": back, "xf": spots_fir[-1], "shade": 0.75, "kind": "fir"})
 		if not _close_spot_free(p):
 			continue
 		taken.append(p)
@@ -592,6 +714,7 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 		var shade := rng.randf_range(0.7, 1.05)
 		spots_fir.append(_close_tree(p, tall, tall * _close_width(p, rng)))
 		tints_fir.append(Color(shade, shade, shade))
+		records.append({"p": p, "xf": spots_fir[-1], "shade": shade, "kind": "fir"})
 	# 1b) the horseshoe down both sides: three staggered rows of fairly slim firs along
 	#     horseshoe_line(), each row 0.7 m further out than the last, with a young fir on the inside of
 	#     every other one. The tents end up among these trees (gap 1.8 m, not the belt's 3.3).
@@ -611,6 +734,7 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 			var shade := rng.randf_range(0.7, 1.1)
 			spots_fir.append(_close_tree(p, tall, tall * minf(_close_width(p, rng), rng.randf_range(0.34, 0.46))))
 			tints_fir.append(Color(shade, shade, shade))
+			records.append({"p": p, "xf": spots_fir[-1], "shade": shade, "kind": "fir"})
 	# 2) the belt round the clearing, from just outside the tents and benches out to where the
 	#    ordinary forest starts
 	for i in CLOSE_TRIES:
@@ -635,8 +759,11 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 		if p.y < -1.0 or rng.randf() < 0.8:
 			spots_fir.append(_close_tree(p, tall, tall * _close_width(p, rng)))
 			tints_fir.append(Color(shade, shade, shade))
+			records.append({"p": p, "xf": spots_fir[-1], "shade": shade, "kind": "fir"})
 		else:
-			spots_round.append(_close_tree(p, tall, tall * rng.randf_range(0.5, 0.8)).scaled_local(Vector3(1.15, 0.8, 1.15)))
+			var round_xf := _close_tree(p, tall, tall * rng.randf_range(0.5, 0.8))
+			records.append({"p": p, "xf": round_xf, "shade": shade, "kind": "round"})
+			spots_round.append(round_xf.scaled_local(Vector3(1.15, 0.8, 1.15)))
 			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
 	# 3) the young firs: 2.2 to 3.5 m tall and sunk a little, so their lowest branches brush the ground
 	for p in young:
@@ -648,6 +775,7 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 		var shade := rng.randf_range(0.8, 1.15)
 		spots_fir.append(xf)
 		tints_fir.append(Color(shade, shade, shade))
+		records.append({"p": p, "xf": xf, "shade": shade, "kind": "young"})
 	var nodes: Array[Node3D] = [
 		_add_trees(parent, "CloseFirs", fir, spots_fir, tints_fir, tree_mat),
 		_add_trees(parent, "CloseRoundTrees", round_tree, spots_round, tints_round, tree_mat)]
@@ -655,6 +783,184 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 		n.visible = false
 	out["close_woods"] = nodes
 	out["close_tree_count"] = spots_fir.size() + spots_round.size()
+	return records
+
+
+# ── The detailed plants ──────────────────────────────────────
+## The detailed look of the forest ("camp_detail", Room tab > Set detail): every tree of the
+## forest and of the close woods once more, as a detailed tree from campfire_trees.gd standing
+## on the same spot, plus grass tufts and ferns. All built hidden; campfire_room.gd's
+## _apply_detail() shows the detailed lot or the low-poly lot of each group:
+##   out["detail_near"]         Node3D: the forest's trees within NEAR_RADIUS of the fire
+##   out["detail_far"]          Node3D: the rest of the forest
+##   out["close_woods_detail"]  Node3D: the close woods (only shown while they are switched on)
+##   out["undergrowth"]         Node3D: grass tufts and ferns
+## `forest` / `close`: the records _build_forest and _build_close_woods made.
+## Which species stands where is worked out from the spot itself (species_at), so it is the
+## same on every PC and adding this changed nothing in the low-poly set.
+static func _build_detailed_plants(parent: Node3D, out: Dictionary, forest: Array[Dictionary], close: Array[Dictionary]) -> void:
+	var mats := Trees.materials(TREE_SWAY)
+	for key: String in mats:
+		_note_material(out, mats[key], false, true)
+	out["plant_mats"] = mats
+	var kits: Dictionary = {}                 # species -> its mesh, made the first time it is needed
+	var groups: Dictionary = {"detail_near": {}, "detail_far": {}, "close_woods_detail": {}}      # group -> species -> [spots, tints]
+	var counts: Dictionary = {}               # species -> how many, for the test and the log
+	for is_close: bool in [false, true]:
+		for rec: Dictionary in (close if is_close else forest):
+			var p: Vector2 = rec["p"]
+			var species := species_at(p, String(rec["kind"]), rec["xf"], is_close)
+			var group: Dictionary = groups["close_woods_detail" if is_close else ("detail_near" if is_near(p) else "detail_far")]
+			if not group.has(species):
+				var no_spots: Array[Transform3D] = []
+				group[species] = [no_spots, PackedColorArray()]
+			(group[species][0] as Array[Transform3D]).append(_detailed_spot(rec["xf"], species))
+			var shade: float = rec["shade"]
+			# leafy trees vary in colour as well as in brightness: some yellower, some bluer
+			var hue := fposmod(p.x * 0.731 + p.y * 1.377, 1.0) - 0.5
+			var tint := Color(shade, shade, shade)
+			if species in ["oak", "maple", "birch"]:
+				tint = Color(shade * (1.0 + 0.16 * hue), shade, shade * (1.0 - 0.2 * hue))
+			var tints: PackedColorArray = group[species][1]
+			tints.append(tint)
+			group[species][1] = tints          # (a PackedColorArray is copied when read out of an Array)
+			counts[species] = int(counts.get(species, 0)) + 1
+	for group_name: String in groups:
+		var holder := Node3D.new()
+		holder.name = group_name.to_pascal_case()        # DetailNear, DetailFar, CloseWoodsDetail
+		holder.visible = false
+		parent.add_child(holder)
+		out[group_name] = holder
+		var group: Dictionary = groups[group_name]
+		for species: String in group:
+			if not kits.has(species):
+				kits[species] = Trees.kit(species, mats)
+			_add_plants(holder, species.to_pascal_case(), kits[species], group[species][0], group[species][1], true)
+	out["species_counts"] = counts
+	_build_undergrowth(parent, out, mats)
+
+
+## Which detailed tree stands on a low-poly tree's spot. kind = the low-poly tree there
+## ("fir", "round" or "young"), xf = its place and size, is_close = it belongs to the close woods.
+## The forest is firs with pines, birches, maples and oaks mixed in. In the close woods the
+## trees that have to hide something stay firs (their boughs reach the ground): on the lake's
+## side, and wherever the low-poly fir was made slim to keep clear of the screen or the benches.
+static func species_at(p: Vector2, kind: String, xf: Transform3D, is_close: bool) -> String:
+	if kind == "young":
+		return "young_fir"
+	var roll := fposmod(sin(p.x * 91.7 + p.y * 37.3) * 43758.5453, 1.0)      # 0..1, fixed for the spot
+	if kind == "round":
+		return "oak" if roll < 0.4 else ("maple" if roll < 0.7 else "birch")
+	var size := xf.basis.get_scale()
+	if is_close and (p.y < -1.0 or size.x < size.y * 0.5):
+		# a slim birch now and then down the sides, never behind the screen
+		return "birch" if (roll > 0.86 and p.y > -1.0) else "fir"
+	if roll < 0.58:
+		return "fir"
+	if roll < 0.7:
+		return "pine"
+	if roll < 0.82:
+		return "birch"
+	return "maple" if roll < 0.92 else "oak"
+
+
+## A detailed tree's place and size from the low-poly tree's (`xf`: turned round y, `wide`
+## across and `tall` high). Young firs keep it. A fir keeps it too, but is never slimmer than
+## 0.3 of its height: slimmer, its boughs shrink to tufts on a pole (the low-poly firs behind
+## the screen go down to CLOSE_SLIM; at 0.3 a 10 m fir's boughs reach 0.9 m, still clear of the
+## screen 1.1 m in front of it). Leafy trees and pines are built to other proportions
+## (campfire_trees.gd), so they are kept from getting needle-thin or wider than they are tall.
+static func _detailed_spot(xf: Transform3D, species: String) -> Transform3D:
+	if species == "young_fir":
+		return xf
+	var size := xf.basis.get_scale()
+	if species == "fir":
+		if size.x >= size.y * 0.3:
+			return xf
+		return Transform3D(xf.basis.orthonormalized().scaled(Vector3(size.y * 0.3, size.y, size.y * 0.3)), xf.origin)
+	var tall := size.y * (0.85 if species != "pine" else 1.05)
+	var wide := clampf(size.x, tall * 0.55, tall * 0.9)
+	return Transform3D(xf.basis.orthonormalized().scaled(Vector3(wide, tall, wide)), xf.origin)
+
+
+## One kind of detailed plant drawn many times in one go. Unlike _add_trees, the mesh brings
+## its own materials (bark on one surface, leaf cards on the other: campfire_trees.gd kit()).
+static func _add_plants(parent: Node3D, node_name: String, mesh: Mesh, spots: Array[Transform3D], tints: PackedColorArray, shadows: bool) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true
+	mm.mesh = mesh
+	mm.instance_count = spots.size()
+	for i in spots.size():
+		mm.set_instance_transform(i, spots[i])
+		mm.set_instance_color(i, tints[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = node_name
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mmi)
+	return mmi
+
+
+## Grass tufts in the clearing and ferns under the trees at its edge (out["undergrowth"], shown
+## with the detailed looks only). Tufts grow where the ground is grass: not on the trodden dirt
+## round the fire and under the benches, not on the sand, not where a tent or the camp's things
+## stand. They cast no shadows (too small to matter, and shadows are what costs).
+static func _build_undergrowth(parent: Node3D, out: Dictionary, mats: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261115
+	var holder := Node3D.new()
+	holder.name = "Undergrowth"
+	holder.visible = false
+	parent.add_child(holder)
+	out["undergrowth"] = holder
+	var grass: Array[Transform3D] = []
+	var ferns: Array[Transform3D] = []
+	var grass_tints := PackedColorArray()
+	var fern_tints := PackedColorArray()
+	for i in 9000:
+		var radius := sqrt(rng.randf()) * UNDERGROWTH_RADIUS
+		var ang := rng.randf() * TAU
+		var p := Vector2(cos(ang) * radius * 1.25, sin(ang) * radius)
+		var roll := rng.randf()
+		var size := rng.randf_range(0.5, 1.1)
+		var high := rng.randf_range(0.8, 1.3)
+		var turn := rng.randf() * TAU
+		var shade := rng.randf_range(0.8, 1.1)
+		if shore_z(p.x) - p.y > -0.6 or stream_near(p.x, p.y).x < 1.6:
+			continue                                   # the lake, the stream and their banks
+		if not _undergrowth_free(p):
+			continue
+		var kind := ground_kind(p.x, p.y)
+		if kind.r > 0.25 or kind.g > 0.25:
+			continue                                   # trodden dirt, sand
+		var xf := Transform3D(Basis(Vector3.UP, turn).scaled(Vector3(size, size * high, size)), Vector3(p.x, ground_height(p.x, p.y) - 0.02, p.y))
+		# under the trees: mostly ferns, a little thin grass; in the open: grass, in clumps
+		if kind.b > 0.4:
+			if roll < 0.3 and ferns.size() < FERN_MAX:
+				ferns.append(xf)
+				fern_tints.append(Color(shade, shade, shade))
+			elif roll > 0.8 and grass.size() < GRASS_MAX:
+				grass.append(xf)
+				grass_tints.append(Color(shade * 0.8, shade * 0.85, shade * 0.8))
+		elif grass.size() < GRASS_MAX and _noise.get_noise_2d(p.x * 6.0 + 300.0, p.y * 6.0) > -0.12:
+			grass.append(xf)
+			grass_tints.append(Color(shade, shade, shade))
+	_add_plants(holder, "GrassTufts", Trees.kit("grass", mats), grass, grass_tints, false)
+	_add_plants(holder, "Ferns", Trees.kit("fern", mats), ferns, fern_tints, false)
+
+
+## Whether a tuft or fern may grow at p: not in a tent, on the s'mores table or the stick pile,
+## or under the screen and its posts.
+static func _undergrowth_free(p: Vector2) -> bool:
+	for t: Array in TENTS:
+		if p.distance_to(Vector2(float(t[0]), float(t[1]))) < 2.3:
+			return false
+	if p.distance_to(STICK_PILE) < 1.0 or p.distance_to(SMORES_TABLE) < 1.1:
+		return false
+	if absf(p.x) < POST_X + 0.4 and absf(p.y - SCREEN_Z) < 0.5:
+		return false
+	return true
 
 
 ## Where and how big one close-woods tree is: standing at p (x, z) on the ground, turned at
@@ -727,12 +1033,14 @@ static func _close_spot_free(p: Vector2, tent_gap: float = 3.3) -> bool:
 ## The fire pit: a ring of stones, the logs leaning together, the bed of coals (its own mesh and
 ## glowing material) and the FIRE_Camp marker at the bottom centre of the flames.
 static func _build_fire_pit(props: Buf, parent: Node3D, markers: Node3D, out: Dictionary, rng: RandomNumberGenerator) -> void:
+	props.mat = MAT_ROCK
 	for i in 11:
 		var a := TAU * float(i) / 11.0 + rng.randf_range(-0.08, 0.08)
 		var size := rng.randf_range(0.16, 0.24)
 		var grey := rng.randf_range(0.22, 0.38)
 		props.blob(Vector3(cos(a) * 0.82, size * 0.45, sin(a) * 0.82), Vector3(size, size * 0.7, size * 0.85), 6, 4,
 			Color(grey, grey, grey * 1.05), Color(grey * 0.5, grey * 0.5, grey * 0.5), 0.35, rng)
+	props.mat = MAT_BARK
 	for i in 6:                                   # the logs: feet on a circle, tops meeting over the middle
 		var a := TAU * float(i) / 6.0 + 0.3
 		var foot := Vector3(cos(a) * 0.48, 0.05, sin(a) * 0.48)
@@ -755,6 +1063,7 @@ static func _build_fire_pit(props: Buf, parent: Node3D, markers: Node3D, out: Di
 ## The log benches (the chat audience's seats): each row is an arc of logs with one AUDIENCE_
 ## marker per seat on top, facing the fire.
 static func _build_benches(props: Buf, markers: Node3D) -> void:
+	props.mat = MAT_BARK
 	var bark := Color(0.17, 0.11, 0.07)
 	var cut := Color(0.5, 0.38, 0.22)
 	var row_n := 0
@@ -786,6 +1095,7 @@ static func _build_benches(props: Buf, markers: Node3D) -> void:
 static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 	var wood := Color(0.34, 0.24, 0.14)
 	var dark_wood := Color(0.2, 0.14, 0.09)
+	props.mat = MAT_BARK
 	# the stick pile
 	var pile_y := ground_height(STICK_PILE.x, STICK_PILE.y)
 	for i in 14:
@@ -794,6 +1104,7 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 		var from := Vector3(STICK_PILE.x - 0.55, pile_y + 0.05 + layer * 0.085, STICK_PILE.y + off)
 		var to := from + Vector3(1.1 + rng.randf_range(-0.15, 0.15), rng.randf_range(-0.01, 0.03), rng.randf_range(-0.08, 0.08))
 		props.rod(from, to, 0.035, 5, dark_wood.lerp(wood, rng.randf()), Color(0.5, 0.38, 0.22))
+	props.mat = MAT_PLAIN
 	# the s'mores table: a folding table with the makings on it, and a cooler beside it
 	var ty := ground_height(SMORES_TABLE.x, SMORES_TABLE.y)
 	var table := Transform3D(Basis(Vector3.UP, deg_to_rad(20.0)), Vector3(SMORES_TABLE.x, ty, SMORES_TABLE.y))
@@ -806,6 +1117,7 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 	props.box(table * Transform3D(Basis.IDENTITY, Vector3(0.3, 0.76, -0.05)), Vector3(0.22, 0.03, 0.1), Color(0.2, 0.1, 0.06))      # chocolate
 	props.box(table * Transform3D(Basis.IDENTITY, Vector3(1.0, 0.2, 0.1)), Vector3(0.6, 0.4, 0.38), Color(0.12, 0.3, 0.55))         # the cooler
 	props.box(table * Transform3D(Basis.IDENTITY, Vector3(1.0, 0.43, 0.1)), Vector3(0.62, 0.06, 0.4), Color(0.9, 0.9, 0.92))
+	props.mat = MAT_PLANKS
 	# the dock: planks on posts out over the lake
 	var planks := int((DOCK_Z.x - DOCK_Z.y) / 0.3)
 	for i in planks:
@@ -825,6 +1137,7 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(-1.6 + float(i) * 0.4, 0.0, 0.0)), Vector3(0.36, 0.05, 1.1), wood)
 	for sz: float in [-0.5, 0.5]:
 		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(0.0, -0.08, sz)), Vector3(3.6, 0.1, 0.08), dark_wood)
+	props.mat = MAT_ROCK
 	# rocks along the stream and the shore
 	var pts := smooth_stream()
 	for i in 46:
@@ -849,6 +1162,7 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 ## a top and a bottom bar and a dark back. The room script hides the sheet and its back when the
 ## screen is switched off; the posts stay, because the string lights hang from them.
 static func _build_screen(props: Buf, parent: Node3D, out: Dictionary) -> void:
+	props.mat = MAT_BARK
 	var pole := Color(0.16, 0.12, 0.09)
 	for sx: float in [-1.0, 1.0]:
 		var x := POST_X * sx
@@ -885,6 +1199,7 @@ static func _build_chairs(parent: Node3D, markers: Node3D, mat: Material) -> voi
 	for i in CHAIR_DEGREES.size():
 		var at := ring_point(CHAIR_RADIUS, CHAIR_DEGREES[i])
 		var b := Buf.new()
+		b.mat = MAT_FABRIC
 		var cloth := cloths[i]
 		# local axes: +Z = the way the chair faces, y up from the ground
 		b.box(Transform3D(Basis.IDENTITY, Vector3(0.0, CHAIR_SEAT_Y - 0.03, -0.12)), Vector3(0.56, 0.04, 0.5), cloth)
@@ -904,6 +1219,7 @@ static func _build_chairs(parent: Node3D, markers: Node3D, mat: Material) -> voi
 ## (camp_prop.gdshader's glow).
 static func _build_tents(parent: Node3D, out: Dictionary) -> void:
 	var b := Buf.new()
+	b.mat = MAT_FABRIC
 	for t: Array in TENTS:
 		var x := float(t[0])
 		var z := float(t[1])
@@ -951,6 +1267,7 @@ static func _build_tents(parent: Node3D, out: Dictionary) -> void:
 					door if s >= 2 and s <= 5 else main)
 	var mat := _prop_material()
 	out["tent_mat"] = mat
+	_note_material(out, mat, true, false)
 	_add_mesh(parent, "Tents", b.to_mesh(), mat)
 
 
@@ -960,6 +1277,7 @@ static func _build_tents(parent: Node3D, out: Dictionary) -> void:
 ## their cloth glows instead (the room script, _apply_glows).
 static func _build_lights(parent: Node3D, room: Node3D, out: Dictionary) -> void:
 	var poles := Buf.new()
+	poles.mat = MAT_BARK
 	var tops: Array[Vector3] = []
 	for p in LIGHT_POLES:
 		var foot := ground_height(p.x, p.z)
@@ -995,7 +1313,9 @@ static func _build_lights(parent: Node3D, room: Node3D, out: Dictionary) -> void
 			lamp.name = "LAMP_String_%d" % lamp_n
 			house.add_child(lamp)
 			lamp.position = a.lerp(b, 0.5) - Vector3(0.0, sag + 0.25, 0.0)
-	_add_mesh(parent, "LightPoles", poles.to_mesh(), _prop_material())
+	var pole_mat := _prop_material()
+	_note_material(out, pole_mat, true, false)
+	_add_mesh(parent, "LightPoles", poles.to_mesh(), pole_mat)
 	var bulb := SphereMesh.new()
 	bulb.radius = 0.045
 	bulb.height = 0.09
