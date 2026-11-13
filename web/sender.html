@@ -35,6 +35,7 @@
   .pres:first-of-type { border-top: 0; }
   .pres video { width: 96px; height: 54px; object-fit: cover; margin: 0; }
   .pres .name { font-weight: 600; }
+  .pres .status { overflow-wrap: anywhere; }   /* a long window title wraps instead of running out of the box */
   .pres.want-web .openweb, .pres.want-tab .pick { background: var(--accent); border-color: var(--accent); color:#0b1406; font-weight:600; }
   /* presenter feeds only matter when a podium uses this page (its list is filled by the script) */
   /* Slimmer window (work list item 12): a presenter row that isn't used is hidden
@@ -45,6 +46,8 @@
      by itself): outlined for a few seconds so it's easy to find which button to click. */
   .pres.called { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
   #presSection:not(:has(#presList .pres:not(.unused))):has(#camPermRow.hidden) { display: none; }
+  /* The Extra screens box only shows while a room asks for a tab on one of its own screens. */
+  #extraSection:not(:has(#extraList .pres:not(.unused))) { display: none; }
   .hidden { display: none !important; }
   /* Inside Stream Core's dashboard (see "Inside Stream Core" in the script): the dashboard card has
      its own heading, so the page's header goes and the page uses the card's full width. */
@@ -143,6 +146,14 @@
       <span class="status">The browser needs permission once before cameras can start.</span>
     </div>
     <div id="presList"></div>
+  </section>
+
+  <section id="extraSection">
+    <div class="row"><b>Extra screens</b> <small>(a room's own small screens)</small></div>
+    <small>A small screen set to Browser tab or window (for the Forge Hall: Small live screens, in the
+      game's Room tab or Stream Core's Room &amp; sound page) gets a row here. Click its button and pick
+      the tab or window it should show. Each screen has its own; they carry no sound.</small>
+    <div id="extraList"></div>
   </section>
 </main>
 
@@ -262,7 +273,7 @@ function connect() {
     else if (m.type === "replaced") setReplaced(true);
     else if (m.type === "message") {
       let msg; try { msg = JSON.parse(m.text); } catch (_) { return; }
-      if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots, msg.avatar, msg.screen);
+      if (msg.type === "presenters" && Array.isArray(msg.slots)) applyPresenterWishes(msg.slots, msg.avatar, msg.screen, msg.extras);
       if (msg.type === "live_feed") applyLiveFeed(msg);
     }
   };
@@ -335,6 +346,8 @@ function sendStatus() {
     presenters: pres.slice(0, PRESENTERS).map((p, i) => ({ slot: i, want: p.want.kind, active: !!p.stream, kind: p.kind, label: p.label, error: p.error })),
     avatar: { want: pres[AVATAR].want.kind, active: !!pres[AVATAR].stream, kind: pres[AVATAR].kind, label: pres[AVATAR].label, error: pres[AVATAR].error,
       sent: !!(avatar.publishedStream && avatar.publishedStream === pres[AVATAR].stream) },
+    // the Extra screens rows, in row order (the game drops a row's picture when it isn't active)
+    extras: pres.slice(EXTRA0).map((p, k) => ({ slot: k, want: p.want.kind, active: !!p.stream, label: p.label, error: p.error })),
   }) });
 }
 // (the once-a-second status goes out when the worker says so: a page's own timers slow to once a
@@ -1111,18 +1124,26 @@ async function toggleCam() {
 // sent to the game as a podium; it's published to the others (syncAvatars), and a podium or the
 // big screen set to my own avatar takes a copy of it (syncMine). Podium kinds from the game:
 // "mine" (my avatar), "view" (someone's avatar, through VDO.Ninja), "wait" (that person isn't here).
+// Extra screens: EXTRAS more entries after the avatar, for small screens a room builds itself
+// (the Forge Hall's three; core/extra_feeds.gd kind "tab" in the game). The game's message
+// carries "extras": [{kind: "tab" | "off", name}], one per row; a row is always a picked tab or
+// window, and its frames go out like a podium's with slot byte EXTRA0 + row. Keep PRESENTERS,
+// EXTRAS and EXTRA0 in step with MAX_PRESENTERS, MAX_EXTRA_TABS and EXTRA_SLOT0 in
+// core/capture_server.gd.
 const AVATAR = PRESENTERS;
+const EXTRAS = 3;
+const EXTRA0 = PRESENTERS + 1;
 let cameraList = [];
-const pres = Array.from({ length: PRESENTERS + 1 }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00", publish: "", view: "", who: "" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "", srcStream: null }));
+const pres = Array.from({ length: PRESENTERS + 1 + EXTRAS }, () => ({ want: { kind: "off", device: "", url: "", bg: "00ff00", publish: "", view: "", who: "", name: "" }, win: null, stream: null, pump: null, kind: "", device: "", label: "", error: "", srcStream: null }));
 let screenWant = { kind: "off", view: "", who: "" };     // the big screen: someone's avatar?
 
 function buildPresenterRows() {
   pres.forEach((p, i) => {
-    const list = $(i === AVATAR ? "avatarList" : "presList");
+    const list = $(i === AVATAR ? "avatarList" : i >= EXTRA0 ? "extraList" : "presList");
     const row = document.createElement("div");
     row.className = "pres";
     row.innerHTML = `<video muted playsinline></video><div>
-      <div><span class="name">${i === AVATAR ? "My avatar" : "Presenter " + (i + 1)}</span> <span class="status"></span></div>
+      <div><span class="name">${i === AVATAR ? "My avatar" : i >= EXTRA0 ? "Extra screen " + (i - EXTRA0 + 1) : "Presenter " + (i + 1)}</span> <span class="status"></span></div>
       <div class="row"><button class="openweb">1. Open page</button><button class="pick">Pick a tab or window</button><button class="stop">Stop</button></div></div>`;
     list.appendChild(row);
     p.row = row;
@@ -1141,6 +1162,8 @@ function renderPresenter(i) {
   const winOpen = !!(p.win && !p.win.closed);
   const who = p.want.who || "a guest";
   const pageName = i === AVATAR ? "My avatar web page" : "Presenter " + (i + 1) + " web page";
+  // an Extra screens row is named after the screen it feeds (the game sends the name)
+  if (i >= EXTRA0) row.querySelector(".name").textContent = p.want.name || "Extra screen " + (i - EXTRA0 + 1);
   row.classList.toggle("want-tab", (want === "tab" || (web && winOpen)) && !(p.stream && p.kind === want));
   row.classList.toggle("want-web", web && !winOpen && !p.stream);
   row.querySelector(".pick").classList.toggle("hidden", (want !== "tab" && !web) || remote);
@@ -1264,15 +1287,20 @@ async function startPresenterTab(i) {
   renderPresenter(i); sendStatus();
 }
 
-function applyPresenterWishes(slots, myAvatar, screen) {
+function applyPresenterWishes(slots, myAvatar, screen, extras) {
   const wishes = slots.slice(0, PRESENTERS);
   if (myAvatar && typeof myAvatar === "object") wishes[AVATAR] = myAvatar;
+  // Extra screens: only "tab" or "off" (a row the game doesn't mention is off)
+  for (let k = 0; k < EXTRAS; k++) {
+    const x = Array.isArray(extras) && extras[k] && typeof extras[k] === "object" ? extras[k] : {};
+    wishes[EXTRA0 + k] = { kind: x.kind === "tab" ? "tab" : "off", name: String(x.name || "") };
+  }
   wishes.forEach((w, i) => {
     if (!w || typeof w !== "object") return;
     const p = pres[i];
     const before = backdropUrl(i);
     p.want = { kind: w.kind || "off", device: w.device || "", url: w.url || "", bg: w.bg || "00ff00",
-      publish: w.publish || "", view: w.view || "", who: w.who || "" };
+      publish: w.publish || "", view: w.view || "", who: w.who || "", name: w.name || "" };
     if (p.want.kind === "off" || p.want.kind === "wait" || (p.stream && p.kind !== p.want.kind)) { stopPresenter(i); p.error = ""; }
     if (p.want.kind !== "web") closeWebPage(i);
     else if (p.win && !p.win.closed && backdropUrl(i) !== before) p.win.location.href = backdropUrl(i);
@@ -1323,6 +1351,22 @@ window.SenderPage = {
     const i = Number(n) - 1;
     if (!(i >= 0 && i < PRESENTERS)) return "no-row";
     const p = pres[i];
+    const ua = navigator.userActivation;
+    if (p.want.kind === "tab" && (!ua || ua.isActive) && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
+      startPresenterTab(i);
+      return "picking";
+    }
+    p.row.classList.add("called");
+    p.row.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTimeout(() => p.row.classList.remove("called"), 6000);
+    return "click";
+  },
+  // The same for an Extra screens row (n = 1..EXTRAS), for a dashboard button that wants to
+  // open the picker for a room's small screen. Nothing in Stream Core calls it yet.
+  pickExtra(n) {
+    const k = Number(n) - 1;
+    if (!(k >= 0 && k < EXTRAS)) return "no-row";
+    const i = EXTRA0 + k, p = pres[i];
     const ua = navigator.userActivation;
     if (p.want.kind === "tab" && (!ua || ua.isActive) && navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia) {
       startPresenterTab(i);

@@ -35,6 +35,10 @@ extends Resource
 ## See-through hologram screen: adds Hologram, Transparency and Glitch controls to the Room tab.
 @export var screen_hologram: bool = false
 
+## A "please stand by" picture shown over the screen instead of the red stage curtain
+## (core/standby_card.gd). Empty = the curtain.
+@export var standby_card: Texture2D
+
 @export_group("Audio")
 ## Looping background sound on the Ambience bus (optional; some rooms generate theirs in code).
 @export var ambience: AudioStream

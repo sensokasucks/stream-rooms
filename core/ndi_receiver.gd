@@ -48,6 +48,11 @@ static func supports_pull_audio() -> bool:
 	return ClassDB.class_exists(STREAM_CLASS) and ClassDB.class_has_method(STREAM_CLASS, "pull_audio")
 
 
+## The source names from the last change, sorted (ExtraFeeds matches part of a name on them).
+func get_source_names() -> PackedStringArray:
+	return _names
+
+
 func has_source(source_name: String) -> bool:
 	return source_name != "" and _names.has(source_name)
 

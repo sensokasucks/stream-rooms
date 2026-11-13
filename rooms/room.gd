@@ -154,7 +154,7 @@ func get_chat_screen_marker() -> Node3D:
 ## The room's own meshes (walls, floors, furniture), not the things the app adds at runtime
 ## (audience, curtain, screens, effects).
 func get_static_meshes() -> Array[MeshInstance3D]:
-	var skip := ["StageCurtain", "Audience", "Reactions", "Presenters", "ScreenLights", "ReplyScreen",
+	var skip := ["StageCurtain", "StandbyCard", "Audience", "Reactions", "Presenters", "ScreenLights", "ReplyScreen",
 		"ChatScreen", "WebcamDisplay", "SunShafts", "SideChats"]
 	var out: Array[MeshInstance3D] = []
 	for n in find_children("*", "MeshInstance3D", true, false):
@@ -186,6 +186,18 @@ func get_projector_marker() -> Node3D:
 ##   {"key": "rain_amount", "label": "Rain", "min": 0.0, "max": 2.0, "step": 0.01,
 ##    "format": "%d%%", "scale": 100.0}                  a slider for an AppState setting
 ##   {"key": "holo_color1", "label": "Line colour", "type": "color"}   a colour picker
+##   {"key": "rain_on", "label": "Rain", "type": "check"}             a tick box (a bool setting)
+##   {"key": "forge_art_frame", "label": "Frame", "type": "option",
+##    "options": [["brass", "Brass"], ...]}              a dropdown (a String setting)
+##   (a "text" control may add "pick_feeds": the key of a source setting, for a Pick button
+##   listing the NDI sources and Spout senders found, which fills the box and sets that setting
+##   to "ndi" / "spout"; and "hide_login": true to show dots while an address with a login in
+##   it isn't being edited)
+##   {"key": "forge_live_1_address", "label": "Address", "type": "text",
+##    "placeholder": "..."}                              a line of text (a String setting)
+##   {"key": "forge_art_1", "label": "Art 1", "type": "picture",
+##    "placeholder": "..."}                              a picture file box with Browse / Clear
+## Any entry can carry a "tooltip". ui/control_panel.gd (_on_room_controls) builds them.
 ## The room reacts to its settings through EventBus.setting_changed.
 func get_controls() -> Array[Dictionary]:
 	return []
