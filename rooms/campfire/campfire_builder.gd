@@ -79,6 +79,15 @@ const CLOSE_WALL_HALF: float = 17.0
 const CLOSE_WALL_Z: float = -7.6
 const CLOSE_WALL_STEP: float = 0.5
 const CLOSE_SLIM: Vector2 = Vector2(0.22, 0.3)
+## The horseshoe: the two walls of trees down the sides that make the clearing a cul-de-sac.
+## Each starts beside the screen at CLOSE_SIDE_START (x, z; mirrored for the other side), widens
+## to CLOSE_SIDE_RADIUS metres from the fire level with it, then follows that circle round
+## behind the benches' ends and stops where |x| gets down to CLOSE_SIDE_OPEN, which leaves the
+## mouth the main camera looks in through. CLOSE_SIDE_STEP: metres between trees along it.
+const CLOSE_SIDE_START: Vector2 = Vector2(5.3, -7.2)
+const CLOSE_SIDE_RADIUS: float = 9.0
+const CLOSE_SIDE_OPEN: float = 6.5
+const CLOSE_SIDE_STEP: float = 0.4
 ## The belt round the clearing: from / to as a radius in the clearing's oval, how many places
 ## are tried, the least metres between two trunks, and the room kept clear round each camera.
 const CLOSE_RING: Vector2 = Vector2(8.4, 15.0)
@@ -92,7 +101,7 @@ const CAMERAS: Array = [
 	["02_Fireside_Right", Vector3(6.6, 1.3, 5.2), Vector3(-1.2, 1.5, -2.0)],
 	["03_Fireside_Left", Vector3(-6.6, 1.3, 5.2), Vector3(1.2, 1.5, -2.0)],
 	["04_From_The_Screen", Vector3(2.4, 2.6, -5.4), Vector3(-0.6, 0.9, 4.0)],
-	["05_Tent_View", Vector3(8.6, 1.5, -3.6), Vector3(-2.0, 1.1, 1.0)],
+	["05_Tent_View", Vector3(6.3, 1.5, -3.9), Vector3(-2.0, 1.1, 1.0)],
 	["06_Lake_Shore", Vector3(-10.2, 1.7, -4.2), Vector3(6.0, 1.6, -9.0)],
 	["07_Drone", Vector3(0.0, 15.0, 16.0), Vector3(0.0, 0.0, -3.0)],
 	["08_Marshmallows", Vector3(0.0, 0.95, 2.6), Vector3(0.0, 1.25, -2.4)],
@@ -543,7 +552,8 @@ static func _add_trees(parent: Node3D, node_name: String, tree: Buf, spots: Arra
 ## seen and the camp sits in the forest. Built once with the rest of the set and left hidden;
 ## campfire_room.gd's _apply_woods() shows and hides the nodes listed in out["close_woods"].
 ## They use the forest's two tree shapes and its material (wet, wind).
-## Three passes: 1) the shore wall, two staggered rows of tall firs and a thinner third; 2) the belt, tall trees
+## Passes: 1) the shore wall, two staggered rows of tall firs and a thinner third; 1b) the
+## horseshoe, a wall down each side that closes the clearing into a cul-de-sac; 2) the belt, tall trees
 ## scattered round the clearing; 3) young firs between them all, whose branches start at the
 ## ground and close the gaps between the tall trees' bare trunks.
 ## Its own random numbers (not the set's `rng`), so adding it changed nothing else in the set.
@@ -582,6 +592,25 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 		var shade := rng.randf_range(0.7, 1.05)
 		spots_fir.append(_close_tree(p, tall, tall * _close_width(p, rng)))
 		tints_fir.append(Color(shade, shade, shade))
+	# 1b) the horseshoe down both sides: three staggered rows of fairly slim firs along
+	#     horseshoe_line(), each row 0.7 m further out than the last, with a young fir on the inside of
+	#     every other one. The tents end up among these trees (gap 1.8 m, not the belt's 3.3).
+	var line := horseshoe_line()
+	for side: float in [-1.0, 1.0]:
+		for i in line.size():
+			var on_line := line[i]
+			var outward := on_line.normalized() if on_line.y > 0.0 else Vector2(1.0, 0.0)
+			var p := Vector2(on_line.x, on_line.y) + outward * (0.7 * float(i % 3)) + Vector2(rng.randf_range(-0.1, 0.1), rng.randf_range(-0.1, 0.1))
+			p.x *= side
+			if i % 2 == 0:
+				young.append(Vector2((on_line.x - outward.x * 0.45) * side, on_line.y - outward.y * 0.45))
+			if not _close_spot_free(p, 1.8):
+				continue
+			taken.append(p)
+			var tall := rng.randf_range(6.0, 9.5)
+			var shade := rng.randf_range(0.7, 1.1)
+			spots_fir.append(_close_tree(p, tall, tall * minf(_close_width(p, rng), rng.randf_range(0.34, 0.46))))
+			tints_fir.append(Color(shade, shade, shade))
 	# 2) the belt round the clearing, from just outside the tents and benches out to where the
 	#    ordinary forest starts
 	for i in CLOSE_TRIES:
@@ -611,7 +640,7 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
 	# 3) the young firs: 2.2 to 3.5 m tall and sunk a little, so their lowest branches brush the ground
 	for p in young:
-		if not _close_spot_free(p) or shore_z(p.x) - p.y > -0.3:
+		if not _close_spot_free(p, 1.8) or shore_z(p.x) - p.y > -0.3:
 			continue
 		var tall := rng.randf_range(2.2, 3.5)
 		var xf := _close_tree(p, tall, tall * rng.randf_range(0.6, 0.8))
@@ -646,12 +675,31 @@ static func _close_width(p: Vector2, rng: RandomNumberGenerator) -> float:
 	return rng.randf_range(0.5, 0.8)
 
 
-## True when a close-woods tree may stand at p (x, z): not on a tent, a light pole, the stream,
-## the path to the dock, a camera (CLOSE_CAMERA_GAP metres round each) or on the near side
-## between the benches' ends (the main camera looks along there, and at the tents past them).
-static func _close_spot_free(p: Vector2) -> bool:
+## The horseshoe's line on the right-hand side (x > 0) as points CLOSE_SIDE_STEP apart, from
+## beside the screen round to the mouth; the left side is the same with x turned round.
+static func horseshoe_line() -> Array[Vector2]:
+	var pts: Array[Vector2] = []
+	# beside the screen, widening towards the fire's level (z = 0)
+	var steps := int(absf(CLOSE_SIDE_START.y) / CLOSE_SIDE_STEP)
+	for i in steps:
+		var t := float(i) / float(steps)
+		pts.append(Vector2(lerpf(CLOSE_SIDE_START.x, CLOSE_SIDE_RADIUS, pow(t, 0.8)), lerpf(CLOSE_SIDE_START.y, 0.0, t)))
+	# round the circle behind the benches' ends
+	var ang := 0.0
+	while CLOSE_SIDE_RADIUS * cos(ang) > CLOSE_SIDE_OPEN:
+		pts.append(Vector2(cos(ang), sin(ang)) * CLOSE_SIDE_RADIUS)
+		ang += CLOSE_SIDE_STEP / CLOSE_SIDE_RADIUS
+	return pts
+
+
+## True when a close-woods tree may stand at p (x, z): not on a tent (tent_gap metres from its
+## middle), a light pole, the stream, the path to the dock, a camera (CLOSE_CAMERA_GAP metres
+## round each, and for a camera that looks in at the fire from the edge, nothing within 3 m in
+## front of it), and not inside the horseshoe or in its mouth, where the benches and the main
+## camera's view are.
+static func _close_spot_free(p: Vector2, tent_gap: float = 3.3) -> bool:
 	for t: Array in TENTS:
-		if p.distance_to(Vector2(float(t[0]), float(t[1]))) < 3.3:
+		if p.distance_to(Vector2(float(t[0]), float(t[1]))) < tent_gap:
 			return false
 	for pole in LIGHT_POLES:
 		if p.distance_to(Vector2(pole.x, pole.z)) < 1.0:
@@ -661,10 +709,17 @@ static func _close_spot_free(p: Vector2) -> bool:
 	if absf(p.x - DOCK_X) < 0.75 and p.y < -6.0:
 		return false
 	for c: Array in CAMERAS:
-		var at: Vector3 = c[1]
-		if p.distance_to(Vector2(at.x, at.z)) < CLOSE_CAMERA_GAP:
+		var at := Vector2((c[1] as Vector3).x, (c[1] as Vector3).z)
+		var to_tree := p - at
+		if to_tree.length() < CLOSE_CAMERA_GAP:
 			return false
-	if absf(p.x) < 9.5 and p.y > 4.0:
+		var look := (Vector2((c[2] as Vector3).x, (c[2] as Vector3).z) - at).normalized()
+		var from_edge := at.length() > 6.0 and look.dot(-at.normalized()) > 0.5
+		if from_edge and to_tree.length() < 3.0 and look.dot(to_tree.normalized()) > 0.8:
+			return false
+	if p.y > -1.0 and p.length() < CLOSE_SIDE_RADIUS - 0.5:
+		return false
+	if absf(p.x) < CLOSE_SIDE_OPEN and p.y > 5.5:
 		return false
 	return true
 

@@ -196,7 +196,7 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "camp_screen", "label": "Big screen", "type": "check",
 			"tooltip": "On: the big screen hangs between the two posts. Off: the screen is taken down, which opens the view over the lake. The sound of whatever is playing carries on."},
 		{"key": "camp_close_woods", "label": "Woods close around the camp", "type": "check",
-			"tooltip": "On: thick trees stand right round the clearing and behind the screen, so the lake is hidden and the camp sits deep in the forest. Off: the open view over the lake."},
+			"tooltip": "On: thick trees stand right round the clearing, behind the screen and down both sides of the fire, so the lake is hidden and the camp is a cul-de-sac deep in the forest. Off: the open view over the lake."},
 		{"key": "camp_string_lights", "label": "String lights and lanterns", "type": "check",
 			"tooltip": "The string lights between the posts and the lanterns in the tents. They glow softly by day and fully at night, and follow the House lights slider."},
 		{"key": "camp_fireflies", "label": "Fireflies at night", "type": "check",

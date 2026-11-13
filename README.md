@@ -1426,8 +1426,10 @@ Included rooms:
     runs down the left side into the lake with a footbridge over it, a little jetty, a pile
     of sticks, a s'mores table with a cool box, and a forest of fir and round trees.
   - **Woods close around the camp** (off to start with) plants thick trees right round the
-    clearing and a wall of firs along the shore behind the screen. The lake is hidden and the
-    camp sits deep in the forest. The stream and the jetty still peek through a little, and
+    clearing, a wall of firs along the shore behind the screen, and a wall down each side from
+    the screen past the fire to the ends of the benches. The camp becomes a cul-de-sac in the
+    forest, open only towards the main camera, with the tents tucked in among the trees. The
+    lake is hidden. The stream and the jetty still peek through a little, and
     the Lake and Sky camera stands at the water past the trees, so it keeps its view. In a
     co-stream it is the host's, like the weather.
   - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night

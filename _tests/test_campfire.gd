@@ -190,6 +190,14 @@ func _ready() -> void:
 	for i in wall_xs.size() - 1:
 		widest = maxf(widest, wall_xs[i + 1] - wall_xs[i])
 	_check(wall_xs.size() > 15 and widest < 1.2, "a wall of firs behind the screen hides the lake (%d trees, widest gap %.2f m)" % [wall_xs.size(), widest])
+	# the horseshoe: tall firs stand down both sides, between the screen and the benches' ends
+	var sides := [0, 0]
+	for i in close_firs.multimesh.instance_count:
+		var xf := close_firs.multimesh.get_instance_transform(i)
+		var from_fire := Vector2(xf.origin.x, xf.origin.z).length()
+		if xf.basis.get_scale().y > 4.0 and xf.origin.z > -6.5 and xf.origin.z < 6.5 and from_fire < 10.2 and absf(xf.origin.x) > 5.0:
+			sides[0 if xf.origin.x < 0.0 else 1] += 1
+	_check(sides[0] > 10 and sides[1] > 10, "trees wall in both sides of the fire, a cul-de-sac (%d left, %d right)" % sides)
 	await _shot("camp_woods")
 	AppState.set_setting("camp_screen", false)
 	await _secs(0.5)
@@ -197,7 +205,7 @@ func _ready() -> void:
 	AppState.set_setting("camp_screen", true)
 	AppState.set_setting("camp_time", 12.0)
 	await _secs(2.5)
-	for i: int in [0, 1, 3, 4, 6]:
+	for i in cams.size():
 		EventBus.camera_preset_requested.emit(i)
 		await _secs(1.2)
 		await _shot("camp_woods_noon_%s" % String(cams[i].name).trim_prefix("CAM_"))
