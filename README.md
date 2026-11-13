@@ -1264,6 +1264,134 @@ Included rooms:
     textures come from `blender/make_throne_textures.py`, which paints the crest picture you
     give it onto the banner (`rooms/throne_hall/textures/crest_source.png`; swap that file and
     run the script again for another crest).
+- **Forge Hall**: a long, tall hall of polished granite with a little science fiction in it,
+  modelled on a reference picture and a cross-section sketch.
+  - Walls and floor are big slabs of dark polished granite (fine speckle, a mirror shine).
+    The pillars are a shade lighter, in veined marble, and the forge is a steelier granite
+    with a metallic glint. Lines of cyan, orange and purple light are set flush into them like the traces of
+    a circuit board, running to a "chip" in the floor in front of the screen and a second one
+    halfway down the hall. A layer of much finer traces runs between the main lines on the
+    floor, the walls and the forge.
+  - Above the walls a ledge carries tall slanted windows that lean in to an upper level of
+    stone and steel, under a ceiling of dark diamond plate on steel girders. Short-chained
+    hexagonal lanterns hang close to the ceiling. There is no window next to the forge.
+  - Brass and iron pipework with valves and gauges runs along the ledges and down the walls.
+    Under the ceiling, between the two rows of windows (so it never blocks them), hang a square
+    air duct with grilles and a fan unit, a round duct and a run of pipes.
+  - **Time of day**: the windows look out on a sky the room draws itself, with a dark fantasy
+    look: a deep blue day sky with billowing clouds lit by the sun and rays fanning out from
+    it, pink and orange clouds at sunrise and sunset, and at night a moon, a dense field of
+    stars with a few that sparkle, and purple and blue nebula clouds. The
+    sunbeams and the barred patches of light on the floor follow the sun (pale and blue under
+    the moon), and the room's own daylight dims at night so the inlays and the fire carry it.
+    Room tab:
+    - **Time of day**: 0 to 24 hours (6 = sunrise, 12 = noon, 18 = sunset).
+    - **Day length**: how many minutes a whole day and night take when the clock runs by
+      itself. **Clock stopped** (0) keeps the time where the slider is.
+    - **Clouds**: how much cloud drifts across the sky (0% = clear, 200% = heavy).
+    - **Nebula**: how strong the night's nebula clouds are (0% = stars only).
+    - **Stars**: how bright the stars are (0% = none).
+    - **Clouds** and **Nebula** at 0% are the lightest settings for a slow graphics card.
+    - **Light rays**: the sunbeams and floor patches (0% = off).
+  - **Please stand by**: this room has no curtain. Closing the curtain (the **Curtain** button,
+    its hotkey or Stream Core) fades a "please stand by" test card in over the big screen
+    instead, the kind TV stations showed when they went off the air, and opening it fades the
+    card away. The stream sound mutes the same way, **Curtain speed** sets how fast it fades and
+    the **Sign** text shows across the bottom of the card. The curtain's colour, sound and
+    reveal settings do nothing here.
+  - The screen hangs in a wide alcove. It can show LED dots and the hologram look like Neon
+    City's, and it can be bent, resized and moved. Room tab:
+    - **LED dots**: how strongly the picture is broken into dots (0% = smooth). The same slider
+      now shows in Neon City.
+    - **Hologram**, **Transparency**, **Glitch**, **Scan lines**, **Scroll speed**, **Noise**,
+      **Line colour 1**, **Line colour 2**: the hologram look, shared with Neon City.
+    - **Bend**: above 0% the screen's edges wrap towards the audience (concave), below 0% its
+      middle bulges out (convex).
+    - **Size**, **Move left/right**, **Move up/down**: the screen stays inside its alcove, so
+      make it smaller to move it further. The room reloads a moment after you let go of one of
+      these four, so the screen's light and the stand-by card follow.
+  - **Small live screens**: three extra screens, each about a quarter of the big screen's
+    width. One rises out of the square in the middle of the floor chip; two hang above the big
+    screen. Room tab, **Small live screens**:
+    - **Raise the floor screen**: brings the floor screen up, or lowers it back into the floor.
+    - **Floor screen**, **Upper left screen**, **Upper right screen**: what each one shows:
+      Off, Webcam (the webcam from the sender page; the corner overlay steps aside while a
+      screen shows it), Podium 1 to 4's feed (whatever that podium shows live; the podium has
+      to be on in the Presenters tab), Copy of the big screen, Picture file, or a feed of the
+      screen's own: **NDI source**, **Spout sender**, **Stream address** or **Browser tab or
+      window**. The three screens can each have a different one. These feeds are picture only
+      (no sound).
+    - **Browser tab or window**: each small screen can show a tab or window of its own, apart
+      from the big screen and the podiums. Pick the source, then look at the sender page
+      (**Share to Stream Rooms** on Stream Core's Live page, or the game's own sender page): a
+      box **Extra screens** appears with a row named after the screen. Click **Pick a tab or
+      window** on that row and choose what it shows. **Stop** on the row ends it, and the
+      screen goes dark. The sender page has to stay open, as for the big screen.
+    - Where these controls are: the game's **Room** tab, or in Stream Core under Setup > Stream
+      Rooms > Room & sound, in the last section (**More from Stream Rooms**), while the Forge
+      Hall is the room on screen.
+    - **Floor screen picture** (and the two others): the file used for Picture file.
+    - **Floor screen address** (and the two others): what the screen's own feed connects to.
+      Press Enter to apply.
+      **Pick** beside the box lists the NDI sources and Spout senders found right now;
+      choosing one fills in the name and switches the screen to it. An address with a login
+      in it (`rtsp://name:password@...`) shows as dots until you click into the box, so it
+      can't be read off the panel on stream. (Stream Core's page shows it in full.)
+      - For NDI source or Spout sender: the source's name as the Source tab lists it, or just
+        part of it (`cam 2` finds `STUDIO-PC (cam 2)`). The screen lights up by itself when the
+        source appears.
+      - For Stream address: an `rtmp://`, `rtsp://`, `srt://` or `http` stream address (an IP
+        camera, a media server, a phone camera app), or a video file, which loops. This needs
+        `ffmpeg` in the `tools` folder (`tools/get_tools.ps1`). A stream that drops is tried
+        again every few seconds.
+      - A camera or phone app that *sends* RTMP needs somewhere to send it. Put `listen:` in
+        front (`listen:rtmp://0.0.0.0:1935/live/cam`) and the screen waits for it to connect
+        to this PC; point the app at `rtmp://<this PC's address>:1935/live/cam`. Windows may
+        ask once to let ffmpeg through the firewall.
+    - **Wall screens: place**: the two screens above the big screen can be moved, resized,
+      tilted and turned. Each has **left/right**, **up/down**, **size**, **tilt** (+ leans the
+      top towards the seats) and **turn** (+ turns its face to the right) sliders.
+      **Keep the two wall screens aligned** (ticked by default) makes the upper right screen a
+      mirror image of the upper left one, so you only set the left one; untick it to place
+      each screen on its own.
+    - These three screens are yours only: they are not sent to co-stream guests.
+  - Thirteen alcoves are cut into the walls between the pillars, lined with wood panelling.
+    Each holds a framed picture. Room tab, **Alcove art**:
+    - **Frame**: Brass, Steel, Dark wood, Granite, Light strip (glows, follows **Inlay
+      brightness**) or No frame.
+    - **Art style**: Picture (flat on the wall, lit by the room) or Hologram (see-through and
+      glowing, floating in front of the wall).
+    - **Art 1** to **Art 13**: a picture file for each alcove (PNG, JPG, WebP or GIF, up to
+      3 MB; **Browse...** picks one, **Clear** brings the built-in poster back). 1 to 6 are the
+      left wall counted from the front, 7 to 11 the right wall, 12 and 13 the back wall.
+  - A big forge fireplace is built out from the right wall, with a second fire slot under the
+    hearth. Its chimney carries riveted iron bands, turning-gear shapes, a brass porthole,
+    pistons, glowing power cells, copper coils and a small control panel. The fire is several
+    flames side by side that curl and split as they rise, over a bed of glowing coals, with
+    sparks drifting up. The flames and flickering light are drawn by the room (the flicker is gentle and stops in
+    photosensitive-safe mode).
+  - Room tab: **Fire** (flames, their light and the crackle, 0-200%, 0% = out),
+    **Inlay brightness** (the light inlays, both the main lines and the fine layer, and the
+    glowing pipes, 0-300%, 0% = off; above 100% they brighten fast, 300% is five times the
+    100% glow) and **Inlay glow (halo round the lines)** (untick it and the inlays are bright,
+    sharp lines without the soft bloom round them; they then stop getting brighter at about
+    100%, and the room's other glows get a little smaller too).
+  - A podium room: four stone podiums, two each side of the screen (see *Presenters*). No
+    webcam frame: the webcam uses the corner overlay, or one of the small live screens.
+  - Seats for 30: three rows of benches either side of a centre aisle, each row a step higher.
+    There is no filler crowd. The back half of the hall is open floor.
+  - The rest of the room: a boiler with pipes and a round cyan sign, a workbench, an anvil,
+    barrels and crates, and in the back half a second workbench, a small steam engine with a
+    flywheel and a tall double door.
+  - Cameras: the centre aisle (the default), the forge corner (the reference picture's view),
+    the front row, beside the fire, up under the ceiling at the back (the whole length of the
+    hall), by the slanted windows, three podium views and a Reaction camera looking at the
+    fire. Press **0** for the 10th.
+  - Reaction targets: `!tomato forge`, `lantern`, `anvil`, `boiler`.
+  - A medium stone-room reverb and the sound of the fire.
+  - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
+    writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
+    come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

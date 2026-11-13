@@ -26,10 +26,55 @@ const BASE_DEFAULTS: Dictionary = {
 	"house_lights": 1.0,         # 0..1 dimmer for every room's house lights (chandeliers, lamps)
 	# Room-specific looks (the Room tab shows them only in rooms that use them)
 	"film_look": 1.0,            # old-film rooms: 0 = clean picture, 1 = the room's look, 2 = extra dirt
-	"sun_rays": 1.0,             # Lecture Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
+	"sun_rays": 1.0,             # Lecture Hall / Forge Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
+	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
+	"forge_neon": 1.0,           # Forge Hall light inlays (cyan / orange / purple lines, glowing pipes): 0 = off, 1 = normal, 3 = very bright
+	"forge_screen_x": 0.0,       # Forge Hall screen: moved left (-) / right (+) on its wall, metres (clamped to the alcove)
+	"forge_screen_y": 0.0,       # Forge Hall screen: moved down (-) / up (+), metres
+	"forge_screen_size": 1.0,    # Forge Hall screen: size, 1 = as built (8.6 m wide)
+	"forge_screen_bend": 0.0,    # Forge Hall screen: -1 = bulging out at the audience (convex), 0 = flat, 1 = edges wrapped towards the audience (concave)
+	"forge_art_frame": "brass",  # Forge Hall alcove art: frame material: brass / steel / wood / granite / neon / none
+	"forge_art_style": "picture",  # Forge Hall alcove art: "picture" (flat, lit by the room) or "hologram" (see-through, glowing)
+	"forge_art_1": "",           # Forge Hall alcove art 1..13: a picture file; blank = a built-in poster
+	"forge_art_2": "",           # (1-6 = left wall from the front, 7-11 = right wall, 12-13 = back wall;
+	"forge_art_3": "",           #  the count must match ART_COUNT in rooms/forge_hall/forge_hall_room.gd)
+	"forge_art_4": "",
+	"forge_art_5": "",
+	"forge_art_6": "",
+	"forge_art_7": "",
+	"forge_art_8": "",
+	"forge_art_9": "",
+	"forge_art_10": "",
+	"forge_art_11": "",
+	"forge_art_12": "",
+	"forge_art_13": "",
+	"forge_neon_bloom": true,    # Forge Hall light inlays: true = they glow with a halo (bloom), false = crisp lines with no halo
+	"forge_time": 9.5,           # Forge Hall time of day, hours 0..24 (sky, sun, moon, stars, the light through the windows)
+	"forge_clouds": 1.0,         # Forge Hall sky: how much cloud (0 = clear sky, 1 = the room's look, 2 = heavy)
+	"forge_nebula": 1.0,         # Forge Hall night sky: how strong the purple and blue nebula is (0 = stars only)
+	"forge_stars": 1.0,          # Forge Hall night sky: how bright the stars are (0 = none)
+	"forge_day_minutes": 0.0,    # Forge Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at forge_time
+	"forge_lift_up": false,      # Forge Hall: the small live screen in the floor is raised
+	"forge_live_1_source": "webcam",   # Forge Hall small live screens: what each shows: off / webcam / podium1..podium4
+	"forge_live_2_source": "off",      # (that podium's live feed) / screen (a copy of the big screen) / picture /
+	                                   # ndi / spout / stream (a feed of its own, named by forge_live_n_address).
+	"forge_live_3_source": "off",      # 1 = the one that rises from the floor, 2 and 3 = above the big screen (left, right)
+	"forge_live_1_picture": "",  # Forge Hall small live screens: the picture file for source "picture"
+	"forge_live_2_picture": "",
+	"forge_live_3_picture": "",
+	"forge_live_1_address": "",  # Forge Hall small live screens: for source ndi / spout the source's name (or part
+	"forge_live_2_address": "",  # of it), for source stream an address ffmpeg can open (rtmp://, rtsp://, a video
+	"forge_live_3_address": "",  # file; "listen:" in front waits for the camera to connect). core/extra_feeds.gd.
+	# Forge Hall: where the two wall screens (2 = upper left, 3 = upper right) hang, from the spot the model gives
+	# them. _x / _y: metres right / up along the wall. _size: 1.0 = the built size. _tilt: degrees, + leans the top
+	# towards the seats. _turn: degrees, + turns the screen's face to the audience's right.
+	"forge_live_2_x": 0.0, "forge_live_2_y": 0.0, "forge_live_2_size": 1.0, "forge_live_2_tilt": 0.0, "forge_live_2_turn": 0.0,
+	"forge_live_3_x": 0.0, "forge_live_3_y": 0.0, "forge_live_3_size": 1.0, "forge_live_3_tilt": 0.0, "forge_live_3_turn": 0.0,
+	"forge_live_align": true,    # the upper right screen mirrors the upper left one's place (its own five are ignored)
+	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
 	"holo_glitch": 0.0,          # hologram screens: glitch strength
@@ -295,6 +340,7 @@ var _focus_view: bool = false
 var _clean_feed: bool = false
 var _curtain_closed: bool = false
 var _curtain_covering: bool = false
+var _cover_glow: Color = Color(0.0, 0.0, 0.0, 0.0)    # see set_curtain_present / get_cover_glow
 var _curtain_present: bool = false
 # instance id of the StageCurtain that registered last (see set_curtain_present)
 var _curtain_owner: int = 0
@@ -498,7 +544,16 @@ func is_curtain_covering() -> bool:
 	return _curtain_covering
 
 
-## Called by the room's StageCurtain when it starts / stops hiding the screen.
+## The dim light on the room while the screen is covered, read by ScreenLights on
+## EventBus.curtain_covering_changed: the cover's own colour when it gave one to
+## set_curtain_present (StandbyCard), else a warm glow in the curtain cloth's colour.
+func get_cover_glow() -> Color:
+	if _cover_glow.a > 0.0:
+		return _cover_glow
+	return (get_setting("curtain_color") as Color).lightened(0.25) * 0.35
+
+
+## Called by the room's StageCurtain (or StandbyCard) when it starts / stops hiding the screen.
 func set_curtain_covering(on: bool) -> void:
 	if on == _curtain_covering:
 		return
@@ -508,11 +563,17 @@ func set_curtain_covering(on: bool) -> void:
 
 ## StageCurtain registers itself while its room is up. The old room is freed after the new
 ## one has registered, so only the curtain that registered last can unregister.
-func set_curtain_present(holder: Object, on: bool) -> void:
+## glow: the light the cover throws on the room while it hides the screen. The default (see-
+## through black) means "the curtain cloth's colour"; a StandbyCard passes its card's own soft
+## colour so a test card doesn't light the hall red.
+func set_curtain_present(holder: Object, on: bool, glow: Color = Color(0.0, 0.0, 0.0, 0.0)) -> void:
 	if on:
 		_curtain_owner = holder.get_instance_id()
+		_cover_glow = glow
 	elif holder.get_instance_id() != _curtain_owner:
 		return
+	else:
+		_cover_glow = Color(0.0, 0.0, 0.0, 0.0)
 	_curtain_present = on
 	if not on:
 		set_curtain_covering(_curtain_closed)

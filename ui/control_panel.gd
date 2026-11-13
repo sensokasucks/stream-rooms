@@ -99,7 +99,7 @@ var _net_live: HBoxContainer
 var _net_live_label: Label
 var _net_copy_btn: Button
 var _pic_dialog: FileDialog
-var _pic_target: String = ""              # the presenter_<n>_picture setting the picture dialog is for
+var _pic_target: String = ""              # the setting the picture dialog is for (a presenter_<n>_picture, or a room's "picture" control)
 var _net_addr_label: Label
 var _net_dialogs: Dictionary = {}       # peer id -> ConfirmationDialog (someone wants in / is this the right host)
 var _peer_menus: Dictionary = {}        # setting key -> OptionButton listing the people in the session (whose avatar)
@@ -477,7 +477,7 @@ func _build() -> void:
 	_pic_dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
 	_pic_dialog.access = FileDialog.ACCESS_FILESYSTEM
 	_pic_dialog.use_native_dialog = true
-	_pic_dialog.title = "Choose a podium picture"
+	_pic_dialog.title = "Choose a picture"
 	_pic_dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg, *.webp, *.gif ; Pictures"])
 	_pic_dialog.file_selected.connect(func(p: String) -> void:
 		if _pic_target != "":
@@ -1879,6 +1879,61 @@ func _text_setting(key: String, label: String, placeholder: String) -> HBoxConta
 	return h
 
 
+## A room control's "Pick" button beside an address box ("pick_feeds" on a "text" room control,
+## see Room.get_room_controls): a menu of the NDI sources and Spout senders found right now
+## (_ndi_names / _spout_names, kept fresh by _on_ndi_sources / _on_spout_senders). Picking one
+## writes its name into the address setting `key` and sets the setting `source_key` to "ndi" or
+## "spout", so the room shows it straight away. The menu is filled each time it opens.
+func _feed_pick_button(key: String, source_key: String) -> MenuButton:
+	var b := MenuButton.new()
+	b.text = "Pick"
+	b.flat = false
+	b.tooltip_text = "Lists the NDI sources and Spout senders found right now. Picking one fills in the name and switches this screen to it."
+	var pop := b.get_popup()
+	b.about_to_popup.connect(func() -> void:
+		pop.clear()
+		# item metadata = [source kind, name]; separators and the "none" line carry none
+		if not _ndi_names.is_empty():
+			pop.add_separator("NDI sources")
+			for n in _ndi_names:
+				pop.add_item(n)
+				pop.set_item_metadata(pop.item_count - 1, ["ndi", n])
+		if not _spout_names.is_empty():
+			pop.add_separator("Spout senders")
+			for n in _spout_names:
+				pop.add_item(n)
+				pop.set_item_metadata(pop.item_count - 1, ["spout", n])
+		if pop.item_count == 0:
+			pop.add_item("(no NDI source or Spout sender found right now)")
+			pop.set_item_disabled(0, true))
+	pop.index_pressed.connect(func(i: int) -> void:
+		var meta: Variant = pop.get_item_metadata(i)
+		if meta is Array:
+			AppState.set_setting(key, String(meta[1]))
+			AppState.set_setting(source_key, String(meta[0])))
+	return b
+
+
+## For a text box that can hold a stream address with a login in it (rtsp://name:password@...):
+## the box shows dots while it isn't being edited, so the login isn't readable on a panel that
+## is on stream or in a screenshot. Clicking into the box shows the text again. Boxes without
+## a login in them (an NDI name, a plain address) always show their text.
+## (_on_setting_changed does the same when the setting changes from elsewhere: the "hide_login"
+## mark tells it to.)
+func _hide_login_when_idle(e: LineEdit) -> void:
+	e.set_meta("hide_login", true)
+	var refresh := func() -> void:
+		e.secret = not e.has_focus() and _has_login(e.text)
+	e.focus_entered.connect(refresh)
+	e.focus_exited.connect(refresh)
+	refresh.call()
+
+
+## True for an address with a login in front of the host (scheme://name:password@host...).
+func _has_login(address: String) -> bool:
+	return address.contains("://") and address.contains("@")
+
+
 ## Co-stream tab: the "Covered" list under Hide my address (NetSession.hide_checklist), or why it's off.
 func _refresh_hide_covered() -> void:
 	if _hide_covered == null:
@@ -2602,6 +2657,8 @@ func _on_room_controls(controls: Array) -> void:
 		_sliders.erase(key)
 		_colors.erase(key)
 		_checks.erase(key)
+		_options.erase(key)
+		_texts.erase(key)
 	_room_keys.clear()
 	for c in _room_box.get_children():
 		c.queue_free()
@@ -2614,13 +2671,33 @@ func _on_room_controls(controls: Array) -> void:
 			push_warning("Room control for unknown setting: %s" % key)
 			continue
 		var w: Control
-		if String(spec.get("type", "slider")) == "color":
+		var kind := String(spec.get("type", "slider"))
+		if kind == "color":
 			w = _color(key, String(spec.get("label", key)))
-		elif String(spec.get("type", "slider")) == "check":
+		elif kind == "check":
 			w = _check(key, String(spec.get("label", key)))
+		elif kind == "option":
+			# a dropdown: "options" is [[value, "Label"], ...] like _option's items
+			w = _option(key, String(spec.get("label", key)), spec.get("options", []))
+		elif kind == "text":
+			# a line of text (applied on Enter or when the box loses focus)
+			w = _text_setting(key, String(spec.get("label", key)), String(spec.get("placeholder", "")))
+			if bool(spec.get("hide_login", false)):
+				_hide_login_when_idle(_texts[key])
+			if String(spec.get("pick_feeds", "")) != "":
+				w.add_child(_feed_pick_button(key, String(spec["pick_feeds"])))
+		elif kind == "picture":
+			# a picture file: a text box for the path with Browse and Clear, like a podium picture
+			w = _text_setting(key, String(spec.get("label", key)), String(spec.get("placeholder", "a png, jpg, webp or gif")))
+			w.add_child(_tip(_button("Browse...", func() -> void:
+				_pic_target = key
+				_pic_dialog.popup_centered_ratio(0.7)), "Pick the picture file."))
+			w.add_child(_tip(_button("Clear", func() -> void: AppState.set_setting(key, "")),
+				"Empty the box again (back to what the room shows by default)."))
 		else:
 			w = _slider(key, String(spec.get("label", key)), float(spec.get("min", 0.0)), float(spec.get("max", 1.0)),
-				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)))
+				float(spec.get("step", 0.01)), String(spec.get("format", "%.2f")), float(spec.get("scale", 1.0)),
+				String(spec.get("zero", "")))      # "zero": the text shown at 0 (e.g. "Clock stopped")
 		w.tooltip_text = String(spec.get("tooltip", ""))
 		_room_box.add_child(w)
 		_room_keys.append(key)
@@ -2701,6 +2778,8 @@ func _on_setting_changed(key: String, value: Variant) -> void:
 		(_checks[key] as CheckBox).set_pressed_no_signal(bool(value))
 	if _texts.has(key) and not (_texts[key] as LineEdit).has_focus():
 		(_texts[key] as LineEdit).text = String(value)
+		if (_texts[key] as LineEdit).has_meta("hide_login"):      # see _hide_login_when_idle
+			(_texts[key] as LineEdit).secret = _has_login(String(value))
 	if _colors.has(key):
 		(_colors[key] as ColorPickerButton).color = value
 	if _peer_menus.has(key):

@@ -46,6 +46,12 @@ const PKT_AUDIO: int = 2
 const PKT_WEBCAM: int = 3
 const PKT_PRESENTER: int = 4
 const MAX_PRESENTERS: int = 4
+## PKT_PRESENTER slots past the podiums. Slot MAX_PRESENTERS is the sender page's "my avatar"
+## row (never sent to the game). Slots EXTRA_SLOT0 .. EXTRA_SLOT0 + MAX_EXTRA_TABS - 1 are the
+## page's "Extra screens" rows: tabs for screens a room builds itself (core/extra_feeds.gd,
+## kind "tab"). Keep in step with PRESENTERS / EXTRAS / EXTRA0 in web/sender.html.
+const EXTRA_SLOT0: int = MAX_PRESENTERS + 1
+const MAX_EXTRA_TABS: int = 3
 ## Decode channel ids for presenter feeds (PRESENTER_CHANNEL + slot).
 const PRESENTER_CHANNEL: int = 100
 ## Socket receive buffer (8 MB), room for a large JPEG frame plus audio.
@@ -348,7 +354,8 @@ func _handle_binary(pkt: PackedByteArray) -> void:
 			_frames_this_second += 1 if kind == PKT_VIDEO else 0
 			_queue_decode(kind, pkt.slice(1))
 		PKT_PRESENTER:
-			if pkt.size() > 2 and pkt[1] < MAX_PRESENTERS:
+			# podium feeds (0..3) and the extra screens' tabs (5..7); nothing else is decoded
+			if pkt.size() > 2 and (pkt[1] < MAX_PRESENTERS or (pkt[1] >= EXTRA_SLOT0 and pkt[1] < EXTRA_SLOT0 + MAX_EXTRA_TABS)):
 				_queue_decode(PRESENTER_CHANNEL + pkt[1], pkt.slice(2))
 		PKT_AUDIO:
 			var samples := pkt.slice(1).to_float32_array()
