@@ -69,15 +69,27 @@ const ART_COUNT: int = 13
 ## The small live screens: [marker name, rises from the floor]. Screen n (1..3) uses the
 ## "forge_live_n_source" / "forge_live_n_picture" settings in AppState.DEFAULTS.
 const LIVE_SCREENS: Array = [["SCREEN_Lift", true], ["SCREEN_Upper_1", false], ["SCREEN_Upper_2", false]]
+## Where the room's bloom starts (the Environment's glow_hdr_threshold): BLOOM_THRESHOLD is
+## what room_info.tres has, used while Inlay glow is on. While it is off the bloom starts
+## higher (NO_BLOOM_THRESHOLD), so the inlays can be bright, clean lines without a halo; the
+## fire's bright core and the lanterns still reach it. _apply_bloom_threshold sets it.
+const BLOOM_THRESHOLD: float = 1.0
+const NO_BLOOM_THRESHOLD: float = 2.6
 ## The glow (emission energy times the colour's brightest channel) the inlays are held under
-## while Inlay glow is off. The room's Environment starts its bloom at 1.0 (glow_hdr_threshold
-## in room_info.tres), so this must stay below that.
-const NO_BLOOM_GLOW: float = 0.8
+## while Inlay glow is off: must stay below NO_BLOOM_THRESHOLD. (It was 0.8 under a threshold
+## of 1.0, which left the lines dull however high the slider went.)
+const NO_BLOOM_GLOW: float = 2.4
 ## Columns the bent screen is cut into (a flat screen uses the same mesh).
 const SCREEN_COLUMNS: int = 40
 ## Imported material names (blender/forge_hall_gen.py, setup_materials) that the two sliders scale.
 const NEON_MATERIALS: PackedStringArray = ["Neon_Cyan", "Neon_Orange", "Neon_Purple", "Neon_Fine_Cyan", "Neon_Fine_Amber", "Pipe_Glow", "Rune_Sign"]
 const FIRE_MATERIALS: PackedStringArray = ["Embers"]
+## The firebox's flames: [metres across the fire, metres towards the room, size as a share of
+## flame_size]. The firebox opening is 2 m wide, so they stay within about 0.7 m of the middle.
+const FIRE_FLAMES: Array = [[0.0, 0.0, 1.0], [-0.42, 0.1, 0.72], [0.4, 0.08, 0.78], [-0.18, -0.15, 0.85], [0.2, -0.12, 0.6], [-0.66, -0.05, 0.45], [0.66, -0.02, 0.5]]
+## How much faster the inlays brighten above 100% on the Inlay brightness slider: each step
+## past 100% counts this many times, so 300% is 1 + 2 x NEON_BOOST = 5 times the 100% glow.
+const NEON_BOOST: float = 2.0
 
 @export_group("Light groups")
 ## Energy and range (metres) per light group; _tune_lights() picks the group from the LAMP_ name
@@ -93,9 +105,12 @@ const FIRE_MATERIALS: PackedStringArray = ["Embers"]
 @export_range(0.0, 1.0) var neon_strength: float = 0.6
 
 @export_group("Fire")
-## The firebox flames: width and height in metres (the slot's are lower and a little wider).
-@export var flame_size: Vector2 = Vector2(1.5, 1.7)
-@export var slot_flame_size: Vector2 = Vector2(1.6, 0.55)
+## The firebox's tallest flame: width and height in metres (_build_fire stands smaller ones
+## round it), and the low flames in the slot under the hearth.
+@export var flame_size: Vector2 = Vector2(1.15, 1.75)
+@export var slot_flame_size: Vector2 = Vector2(0.8, 0.62)
+## Sparks in the air over the firebox at Fire 100% (the slider scales the number).
+@export var spark_count: int = 36
 ## The light the fire throws: energy at Fire 100% with the house lights up, and its range (metres).
 @export var fire_light_energy: float = 4.5
 @export var fire_light_range: float = 12.0
@@ -191,6 +206,7 @@ var _fx: Node3D
 var _fire_mats: Array[ShaderMaterial] = []
 var _fire_meshes: Array[MeshInstance3D] = []
 var _fire_light: OmniLight3D
+var _sparks: CPUParticles3D        # the firebox's rising sparks (_build_sparks)
 var _neon_lights: Array[OmniLight3D] = []
 var _screen_box: AABB            # the TVScreen rectangle as the model has it (set once in _shape_screen)
 var _screen_has_box: bool = false
@@ -290,9 +306,9 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "forge_fire", "label": "Fire", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How big the forge fire is: its flames, the light it throws and its crackle. 0% = out."},
 		{"key": "forge_neon", "label": "Inlay brightness", "min": 0.0, "max": 3.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How bright the cyan, orange and purple light inlays and the glowing pipes are. 0% = off. With Inlay glow off, 100% is as bright as they get."},
+			"tooltip": "How bright the cyan, orange and purple light inlays and the glowing pipes are. 0% = off. Above 100% they brighten fast: 300% is five times the 100% glow. With Inlay glow off they stop getting brighter at about 100%, where they are bright, clean lines."},
 		{"key": "forge_neon_bloom", "label": "Inlay glow (halo round the lines)", "type": "check",
-			"tooltip": "On: the light inlays glow with a soft halo. Off: they are crisp lit lines with no halo."},
+			"tooltip": "On: the light inlays glow with a soft halo. Off: they are bright, crisp lines with no halo (the room's other glows, like the lanterns', get a little smaller too)."},
 		{"heading": "Time of day"},
 		{"key": "forge_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
 			"tooltip": "The hour in the hall, 0 to 24: the sky, the sun, the moon and stars, and the light through the windows. 6 = sunrise, 12 = noon, 18 = sunset. The sun shines in from the left in the morning and from the right in the afternoon."},
@@ -441,17 +457,36 @@ func _tune_lights() -> void:
 
 
 ## "forge_neon" (AppState.DEFAULTS, 0..3): scales the glow of the NEON_MATERIALS and the cyan
-## wash lights. With "forge_neon_bloom" off the glow is also capped at NO_BLOOM_GLOW, under
-## the brightness where bloom starts. Room._process then keeps dimming them with the house
+## wash lights (above 100% the inlays brighten faster: _neon_gain). With "forge_neon_bloom"
+## off the glow is also capped at NO_BLOOM_GLOW, under the brightness where bloom then starts
+## (_apply_bloom_threshold). Room._process then keeps dimming them with the house
 ## lights from the new value.
 func _apply_neon() -> void:
 	var amount := clampf(float(AppState.get_setting("forge_neon")), 0.0, 3.0)
 	var top := INF if bool(AppState.get_setting("forge_neon_bloom")) else NO_BLOOM_GLOW
-	_scale_glow(NEON_MATERIALS, amount * neon_strength, top)
+	_scale_glow(NEON_MATERIALS, _neon_gain(amount) * neon_strength, top)
 	for o in _neon_lights:
+		# the cyan wash lights follow the slider itself (not the boost): they light the stone,
+		# and at five times they would wash the hall out
 		_base_energy[o] = neon_energy * amount
 		o.light_energy = neon_energy * amount * _level
 	_apply_art_level()          # the "Light strip" art frames follow this slider too
+	_apply_bloom_threshold(get_world_3d().environment if is_inside_tree() else null)
+
+
+## Sets where the bloom starts on the Environment in use: BLOOM_THRESHOLD with Inlay glow on,
+## NO_BLOOM_THRESHOLD with it off. Called when the setting changes and from _run_clock when
+## the app has swapped the Environment (a graphics setting changed). The Environment is this
+## room's own (room_info.tres), so no other room is touched.
+func _apply_bloom_threshold(env: Environment) -> void:
+	if env:
+		env.glow_hdr_threshold = BLOOM_THRESHOLD if bool(AppState.get_setting("forge_neon_bloom")) else NO_BLOOM_THRESHOLD
+
+
+## The inlays' glow for a slider value (0..3): the value itself up to 100%, then NEON_BOOST
+## times as steep, so the top of the slider is really bright (300% = 5 times the 100% glow).
+func _neon_gain(amount: float) -> float:
+	return amount if amount <= 1.0 else 1.0 + (amount - 1.0) * NEON_BOOST
 
 
 ## Sets the glow of every glow material named in `names` to its own brightness times amount,
@@ -610,7 +645,7 @@ func _apply_art_level() -> void:
 	if _art_frame_mat == null:
 		return
 	var strips := clampf(float(AppState.get_setting("forge_neon")), 0.0, 3.0)
-	var glow := art_neon_energy * strips
+	var glow := art_neon_energy * _neon_gain(strips)
 	if not bool(AppState.get_setting("forge_neon_bloom")):
 		glow = minf(glow, NO_BLOOM_GLOW)
 	_art_frame_mat.emission_energy_multiplier = glow * _level
@@ -707,12 +742,16 @@ func _apply_art(a: Dictionary) -> void:
 ## Flames at both FIRE_ markers and the light in front of the firebox. The markers sit at the
 ## bottom centre of the flames with +Z facing into the room.
 func _build_fire() -> void:
+	_coal_look()
 	var main := find_child("FIRE_Main", true, false) as Node3D
 	var slot := find_child("FIRE_Slot", true, false) as Node3D
 	if main:
-		# three rectangles crossing in the middle, so the fire has body from every side
-		for k in 3:
-			_add_flame(main, flame_size, deg_to_rad(-60.0 + 60.0 * k), float(k))
+		# several flames of different sizes side by side and one behind the other, so the fire
+		# has body from every side. FIRE_FLAMES: [across (m), towards the room (m), size share]
+		for k in FIRE_FLAMES.size():
+			var f: Array = FIRE_FLAMES[k]
+			_add_flame(main, flame_size * float(f[2]), Vector2(float(f[0]), float(f[1])), float(k) * 1.37)
+		_build_sparks(main)
 		_fire_light = OmniLight3D.new()
 		_fire_light.name = "FireLight"
 		_fire_light.light_color = fire_light_color
@@ -723,12 +762,97 @@ func _build_fire() -> void:
 		add_child(_fire_light)
 		_fire_light.global_position = main.global_position + main.global_basis.z * 1.0 + Vector3.UP * 0.8
 	if slot:
-		_add_flame(slot, slot_flame_size, 0.0, 5.0)
+		for k in 3:
+			_add_flame(slot, slot_flame_size * (1.0 if k == 1 else 0.8), Vector2(-0.5 + 0.5 * k, 0.0), 5.0 + float(k) * 1.9)
 
 
-## One upright flame rectangle at marker, turned by yaw (radians) round the vertical; seed_value
-## makes its flames move differently from the others'.
-func _add_flame(marker: Node3D, size: Vector2, yaw: float, seed_value: float) -> void:
+## The ember beds under the logs (material Embers in the model) are flat slabs: a blotchy
+## noise picture on their glow breaks them into bright coals with dark gaps between. The glow's
+## strength stays with _scale_glow (the Fire slider) as before.
+func _coal_look() -> void:
+	for g in _glow:
+		var m := g["mat"] as BaseMaterial3D
+		if m.resource_name != "Embers":
+			continue
+		var cells := FastNoiseLite.new()
+		cells.noise_type = FastNoiseLite.TYPE_CELLULAR
+		cells.frequency = 0.09
+		cells.cellular_return_type = FastNoiseLite.RETURN_DISTANCE2_SUB      # bright cells, dark seams
+		var pic := NoiseTexture2D.new()
+		pic.width = 128
+		pic.height = 128
+		pic.seamless = true
+		pic.noise = cells
+		var ramp := Gradient.new()                      # most of each coal dark red, its heart bright
+		ramp.set_color(0, Color(0.0, 0.0, 0.0))
+		ramp.add_point(0.35, Color(0.35, 0.03, 0.0))
+		ramp.add_point(0.7, Color(1.0, 0.3, 0.03))
+		ramp.set_color(ramp.get_point_count() - 1, Color(1.0, 0.8, 0.4))
+		pic.color_ramp = ramp
+		m.emission_texture = pic
+		m.emission = Color.WHITE                        # the picture carries the colour now
+		m.emission_operator = BaseMaterial3D.EMISSION_OP_MULTIPLY
+		m.albedo_color = Color(0.03, 0.02, 0.02)
+		m.uv1_triplanar = true                          # the slabs' own UVs stretch: map by position
+		m.uv1_world_triplanar = true
+		m.uv1_scale = Vector3(1.6, 1.6, 1.6)
+
+
+## Sparks drifting up out of the firebox: a few dozen small glowing specks that rise, wander
+## and fade. _apply_fire sets how many are in the air from the Fire slider.
+func _build_sparks(marker: Node3D) -> void:
+	_sparks = CPUParticles3D.new()
+	_sparks.name = "FireSparks"
+	_sparks.amount = spark_count
+	_sparks.lifetime = 2.2
+	_sparks.randomness = 0.6
+	_sparks.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	_sparks.emission_box_extents = Vector3(0.6, 0.15, 0.2)
+	_sparks.direction = Vector3.UP
+	_sparks.spread = 22.0
+	_sparks.gravity = Vector3(0.0, 0.35, 0.0)          # hot air: they keep rising
+	_sparks.initial_velocity_min = 0.5
+	_sparks.initial_velocity_max = 1.3
+	_sparks.damping_min = 0.3
+	_sparks.damping_max = 0.6
+	_sparks.scale_amount_min = 0.5
+	_sparks.scale_amount_max = 1.2
+	var fade := Gradient.new()                          # bright yellow, to orange, to nothing
+	fade.set_color(0, Color(1.0, 0.8, 0.4, 1.0))
+	fade.add_point(0.5, Color(1.0, 0.4, 0.08, 0.9))
+	fade.set_color(fade.get_point_count() - 1, Color(0.6, 0.1, 0.0, 0.0))
+	_sparks.color_ramp = fade
+	var speck := QuadMesh.new()
+	speck.size = Vector2(0.03, 0.03)
+	var dot := GradientTexture2D.new()                  # a soft round dot instead of a square
+	dot.width = 16
+	dot.height = 16
+	dot.fill = GradientTexture2D.FILL_RADIAL
+	dot.fill_from = Vector2(0.5, 0.5)
+	dot.fill_to = Vector2(1.0, 0.5)
+	var dot_fade := Gradient.new()
+	dot_fade.set_color(0, Color.WHITE)
+	dot_fade.set_color(1, Color.BLACK)                  # added onto the picture: black = nothing
+	dot.gradient = dot_fade
+	var sm := StandardMaterial3D.new()
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.vertex_color_use_as_albedo = true
+	sm.albedo_color = Color(3.0, 3.0, 3.0)              # above 1: the specks bloom
+	sm.albedo_texture = dot
+	sm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	sm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	sm.billboard_keep_scale = true
+	speck.material = sm
+	_sparks.mesh = speck
+	_sparks.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fx.add_child(_sparks)
+	_sparks.global_transform = Transform3D(marker.global_basis.orthonormalized(), marker.global_position + Vector3.UP * 0.25)
+
+
+## One upright flame rectangle standing on marker, moved by offset (x = metres across the
+## fire, y = metres towards the room). The shader turns it to face the camera. seed_value
+## makes its flame move differently from the others'.
+func _add_flame(marker: Node3D, size: Vector2, offset: Vector2, seed_value: float) -> void:
 	var quad := QuadMesh.new()
 	quad.size = size
 	var mat := ShaderMaterial.new()
@@ -740,10 +864,12 @@ func _add_flame(marker: Node3D, size: Vector2, yaw: float, seed_value: float) ->
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_fx.add_child(mi, true)     # true: keeps a readable name (FireFlame, FireFlame2 ...)
-	# QuadMesh: centred, facing +Z, UV.y 0 at the top: the shader wants 0 at the logs, so the
-	# rectangle is turned upside down (and UV.x mirrored, which a flame doesn't mind)
-	var b := marker.global_basis.orthonormalized().rotated(Vector3.UP, yaw)
-	mi.global_transform = Transform3D(Basis(-b.x, -b.y, b.z), marker.global_position + Vector3.UP * size.y * 0.5)
+	# (QuadMesh: centred, UV.y 0 at the top; the shader counts height from the bottom itself.
+	# A little below the marker, so the flame's soft foot sits among the logs.)
+	var b := marker.global_basis.orthonormalized()
+	mi.global_transform = Transform3D(b, marker.global_position + b.x * offset.x + b.z * offset.y + Vector3.UP * (size.y * 0.5 - 0.06))
+	# the shader moves the rectangle to face the camera: keep it from being culled by its old box
+	mi.extra_cull_margin = maxf(size.x, size.y)
 	_fire_mats.append(mat)
 	_fire_meshes.append(mi)
 
@@ -756,6 +882,13 @@ func _apply_fire() -> void:
 		m.set_shader_parameter("amount", amount)
 	for mi in _fire_meshes:
 		mi.visible = amount > 0.005
+	if _sparks:
+		_sparks.emitting = amount > 0.005
+		_sparks.visible = amount > 0.005
+		# (changing the count restarts the sparks, so only when it really changes)
+		var want := maxi(int(round(float(spark_count) * amount)), 1)
+		if _sparks.amount != want:
+			_sparks.amount = want
 	_scale_glow(FIRE_MATERIALS, amount)
 
 
@@ -827,6 +960,7 @@ func _run_clock(delta: float) -> void:
 		_hour_drawn = _hour
 		_env_drawn = env_id
 		_apply_time(env)
+		_apply_bloom_threshold(env)
 
 
 ## The hour the room's clock shows now, 0..24 (for tests; "forge_time" only says where it started).

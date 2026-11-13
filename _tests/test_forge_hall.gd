@@ -12,6 +12,8 @@ extends Node
 ##   <redot console exe> --path . _tests/test_forge_hall.tscn -- C:/temp/sr_tests --mp-profile=test
 
 var _fails: int = 0
+## The room's script, for its constants (it has no class name).
+const FH := preload("res://rooms/forge_hall/forge_hall_room.gd")
 var _out: String = ""
 
 
@@ -135,7 +137,9 @@ func _ready() -> void:
 	var beams := fx.get_node_or_null("Beams") as MeshInstance3D if fx else null
 	var patches := fx.get_node_or_null("Patches") as MeshInstance3D if fx else null
 	var fire_light := room.find_child("FireLight", false, false) as OmniLight3D
-	_check(flames.size() == 4 and fire_light != null and fire_light.visible, "four flame rectangles (three in the firebox, one in the slot) and the fire's light (%d)" % flames.size())
+	var sparks := fx.get_node_or_null("FireSparks") as CPUParticles3D if fx else null
+	_check(flames.size() == 10 and fire_light != null and fire_light.visible, "ten flames (seven in the firebox, three in the slot) and the fire's light (%d)" % flames.size())
+	_check(sparks != null and sparks.emitting, "sparks rise from the firebox")
 	_check(beams != null and beams.visible and beams.mesh != null and beams.mesh.get_faces().size() == 120,
 		"at 9:30 the sun shines through the five left windows, each beam an open box (%d vertices)" % (beams.mesh.get_faces().size() if beams and beams.mesh else -1))
 	_check(patches != null and patches.visible, "the patches of sunlight on the floor")
@@ -188,6 +192,7 @@ func _ready() -> void:
 	_check(neon_full > 0.5 and is_zero_approx(_glow_of(room, "Neon_Cyan")), "Inlay brightness 0%% turns the inlays off (%.2f -> %.2f)" % [neon_full, _glow_of(room, "Neon_Cyan")])
 	_check(embers_full > 0.5 and is_zero_approx(_glow_of(room, "Embers")) and not (flames[0] as MeshInstance3D).visible and not fire_light.visible,
 		"Fire 0% puts the fire out (flames, embers and light)")
+	_check(sparks != null and not sparks.emitting, "and stops the sparks")
 	_check(not beams.visible and not patches.visible, "Light rays 0% hides the sunbeams and patches")
 	EventBus.camera_preset_requested.emit(1)
 	await _secs(1.0)
@@ -198,18 +203,21 @@ func _ready() -> void:
 	await _secs(0.3)
 	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and (flames[0] as MeshInstance3D).visible and beams.visible, "back at 100% everything is on again")
 
-	# Inlay glow off: the inlays stay under the brightness where bloom starts, however high the slider
+	# Inlay glow off: the bloom starts higher and the inlays stay under it, however high the slider
 	AppState.set_setting("forge_neon_bloom", false)
 	AppState.set_setting("forge_neon", 3.0)
 	await _secs(0.3)
 	var capped := _glow_of(room, "Neon_Cyan")
-	_check(capped > 0.3 and capped <= 0.81, "Inlay glow off keeps the inlays under the bloom threshold even at 300%% (%.2f)" % capped)
+	var env_now: Environment = get_viewport().get_world_3d().environment
+	_check(capped > 1.5 and capped <= FH.NO_BLOOM_GLOW + 0.01 and env_now != null and env_now.glow_hdr_threshold > FH.NO_BLOOM_GLOW,
+		"Inlay glow off: bright lines, still under where the bloom starts, even at 300%% (%.2f)" % capped)
 	EventBus.camera_preset_requested.emit(1)
 	await _secs(1.0)
 	await _shot(_out + "/forge_no_bloom.png")
 	AppState.set_setting("forge_neon_bloom", true)
 	await _secs(0.2)
-	_check(_glow_of(room, "Neon_Cyan") > neon_full * 2.0, "with the glow back on, 300% is three times as bright")
+	_check(_glow_of(room, "Neon_Cyan") > neon_full * 4.9 and is_equal_approx(env_now.glow_hdr_threshold, FH.BLOOM_THRESHOLD),
+		"with the glow back on, 300% is five times as bright and the bloom starts where it did")
 	AppState.set_setting("forge_neon", 1.0)
 
 	# time of day: the sky, and which windows the light comes through

@@ -1366,13 +1366,16 @@ Included rooms:
       left wall counted from the front, 7 to 11 the right wall, 12 and 13 the back wall.
   - A big forge fireplace is built out from the right wall, with a second fire slot under the
     hearth. Its chimney carries riveted iron bands, turning-gear shapes, a brass porthole,
-    pistons, glowing power cells, copper coils and a small control panel. The flames and
-    flickering light are drawn by the room (the flicker is gentle and stops in
+    pistons, glowing power cells, copper coils and a small control panel. The fire is several
+    flames side by side that curl and split as they rise, over a bed of glowing coals, with
+    sparks drifting up. The flames and flickering light are drawn by the room (the flicker is gentle and stops in
     photosensitive-safe mode).
   - Room tab: **Fire** (flames, their light and the crackle, 0-200%, 0% = out),
     **Inlay brightness** (the light inlays, both the main lines and the fine layer, and the
-    glowing pipes, 0-300%, 0% = off) and **Inlay glow (halo round the lines)** (untick it and
-    the inlays stay sharp lines without the soft bloom round them, at any brightness).
+    glowing pipes, 0-300%, 0% = off; above 100% they brighten fast, 300% is five times the
+    100% glow) and **Inlay glow (halo round the lines)** (untick it and the inlays are bright,
+    sharp lines without the soft bloom round them; they then stop getting brighter at about
+    100%, and the room's other glows get a little smaller too).
   - A podium room: four stone podiums, two each side of the screen (see *Presenters*). No
     webcam frame: the webcam uses the corner overlay, or one of the small live screens.
   - Seats for 30: three rows of benches either side of a centre aisle, each row a step higher.
