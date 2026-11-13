@@ -142,6 +142,8 @@ broken video in the cache.
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
 | **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
 | **L** (hold) | Laser pointer: a dot where the mouse points, with a beam (see *Laser pointer*). |
+| **M** (hold) | Lakeside Campfire only: roast a marshmallow over the fire. Let go while it is golden for a s'more. |
+| **T** | Lakeside Campfire only: toss a stick on the fire, which flares up. |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -1411,6 +1413,52 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
+- **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
+  lake, with mountains behind it and a sky that changes with the hour and the weather.
+  - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
+    (Room tab) and the screen is taken down, which opens the view over the water; the posts and
+    the string lights stay, and the sound of whatever is playing carries on.
+  - A podium room without podiums: the four presenters sit on camp chairs round the far side
+    of the fire, facing the main camera (see *Presenters*). No webcam frame.
+  - Seats for 30: three curved rows of split-log benches on the near side of the fire. There is
+    no filler crowd.
+  - Around the clearing: three modern dome tents with lanterns in them, a small stream that
+    runs down the left side into the lake with a footbridge over it, a little jetty, a pile
+    of sticks, a s'mores table with a cool box, and a forest of fir and round trees.
+  - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night
+    and it burns lower in the rain.
+  - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
+    moon, the colour of the sky, the light on the ground and the reflection on the lake all
+    follow it. **Day length** lets the clock run by itself: the number of minutes a whole day
+    and night takes (0 = **Clock stopped**).
+  - The sky is built from layers: the sky colour, stars with a Milky Way and the odd shooting
+    star, an aurora, the sun and the moon, thin high cloud, big low cloud, two mountain ridges
+    with mist between them and a far tree line. **Clouds**, **Stars**, **Aurora** and **Mist**
+    set how much of each there is. On a slow graphics card, **Clouds** and **Aurora** at 0% are
+    the lightest.
+  - **Rain** makes it rain, as hard as you like: the clouds close in, the ground goes dark and
+    shiny and rings spread on the lake. **Thunderstorm** adds heavy rain, wind in the trees and
+    lightning with thunder. The lightning follows **Flash strength**, and in photosensitive-safe
+    mode a strike is a slow, dim glow instead of a flash.
+  - **String lights and lanterns** and **Fireflies at night** switch those on and off. The
+    string lights follow the **House lights** slider.
+  - **Fire games (M and T keys)**: hold **M** in the room window and a stick pokes out of your
+    avatar picture with a marshmallow over the fire. It browns while you hold: white, golden,
+    brown, black, and if you leave it too long it catches fire. Let go while it is golden and it
+    counts as a s'more. Press **T** to toss a stick on the fire and watch it flare up. In a
+    co-stream every guest has their own stick and everyone sees everyone's. Chat can feed the
+    fire too: any reaction thrown at the campfire (`!tomato campfire`) makes it flare.
+  - In a co-stream the fire, the screen, the time of day, the sky and the weather are the
+    host's and everyone sees the same (a co-host can change them too).
+  - Cameras: across the fire at the screen (the default), beside the fire from the right and
+    the left, back from the screen at everyone, from a tent, the lake shore, a drone view from
+    high up, close on the marshmallows, a Reaction camera, and the lake and the sky with the
+    camp behind you. Press **0** for the 10th.
+  - Reaction targets: `!tomato campfire`, `lake`, `tent`.
+  - Almost no reverb (it is outdoors). The fire crackles, crickets sing at night, and the rain and
+    the thunder have their own sound.
+  - Source: the whole set is built in code when the room loads (`rooms/campfire/campfire_builder.gd`),
+    so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

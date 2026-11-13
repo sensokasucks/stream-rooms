@@ -11,6 +11,8 @@ extends Node
 ##   Esc        the game menu (ui/esc_menu.gd, its own window; Esc there closes it)
 ##   P / Shift+click  the click menu on people in the room (core/people_picker.gd handles it)
 ##   L          laser pointer while held, aimed with the mouse (core/laser_pointers.gd handles it)
+##   M / T      Lakeside Campfire only: hold M to roast a marshmallow, T tosses a stick on the
+##              fire (rooms/campfire/campfire_games.gd handles them)
 ## (Tab for the control panel is handled by the panel itself.)
 ## Lives as the Hotkeys node in core/main.tscn. Keep the list above and the README in sync with
 ## _handle() when adding a key.

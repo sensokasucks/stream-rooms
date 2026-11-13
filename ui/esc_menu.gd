@@ -33,6 +33,8 @@ const KEYS: Array = [
 	["Shift + click", "On a chatter, presenter or the big screen: their menu (throw, glow, seat...)"],
 	["P, then click", "The same, without holding Shift"],
 	["L (hold)", "Laser pointer: point with the mouse (Co-stream tab > Laser pointer)"],
+	["M (hold)", "Lakeside Campfire: roast a marshmallow over the fire"],
+	["T", "Lakeside Campfire: toss a stick on the fire"],
 ]
 const BG := Color(0.07, 0.075, 0.09)
 const ACCENT := Color(0.96, 0.72, 0.3)

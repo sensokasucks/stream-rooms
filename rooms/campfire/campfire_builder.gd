@@ -1,0 +1,827 @@
+extends RefCounted
+## Builds the Lakeside Campfire's set out of plain shapes, in code: the ground with its lake bed
+## and stream bed, the two sheets of water, the forest, the tents, the log benches, the camp
+## chairs, the fire pit, the big screen on its posts, the string lights, the dock and footbridge,
+## and every marker the app looks for (rooms/room.gd lists them: TVScreen, CAM_*, PRESENTER_n,
+## PODIUM_n, AUDIENCE_*, TARGET_*, LIGHTS_House with LAMP_* inside).
+##
+## Called once by rooms/campfire/campfire_room.gd (_ready, before anything reads the room), which
+## keeps the Dictionary build() returns: the materials and nodes it animates afterwards.
+## There is no Blender model for this room: to move or resize something, change the numbers in
+## the "Layout" block below; everything else follows from them.
+##
+## Axes (metres): the campfire is at the origin and the ground there is y = 0. -Z is north (the
+## big screen, then the lake), +Z is south (the benches, then the main camera), +X is east.
+## Markers that "face" something follow the app's rule: +Z points at what they face, except
+## cameras, which look along -Z.
+
+const WATER_SHADER := preload("res://rooms/campfire/camp_water.gdshader")
+const GROUND_SHADER := preload("res://rooms/campfire/camp_ground.gdshader")
+const PROP_SHADER := preload("res://rooms/campfire/camp_prop.gdshader")
+
+# ── Layout ───────────────────────────────────────────────────
+## The lake's surface (y). The ground dips below it north of shore_z().
+const WATER_Y: float = -0.3
+## The big screen: its middle is this far north of the fire; width x height; bottom edge height.
+const SCREEN_Z: float = -6.5
+const SCREEN_SIZE: Vector2 = Vector2(7.2, 4.05)
+const SCREEN_BOTTOM: float = 1.5
+## The two posts the screen hangs between: metres either side of the middle, and their height.
+const POST_X: float = 3.85
+const POST_H: float = 6.0
+## The four camp chairs (the podiums): metres from the fire, and where on the circle (degrees;
+## -90 = due north of the fire, so they sit on the far side facing the main camera).
+const CHAIR_RADIUS: float = 2.7
+const CHAIR_DEGREES: Array[float] = [-150.0, -110.0, -70.0, -30.0]
+## Height of a chair's seat, where the presenter's picture stands.
+const CHAIR_SEAT_Y: float = 0.42
+## The chat audience's log benches: [metres from the fire, seats] per row, on an arc south of
+## the fire from ROW_ARC.x to ROW_ARC.y degrees (90 = due south). 8 + 10 + 12 = 30 seats.
+const ROWS: Array = [[4.6, 8], [6.1, 10], [7.6, 12]]
+const ROW_ARC: Vector2 = Vector2(18.0, 162.0)
+## A bench's sitting height above the ground under it.
+const BENCH_Y: float = 0.42
+## The tents: [x, z, turn in degrees (0 = door facing south), kind ("dome" / "tunnel"),
+## main colour, second colour].
+const TENTS: Array = [
+	[-10.0, -1.4, 110.0, "dome", Color(0.1, 0.42, 0.4), Color(0.75, 0.78, 0.72)],
+	[10.5, -1.75, -105.0, "dome", Color(0.78, 0.5, 0.08), Color(0.2, 0.2, 0.22)],
+	[10.9, 4.6, -70.0, "tunnel", Color(0.3, 0.24, 0.6), Color(0.72, 0.7, 0.8)],
+]
+## The stream's middle line from the lake back up into the hills: x, the water's height, z.
+const STREAM: Array[Vector3] = [
+	Vector3(-9.0, -0.3, -10.6), Vector3(-9.6, -0.28, -8.6), Vector3(-11.6, -0.22, -5.5), Vector3(-12.7, -0.16, -1.25),
+	Vector3(-14.0, -0.1, 1.5), Vector3(-15.3, -0.02, 3.2), Vector3(-19.5, 0.6, 7.5), Vector3(-26.0, 1.8, 11.5),
+	Vector3(-35.0, 3.6, 15.0), Vector3(-48.0, 6.5, 18.0),
+]
+const STREAM_WIDTH: float = 1.5
+## Where the things beside the fire stand (x, z).
+const STICK_PILE: Vector2 = Vector2(4.2, 0.6)
+const SMORES_TABLE: Vector2 = Vector2(-4.3, 0.6)
+## The dock: its middle line's x, and the z of its land end and its lake end.
+const DOCK_X: float = 5.7
+const DOCK_Z: Vector2 = Vector2(-7.6, -12.6)
+## The poles the string lights hang from (besides the screen's two posts): x, height, z.
+## How many of the string light lines carry a real lamp (the first ones in _build_lights' list).
+const LAMP_LINES: int = 3
+const LIGHT_POLES: Array[Vector3] = [Vector3(-9.0, 3.6, 0.4), Vector3(9.4, 3.6, 0.0), Vector3(9.9, 3.6, 3.2)]
+## The ground mesh: it covers GROUND_HALF metres each way from the fire, in squares this big.
+const GROUND_HALF: float = 78.0
+const GROUND_CELL: float = 1.5
+## How many trees are tried / at most planted, and how far out the forest goes.
+const TREE_TRIES: int = 2600
+const TREE_MAX: int = 620
+const FOREST_RADIUS: float = 66.0
+## Camera views: [name (after "CAM_"; the leading number sets the order), where it stands, what
+## it looks at]. The one with "Reaction" in its name is used for react pauses.
+const CAMERAS: Array = [
+	["01_Campfire", Vector3(0.0, 2.3, 11.6), Vector3(0.0, 2.2, -3.0)],
+	["02_Fireside_Right", Vector3(6.6, 1.3, 5.2), Vector3(-1.2, 1.5, -2.0)],
+	["03_Fireside_Left", Vector3(-6.6, 1.3, 5.2), Vector3(1.2, 1.5, -2.0)],
+	["04_From_The_Screen", Vector3(2.4, 2.6, -5.4), Vector3(-0.6, 0.9, 4.0)],
+	["05_Tent_View", Vector3(8.6, 1.5, -3.6), Vector3(-2.0, 1.1, 1.0)],
+	["06_Lake_Shore", Vector3(-10.2, 1.7, -4.2), Vector3(6.0, 1.6, -9.0)],
+	["07_Drone", Vector3(0.0, 15.0, 16.0), Vector3(0.0, 0.0, -3.0)],
+	["08_Marshmallows", Vector3(0.0, 0.95, 2.6), Vector3(0.0, 1.25, -2.4)],
+	["09_Reaction", Vector3(0.0, 1.7, 4.6), Vector3(0.0, 1.5, -2.6)],
+	["10_Lake_And_Sky", Vector3(0.0, 1.6, -8.0), Vector3(0.0, 5.5, -40.0)],
+]
+
+## The noise the ground's bumps and hills come from (made once; the same on every PC).
+static var _noise: FastNoiseLite
+## The stream's middle line with the bends rounded off (smooth_stream), built on first use.
+static var _stream_fine: Array[Vector3] = []
+
+
+# ── Where the ground is ──────────────────────────────────────
+static func _setup_noise() -> void:
+	if _noise == null:
+		_noise = FastNoiseLite.new()
+		_noise.seed = 4242
+		_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		_noise.frequency = 0.045
+		_noise.fractal_octaves = 3
+
+
+## The z of the lake's near shore at this x: gently wavy, curving away to the north at the sides.
+static func shore_z(x: float) -> float:
+	return -8.6 + 0.5 * sin(x * 0.31) + 0.35 * sin(x * 0.13 + 1.0) - 0.0016 * x * x
+
+
+## The stream's middle line as many short straight pieces (a smooth curve through STREAM).
+static func smooth_stream() -> Array[Vector3]:
+	if _stream_fine.is_empty():
+		for i in STREAM.size() - 1:
+			var p0 := STREAM[maxi(i - 1, 0)]
+			var p1 := STREAM[i]
+			var p2 := STREAM[i + 1]
+			var p3 := STREAM[mini(i + 2, STREAM.size() - 1)]
+			for k in 6:
+				var t := float(k) / 6.0
+				_stream_fine.append(0.5 * ((2.0 * p1) + (-p0 + p2) * t + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+					+ (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t))
+		_stream_fine.append(STREAM[STREAM.size() - 1])
+	return _stream_fine
+
+
+## For a point on the map: x = metres to the stream's middle line, y = the water's height there.
+## Far from the stream (east of the fire, or beyond its ends) it returns a large distance.
+static func stream_near(x: float, z: float) -> Vector2:
+	if x > -5.0 or x < -52.0:
+		return Vector2(99.0, 0.0)
+	var pts := smooth_stream()
+	var best := 1e9
+	var water := 0.0
+	var p := Vector2(x, z)
+	for i in pts.size() - 1:
+		var a := Vector2(pts[i].x, pts[i].z)
+		var b := Vector2(pts[i + 1].x, pts[i + 1].z)
+		var ab := b - a
+		var t := clampf((p - a).dot(ab) / ab.length_squared(), 0.0, 1.0)
+		var d := p.distance_squared_to(a + ab * t)
+		if d < best:
+			best = d
+			water = lerpf(pts[i].y, pts[i + 1].y, t)
+	return Vector2(sqrt(best), water)
+
+
+## The ground's height (y) at a point: flat round the camp, a low bank under the benches so the
+## back rows see over the front ones, hills with the forest on them further out, the lake's bed
+## north of the shore and the stream's bed along STREAM.
+static func ground_height(x: float, z: float) -> float:
+	_setup_noise()
+	var from_fire := Vector2(x, z).length()
+	var oval := Vector2(x / 1.25, z).length()                # the clearing is wider than it is deep
+	var h := _noise.get_noise_2d(x, z) * 0.14 * smoothstep(8.0, 14.0, oval)
+	h += 0.22 * clampf((from_fire - 5.3) / 1.5, 0.0, 2.2) * smoothstep(0.5, 2.5, z)
+	var in_lake := shore_z(x) - z                            # above 0 = north of the shore line
+	var hills := 2.5 + 7.0 * (0.5 + 0.5 * _noise.get_noise_2d(x * 0.5 + 90.0, z * 0.5))
+	h += hills * smoothstep(15.0, 50.0, oval) * smoothstep(2.0, -6.0, in_lake)
+	h = lerpf(h, WATER_Y - 1.3, smoothstep(-0.6, 3.0, in_lake))
+	var s := stream_near(x, z)
+	if s.x < 2.4:
+		h = lerpf(h, minf(h, s.y - 0.3), smoothstep(2.4, 0.6, s.x))
+	return h
+
+
+## A point on a circle round the fire, on the ground: degrees as in CHAIR_DEGREES / ROW_ARC.
+static func ring_point(radius: float, degrees: float) -> Vector3:
+	var a := deg_to_rad(degrees)
+	var x := radius * cos(a)
+	var z := radius * sin(a)
+	return Vector3(x, ground_height(x, z), z)
+
+
+# ── A mesh being put together ────────────────────────────────
+## Collects flat-shaded, coloured triangles and turns them into one mesh. Every shape below adds
+## to one of these, so a whole group of objects is a single mesh with a single material.
+class Buf:
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+
+	## One triangle. The normal comes from the corner order, and the material draws both sides,
+	## so the order never makes a face vanish.
+	func tri(a: Vector3, b: Vector3, c: Vector3, col: Color) -> void:
+		var n := (c - a).cross(b - a)
+		if n.length_squared() < 1e-12:
+			return
+		n = n.normalized()
+		verts.append_array([a, b, c])
+		normals.append_array([n, n, n])
+		colors.append_array([col, col, col])
+
+	func quad(a: Vector3, b: Vector3, c: Vector3, d: Vector3, col: Color) -> void:
+		tri(a, c, b, col)
+		tri(a, d, c, col)
+
+	## A box: xf places its centre and turns it, size is its full width, height and depth.
+	func box(xf: Transform3D, size: Vector3, col: Color) -> void:
+		var h := size * 0.5
+		var p: Array[Vector3] = []
+		for sx: float in [-1.0, 1.0]:
+			for sy: float in [-1.0, 1.0]:
+				for sz: float in [-1.0, 1.0]:
+					p.append(xf * Vector3(h.x * sx, h.y * sy, h.z * sz))
+		# corners: index = 4 * (x side) + 2 * (y side) + (z side)
+		quad(p[0], p[1], p[3], p[2], col)
+		quad(p[4], p[6], p[7], p[5], col)
+		quad(p[0], p[4], p[5], p[1], col)
+		quad(p[2], p[3], p[7], p[6], col)
+		quad(p[0], p[2], p[6], p[4], col)
+		quad(p[1], p[5], p[7], p[3], col)
+
+	## A cylinder or cone standing on xf's origin along its Y axis: r0 at the bottom, r1 at the
+	## top (0 = a point), h tall. cap = the colour of the flat ends (a log's cut wood).
+	func cyl(xf: Transform3D, r0: float, r1: float, h: float, segs: int, col: Color, cap: Color = Color(0, 0, 0, 0)) -> void:
+		var end := col if cap.a == 0.0 else cap
+		for i in segs:
+			var a0 := TAU * float(i) / float(segs)
+			var a1 := TAU * float(i + 1) / float(segs)
+			var b0 := xf * Vector3(cos(a0) * r0, 0.0, sin(a0) * r0)
+			var b1 := xf * Vector3(cos(a1) * r0, 0.0, sin(a1) * r0)
+			var t0 := xf * Vector3(cos(a0) * r1, h, sin(a0) * r1)
+			var t1 := xf * Vector3(cos(a1) * r1, h, sin(a1) * r1)
+			quad(b0, t0, t1, b1, col)
+			if r0 > 0.0:
+				tri(xf * Vector3.ZERO, b0, b1, end)
+			if r1 > 0.0:
+				tri(xf * Vector3(0.0, h, 0.0), t1, t0, end)
+
+	## A cylinder from one point to another (a pole, a log, a rope).
+	func rod(from: Vector3, to: Vector3, radius: float, segs: int, col: Color, cap: Color = Color(0, 0, 0, 0)) -> void:
+		var axis := to - from
+		if axis.length() < 0.001:
+			return
+		var up := axis.normalized()
+		var side := up.cross(Vector3.RIGHT if absf(up.x) < 0.9 else Vector3.FORWARD).normalized()
+		cyl(Transform3D(Basis(side, up, side.cross(up)), from), radius, radius, axis.length(), segs, col, cap)
+
+	## A lumpy ball (a rock, a tree's crown): radii per axis, `lump` = how uneven (0 = smooth),
+	## top and bottom colours blended by height.
+	func blob(centre: Vector3, radii: Vector3, segs: int, rings: int, top: Color, bottom: Color, lump: float, rng: RandomNumberGenerator) -> void:
+		var grid: Array = []
+		for r in rings + 1:
+			var row: Array[Vector3] = []
+			var lat := PI * float(r) / float(rings)
+			for s in segs:
+				var lon := TAU * float(s) / float(segs)
+				var k := 1.0 + (rng.randf() - 0.5) * lump if r > 0 and r < rings else 1.0
+				row.append(centre + Vector3(sin(lat) * cos(lon) * radii.x, cos(lat) * radii.y, sin(lat) * sin(lon) * radii.z) * k)
+			grid.append(row)
+		for r in rings:
+			var col := bottom.lerp(top, 1.0 - (float(r) + 0.5) / float(rings))
+			for s in segs:
+				var s1 := (s + 1) % segs
+				quad(grid[r][s], grid[r][s1], grid[r + 1][s1], grid[r + 1][s], col)
+
+	## Sets every corner's alpha from its height: 0 at y = 0 up to 1 at y = top (the trees'
+	## sway weight, see camp_prop.gdshader).
+	func alpha_by_height(top: float) -> void:
+		for i in verts.size():
+			var c := colors[i]
+			c.a = clampf(verts[i].y / top, 0.0, 1.0)
+			colors[i] = c
+
+	func to_mesh() -> ArrayMesh:
+		var arrays: Array = []
+		arrays.resize(Mesh.ARRAY_MAX)
+		arrays[Mesh.ARRAY_VERTEX] = verts
+		arrays[Mesh.ARRAY_NORMAL] = normals
+		arrays[Mesh.ARRAY_COLOR] = colors
+		var mesh := ArrayMesh.new()
+		if not verts.is_empty():
+			mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		return mesh
+
+
+static func _prop_material(sway: float = 0.0) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = PROP_SHADER
+	m.set_shader_parameter("sway", sway)
+	return m
+
+
+static func _add_mesh(parent: Node3D, node_name: String, mesh: Mesh, mat: Material, shadows: bool = true) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.name = node_name
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadows else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mi)
+	return mi
+
+
+## A marker node at `at` whose +Z axis points (level) at `toward`.
+static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, toward: Vector3) -> Marker3D:
+	var m := Marker3D.new()
+	m.name = node_name
+	parent.add_child(m)
+	var dir := toward - at
+	dir.y = 0.0
+	if dir.length() < 0.001:
+		dir = Vector3.BACK
+	m.transform = Transform3D(Basis.looking_at(-dir.normalized(), Vector3.UP), at)
+	return m
+
+
+# ── The whole set ────────────────────────────────────────────
+## Builds everything under `room`. Returns what the room script goes on using:
+##   ground_mat, prop_mat, tent_mat, tree_mat (ShaderMaterial): for wet / glow / wind,
+##   lake_mat, stream_mat (ShaderMaterial): the two sheets of water,
+##   ember_mat, bulb_mat (StandardMaterial3D): the fire's coals and the string lights' bulbs,
+##   bulbs (MultiMeshInstance3D): the string lights,
+##   screen (MeshInstance3D "TVScreen"), screen_back (MeshInstance3D): shown / hidden together,
+##   fire (Marker3D "FIRE_Camp"): bottom centre of the flames.
+static func build(room: Node3D) -> Dictionary:
+	_setup_noise()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261113              # the same forest on every PC
+	var out: Dictionary = {}
+	var set_root := Node3D.new()
+	set_root.name = "Set"
+	room.add_child(set_root)
+	var markers := Node3D.new()
+	markers.name = "Markers"
+	room.add_child(markers)
+
+	_build_ground(set_root, out)
+	_build_water(set_root, out)
+	_build_forest(set_root, out, rng)
+	var props := Buf.new()            # everything small and solid shares this mesh
+	_build_fire_pit(props, set_root, markers, out, rng)
+	_build_benches(props, markers)
+	_build_camp_things(props, rng)
+	_build_screen(props, set_root, out)
+	out["prop_mat"] = _prop_material()
+	_add_mesh(set_root, "CampProps", props.to_mesh(), out["prop_mat"])
+	_build_chairs(set_root, markers, out["prop_mat"])
+	_build_tents(set_root, out)
+	_build_lights(set_root, room, out)
+	_build_markers(markers)
+	return out
+
+
+## The ground: a grid of squares whose corners sit at ground_height(), coloured by what the
+## ground is there (see camp_ground.gdshader for what the colours mean).
+static func _build_ground(parent: Node3D, out: Dictionary) -> void:
+	var n := int(GROUND_HALF * 2.0 / GROUND_CELL)
+	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
+	var indices := PackedInt32Array()
+	var heights := PackedFloat32Array()
+	heights.resize((n + 1) * (n + 1))
+	for iz in n + 1:
+		for ix in n + 1:
+			heights[iz * (n + 1) + ix] = ground_height(-GROUND_HALF + ix * GROUND_CELL, -GROUND_HALF + iz * GROUND_CELL)
+	for iz in n + 1:
+		for ix in n + 1:
+			var x := -GROUND_HALF + ix * GROUND_CELL
+			var z := -GROUND_HALF + iz * GROUND_CELL
+			var h := heights[iz * (n + 1) + ix]
+			verts.append(Vector3(x, h, z))
+			# the slope from the neighbours' heights
+			var hl := heights[iz * (n + 1) + maxi(ix - 1, 0)]
+			var hr := heights[iz * (n + 1) + mini(ix + 1, n)]
+			var hu := heights[maxi(iz - 1, 0) * (n + 1) + ix]
+			var hd := heights[mini(iz + 1, n) * (n + 1) + ix]
+			normals.append(Vector3(hl - hr, 2.0 * GROUND_CELL, hu - hd).normalized())
+			var from_fire := Vector2(x, z).length()
+			var oval := Vector2(x / 1.25, z).length()
+			var in_lake := shore_z(x) - z
+			var dirt := 1.0 - smoothstep(2.6, 4.2, from_fire)
+			for row: Array in ROWS:           # trodden ground under each bench row
+				dirt = maxf(dirt, (1.0 - smoothstep(0.5, 1.3, absf(from_fire - float(row[0])))) * smoothstep(-0.5, 1.0, z))
+			var sand := smoothstep(-2.2, -0.4, in_lake)
+			sand = maxf(sand, 1.0 - smoothstep(0.9, 2.2, stream_near(x, z).x))
+			var forest := smoothstep(11.5, 15.0, oval) * (1.0 - sand)
+			colors.append(Color(dirt, sand, forest))
+	for iz in n:
+		for ix in n:
+			var i := iz * (n + 1) + ix
+			indices.append_array([i, i + 1, i + n + 1, i + 1, i + n + 2, i + n + 1])
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var mat := ShaderMaterial.new()
+	mat.shader = GROUND_SHADER
+	out["ground_mat"] = mat
+	_add_mesh(parent, "Ground", mesh, mat, false)
+
+
+## The lake (one huge flat sheet north of the camp; the ground hides it wherever the land is
+## higher) and the stream (a ribbon along STREAM that drops with it).
+static func _build_water(parent: Node3D, out: Dictionary) -> void:
+	var lake := PlaneMesh.new()
+	lake.size = Vector2(1400.0, 1400.0)
+	var lake_mat := ShaderMaterial.new()
+	lake_mat.shader = WATER_SHADER
+	out["lake_mat"] = lake_mat
+	var mi := _add_mesh(parent, "Lake", lake, lake_mat, false)
+	mi.position = Vector3(0.0, WATER_Y, -700.0 - 3.0)       # its south edge is 3 m north of the fire
+	# the stream: a strip STREAM_WIDTH wide following the smoothed middle line
+	var pts := smooth_stream()
+	var verts := PackedVector3Array()
+	var indices := PackedInt32Array()
+	for i in pts.size():
+		var along := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)])
+		along.y = 0.0
+		var side := along.normalized().cross(Vector3.UP) * STREAM_WIDTH * 0.75
+		verts.append(pts[i] - side)
+		verts.append(pts[i] + side)
+	for i in pts.size() - 1:
+		var k := i * 2
+		indices.append_array([k, k + 1, k + 2, k + 1, k + 3, k + 2, k, k + 2, k + 1, k + 1, k + 2, k + 3])   # both windings
+	var arrays: Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_INDEX] = indices
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var stream_mat := ShaderMaterial.new()
+	stream_mat.shader = WATER_SHADER
+	stream_mat.set_shader_parameter("flow", Vector2(0.14, -0.3))      # downhill: north-east to the lake
+	stream_mat.set_shader_parameter("shore_amount", 0.0)
+	out["stream_mat"] = stream_mat
+	_add_mesh(parent, "Stream", mesh, stream_mat, false)
+
+
+## The forest: two tree shapes (a fir and a round-crowned tree), each drawn many times in one go
+## (a MultiMesh), scattered on the hills round the clearing. None stand in the clearing, in the
+## lake, on the stream or in the main camera's view of the lake.
+static func _build_forest(parent: Node3D, out: Dictionary, rng: RandomNumberGenerator) -> void:
+	# a fir, 1 unit tall: a trunk and four tiers of branches
+	var fir := Buf.new()
+	fir.cyl(Transform3D.IDENTITY, 0.035, 0.02, 0.5, 6, Color(0.2, 0.13, 0.08))
+	var tiers := [[0.16, 0.27, 0.34], [0.36, 0.22, 0.3], [0.55, 0.16, 0.27], [0.72, 0.1, 0.28]]
+	for t: Array in tiers:
+		var green := Color(0.05, 0.17, 0.09).lerp(Color(0.09, 0.26, 0.12), float(t[0]))
+		fir.cyl(Transform3D(Basis.IDENTITY, Vector3(0.0, float(t[0]), 0.0)), float(t[1]), 0.0, float(t[2]), 8, green)
+	fir.alpha_by_height(1.0)
+	# a round tree, 1 unit tall: a trunk and three lumpy balls of leaves
+	var round_tree := Buf.new()
+	round_tree.cyl(Transform3D.IDENTITY, 0.045, 0.03, 0.5, 6, Color(0.23, 0.16, 0.1))
+	var crown_rng := RandomNumberGenerator.new()
+	crown_rng.seed = 7
+	round_tree.blob(Vector3(0.0, 0.66, 0.0), Vector3(0.3, 0.26, 0.3), 9, 6, Color(0.2, 0.36, 0.1), Color(0.07, 0.17, 0.06), 0.16, crown_rng)
+	round_tree.blob(Vector3(0.16, 0.8, 0.06), Vector3(0.2, 0.18, 0.2), 8, 5, Color(0.24, 0.4, 0.12), Color(0.09, 0.2, 0.07), 0.16, crown_rng)
+	round_tree.blob(Vector3(-0.14, 0.76, -0.1), Vector3(0.19, 0.17, 0.19), 8, 5, Color(0.18, 0.34, 0.1), Color(0.07, 0.17, 0.06), 0.16, crown_rng)
+	round_tree.alpha_by_height(1.0)
+
+	var spots_fir: Array[Transform3D] = []
+	var spots_round: Array[Transform3D] = []
+	var tints_fir := PackedColorArray()
+	var tints_round := PackedColorArray()
+	var taken: Array[Vector2] = []
+	# a few picked by hand close to the camp, so the clearing has an edge
+	var near: Array[Vector2] = [Vector2(-13.6, 5.0), Vector2(13.9, -4.6), Vector2(13.4, 8.6), Vector2(-12.4, 9.4),
+		Vector2(-15.8, -3.4), Vector2(15.0, 1.6), Vector2(-6.5, 12.8), Vector2(7.2, 13.2), Vector2(14.6, -7.6), Vector2(-17.0, 1.0)]
+	var tries := TREE_TRIES + near.size()
+	for i in tries:
+		var p: Vector2
+		if i < near.size():
+			p = near[i]
+		else:
+			var radius := sqrt(rng.randf()) * FOREST_RADIUS
+			var ang := rng.randf() * TAU
+			p = Vector2(cos(ang) * radius, sin(ang) * radius)
+			if Vector2(p.x / 1.25, p.y).length() < 14.0:
+				continue                                    # the clearing
+			if absf(p.x) < 5.0 and p.y > 10.0 and p.y < 24.0:
+				continue                                    # behind the main camera stays open
+		if shore_z(p.x) - p.y > -2.0 or stream_near(p.x, p.y).x < 2.8:
+			continue                                        # the lake and the stream
+		var ok := true
+		for q in taken:
+			if q.distance_squared_to(p) < 3.2:
+				ok = false
+				break
+		if not ok or spots_fir.size() + spots_round.size() >= TREE_MAX:
+			continue
+		taken.append(p)
+		var tall := rng.randf_range(5.5, 11.0)
+		var wide := tall * rng.randf_range(0.85, 1.2)
+		var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(wide, tall, wide)),
+			Vector3(p.x, ground_height(p.x, p.y) - 0.15, p.y))
+		var shade := rng.randf_range(0.75, 1.15)
+		if rng.randf() < 0.84:
+			spots_fir.append(xf)
+			tints_fir.append(Color(shade, shade, shade))
+		else:
+			xf = xf.scaled_local(Vector3(1.15, 0.8, 1.15))
+			spots_round.append(xf)
+			tints_round.append(Color(shade, shade * 1.05, shade * 0.9))
+	var tree_mat := _prop_material(0.02)       # sway: metres per unit of tree, so a 10 m fir's top moves 20 cm
+	out["tree_mat"] = tree_mat
+	for kind: Array in [["Firs", fir, spots_fir, tints_fir], ["RoundTrees", round_tree, spots_round, tints_round]]:
+		var spots: Array[Transform3D] = kind[2]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = (kind[1] as Buf).to_mesh()
+		mm.instance_count = spots.size()
+		for i in spots.size():
+			mm.set_instance_transform(i, spots[i])
+			mm.set_instance_color(i, (kind[3] as PackedColorArray)[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = String(kind[0])
+		mmi.multimesh = mm
+		mmi.material_override = tree_mat
+		parent.add_child(mmi)
+	out["tree_count"] = spots_fir.size() + spots_round.size()
+
+
+## The fire pit: a ring of stones, the logs leaning together, the bed of coals (its own mesh and
+## glowing material) and the FIRE_Camp marker at the bottom centre of the flames.
+static func _build_fire_pit(props: Buf, parent: Node3D, markers: Node3D, out: Dictionary, rng: RandomNumberGenerator) -> void:
+	for i in 11:
+		var a := TAU * float(i) / 11.0 + rng.randf_range(-0.08, 0.08)
+		var size := rng.randf_range(0.16, 0.24)
+		var grey := rng.randf_range(0.22, 0.38)
+		props.blob(Vector3(cos(a) * 0.82, size * 0.45, sin(a) * 0.82), Vector3(size, size * 0.7, size * 0.85), 6, 4,
+			Color(grey, grey, grey * 1.05), Color(grey * 0.5, grey * 0.5, grey * 0.5), 0.35, rng)
+	for i in 6:                                   # the logs: feet on a circle, tops meeting over the middle
+		var a := TAU * float(i) / 6.0 + 0.3
+		var foot := Vector3(cos(a) * 0.48, 0.05, sin(a) * 0.48)
+		var top := Vector3(cos(a + 2.6) * 0.1, 0.62, sin(a + 2.6) * 0.1)
+		props.rod(foot, top, 0.065, 7, Color(0.1, 0.07, 0.05), Color(0.32, 0.22, 0.12))
+	var coals := CylinderMesh.new()
+	coals.top_radius = 0.55
+	coals.bottom_radius = 0.62
+	coals.height = 0.1
+	coals.radial_segments = 12
+	var ember := StandardMaterial3D.new()
+	ember.resource_name = "Embers"
+	ember.emission_enabled = true
+	out["ember_mat"] = ember
+	var mi := _add_mesh(parent, "Embers", coals, ember, false)
+	mi.position = Vector3(0.0, 0.05, 0.0)
+	out["fire"] = _marker_facing(markers, "FIRE_Camp", Vector3(0.0, 0.12, 0.0), Vector3(0.0, 0.0, 5.0))
+
+
+## The log benches (the chat audience's seats): each row is an arc of logs with one AUDIENCE_
+## marker per seat on top, facing the fire.
+static func _build_benches(props: Buf, markers: Node3D) -> void:
+	var bark := Color(0.17, 0.11, 0.07)
+	var cut := Color(0.5, 0.38, 0.22)
+	var row_n := 0
+	for row: Array in ROWS:
+		row_n += 1
+		var radius := float(row[0])
+		var seats := int(row[1])
+		var step := (ROW_ARC.y - ROW_ARC.x) / float(seats)
+		# a log for every two seats (the last one takes what is left)
+		var s := 0
+		while s < seats:
+			var take := mini(2, seats - s)
+			var from := ring_point(radius, ROW_ARC.x + step * (float(s) + 0.08))
+			var to := ring_point(radius, ROW_ARC.x + step * (float(s + take) - 0.08))
+			from.y += BENCH_Y - 0.19
+			to.y += BENCH_Y - 0.19
+			props.rod(from, to, 0.19, 9, bark, cut)
+			for end: Vector3 in [from.lerp(to, 0.15), from.lerp(to, 0.85)]:       # two stumps under each log
+				props.cyl(Transform3D(Basis.IDENTITY, Vector3(end.x, ground_height(end.x, end.z) - 0.1, end.z)), 0.15, 0.14, end.y - ground_height(end.x, end.z), 7, bark, cut)
+			s += take
+		for i in seats:
+			var at := ring_point(radius, ROW_ARC.x + step * (float(i) + 0.5))
+			at.y += BENCH_Y
+			_marker_facing(markers, "AUDIENCE_R%d_%02d" % [row_n, i + 1], at, Vector3.ZERO)
+
+
+## The loose things round the camp: the stick pile, the s'mores table and cooler, the dock, the
+## footbridge over the stream, and rocks along the water.
+static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
+	var wood := Color(0.34, 0.24, 0.14)
+	var dark_wood := Color(0.2, 0.14, 0.09)
+	# the stick pile
+	var pile_y := ground_height(STICK_PILE.x, STICK_PILE.y)
+	for i in 14:
+		var layer := i / 5
+		var off := (float(i % 5) - 2.0) * 0.1 + rng.randf_range(-0.02, 0.02)
+		var from := Vector3(STICK_PILE.x - 0.55, pile_y + 0.05 + layer * 0.085, STICK_PILE.y + off)
+		var to := from + Vector3(1.1 + rng.randf_range(-0.15, 0.15), rng.randf_range(-0.01, 0.03), rng.randf_range(-0.08, 0.08))
+		props.rod(from, to, 0.035, 5, dark_wood.lerp(wood, rng.randf()), Color(0.5, 0.38, 0.22))
+	# the s'mores table: a folding table with the makings on it, and a cooler beside it
+	var ty := ground_height(SMORES_TABLE.x, SMORES_TABLE.y)
+	var table := Transform3D(Basis(Vector3.UP, deg_to_rad(20.0)), Vector3(SMORES_TABLE.x, ty, SMORES_TABLE.y))
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.72, 0.0)), Vector3(1.2, 0.04, 0.6), Color(0.55, 0.57, 0.6))
+	for lx: float in [-0.5, 0.5]:
+		props.rod(table * Vector3(lx, 0.0, -0.22), table * Vector3(lx, 0.7, 0.22), 0.018, 5, Color(0.25, 0.26, 0.28))
+		props.rod(table * Vector3(lx, 0.0, 0.22), table * Vector3(lx, 0.7, -0.22), 0.018, 5, Color(0.25, 0.26, 0.28))
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(-0.35, 0.83, 0.0)), Vector3(0.26, 0.18, 0.18), Color(0.92, 0.92, 0.95))   # bag of marshmallows
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.8, 0.05)), Vector3(0.2, 0.12, 0.14), Color(0.6, 0.4, 0.16))        # box of crackers
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(0.3, 0.76, -0.05)), Vector3(0.22, 0.03, 0.1), Color(0.2, 0.1, 0.06))      # chocolate
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(1.0, 0.2, 0.1)), Vector3(0.6, 0.4, 0.38), Color(0.12, 0.3, 0.55))         # the cooler
+	props.box(table * Transform3D(Basis.IDENTITY, Vector3(1.0, 0.43, 0.1)), Vector3(0.62, 0.06, 0.4), Color(0.9, 0.9, 0.92))
+	# the dock: planks on posts out over the lake
+	var planks := int((DOCK_Z.x - DOCK_Z.y) / 0.3)
+	for i in planks:
+		var z := DOCK_Z.x - 0.15 - float(i) * 0.3
+		var shade := rng.randf_range(0.85, 1.1)
+		props.box(Transform3D(Basis.IDENTITY, Vector3(DOCK_X, 0.2, z)), Vector3(1.3, 0.05, 0.27), Color(wood.r * shade, wood.g * shade, wood.b * shade))
+	for z: float in [DOCK_Z.x - 0.6, (DOCK_Z.x + DOCK_Z.y) * 0.5, DOCK_Z.y + 0.3]:
+		for sx: float in [-0.6, 0.6]:
+			props.cyl(Transform3D(Basis.IDENTITY, Vector3(DOCK_X + sx, WATER_Y - 1.4, z)), 0.07, 0.07, 2.1, 6, dark_wood)
+	# the footbridge where the path crosses the stream
+	var mid := STREAM[3]
+	var along := (STREAM[4] - STREAM[2])
+	along.y = 0.0
+	var across := along.normalized().cross(Vector3.UP)
+	var bridge := Transform3D(Basis(across, Vector3.UP, across.cross(Vector3.UP)), Vector3(mid.x, mid.y + 0.42, mid.z))
+	for i in 9:
+		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(-1.6 + float(i) * 0.4, 0.0, 0.0)), Vector3(0.36, 0.05, 1.1), wood)
+	for sz: float in [-0.5, 0.5]:
+		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(0.0, -0.08, sz)), Vector3(3.6, 0.1, 0.08), dark_wood)
+	# rocks along the stream and the shore
+	var pts := smooth_stream()
+	for i in 46:
+		var at: Vector3
+		if i < 30:
+			var p := pts[rng.randi_range(2, pts.size() - 8)]
+			var side := 1.0 if rng.randf() < 0.5 else -1.0
+			at = Vector3(p.x + side * rng.randf_range(0.8, 1.5), 0.0, p.z + rng.randf_range(-0.6, 0.6))
+		else:
+			var x := rng.randf_range(-9.0, 14.0)
+			if absf(x - DOCK_X) < 1.2:
+				continue
+			at = Vector3(x, 0.0, shore_z(x) + rng.randf_range(-0.4, 0.9))
+		var size := rng.randf_range(0.14, 0.42)
+		var grey := rng.randf_range(0.2, 0.36)
+		at.y = ground_height(at.x, at.z) + size * 0.2
+		props.blob(at, Vector3(size, size * rng.randf_range(0.5, 0.8), size * rng.randf_range(0.7, 1.1)), 6, 4,
+			Color(grey, grey, grey * 1.06), Color(grey * 0.45, grey * 0.5, grey * 0.45), 0.4, rng)
+
+
+## The big screen: a white sheet (TVScreen, where the picture goes) hung between two posts, with
+## a top and a bottom bar and a dark back. The room script hides the sheet and its back when the
+## screen is switched off; the posts stay, because the string lights hang from them.
+static func _build_screen(props: Buf, parent: Node3D, out: Dictionary) -> void:
+	var pole := Color(0.16, 0.12, 0.09)
+	for sx: float in [-1.0, 1.0]:
+		var x := POST_X * sx
+		var foot := ground_height(x, SCREEN_Z)
+		props.cyl(Transform3D(Basis.IDENTITY, Vector3(x, foot - 0.3, SCREEN_Z)), 0.1, 0.075, POST_H + 0.3 - foot, 8, pole)
+		# a guy rope down to a peg behind each post
+		props.rod(Vector3(x, POST_H - 0.3, SCREEN_Z), Vector3(x + sx * 1.6, ground_height(x + sx * 1.6, SCREEN_Z - 1.4), SCREEN_Z - 1.4), 0.012, 4, Color(0.6, 0.55, 0.45))
+	var top := SCREEN_BOTTOM + SCREEN_SIZE.y
+	props.rod(Vector3(-POST_X, top + 0.1, SCREEN_Z), Vector3(POST_X, top + 0.1, SCREEN_Z), 0.04, 6, pole)
+	props.rod(Vector3(-POST_X, SCREEN_BOTTOM - 0.1, SCREEN_Z), Vector3(POST_X, SCREEN_BOTTOM - 0.1, SCREEN_Z), 0.04, 6, pole)
+	var sheet := QuadMesh.new()
+	sheet.size = SCREEN_SIZE
+	var screen := MeshInstance3D.new()
+	screen.name = "TVScreen"
+	screen.mesh = sheet
+	screen.position = Vector3(0.0, SCREEN_BOTTOM + SCREEN_SIZE.y * 0.5, SCREEN_Z)
+	parent.add_child(screen)
+	out["screen"] = screen
+	var back := QuadMesh.new()
+	back.size = SCREEN_SIZE
+	var back_mat := StandardMaterial3D.new()
+	back_mat.albedo_color = Color(0.07, 0.07, 0.08)
+	back_mat.roughness = 0.9
+	var back_mi := _add_mesh(parent, "ScreenBack", back, back_mat, true)
+	back_mi.transform = Transform3D(Basis(Vector3.UP, PI), screen.position + Vector3(0.0, 0.0, -0.03))
+	out["screen_back"] = back_mi
+
+
+## The four camp chairs. Each is its own mesh named PODIUM_n, so the app shows it only while that
+## presenter is on set, with PRESENTER_n on its seat: the bottom centre of the presenter's picture.
+static func _build_chairs(parent: Node3D, markers: Node3D, mat: Material) -> void:
+	var cloths: Array[Color] = [Color(0.62, 0.2, 0.08), Color(0.1, 0.3, 0.5), Color(0.14, 0.38, 0.16), Color(0.55, 0.42, 0.08)]
+	var frame := Color(0.12, 0.12, 0.13)
+	for i in CHAIR_DEGREES.size():
+		var at := ring_point(CHAIR_RADIUS, CHAIR_DEGREES[i])
+		var b := Buf.new()
+		var cloth := cloths[i]
+		# local axes: +Z = the way the chair faces, y up from the ground
+		b.box(Transform3D(Basis.IDENTITY, Vector3(0.0, CHAIR_SEAT_Y - 0.03, -0.12)), Vector3(0.56, 0.04, 0.5), cloth)
+		b.box(Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-12.0)), Vector3(0.0, CHAIR_SEAT_Y + 0.33, -0.42)), Vector3(0.56, 0.62, 0.035), cloth.darkened(0.15))
+		for sx: float in [-0.29, 0.29]:
+			b.rod(Vector3(sx, 0.0, 0.12), Vector3(sx, CHAIR_SEAT_Y + 0.22, -0.4), 0.016, 5, frame)        # front foot to the back's side
+			b.rod(Vector3(sx, 0.0, -0.4), Vector3(sx, CHAIR_SEAT_Y + 0.22, 0.12), 0.016, 5, frame)        # back foot to the armrest's front
+			b.rod(Vector3(sx, CHAIR_SEAT_Y + 0.22, -0.4), Vector3(sx, CHAIR_SEAT_Y + 0.72, -0.5), 0.016, 5, frame)
+			b.box(Transform3D(Basis.IDENTITY, Vector3(sx, CHAIR_SEAT_Y + 0.23, -0.14)), Vector3(0.05, 0.02, 0.54), cloth.darkened(0.3))
+		var chair := _add_mesh(parent, "PODIUM_%d" % (i + 1), b.to_mesh(), mat)
+		# the chairs face a point a little south of the fire, so they open towards the main camera
+		var marker := _marker_facing(markers, "PRESENTER_%d" % (i + 1), at + Vector3(0.0, CHAIR_SEAT_Y, 0.0), Vector3(0.0, 0.0, 2.5))
+		chair.transform = Transform3D(marker.transform.basis, at)
+
+
+## The tents, in a mesh of their own so the room script can make them glow from inside at night
+## (camp_prop.gdshader's glow).
+static func _build_tents(parent: Node3D, out: Dictionary) -> void:
+	var b := Buf.new()
+	for t: Array in TENTS:
+		var x := float(t[0])
+		var z := float(t[1])
+		var xf := Transform3D(Basis(Vector3.UP, deg_to_rad(float(t[2]))), Vector3(x, ground_height(x, z) - 0.03, z))
+		var main: Color = t[4]
+		var second: Color = t[5]
+		var door := main.darkened(0.75)
+		if String(t[3]) == "dome":
+			# half a ball, 2.6 m across and 1.45 m high, in panels of alternating colour; the
+			# three panels at the front are the door
+			var segs := 12
+			var rings := 5
+			for r in rings:
+				var lat0 := PI * 0.5 * float(r) / float(rings)
+				var lat1 := PI * 0.5 * float(r + 1) / float(rings)
+				for s in segs:
+					var lon0 := TAU * float(s) / float(segs)
+					var lon1 := TAU * float(s + 1) / float(segs)
+					var col := main if s % 2 == 0 else main.lerp(second, 0.85)
+					if (s == 2 or s == 3) and r < 3:
+						col = door                      # (segments 2 and 3 straddle +Z, the front)
+					var corners: Array[Vector3] = []
+					for ll: Array in [[lat0, lon0], [lat0, lon1], [lat1, lon1], [lat1, lon0]]:
+						corners.append(xf * Vector3(cos(float(ll[0])) * cos(float(ll[1])) * 1.3, sin(float(ll[0])) * 1.45, cos(float(ll[0])) * sin(float(ll[1])) * 1.3))
+					b.quad(corners[0], corners[1], corners[2], corners[3], col)
+		else:
+			# a tunnel: half a pipe 3.6 m long and 1.4 m high, striped by its hoops, closed at
+			# the back, with a dark doorway at the front
+			var segs := 8
+			var hoops := 4
+			for hp in hoops:
+				var z0 := -1.8 + 3.6 * float(hp) / float(hoops)
+				var z1 := -1.8 + 3.6 * float(hp + 1) / float(hoops)
+				for s in segs:
+					var a0 := PI * float(s) / float(segs)
+					var a1 := PI * float(s + 1) / float(segs)
+					var col := main if hp % 2 == 0 else main.lerp(second, 0.85)
+					b.quad(xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, z0), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, z0),
+						xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, z1), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, z1), col)
+			for s in segs:
+				var a0 := PI * float(s) / float(segs)
+				var a1 := PI * float(s + 1) / float(segs)
+				b.tri(xf * Vector3(0.0, 0.0, -1.8), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, -1.8), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, -1.8), main.darkened(0.2))
+				b.tri(xf * Vector3(0.0, 0.0, 1.8), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, 1.8), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, 1.8),
+					door if s >= 2 and s <= 5 else main)
+	var mat := _prop_material()
+	out["tent_mat"] = mat
+	_add_mesh(parent, "Tents", b.to_mesh(), mat)
+
+
+## The string lights: bulbs on sagging lines from the screen's posts out to the poles by the
+## tents, plus the few lamps that really light the camp (LAMP_ markers under LIGHTS_House: Room
+## turns each into a light and dims them with the house lights). The tents have no lamp inside:
+## their cloth glows instead (the room script, _apply_glows).
+static func _build_lights(parent: Node3D, room: Node3D, out: Dictionary) -> void:
+	var poles := Buf.new()
+	var tops: Array[Vector3] = []
+	for p in LIGHT_POLES:
+		var foot := ground_height(p.x, p.z)
+		poles.cyl(Transform3D(Basis.IDENTITY, Vector3(p.x, foot - 0.2, p.z)), 0.05, 0.04, p.y + 0.2 - foot, 6, Color(0.16, 0.12, 0.09))
+		tops.append(Vector3(p.x, p.y, p.z))
+	var post_l := Vector3(-POST_X, POST_H - 0.1, SCREEN_Z)
+	var post_r := Vector3(POST_X, POST_H - 0.1, SCREEN_Z)
+	var lines: Array = [[post_l, tops[0]], [post_r, tops[1]], [tops[1], tops[2]], [post_l, post_r]]
+	var bulbs: Array[Vector3] = []
+	var house := Node3D.new()
+	house.name = "LIGHTS_House"
+	room.add_child(house)
+	var lamp_n := 0
+	for line: Array in lines:
+		var a: Vector3 = line[0]
+		var b: Vector3 = line[1]
+		var count := maxi(int(a.distance_to(b) / 0.55), 2)
+		var sag := a.distance_to(b) * 0.09
+		var last := a
+		for i in range(1, count + 1):
+			var t := float(i) / float(count)
+			var p := a.lerp(b, t) - Vector3(0.0, sag * 4.0 * t * (1.0 - t), 0.0)
+			poles.rod(last, p, 0.006, 3, Color(0.05, 0.05, 0.05))
+			last = p
+			if i < count:
+				bulbs.append(p - Vector3(0.0, 0.06, 0.0))
+		# one real light in the middle of each long line (LAMP_LINES of them in all). Few on
+		# purpose: every lamp costs the graphics card on every frame, and the bulbs and the
+		# tents glow by themselves anyway.
+		if lamp_n < LAMP_LINES:
+			lamp_n += 1
+			var lamp := Marker3D.new()
+			lamp.name = "LAMP_String_%d" % lamp_n
+			house.add_child(lamp)
+			lamp.position = a.lerp(b, 0.5) - Vector3(0.0, sag + 0.25, 0.0)
+	_add_mesh(parent, "LightPoles", poles.to_mesh(), _prop_material())
+	var bulb := SphereMesh.new()
+	bulb.radius = 0.045
+	bulb.height = 0.09
+	bulb.radial_segments = 8
+	bulb.rings = 4
+	var bulb_mat := StandardMaterial3D.new()
+	bulb_mat.albedo_color = Color(1.0, 0.85, 0.55)
+	bulb_mat.emission_enabled = true
+	bulb_mat.emission = Color(1.0, 0.72, 0.38)
+	bulb_mat.emission_energy_multiplier = 3.0
+	out["bulb_mat"] = bulb_mat
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = bulb
+	mm.instance_count = bulbs.size()
+	for i in bulbs.size():
+		mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, bulbs[i]))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "StringLights"
+	mmi.multimesh = mm
+	mmi.material_override = bulb_mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	parent.add_child(mmi)
+	out["bulbs"] = mmi
+
+
+## The camera views and the reaction targets (things chat can throw at: "campfire", "lake", "tent").
+static func _build_markers(markers: Node3D) -> void:
+	for c: Array in CAMERAS:
+		var cam := Marker3D.new()
+		cam.name = "CAM_" + String(c[0])
+		markers.add_child(cam)
+		cam.transform = Transform3D(Basis.IDENTITY, c[1]).looking_at(c[2], Vector3.UP)
+	_marker_facing(markers, "TARGET_Campfire", Vector3(0.0, 0.7, 0.0), Vector3(0.0, 0.0, 8.0))
+	_marker_facing(markers, "TARGET_Lake", Vector3(-1.0, WATER_Y + 0.1, -16.0), Vector3(0.0, 0.0, 8.0))
+	_marker_facing(markers, "TARGET_Tent", Vector3(float(TENTS[1][0]), 1.2, float(TENTS[1][1])), Vector3(0.0, 0.0, 2.0))
