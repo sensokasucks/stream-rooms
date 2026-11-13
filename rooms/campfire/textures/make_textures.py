@@ -16,9 +16,10 @@ What it writes:
   detail_fabric .jpg   "detail" textures: the photo divided by its own average colour, so
         mid grey means "no change". camp_prop.gdshader multiplies an object's own colour by
         one of them (times 2), which keeps the set's colours and adds the photo's grain.
-  card_fir / card_pine / card_leaves / card_grass / card_fern .png   see-through pictures of a
-        fir bough, a pine tuft, a spray of leaves, a grass tuft and a fern frond, put together
-        here from single twigs and leaves; the trees are built out of flat cards showing them
+  card_fir / card_pine / card_grass / card_fern .png   see-through pictures of a fir bough, a
+        pine tuft, a grass tuft and a fern frond, put together here from single photographed twigs;
+  card_oak / card_maple / card_birch .png   sprays of oak, maple and birch leaves. These leaves
+        are not photos: this script draws them (leaf_outline, drawn_leaf), one shape per species; the trees are built out of flat cards showing them
         (campfire_trees.gd, camp_foliage.gdshader). The stem end of each is at the bottom middle.
 """
 import json
@@ -199,26 +200,116 @@ def card_pine(size: int = 512) -> None:
     print("wrote card_pine.png")
 
 
-def card_leaves(size: int = 512) -> None:
-    rnd = random.Random(11)
-    leaves = [upright(t) for t in sprites("island_tree_02", "leaves_diff", "leaves_alpha", 0.006)[:8]]
+def leaf_outline(kind: str) -> list:
+    """The outline of one leaf, drawn by us (no photo): points (x, y) with the stem end at
+    (0, 0), the tip at (0, 1) and x the half-width, for the right half then mirrored.
+    oak: rounded lobes (a white oak); maple: five points; birch: a small toothed egg shape."""
+    right = []
+    if kind == "oak":
+        for i in range(0, 121):
+            t = i / 120.0
+            body = 0.36 * math.sin(math.pi * min(1.0, t * 1.08) ** 0.75) ** 0.8      # widest above the middle
+            lobes = 0.45 + 0.55 * math.cos(t * math.pi * 3.5) ** 2 if 0.06 < t < 0.93 else 1.0
+            right.append((max(0.012, body * lobes), t))
+    elif kind == "maple":
+        # hand-placed corners of the right half: stem notch, two lower points, the big side
+        # point, the notch under the top point, the top point
+        right = [(0.02, 0.0), (0.05, 0.16), (0.3, 0.1), (0.24, 0.2), (0.5, 0.22), (0.4, 0.34), (0.56, 0.5), (0.4, 0.5), (0.5, 0.66),
+                 (0.3, 0.6), (0.2, 0.56), (0.13, 0.64), (0.2, 0.8), (0.1, 0.78), (0.0, 1.0)]
+    else:
+        for i in range(0, 81):
+            t = i / 80.0
+            body = 0.33 * math.sin(math.pi * t ** 0.62) * (1.0 - 0.25 * t)
+            teeth = 1.0 + 0.07 * math.sin(t * 60.0)
+            right.append((max(0.012, body * teeth), t))
+    return right + [(-x, y) for x, y in reversed(right)]
+
+
+def drawn_leaf(kind: str, colour, rnd: random.Random, px: int = 220) -> Image.Image:
+    """One leaf as an upright RGBA picture, px tall, stem end at the bottom middle: the
+    outline filled with `colour` (a little lighter towards the edge, as a leaf held to the
+    light is), with a pale midrib and side veins. Drawn four times too big and shrunk, so its
+    edge is smooth."""
+    k = 4
+    w = int(px * (1.2 if kind == "maple" else 0.8)) * k
+    h = px * k
+    stalk = int(h * (0.16 if kind == "maple" else 0.08))             # the leaf's own little stalk
+    pts = [(w / 2 + x * (h - stalk), h - stalk - y * (h - stalk) * 0.98) for x, y in leaf_outline(kind)]
+    mask = Image.new("L", (w, h), 0)
+    md = ImageDraw.Draw(mask)
+    md.polygon(pts, fill=255)
+    md.line([(w / 2, h), (w / 2, h - stalk)], fill=255, width=3 * k)
+    # colour: darker in the middle, lighter and yellower at the edge, plus fine noise
+    edge = np.asarray(mask.filter(ImageFilter.GaussianBlur(h * 0.05))).astype(np.float32) / 255.0
+    noise = np.asarray(Image.effect_noise((w, h), 26).filter(ImageFilter.GaussianBlur(k))).astype(np.float32) / 255.0
+    shade = (0.78 + 0.3 * (1.0 - edge) + 0.5 * (noise - 0.5)) * rnd.uniform(0.9, 1.1)
+    warm = np.stack([1.0 + 0.25 * (1.0 - edge), np.ones_like(edge), 1.0 - 0.2 * (1.0 - edge)], axis=-1)
+    rgb = np.clip(np.array(colour, dtype=np.float32)[None, None, :] * shade[..., None] * warm, 0, 255)
+    img = Image.fromarray(rgb.astype(np.uint8), "RGB").convert("RGBA")
+    d = ImageDraw.Draw(img)
+    pale = tuple(min(255, int(c * 1.5 + 30)) for c in colour) + (255,)
+    top = h - stalk
+    d.line([(w / 2, h), (w / 2, top - (h - stalk) * 0.9)], fill=pale, width=2 * k)
+    if kind == "maple":
+        for x, y in ((0.5, 0.22), (0.56, 0.5), (0.3, 0.1)):          # a vein to each side point
+            for sx in (-1, 1):
+                d.line([(w / 2, top - (h - stalk) * 0.12), (w / 2 + sx * x * (h - stalk) * 0.9, top - y * (h - stalk) * 0.96)], fill=pale, width=k)
+    else:
+        n = 6 if kind == "oak" else 7
+        for i in range(n):
+            t = 0.12 + 0.75 * i / n
+            reach = 0.2 * math.sin(math.pi * t) + 0.04
+            for sx in (-1, 1):
+                d.line([(w / 2, top - t * (h - stalk)), (w / 2 + sx * reach * (h - stalk), top - (t + 0.1) * (h - stalk))], fill=pale, width=k)
+    img.putalpha(mask)
+    return img.resize((w // k, h // k), Image.LANCZOS)
+
+
+def card_broadleaf(kind: str, size: int = 512) -> None:
+    """card_oak / card_maple / card_birch .png: a spray of our own drawn leaves on twigs that
+    fan up from the bottom middle (the card's stem end). Each species has its own leaf shape,
+    leaf size, colour and habit, so the trees can be told apart:
+      oak    big lobed leaves in bunches at the twig ends, dark green
+      maple  broad five-pointed leaves in pairs on long stalks, lighter green
+      birch  many small toothed leaves along thin twigs, yellow-green"""
+    rnd = random.Random({"oak": 21, "maple": 22, "birch": 23}[kind])
+    colour = {"oak": (52, 92, 34), "maple": (78, 122, 36), "birch": (104, 138, 44)}[kind]
+    leaves = [drawn_leaf(kind, colour, rnd) for _ in range(6)]
     c = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     d = ImageDraw.Draw(c)
-    # a few twigs fanning up from the bottom middle, leaves all along them
-    for tw in range(7):
-        ang = math.radians(-66 + 22 * tw + rnd.uniform(-6, 6))
-        length = size * rnd.uniform(0.62, 0.86)
+    twigs = {"oak": 6, "maple": 5, "birch": 8}[kind]
+    for tw in range(twigs):
+        spread = 104.0 if kind != "birch" else 100.0
+        ang = math.radians(-spread / 2 + spread * tw / (twigs - 1) + rnd.uniform(-5, 5))
+        # (short enough that no leaf is cut off at the card's edge)
+        length = size * (rnd.uniform(0.42, 0.56) if kind != "birch" else rnd.uniform(0.5, 0.72))
         x1 = size / 2 + math.sin(ang) * length
         y1 = size - math.cos(ang) * length
-        d.line([(size / 2, size), (x1, y1)], fill=(64, 50, 34, 255), width=4)
-        n = 9
-        for i in range(n):
-            t = (i + 1.0) / n
-            at = (size / 2 + (x1 - size / 2) * t, size + (y1 - size) * t)
-            for side in (-1, 1):
-                stamp(c, rnd.choice(leaves), at, size * rnd.uniform(0.13, 0.19), math.degrees(ang) + side * rnd.uniform(35, 75), rnd.uniform(0.7, 1.1))
-    bleed(c).save(os.path.join(HERE, "card_leaves.png"))
-    print("wrote card_leaves.png")
+        d.line([(size / 2, size), (x1, y1)], fill=(70, 54, 38, 255) if kind != "birch" else (60, 44, 36, 255), width=4 if kind != "birch" else 3)
+        if kind == "oak":
+            # bunches: a few leaves along the twig, a rosette of five at its end
+            for t in (0.45, 0.7):
+                at = (size / 2 + (x1 - size / 2) * t, size + (y1 - size) * t)
+                for side in (-1, 1):
+                    stamp(c, rnd.choice(leaves), at, size * rnd.uniform(0.17, 0.21), math.degrees(ang) + side * rnd.uniform(40, 70), rnd.uniform(0.75, 1.0))
+            for i in range(5):
+                stamp(c, rnd.choice(leaves), (x1, y1), size * rnd.uniform(0.19, 0.24), math.degrees(ang) - 80 + 40 * i + rnd.uniform(-10, 10), rnd.uniform(0.85, 1.12))
+        elif kind == "maple":
+            # pairs opposite each other, the leaves hanging a little flat and wide, one at the end
+            for t in (0.4, 0.62, 0.84):
+                at = (size / 2 + (x1 - size / 2) * t, size + (y1 - size) * t)
+                for side in (-1, 1):
+                    stamp(c, rnd.choice(leaves), at, size * rnd.uniform(0.18, 0.22), math.degrees(ang) + side * rnd.uniform(45, 65), rnd.uniform(0.78, 1.08))
+            stamp(c, rnd.choice(leaves), (x1, y1), size * rnd.uniform(0.2, 0.24), math.degrees(ang) + rnd.uniform(-12, 12), rnd.uniform(0.95, 1.15))
+        else:
+            n = 11
+            for i in range(n):
+                t = 0.25 + 0.75 * (i + 1.0) / n
+                at = (size / 2 + (x1 - size / 2) * t, size + (y1 - size) * t)
+                side = -1 if i % 2 else 1
+                stamp(c, rnd.choice(leaves), at, size * rnd.uniform(0.1, 0.13), math.degrees(ang) + side * rnd.uniform(35, 70), rnd.uniform(0.8, 1.12))
+    bleed(c).save(os.path.join(HERE, "card_%s.png" % kind))
+    print("wrote card_%s.png" % kind)
 
 
 def card_grass(size: int = 256) -> None:
@@ -245,12 +336,26 @@ def card_fern() -> None:
 
 def bark_birch() -> None:
     """There is no birch on Poly Haven: a cherry bark (it has the same sideways streaks) turned
-    white with dark marks."""
+    pale, with birch's dark marks drawn over it by us: many short sideways dashes (lenticels)
+    and a few black arched scars where branches were. Mid grey = no change, as with the
+    other detail textures; the trunk's own off-white colour comes from the mesh."""
     a = np.asarray(fetch("sakura_bark", "Diffuse").convert("L").resize((1024, 1024), Image.LANCZOS)).astype(np.float32) / 255.0
     a = (a - a.mean()) / a.std()
-    rel = np.clip(1.0 + 0.1 * a, 0.0, 2.0)
-    rel = np.where(a < -1.5, 0.35, rel)             # the darkest streaks become birch's black marks
-    img = Image.fromarray(np.clip(rel * 127.5, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.6))
+    rel = np.clip(1.0 + 0.12 * a, 0.0, 2.0)
+    rel = np.where(a < -1.5, 0.45, rel)             # the photo's darkest streaks
+    marks = Image.new("L", (1024, 1024), 255)
+    d = ImageDraw.Draw(marks)
+    rnd = random.Random(5)
+    for _ in range(260):                            # lenticels: thin dashes, 2 to 9 cm wide on the tree
+        x, y = rnd.uniform(0, 1024), rnd.uniform(0, 1024)
+        w, h = rnd.uniform(18, 90), rnd.uniform(3, 8)
+        d.ellipse([x - w / 2, y - h / 2, x + w / 2, y + h / 2], fill=rnd.randint(60, 130))
+    for _ in range(5):                              # branch scars: a dark arch
+        x, y = rnd.uniform(80, 944), rnd.uniform(80, 944)
+        w = rnd.uniform(40, 80)
+        d.arc([x - w, y - w * 0.35, x + w, y + w * 0.9], 200, 340, fill=30, width=int(w * 0.16))
+    m = np.asarray(marks.filter(ImageFilter.GaussianBlur(1.6))).astype(np.float32) / 255.0
+    img = Image.fromarray(np.clip(rel * m * 127.5, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(0.6))
     save_jpg(img.convert("RGB"), "detail_bark_birch.jpg")
 
 
@@ -267,6 +372,7 @@ if __name__ == "__main__":
     detail("detail_fabric.jpg", "denim_fabric_03", size=512, keep_colour=0.0, contrast=2.0)
     card_fir()
     card_pine()
-    card_leaves()
+    for leaf_kind in ("oak", "maple", "birch"):
+        card_broadleaf(leaf_kind)
     card_grass()
     card_fern()
