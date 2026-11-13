@@ -190,6 +190,9 @@ signal board_cleared(board_id: String)
 signal net_state_changed(info: Dictionary)
 ## Someone else's camera moved (peer id, their name, camera transform in the room).
 signal net_camera_moved(peer_id: int, peer_name: String, xform: Transform3D)
+## Someone else's laser pointer changed (core/laser_pointers.gd draws it). state is the checked wire
+## packet from NetSession.send_laser: {on: bool, from: Vector3, to: Vector3, color: Color, beam: bool}.
+signal net_laser_changed(peer_id: int, peer_name: String, state: Dictionary)
 ## Someone left the session (their camera marker goes away).
 signal net_peer_left(peer_id: int)
 ## Someone has to say yes before a connection completes. side "host": a guest called `name` (peer

@@ -141,6 +141,7 @@ broken video in the cache.
 | **F6** | Work the control panel with the keyboard (see *Accessibility*). Esc leaves. |
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
 | **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
+| **L** (hold) | Laser pointer: a dot where the mouse points, with a beam (see *Laser pointer*). |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -347,6 +348,24 @@ it:
 - **Copy name** copies their name.
 
 A plain left click does nothing, so it never fires while you move the camera.
+
+## Laser pointer
+Hold **L** in the room window and point with the mouse: a bright dot lands on whatever you point
+at (the big screen, a wall, the floor), with a thin beam running to it. Let go of **L** and it's
+gone. In a co-stream the host and every guest have their own, and everyone sees everyone's, so you
+can point things out to each other and to your viewers. It works without a session too.
+
+Set yours in the Co-stream tab under **Laser pointer** (Stream Core's Stream Rooms settings show
+the same ones). Each person sets their own:
+- **Laser colour**: your dot and beam. Pick one the others don't use, so it's clear whose is whose.
+- **Show the beam**: off shows only the dot.
+- **Beam starts at**: **My camera** (just beside your camera, like a pointer in your hand) or
+  **My podium avatar** (from your avatar's picture on the podium). With **Podium** on **My podium**
+  that's the podium you claimed as a guest; for the host it's the first podium on set that no guest
+  claimed. Pick a number to use another one. When that podium isn't on set, your camera is used.
+- **L turns it on and off**: press **L** once for on and again for off, instead of holding it.
+
+While you free-look (right mouse button held), the laser points at the middle of the view.
 
 ## Run the room from Stream Core's Live page
 

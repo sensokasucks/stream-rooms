@@ -287,6 +287,13 @@ const BASE_DEFAULTS: Dictionary = {
 	"together_avatar_fps": 20,       # 15 | 20 | 30
 	"together_avatar_kbps": 800,
 	"together_show_cameras": true, # show where the others' cameras are, as small floating cameras
+	# Laser pointer (core/laser_pointers.gd): hold L in the room window and point with the mouse. Each
+	# person sets their own; in a co-stream everyone sees everyone's laser in that person's colour.
+	"laser_color": Color(1.0, 0.12, 0.12),   # the dot and beam colour
+	"laser_beam": true,           # false = only the dot shows, no beam
+	"laser_from": "camera",       # where the beam starts: "camera" (your camera) | "podium" (your podium's avatar)
+	"laser_podium": 0,            # for "podium": 0 = my podium (a guest's claimed one; the host's first lit one) | 1..4
+	"laser_toggle": false,        # true = L turns the laser on and off instead of holding it
 	# Host: which parts guests follow. Off = each PC keeps its own (guests may change theirs).
 	"together_share_room": true,
 	"together_share_curtain": true,   # the curtain and its look, house lights
