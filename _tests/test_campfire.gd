@@ -286,6 +286,13 @@ func _ready() -> void:
 	_check(sky.get_shader_parameter("cloud_noise") is Texture2D, "the sky has its cloud shapes picture")
 	_check((room.get("_parts")["lake_mat"] as ShaderMaterial).get_shader_parameter("ripples") is Texture2D
 		and (room.get("_parts")["stream_mat"] as ShaderMaterial).get_shader_parameter("ripples") is Texture2D, "the lake and the stream have their ripple picture")
+	var bed := room.find_child("StreamBed", true, false) as MeshInstance3D
+	var brook := room.find_child("Stream", true, false) as MeshInstance3D
+	_check(bed != null and brook != null and (brook.material_override as ShaderMaterial).shader.resource_path.ends_with("camp_stream.gdshader"),
+		"the stream has its own bed and its own clear-water shader")
+	var mid := CF.Builder.STREAM[4]
+	_check(CF.Builder.ground_height(mid.x, mid.z) < mid.y - 0.1 and CF.Builder.ground_height(mid.x + 4.0, mid.z) > mid.y,
+		"the stream's bed lies under its water and the bank beside it above")
 	_check(float(sky.get_shader_parameter("day")) < 0.05 and float(sky.get_shader_parameter("dusk")) > 0.2,
 		"18.6 h is dusk: night sky with a sunset glow (day %.2f, dusk %.2f)" % [float(sky.get_shader_parameter("day")), float(sky.get_shader_parameter("dusk"))])
 	AppState.set_setting("camp_time", 12.0)

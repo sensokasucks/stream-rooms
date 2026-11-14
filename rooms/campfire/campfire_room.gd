@@ -625,17 +625,19 @@ func _apply_time(env: Environment) -> void:
 	var shore := Color(0.03, 0.07, 0.05).lerp(Color(0.003, 0.005, 0.007), 1.0 - _day).lerp(hor, 0.25 * mist)
 	var deep := Color(0.012, 0.05, 0.065) * (0.08 + 0.92 * _day)
 	var fire_now := get_fire_amount()
+	var lake := _parts["lake_mat"] as ShaderMaterial
+	lake.set_shader_parameter("shore_color", shore)
+	lake.set_shader_parameter("deep_color", deep)
+	lake.set_shader_parameter("fire_pos", (_parts["fire"] as Node3D).global_position + Vector3(0.0, 0.8, 0.0))
+	lake.set_shader_parameter("fire_color", Vector3(1.0, 0.5, 0.2) * minf(fire_now, 2.0) * (1.0 - 0.6 * _day))
+	# (the stream has its own shader, camp_stream.gdshader: it only needs the sky and the light)
+	(_parts["stream_mat"] as ShaderMaterial).set_shader_parameter("daylight", 0.08 + 0.92 * _day)
 	for key: String in ["lake_mat", "stream_mat"]:
 		var w := _parts[key] as ShaderMaterial
 		w.set_shader_parameter("sky_top", top)
 		w.set_shader_parameter("sky_horizon", hor)
-		w.set_shader_parameter("shore_color", shore)
-		w.set_shader_parameter("deep_color", deep)
 		w.set_shader_parameter("light_dir", world_dir)
 		w.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
-		w.set_shader_parameter("fire_pos", (_parts["fire"] as Node3D).global_position + Vector3(0.0, 0.8, 0.0))
-		w.set_shader_parameter("fire_color", Vector3(1.0, 0.5, 0.2) * minf(fire_now, 2.0) * (1.0 - 0.6 * _day))
-		w.set_shader_parameter("wave", 1.0 if key == "lake_mat" else 2.2)
 	_apply_glows()
 	if _fireflies:
 		var out_tonight := bool(AppState.get_setting("camp_fireflies")) and _day < 0.35

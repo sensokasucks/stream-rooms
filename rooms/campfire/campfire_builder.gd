@@ -16,6 +16,7 @@ extends RefCounted
 ## cameras, which look along -Z.
 
 const WATER_SHADER := preload("res://rooms/campfire/camp_water.gdshader")
+const STREAM_SHADER := preload("res://rooms/campfire/camp_stream.gdshader")
 const GROUND_SHADER := preload("res://rooms/campfire/camp_ground.gdshader")
 const PROP_SHADER := preload("res://rooms/campfire/camp_prop.gdshader")
 ## The detailed trees, grass tufts and ferns (see _build_detailed_plants).
@@ -54,11 +55,17 @@ const TENTS: Array = [
 ]
 ## The stream's middle line from the lake back up into the hills: x, the water's height, z.
 const STREAM: Array[Vector3] = [
-	Vector3(-9.0, -0.3, -10.6), Vector3(-9.6, -0.28, -8.6), Vector3(-11.6, -0.22, -5.5), Vector3(-12.7, -0.16, -1.25),
-	Vector3(-14.0, -0.1, 1.5), Vector3(-15.3, -0.02, 3.2), Vector3(-19.5, 0.6, 7.5), Vector3(-26.0, 1.8, 11.5),
+	Vector3(-9.0, -0.3, -10.6), Vector3(-9.6, -0.12, -8.6), Vector3(-11.6, -0.1, -5.5), Vector3(-12.7, -0.07, -1.25),
+	Vector3(-14.0, -0.03, 1.5), Vector3(-15.3, 0.03, 3.2), Vector3(-19.5, 0.6, 7.5), Vector3(-26.0, 1.8, 11.5),
 	Vector3(-35.0, 3.6, 15.0), Vector3(-48.0, 6.5, 18.0),
 ]
-const STREAM_WIDTH: float = 1.5
+## The stream's water is between 2 x STREAM_NARROW and 2 x STREAM_WIDE metres across
+## (stream_half_width), and STREAM_DEPTH metres deep in the middle.
+const STREAM_NARROW: float = 0.38
+const STREAM_WIDE: float = 0.95
+const STREAM_DEPTH: float = 0.24
+## The stream's own strip of ground (_build_stream) reaches this far each side of its middle.
+const STREAM_BED_HALF: float = 3.4
 ## Where the things beside the fire stand (x, z).
 const STICK_PILE: Vector2 = Vector2(4.2, 0.6)
 const SMORES_TABLE: Vector2 = Vector2(-4.3, 0.6)
@@ -189,6 +196,13 @@ static func stream_near(x: float, z: float) -> Vector2:
 	return Vector2(sqrt(best), water)
 
 
+## Half the width of the stream's water near a point (metres): it narrows and widens along its
+## way (noise), as a real brook does. ground_height() digs the bed this wide.
+static func stream_half_width(x: float, z: float) -> float:
+	_setup_noise()
+	return lerpf(STREAM_NARROW, STREAM_WIDE, clampf(0.5 + 0.9 * _noise.get_noise_2d(x * 3.2 + 50.0, z * 3.2 - 20.0), 0.0, 1.0))
+
+
 ## The ground's height (y) at a point: flat round the camp, a low bank under the benches so the
 ## back rows see over the front ones, hills with the forest on them further out, the lake's bed
 ## north of the shore and the stream's bed along STREAM.
@@ -202,9 +216,19 @@ static func ground_height(x: float, z: float) -> float:
 	var hills := 2.5 + 7.0 * (0.5 + 0.5 * _noise.get_noise_2d(x * 0.5 + 90.0, z * 0.5))
 	h += hills * smoothstep(15.0, 50.0, oval) * smoothstep(2.0, -6.0, in_lake)
 	h = lerpf(h, WATER_Y - 1.3, smoothstep(-0.6, 3.0, in_lake))
+	# the stream: a shallow dish under the water (deepest in the middle), then a bank that
+	# climbs gently from the waterline and has melted into the land around by 2.6 m out.
+	# Lower ground is raised to it as well, so the water never hangs over a dip.
 	var s := stream_near(x, z)
-	if s.x < 2.4:
-		h = lerpf(h, minf(h, s.y - 0.3), smoothstep(2.4, 0.6, s.x))
+	var half := stream_half_width(x, z)
+	if s.x < half + 2.6 and in_lake < 1.0:
+		var bed := s.y - STREAM_DEPTH * smoothstep(half, half * 0.2, s.x)
+		if s.x > half:
+			bed = s.y + 0.03 + 0.22 * (s.x - half)
+		elif in_lake < 0.0:
+			bed = maxf(bed, WATER_Y + 0.02)       # (south of the shore the bed stays above the lake's sheet)
+		var keep := smoothstep(half + 0.5, half + 2.6, s.x)        # 0 = the stream's shape, 1 = the land's own
+		h = lerpf(bed, h, maxf(keep, smoothstep(0.0, 1.0, in_lake)))
 	return h
 
 
@@ -220,7 +244,11 @@ static func ground_kind(x: float, z: float) -> Color:
 	for row: Array in ROWS:           # trodden ground under each bench row
 		dirt = maxf(dirt, (1.0 - smoothstep(0.5, 1.3, absf(from_fire - float(row[0])))) * smoothstep(-0.5, 1.0, z))
 	var sand := smoothstep(-2.2, -0.4, in_lake)
-	sand = maxf(sand, 1.0 - smoothstep(0.9, 2.2, stream_near(x, z).x))
+	# the stream: gravel in its bed and on a narrow, ragged strip of bank (wider in places)
+	_setup_noise()
+	var margin := 0.1 + 0.55 * clampf(0.5 + _noise.get_noise_2d(x * 5.0 - 70.0, z * 5.0 + 30.0), 0.0, 1.0)
+	var past_water := stream_near(x, z).x - stream_half_width(x, z)
+	sand = maxf(sand, 1.0 - smoothstep(margin * 0.4, margin, past_water))
 	var forest := smoothstep(11.5, 15.0, oval) * (1.0 - sand)
 	return Color(dirt, sand, forest)
 
@@ -417,7 +445,7 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 # ── The whole set ────────────────────────────────────────────
 ## Builds everything under `room`. Returns what the room script goes on using:
 ##   ground_mat, prop_mat, tent_mat, tree_mat (ShaderMaterial): for glow,
-##   lake_mat, stream_mat (ShaderMaterial): the two sheets of water,
+##   lake_mat, stream_mat (ShaderMaterial): the lake's and the stream's water,
 ##   ember_mat, bulb_mat (StandardMaterial3D): the fire's coals and the string lights' bulbs,
 ##   bulbs (MultiMeshInstance3D): the string lights,
 ##   screen (MeshInstance3D "TVScreen"), screen_back (MeshInstance3D): shown / hidden together,
@@ -441,6 +469,7 @@ static func build(room: Node3D) -> Dictionary:
 
 	_build_ground(set_root, out)
 	_build_water(set_root, out)
+	_build_stream(set_root, out)
 	_build_forest(set_root, out, rng)
 	var props := Buf.new()            # everything small and solid shares this mesh
 	_build_fire_pit(props, set_root, markers, out, rng)
@@ -469,7 +498,11 @@ static func _build_ground(parent: Node3D, out: Dictionary) -> void:
 	heights.resize((n + 1) * (n + 1))
 	for iz in n + 1:
 		for ix in n + 1:
-			heights[iz * (n + 1) + ix] = ground_height(-GROUND_HALF + ix * GROUND_CELL, -GROUND_HALF + iz * GROUND_CELL)
+			var gx := -GROUND_HALF + ix * GROUND_CELL
+			var gz := -GROUND_HALF + iz * GROUND_CELL
+			# (near the stream these big squares are too coarse for its bed: they duck under the
+			# stream's own fine strip of ground, see _build_stream)
+			heights[iz * (n + 1) + ix] = ground_height(gx, gz) - 0.6 * smoothstep(STREAM_BED_HALF - 0.2, STREAM_BED_HALF - 1.4, stream_near(gx, gz).x)
 	for iz in n + 1:
 		for ix in n + 1:
 			var x := -GROUND_HALF + ix * GROUND_CELL
@@ -505,7 +538,7 @@ static func _build_ground(parent: Node3D, out: Dictionary) -> void:
 
 
 ## The lake (one huge flat sheet north of the camp; the ground hides it wherever the land is
-## higher) and the stream (a ribbon along STREAM that drops with it).
+## higher). The stream is built by _build_stream.
 static func _build_water(parent: Node3D, out: Dictionary) -> void:
 	var lake := PlaneMesh.new()
 	lake.size = Vector2(1400.0, 1400.0)
@@ -514,33 +547,96 @@ static func _build_water(parent: Node3D, out: Dictionary) -> void:
 	lake_mat.set_shader_parameter("ripples", load(TEX + "water_normal.png"))
 	out["lake_mat"] = lake_mat
 	var mi := _add_mesh(parent, "Lake", lake, lake_mat, false)
-	mi.position = Vector3(0.0, WATER_Y, -700.0 - 3.0)       # its south edge is 3 m north of the fire
-	# the stream: a strip STREAM_WIDTH wide following the smoothed middle line
+	# its south edge is just short of the shore's southernmost bend (shore_z), so it never
+	# shows in the stream's bed, which lies lower than the lake for its last few metres
+	mi.position = Vector3(0.0, WATER_Y, -700.0 - 7.7)
+
+
+## The stream: its own fine strip of ground (the bed and the banks, in the ground's material)
+## and a ribbon of clear water over it (camp_stream.gdshader). Both follow the smoothed middle
+## line STREAM; the heights come from ground_height(), which digs the bed.
+static func _build_stream(parent: Node3D, out: Dictionary) -> void:
 	var pts := smooth_stream()
+	# how far along the stream each point is (metres from the lake)
+	var along_m := PackedFloat32Array()
+	along_m.append(0.0)
+	for i in range(1, pts.size()):
+		along_m.append(along_m[i - 1] + Vector2(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z).length())
+	# the bed: corners closer together near the water, where the shape matters
+	var bed_cols: PackedFloat32Array = [-STREAM_BED_HALF, -2.6, -2.0, -1.55, -1.25, -1.0, -0.8, -0.62, -0.46, -0.3, -0.15, 0.0,
+		0.15, 0.3, 0.46, 0.62, 0.8, 1.0, 1.25, 1.55, 2.0, 2.6, STREAM_BED_HALF]
 	var verts := PackedVector3Array()
+	var normals := PackedVector3Array()
+	var colors := PackedColorArray()
 	var indices := PackedInt32Array()
 	for i in pts.size():
-		var along := (pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)])
+		var along := pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]
 		along.y = 0.0
-		var side := along.normalized().cross(Vector3.UP) * STREAM_WIDTH * 0.75
-		verts.append(pts[i] - side)
-		verts.append(pts[i] + side)
-	for i in pts.size() - 1:
-		var k := i * 2
-		indices.append_array([k, k + 1, k + 2, k + 1, k + 3, k + 2, k, k + 2, k + 1, k + 1, k + 2, k + 3])   # both windings
+		var side := along.normalized().cross(Vector3.UP)
+		for u in bed_cols:
+			var x := pts[i].x + side.x * u
+			var z := pts[i].z + side.z * u
+			var h := ground_height(x, z)
+			# the slope, from the heights a hand's width away
+			normals.append(Vector3(ground_height(x - 0.1, z) - ground_height(x + 0.1, z), 0.2, ground_height(x, z - 0.1) - ground_height(x, z + 0.1)).normalized())
+			# (the outermost corners dip, so the strip's edge hides under the big ground mesh)
+			verts.append(Vector3(x, h - (0.25 if absf(u) > STREAM_BED_HALF - 0.01 else 0.0), z))
+			colors.append(ground_kind(x, z))
+	_strip_indices(indices, pts.size(), bed_cols.size())
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = normals
+	arrays[Mesh.ARRAY_COLOR] = colors
 	arrays[Mesh.ARRAY_INDEX] = indices
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var bed := ArrayMesh.new()
+	bed.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	_add_mesh(parent, "StreamBed", bed, out["ground_mat"], false)
+
+	# the water: a ribbon level across, 1 cm over the water's height (clear of the lake's sheet)
+	var water_cols: PackedFloat32Array = [-1.5, -1.15, -0.9, -0.7, -0.5, -0.3, -0.12, 0.0, 0.12, 0.3, 0.5, 0.7, 0.9, 1.15, 1.5]
+	var w_verts := PackedVector3Array()
+	var w_uvs := PackedVector2Array()
+	var w_colors := PackedColorArray()
+	var w_indices := PackedInt32Array()
+	for i in pts.size():
+		var along := pts[mini(i + 1, pts.size() - 1)] - pts[maxi(i - 1, 0)]
+		var steep := clampf(along.y / maxf(Vector2(along.x, along.z).length(), 0.01) * 5.0, 0.0, 1.0)
+		along.y = 0.0
+		var side := along.normalized().cross(Vector3.UP)
+		for u in water_cols:
+			var x := pts[i].x + side.x * u
+			var z := pts[i].z + side.z * u
+			# how deep: down to the ground, and never drawn far past the bed's own width (a dip
+			# in the land beside the stream is not a puddle)
+			var deep := minf(pts[i].y - ground_height(x, z), (stream_half_width(x, z) + 0.3 - absf(u)) * 0.6)
+			deep = clampf(deep / 0.25, 0.0, 1.0)
+			deep *= smoothstep(0.3, -0.9, shore_z(x) - z)          # it melts into the lake at its mouth
+			w_verts.append(Vector3(x, pts[i].y + 0.01, z))
+			w_uvs.append(Vector2(u, along_m[i]))
+			w_colors.append(Color(deep, steep, 0.0))
+	_strip_indices(w_indices, pts.size(), water_cols.size())
+	var w_arrays: Array = []
+	w_arrays.resize(Mesh.ARRAY_MAX)
+	w_arrays[Mesh.ARRAY_VERTEX] = w_verts
+	w_arrays[Mesh.ARRAY_TEX_UV] = w_uvs
+	w_arrays[Mesh.ARRAY_COLOR] = w_colors
+	w_arrays[Mesh.ARRAY_INDEX] = w_indices
+	var water := ArrayMesh.new()
+	water.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, w_arrays)
 	var stream_mat := ShaderMaterial.new()
-	stream_mat.shader = WATER_SHADER
+	stream_mat.shader = STREAM_SHADER
 	stream_mat.set_shader_parameter("ripples", load(TEX + "water_normal.png"))
-	stream_mat.set_shader_parameter("flow", Vector2(0.14, -0.3))      # downhill: north-east to the lake
-	stream_mat.set_shader_parameter("shore_amount", 0.0)
 	out["stream_mat"] = stream_mat
-	_add_mesh(parent, "Stream", mesh, stream_mat, false)
+	_add_mesh(parent, "Stream", water, stream_mat, false)
+
+
+## The triangles of a strip of `rows` x `cols` corners laid out row after row (_build_stream).
+static func _strip_indices(indices: PackedInt32Array, rows: int, cols: int) -> void:
+	for i in rows - 1:
+		for j in cols - 1:
+			var k := i * cols + j
+			indices.append_array([k, k + cols, k + 1, k + 1, k + cols, k + cols + 1])       # facing up
 
 
 ## The forest: two tree shapes (a fir and a round-crowned tree), each drawn many times in one go
@@ -929,7 +1025,7 @@ static func _build_undergrowth(parent: Node3D, out: Dictionary, mats: Dictionary
 		var high := rng.randf_range(0.8, 1.3)
 		var turn := rng.randf() * TAU
 		var shade := rng.randf_range(0.8, 1.1)
-		if shore_z(p.x) - p.y > -0.6 or stream_near(p.x, p.y).x < 1.6:
+		if shore_z(p.x) - p.y > -0.6 or stream_near(p.x, p.y).x < stream_half_width(p.x, p.y) + 0.25:
 			continue                                   # the lake, the stream and their banks
 		if not _undergrowth_free(p):
 			continue
@@ -1147,7 +1243,8 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 		if i < 30:
 			var p := pts[rng.randi_range(2, pts.size() - 8)]
 			var side := 1.0 if rng.randf() < 0.5 else -1.0
-			at = Vector3(p.x + side * rng.randf_range(0.8, 1.5), 0.0, p.z + rng.randf_range(-0.6, 0.6))
+			# (from in the water near one bank to just up that bank)
+			at = Vector3(p.x + side * rng.randf_range(0.25, 1.3), 0.0, p.z + rng.randf_range(-0.6, 0.6))
 		else:
 			var x := rng.randf_range(-9.0, 14.0)
 			if absf(x - DOCK_X) < 1.2:
