@@ -37,7 +37,7 @@ const FENCE := Rect2(-70.0, -76.0, 140.0, 124.0)
 ## patchiness, roughness, forest floor under the trees (grass only)].
 const GROUND_LOOKS: Dictionary = {
 	"Asphalt": [OWN_TEX + "ground_asphalt.jpg", 5.0, Color(0.62, 0.62, 0.64), 0.45, 0.82, false],
-	"Gravel_Ramp": [OWN_TEX + "ground_gravel.jpg", 2.6, Color(1.05, 0.98, 0.88), 0.3, 0.95, false],
+	"Gravel_Ramp": [OWN_TEX + "ground_gravel.jpg", 2.6, Color(0.84, 0.8, 0.74), 0.3, 0.95, false],
 	"Grass": [CAMP_TEX + "ground_grass.jpg", 3.2, Color(0.72, 0.8, 0.64), 0.35, 0.95, true],
 }
 ## Wood and cloth that gain a photo's grain: imported material name -> [detail picture, metres
