@@ -1,0 +1,46 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+[ext_resource type="Shader" path="res://rooms/campfire/camp_sky.gdshader" id="2_sky"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_sky"]
+shader = ExtResource("2_sky")
+
+[sub_resource type="Sky" id="Sky_camp"]
+sky_material = SubResource("ShaderMaterial_sky")
+process_mode = 1
+radiance_size = 1
+
+[sub_resource type="Environment" id="Environment_camp"]
+background_mode = 2
+sky = SubResource("Sky_camp")
+reflected_light_source = 1
+ambient_light_source = 2
+ambient_light_color = Color(0.2, 0.27, 0.52, 1)
+ambient_light_energy = 0.2
+tonemap_mode = 2
+tonemap_white = 6.0
+ssao_enabled = true
+glow_enabled = true
+glow_intensity = 0.7
+glow_bloom = 0.06
+glow_hdr_threshold = 1.0
+fog_enabled = true
+fog_light_color = Color(0.3, 0.35, 0.45, 1)
+fog_density = 0.004
+fog_aerial_perspective = 0.0
+fog_sky_affect = 0.0
+
+[resource]
+script = ExtResource("1_ri")
+id = "campfire"
+display_name = "Lakeside Campfire"
+scene_path = "res://rooms/campfire/campfire_room.tscn"
+sort_order = 10
+environment = SubResource("Environment_camp")
+screen_light_multiplier = 1.2
+screen_light_range = 18.0
+screen_matte = 0.15
+reverb_room_size = 0.1
+reverb_damping = 0.8
+reverb_wet = 0.03

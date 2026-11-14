@@ -142,6 +142,8 @@ broken video in the cache.
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
 | **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
 | **L** (hold) | Laser pointer: a dot where the mouse points, with a beam (see *Laser pointer*). |
+| **M** (hold) | Lakeside Campfire only: roast a marshmallow over the fire. Let go while it is golden for a s'more. |
+| **T** | Lakeside Campfire only: toss a stick on the fire, which flares up. |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -1411,6 +1413,80 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
+- **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
+  lake, with mountains behind it and a sky that changes with the hour.
+  - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
+    (Room tab) and the screen is taken down, which opens the view over the water; the posts and
+    the string lights stay, and the sound of whatever is playing carries on.
+  - A podium room without podiums: the four presenters sit on camp chairs round the far side
+    of the fire, facing the main camera (see *Presenters*). No webcam frame.
+  - Seats for 30: three curved rows of split-log benches on the near side of the fire. There is
+    no filler crowd.
+  - Around the clearing: three modern dome tents with lanterns in them, a small stream that
+    comes down out of the woods on the left in little cascades, over rocks and past an old
+    fallen trunk, and runs into the lake; a little jetty, a pile of sticks, a s'mores table
+    with a cool box, and a forest of fir and round trees. The land is lived in: mossy rock
+    outcrops, tree stumps with mushrooms, reeds and cattails at the water's edge, lily pads
+    on the lake (some in flower) and drifts of wildflowers in the grass. The cascades run
+    between ledges of rock, a dead tree leans out over the brook, old mossy logs lie about,
+    and a small rowing boat is tied to the jetty's rope posts. Snow-capped mountains stand
+    behind the lake. One of the fire ring's stones is Pebble: look for the little face and
+    the gem on its forehead.
+  - **Woods close around the camp** (off to start with) plants thick trees right round the
+    clearing, a wall of firs along the shore behind the screen, and a wall down each side from
+    the screen past the fire to the ends of the benches. The camp becomes a cul-de-sac in the
+    forest, open only towards the main camera, with the tents tucked in among the trees. The
+    lake is hidden. The stream and the jetty still peek through a little, and
+    the Lake and Sky camera stands at the water past the trees, so it keeps its view. In a
+    co-stream it is the host's, like the sky.
+  - **Set detail** chooses how detailed the camp is drawn on this PC. **Detailed everywhere**:
+    photo textures on the ground, the logs, the rocks and the tents, trees with real needles
+    and leaves (firs, pines, oaks, birches and maples mixed together), grass tufts and ferns.
+    **Detailed near the fire**: the same round the camp, but the far hillsides keep their
+    simple trees, which is lighter on a slower graphics card. **Low-poly**: the simple
+    flat-coloured set, the lightest. **Auto (follows Graphics quality)**, the setting it starts
+    on, picks for you: High = everywhere, Medium = near the fire, Low = low-poly. Each PC in a
+    co-stream chooses its own.
+  - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night.
+  - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
+    moon, the colour of the sky, the light on the ground and the reflection on the lake all
+    follow it. **Day length** lets the clock run by itself: the number of minutes a whole day
+    and night takes (0 = **Clock stopped**).
+  - The sky is built from layers: the sky colour, stars with a Milky Way and the odd shooting
+    star, an aurora, the sun and the moon, thin high cloud, big low cloud, two mountain ridges
+    with mist between them and a far tree line. **Clouds**, **Stars**, **Aurora** and **Mist**
+    set how much of each there is. On a slow graphics card, **Clouds** and **Aurora** at 0% are
+    the lightest.
+  - The stars twinkle and turn slowly around the sky over the night, and a shooting star
+    crosses now and then. In photosensitive-safe mode the stars hold steady. The clouds drift
+    and the lake carries small ripples that move with the wind.
+  - **String lights and lanterns** and **Fireflies at night** switch those on and off. The
+    string lights follow the **House lights** slider. **Butterflies by day** does the same
+    for the few butterflies that flutter over the grass while it is light.
+  - **Light rays** sets how strong the sunbeams through the trees are. They show in the
+    morning and the evening, while the sun is low. **Mist** also lays patches of mist on
+    the lake, thickest at dawn and dusk.
+  - **Autumn colours** turns the birches yellow, the maples red and orange and the oaks
+    russet (the firs and pines stay green). In a co-stream everyone gets the same season.
+  - **Fire games (M and T keys)**: hold **M** in the room window and a stick pokes out of your
+    avatar picture with a marshmallow over the fire. It browns while you hold: white, golden,
+    brown, black, and if you leave it too long it catches fire. Let go while it is golden and it
+    counts as a s'more. Press **T** to toss a stick on the fire and watch it flare up. In a
+    co-stream every guest has their own stick and everyone sees everyone's. Chat can feed the
+    fire too: any reaction thrown at the campfire (`!tomato campfire`) makes it flare.
+  - In a co-stream the fire, the screen, the time of day and the sky are the
+    host's and everyone sees the same (a co-host can change them too).
+  - Cameras: across the fire at the screen (the default), beside the fire from the right and
+    the left, back from the screen at everyone, from a tent, the lake shore, a drone view from
+    high up, close on the marshmallows, a Reaction camera, and the lake and the sky with the
+    camp behind you. Press **0** for the 10th.
+  - Reaction targets: `!tomato campfire`, `lake`, `tent`.
+  - Almost no reverb (it is outdoors). The fire crackles and crickets sing at night.
+  - Source: the whole set is built in code when the room loads (`rooms/campfire/campfire_builder.gd`),
+    so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`. The detailed
+    trees are built in `rooms/campfire/campfire_trees.gd`. The photo textures in
+    `rooms/campfire/textures/` come from [Poly Haven](https://polyhaven.com) (CC0, free for any
+    use); `make_textures.py` in that folder downloads them and makes the files again.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
@@ -1471,6 +1547,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.
