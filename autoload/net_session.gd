@@ -91,7 +91,7 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	# the Lakeside Campfire's fire, screen, hour and sky (rooms/campfire/campfire_room.gd):
 	# with the "room" group shared everyone sits under the same sky (see _group_of)
 	"camp_fire", "camp_screen", "camp_time", "camp_day_minutes", "camp_clouds", "camp_stars", "camp_aurora", "camp_mist",
-	"camp_close_woods"]
+	"camp_close_woods", "camp_autumn"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)

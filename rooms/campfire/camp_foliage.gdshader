@@ -16,10 +16,19 @@ uniform float cut = 0.33;
 uniform vec3 tint : source_color = vec3(1.0);
 uniform float sway = 0.02;
 uniform float wind = 1.0;
+// Autumn (campfire_room.gd _apply_autumn, the "camp_autumn" setting): 0 = summer green,
+// 1 = every tree of this material turns a colour of its own between fall_a and fall_b
+// (birches yellow, maples red to orange, oaks russet). The firs' materials leave it at 0.
+uniform float autumn = 0.0;
+uniform vec3 fall_a : source_color = vec3(0.9, 0.6, 0.1);
+uniform vec3 fall_b : source_color = vec3(0.85, 0.3, 0.08);
 // How much light comes through a leaf from behind (0 = none).
 uniform float see_through = 0.35;
 
+varying float tree_pick;       // 0..1, fixed for each tree (its number in the MultiMesh)
+
 void vertex() {
+	tree_pick = fract(float(INSTANCE_ID) * 0.61803);
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	// the same slow lean as the trunks (camp_prop.gdshader), plus a quick flutter of each card
 	float lean = sin(TIME * 0.7 + w.x * 0.13 + w.z * 0.09) + 0.4 * sin(TIME * 1.9 + w.x * 0.7 + w.z * 0.5);
@@ -33,6 +42,11 @@ void fragment() {
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = cut;
 	ALBEDO = t.rgb * COLOR.rgb * tint;
+	if (autumn > 0.0) {
+		// the leaf photo's light and dark, in the tree's autumn colour instead of its green
+		float light = dot(t.rgb, vec3(0.3, 0.6, 0.1)) * 2.6;
+		ALBEDO = mix(ALBEDO, mix(fall_a, fall_b, tree_pick) * light * COLOR.rgb, autumn);
+	}
 	ROUGHNESS = 0.7;
 	SPECULAR = 0.25;
 	BACKLIGHT = ALBEDO * see_through;

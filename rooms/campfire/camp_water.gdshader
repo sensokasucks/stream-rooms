@@ -70,7 +70,7 @@ void fragment() {
 	// what the mirror shows: the sky, then the far shore over it
 	vec3 mirror = mix(sky_horizon, sky_top, pow(clamp(r.y, 0.0, 1.0), 0.5));
 	float az = atan(r.x, -r.z);
-	float shore = max(max(hz_far_ridge(az), hz_near_ridge(az)), hz_tree_line(az));
+	float shore = max(max(max(hz_peaks(az), hz_far_ridge(az)), hz_near_ridge(az)), hz_tree_line(az));
 	// (a soft edge: a ripple smears the shore's outline, it does not cut it out)
 	mirror = mix(mirror, shore_color, smoothstep(shore + 0.1, shore - 0.05, r.y) * shore_amount * 0.9);
 	// starlight: on the darkest night the ripples still catch a faint sheen, so the lake is

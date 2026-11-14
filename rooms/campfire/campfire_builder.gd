@@ -96,7 +96,7 @@ const TREE_SWAY: float = 0.02
 const NEAR_RADIUS: float = 30.0
 ## Grass tufts and ferns (detailed looks only): how many at most, and how far out they grow.
 const GRASS_MAX: int = 1500
-const FERN_MAX: int = 320
+const FERN_MAX: int = 420
 const UNDERGROWTH_RADIUS: float = 21.0
 ## The close woods (_build_close_woods). The wall along the shore: half its length along x,
 ## the nearest its front row comes to the screen (z) and the metres between trees. CLOSE_SLIM: how wide those firs are as a
@@ -1131,6 +1131,9 @@ static func _build_undergrowth(parent: Node3D, out: Dictionary, mats: Dictionary
 			elif roll > 0.8 and grass.size() < GRASS_MAX:
 				grass.append(xf)
 				grass_tints.append(Color(shade * 0.8, shade * 0.85, shade * 0.8))
+		elif roll < 0.5 and ferns.size() < FERN_MAX and stream_near(p.x, p.y).x < stream_half_width(p.x, p.y) + 2.4:
+			ferns.append(xf)                           # ferns crowd the brook's banks, in the open too
+			fern_tints.append(Color(shade, shade, shade))
 		elif grass.size() < GRASS_MAX and _noise.get_noise_2d(p.x * 6.0 + 300.0, p.y * 6.0) > -0.12:
 			grass.append(xf)
 			grass_tints.append(Color(shade, shade, shade))
@@ -1440,7 +1443,8 @@ static func _wild_free(p: Vector2, gap: float) -> bool:
 ## What makes the land look lived in, all in the shared props mesh (so both looks of Set detail
 ## get it): rock outcrops on the stream's banks, the lake's shore and the clearing's edge, tree
 ## stumps and mushrooms, reeds and cattails at the water's edge, lily pads (some in flower) on
-## the lake, and wildflowers in drifts through the grass. Called by build(). It has its own
+## the lake, wildflowers in drifts through the grass, rock ledges walling the cascades, a dead
+## tree leaning over the brook, mossy logs, and the jetty's rope posts and rowing boat. Called by build(). It has its own
 ## random numbers, so it is the same on every PC and moves nothing else.
 static func _build_wild(props: Buf) -> void:
 	var rng := RandomNumberGenerator.new()
@@ -1501,16 +1505,33 @@ static func _build_wild(props: Buf) -> void:
 		if absf(from_mid - absf(edge)) < 0.35:        # (only where that really is the water's edge: the stream bends)
 			clumps.append(Vector2(at.x + edge, at.z))
 	props.mat = MAT_PLAIN
+	# a long leaf: a flat strip from `foot` that narrows to a point at `tip`, bending over on
+	# the way (`bend` metres sideways at the middle); `flat` = the way its width lies
+	var blade := func(foot: Vector3, tip: Vector3, flat: Vector3, width: float, bend: Vector3, low: Color, high: Color) -> void:
+		var mid := foot.lerp(tip, 0.55) + bend
+		var half_w := flat * width * 0.5
+		var n := flat.cross(tip - foot).normalized()
+		props.tri_round(foot - half_w, foot + half_w, mid + half_w * 0.8, n, n, n, low)
+		props.tri_round(foot - half_w, mid + half_w * 0.8, mid - half_w * 0.8, n, n, n, low)
+		props.tri_round(mid - half_w * 0.8, mid + half_w * 0.8, tip, n, n, n, high)
 	for clump in clumps:
-		for n in rng.randi_range(4, 9):
-			var foot := Vector3(clump.x + rng.randf_range(-0.22, 0.22), 0.0, clump.y + rng.randf_range(-0.22, 0.22))
+		for n in rng.randi_range(7, 13):
+			var ang := rng.randf() * TAU
+			var out_dir := Vector3(cos(ang), 0.0, sin(ang))
+			var foot := Vector3(clump.x + out_dir.x * rng.randf_range(0.0, 0.2), 0.0, clump.y + out_dir.z * rng.randf_range(0.0, 0.2))
 			foot.y = maxf(ground_height(foot.x, foot.z), WATER_Y - 0.25) - 0.05
-			var tall := rng.randf_range(0.5, 0.95)
-			var tip := foot + Vector3(rng.randf_range(-0.12, 0.12), tall, rng.randf_range(-0.12, 0.12))
+			var tall := rng.randf_range(0.45, 0.95)
 			var green := rng.randf_range(0.8, 1.15)
-			props.rod(foot, tip, 0.007, 4, Color(0.2 * green, 0.34 * green, 0.1 * green), Color(0.45 * green, 0.55 * green, 0.2 * green))
-			if rng.randf() < 0.3:                      # a cattail's brown head
-				props.rod(foot.lerp(tip, 0.8), foot.lerp(tip, 0.97), 0.017, 6, Color(0.15, 0.09, 0.05), Color(0.15, 0.09, 0.05))
+			# the leaves fan out from the clump and their tips hang over
+			blade.call(foot, foot + out_dir * tall * rng.randf_range(0.25, 0.5) + Vector3(0.0, tall, 0.0), out_dir.cross(Vector3.UP),
+				rng.randf_range(0.022, 0.04), out_dir * -0.06 * tall + Vector3(0.0, tall * 0.12, 0.0),
+				Color(0.14 * green, 0.27 * green, 0.08 * green), Color(0.36 * green, 0.5 * green, 0.16 * green))
+		for n in rng.randi_range(0, 2):                # a cattail or two: a thin stalk with a brown head
+			var foot := Vector3(clump.x + rng.randf_range(-0.12, 0.12), 0.0, clump.y + rng.randf_range(-0.12, 0.12))
+			foot.y = maxf(ground_height(foot.x, foot.z), WATER_Y - 0.25) - 0.05
+			var tip := foot + Vector3(rng.randf_range(-0.06, 0.06), rng.randf_range(0.85, 1.2), rng.randf_range(-0.06, 0.06))
+			props.rod(foot, tip, 0.005, 4, Color(0.25, 0.36, 0.12))
+			props.rod(foot.lerp(tip, 0.82), foot.lerp(tip, 0.95), 0.014, 7, Color(0.17, 0.1, 0.05), Color(0.17, 0.1, 0.05))
 	# -- lily pads on the lake near the shore: a round leaf with a notch, one in four in flower
 	for n in 34:
 		var x := rng.randf_range(-8.5, 15.0)
@@ -1534,7 +1555,6 @@ static func _build_wild(props: Buf) -> void:
 				var tip := heart + out_dir * 0.085 + Vector3(0.0, 0.045 if petal % 2 == 0 else 0.015, 0.0)
 				var up := (Vector3.UP + out_dir * 0.5).normalized()
 				props.tri_round(heart - wide, heart + wide, tip, up, up, up, pink)
-				props.tri_round(heart - wide, tip, heart + wide, -up, -up, -up, pink.darkened(0.25))
 			props.blob(heart + Vector3(0.0, 0.012, 0.0), Vector3(0.018, 0.014, 0.018), 5, 3, Color(0.98, 0.8, 0.15), Color(0.9, 0.6, 0.1), 0.0, rng)
 	# -- wildflowers in drifts through the open grass: each drift mostly one colour
 	var petals: Array[Color] = [Color(0.95, 0.95, 0.9), Color(0.98, 0.82, 0.18), Color(0.58, 0.4, 0.85), Color(0.93, 0.5, 0.65), Color(0.35, 0.5, 0.9)]
@@ -1555,9 +1575,143 @@ static func _build_wild(props: Buf) -> void:
 		var drift := clampf(0.5 + _noise.get_noise_2d(p.x * 1.3 + 800.0, p.y * 1.3 - 300.0), 0.0, 0.999)
 		var col := petals[int(drift * float(petals.size()))] if pick < 0.8 else petals[int(pick * 977.0) % petals.size()]
 		var foot := Vector3(p.x, ground_height(p.x, p.y), p.y)
-		props.rod(foot, foot + lean + Vector3(0.0, tall, 0.0), 0.005, 3, Color(0.16, 0.32, 0.08))
-		props.blob(foot + lean + Vector3(0.0, tall, 0.0), Vector3(0.045, 0.014, 0.045), 7, 3, col, col.darkened(0.3), 0.0, rng)
-		props.blob(foot + lean + Vector3(0.0, tall + 0.012, 0.0), Vector3(0.015, 0.012, 0.015), 5, 3, Color(0.95, 0.75, 0.15), Color(0.8, 0.55, 0.1), 0.0, rng)   # its yellow heart
+		var head := foot + lean + Vector3(0.0, tall, 0.0)
+		var turn := pick * 40.0
+		props.rod(foot, head, 0.004, 3, Color(0.16, 0.32, 0.08))
+		for leaf in 2:                                 # two small leaves low on the stem
+			var leaf_dir := Vector3(cos(turn + PI * float(leaf)), 0.0, sin(turn + PI * float(leaf)))
+			blade.call(foot.lerp(head, 0.25), foot.lerp(head, 0.3) + leaf_dir * 0.07 + Vector3(0.0, 0.03, 0.0), leaf_dir.cross(Vector3.UP), 0.022,
+				Vector3(0.0, 0.012, 0.0), Color(0.15, 0.3, 0.08), Color(0.3, 0.45, 0.14))
+		for petal in 5:                                # five petals in an open cup
+			var a := turn + TAU * float(petal) / 5.0
+			var out_dir := Vector3(cos(a), 0.0, sin(a))
+			var wide := out_dir.cross(Vector3.UP) * 0.017
+			var up := (Vector3.UP + out_dir * 0.4).normalized()
+			var mid := head + out_dir * 0.026 + Vector3(0.0, 0.01, 0.0)
+			var tip := head + out_dir * 0.05 + Vector3(0.0, 0.018, 0.0)
+			props.tri_round(head, mid + wide, mid - wide, up, up, up, col.darkened(0.15))
+			props.tri_round(mid - wide, mid + wide, tip, up, up, up, col)
+		props.blob(head + Vector3(0.0, 0.008, 0.0), Vector3(0.012, 0.009, 0.012), 5, 3, Color(0.95, 0.75, 0.15), Color(0.8, 0.55, 0.1), 0.0, rng)   # its yellow heart
+	# -- rock ledges walling the cascades: flat slabs lying one on another up both banks, so
+	# the stream comes down a small gorge. Each slab is a six-sided block stretched along the
+	# stream, a little tilted, mossy on top; here and there a gap is left.
+	props.mat = MAT_ROCK
+	var at_piece := 37
+	while at_piece < line.size() - 3 and line[at_piece].x > -40.0:
+		var along := line[at_piece + 1] - line[at_piece - 1]
+		along.y = 0.0
+		along = along.normalized()
+		var across := along.cross(Vector3.UP)
+		var half := stream_half_width(line[at_piece].x, line[at_piece].z)
+		for bank_side: float in [-1.0, 1.0]:
+			if rng.randf() < 0.18:
+				continue
+			var lift := 0.0
+			for layer in rng.randi_range(1, 3):
+				var length := rng.randf_range(1.1, 2.1) * (1.0 - 0.2 * float(layer))
+				var deep := rng.randf_range(0.75, 1.25)
+				var tall := rng.randf_range(0.3, 0.55)
+				var out_m := half + 0.3 + deep * 0.45 + float(layer) * rng.randf_range(0.35, 0.6)
+				var at := line[at_piece] + across * bank_side * out_m + along * rng.randf_range(-0.35, 0.35)
+				var y := ground_height(at.x, at.z) - 0.18 + lift      # (each slab sits on the one below)
+				lift += tall * 0.85
+				var grey := rng.randf_range(0.2, 0.31)
+				var moss := rng.randf_range(0.1, 0.6)
+				var turned := Basis(Vector3.UP, atan2(along.x, along.z) + rng.randf_range(-0.3, 0.3)) * Basis(Vector3.RIGHT, rng.randf_range(-0.09, 0.09))
+				props.cyl(Transform3D(turned * Basis.from_scale(Vector3(deep, 1.0, length)), Vector3(at.x, y, at.z)), 0.62, 0.5, tall, 6 + (layer + at_piece) % 2,
+					Color(grey * 0.75, grey * 0.78, grey * 0.8), Color(grey, grey, grey * 1.05).lerp(Color(0.13, 0.2, 0.07), moss))
+		at_piece += rng.randi_range(3, 5)
+	# a round stick that tapers from r0 at `from` to r1 at `to` (a trunk, a limb, a log)
+	var stick := func(from: Vector3, to: Vector3, r0: float, r1: float, col: Color, cap: Color) -> void:
+		var dir := (to - from).normalized()
+		var side := dir.cross(Vector3.UP if absf(dir.y) < 0.95 else Vector3.RIGHT).normalized()
+		props.cyl(Transform3D(Basis(side, dir, side.cross(dir)), from), r0, r1, (to - from).length(), 8, col, cap)
+	# -- a dead tree leaning out over the brook where it leaves the woods: bleached, bare, with
+	# a few broken limbs
+	props.mat = MAT_BARK
+	var snag_at := STREAM[6]
+	var bleached := Color(0.4, 0.38, 0.34)
+	var snag_foot := Vector3(snag_at.x + 2.4, ground_height(snag_at.x + 2.4, snag_at.z + 1.6) - 0.2, snag_at.z + 1.6)
+	var snag_top := snag_foot + Vector3(-3.6, 4.4, -1.4)
+	stick.call(snag_foot, snag_top, 0.22, 0.07, bleached, bleached)
+	for limb: Array in [[0.45, Vector3(-0.3, 0.9, 0.9)], [0.6, Vector3(0.5, 0.7, -0.8)], [0.75, Vector3(-0.9, 0.5, 0.2)], [0.88, Vector3(0.1, 0.6, 0.6)]]:
+		var from := snag_foot.lerp(snag_top, float(limb[0]))
+		stick.call(from, from + (limb[1] as Vector3) * (1.3 - float(limb[0])), 0.06, 0.015, bleached, bleached)
+	# -- old logs lying about, moss along their tops
+	for log_at: Array in [[Vector2(-16.6, -1.2), 0.5, 3.4], [Vector2(-22.5, 6.2), 2.1, 4.2], [Vector2(12.6, 6.4), 1.2, 3.0], [Vector2(-9.5, 9.8), 2.7, 2.6]]:
+		var mid_at: Vector2 = log_at[0]
+		if not _wild_free(mid_at, 1.6):
+			continue
+		var lie := Vector3(cos(float(log_at[1])), 0.0, sin(float(log_at[1]))) * float(log_at[2]) * 0.5
+		var end_a := Vector3(mid_at.x, 0.0, mid_at.y) - lie
+		var end_b := Vector3(mid_at.x, 0.0, mid_at.y) + lie
+		end_a.y = ground_height(end_a.x, end_a.z) + 0.12
+		end_b.y = ground_height(end_b.x, end_b.z) + 0.1
+		props.mat = MAT_BARK
+		stick.call(end_a, end_b, 0.21, 0.16, Color(0.19, 0.15, 0.1), Color(0.42, 0.33, 0.2))
+		props.mat = MAT_PLAIN
+		for pad in 6:
+			var on_log := end_a.lerp(end_b, rng.randf_range(0.08, 0.92)) + Vector3(0.0, 0.16, 0.0)
+			props.blob(on_log, Vector3(rng.randf_range(0.14, 0.3), 0.05, 0.13), 6, 3, Color(0.16, 0.3, 0.08), Color(0.1, 0.2, 0.06), 0.3, rng)
+	# -- the jetty: taller posts wrapped in rope, a rope slung from post to post down each side
+	var rope := Color(0.62, 0.52, 0.34)
+	var post_z: Array[float] = [DOCK_Z.x - 0.6, (DOCK_Z.x + DOCK_Z.y) * 0.5, DOCK_Z.y + 0.3]
+	for sx: float in [-0.6, 0.6]:
+		for n in post_z.size():
+			var top := Vector3(DOCK_X + sx, 0.4, post_z[n])
+			props.mat = MAT_BARK
+			props.cyl(Transform3D(Basis.IDENTITY, top), 0.075, 0.07, 0.4, 8, Color(0.2, 0.14, 0.09), Color(0.4, 0.3, 0.18))
+			props.mat = MAT_PLAIN
+			for turn_n in 4:
+				props.cyl(Transform3D(Basis.IDENTITY, top + Vector3(0.0, 0.14 + 0.04 * float(turn_n), 0.0)), 0.088, 0.088, 0.034, 8, rope.darkened(0.12 * float(turn_n % 2)))
+			if n + 1 < post_z.size():                  # the rope hangs in a curve to the next post
+				var next_top := Vector3(DOCK_X + sx, 0.4, post_z[n + 1])
+				for piece in 6:
+					var t0 := float(piece) / 6.0
+					var t1 := float(piece + 1) / 6.0
+					props.rod(top.lerp(next_top, t0) + Vector3(0.0, 0.22 - 0.5 * t0 * (1.0 - t0), 0.0),
+						top.lerp(next_top, t1) + Vector3(0.0, 0.22 - 0.5 * t1 * (1.0 - t1), 0.0), 0.014, 4, rope)
+	# -- a small rowing boat tied up beside the jetty: the hull is drawn rib by rib from the
+	# stern (t = -1) to the pointed bow (t = 1), each rib five points from rail to keel to rail
+	props.mat = MAT_PLANKS
+	var boat := Transform3D(Basis(Vector3.UP, 0.22), Vector3(DOCK_X + 1.5, WATER_Y, -10.4))
+	var ribs: Array = []
+	for rib in 11:
+		var t := -1.0 + 2.0 * float(rib) / 10.0
+		var wide := 0.54 * (1.0 - 0.25 * t * t) if t < 0.0 else 0.54 * pow(maxf(1.0 - pow(t, 2.4), 0.0), 0.7)
+		var rail := 0.27 + 0.1 * t * t                # the rail rises to the bow and the stern
+		var keel := -0.1 + 0.33 * pow(maxf(t, 0.0), 3.0)
+		var one: Array[Vector3] = []
+		for corner: Vector2 in [Vector2(-1.0, rail), Vector2(-0.76, keel + 0.09), Vector2(0.0, keel), Vector2(0.76, keel + 0.09), Vector2(1.0, rail)]:
+			one.append(boat * Vector3(corner.x * wide, corner.y, -t * 1.4))
+		ribs.append(one)
+	var hull_col := Color(0.3, 0.2, 0.12)
+	var boat_mid := boat * Vector3(0.0, 0.3, 0.0)
+	for rib in 10:
+		for strake in 4:
+			var a: Vector3 = ribs[rib][strake]
+			var b: Vector3 = ribs[rib][strake + 1]
+			var c: Vector3 = ribs[rib + 1][strake + 1]
+			var d: Vector3 = ribs[rib + 1][strake]
+			var n := ((a + b + c + d) * 0.25 - boat_mid).normalized()
+			var shade := hull_col * (1.0 if strake % 3 == 0 else 0.8)      # the bottom boards a little darker
+			props.tri_round(a, b, c, n, n, n, shade)
+			props.tri_round(a, c, d, n, n, n, shade)
+	var stern_n := boat.basis * Vector3(0.0, 0.0, 1.0)
+	for strake in 3:                                   # the flat board across the stern
+		props.tri_round(ribs[0][0], ribs[0][strake + 1], ribs[0][strake + 2], stern_n, stern_n, stern_n, hull_col * 0.9)
+	for seat_t: float in [-0.45, 0.3]:                 # two seats across
+		props.box(boat * Transform3D(Basis.IDENTITY, Vector3(0.0, 0.2, -seat_t * 1.4)), Vector3(0.95, 0.03, 0.2), Color(0.42, 0.3, 0.18))
+	for oar_x: float in [-0.2, 0.2]:                   # the oars laid inside
+		props.rod(boat * Vector3(oar_x, 0.23, 1.0), boat * Vector3(oar_x * 0.6, 0.26, -0.75), 0.018, 5, Color(0.5, 0.38, 0.22))
+		props.box(boat * Transform3D(Basis.IDENTITY, Vector3(oar_x, 0.23, 1.05)), Vector3(0.11, 0.012, 0.38), Color(0.5, 0.38, 0.22))
+	props.mat = MAT_PLAIN                              # its rope to the nearest post
+	var bow := boat * Vector3(0.0, 0.36, -1.38)
+	var tie := Vector3(DOCK_X + 0.6, 0.6, post_z[1])
+	for piece in 5:
+		var t0 := float(piece) / 5.0
+		var t1 := float(piece + 1) / 5.0
+		props.rod(bow.lerp(tie, t0) - Vector3(0.0, 0.5 * t0 * (1.0 - t0), 0.0), bow.lerp(tie, t1) - Vector3(0.0, 0.5 * t1 * (1.0 - t1), 0.0), 0.012, 4, rope)
 	props.mat = MAT_ROCK
 
 

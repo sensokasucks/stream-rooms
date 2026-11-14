@@ -59,6 +59,8 @@ func _ready() -> void:
 	AppState.set_setting("camp_string_lights", true)
 	AppState.set_setting("camp_fireflies", true)
 	AppState.set_setting("camp_butterflies", true)
+	AppState.set_setting("camp_autumn", false)
+	AppState.set_setting("sun_rays", 1.0)
 	AppState.set_setting("camp_games", true)
 	for n in range(1, 5):
 		AppState.set_setting(AppState.presenter_key(n, "on"), n <= 2)
@@ -115,7 +117,7 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_butterflies", "camp_games", "camp_time", "camp_day_minutes",
+	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_butterflies", "camp_autumn", "sun_rays", "camp_games", "camp_time", "camp_day_minutes",
 		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist"]
 	var all_there := true
 	for k in wanted:
@@ -325,6 +327,19 @@ func _ready() -> void:
 	_check(flies != null and flies.emitting, "fireflies are out on a dry night")
 	var wings := fx.get_node_or_null("Butterflies") as CPUParticles3D
 	_check(wings != null and not wings.emitting, "the butterflies stay in at night")
+	# round 13: sunbeams only with a low sun, mist sheets on the lake, autumn colours
+	var beams := fx.get_node_or_null("Shafts")
+	_check(beams != null and beams.get_child_count() == 10 and not (beams.get_child(0) as Node3D).visible, "no sunbeams at midnight")
+	_check(fx.get_node_or_null("Mist") != null and fx.get_node("Mist").get_child_count() == 3, "three sheets of mist lie on the lake")
+	var maple_leaves := (room.get("_parts")["plant_mats"] as Dictionary)["leaves_maple"] as ShaderMaterial
+	var fir_needles := (room.get("_parts")["plant_mats"] as Dictionary)["fir"] as ShaderMaterial
+	AppState.set_setting("camp_autumn", true)
+	await get_tree().process_frame
+	_check(is_equal_approx(float(maple_leaves.get_shader_parameter("autumn")), 1.0) and fir_needles.get_shader_parameter("autumn") == null,
+		"Autumn colours turns the maples and leaves the firs green")
+	AppState.set_setting("camp_autumn", false)
+	await get_tree().process_frame
+	_check(is_equal_approx(float(maple_leaves.get_shader_parameter("autumn")), 0.0), "and back to summer")
 	await _shot("camp_midnight_lake")
 	EventBus.camera_preset_requested.emit(9)
 	await _secs(1.2)

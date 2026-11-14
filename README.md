@@ -1427,8 +1427,11 @@ Included rooms:
     fallen trunk, and runs into the lake; a little jetty, a pile of sticks, a s'mores table
     with a cool box, and a forest of fir and round trees. The land is lived in: mossy rock
     outcrops, tree stumps with mushrooms, reeds and cattails at the water's edge, lily pads
-    on the lake (some in flower) and drifts of wildflowers in the grass. One of the fire
-    ring's stones is Pebble: look for the little face and the gem on its forehead.
+    on the lake (some in flower) and drifts of wildflowers in the grass. The cascades run
+    between ledges of rock, a dead tree leans out over the brook, old mossy logs lie about,
+    and a small rowing boat is tied to the jetty's rope posts. Snow-capped mountains stand
+    behind the lake. One of the fire ring's stones is Pebble: look for the little face and
+    the gem on its forehead.
   - **Woods close around the camp** (off to start with) plants thick trees right round the
     clearing, a wall of firs along the shore behind the screen, and a wall down each side from
     the screen past the fire to the ends of the benches. The camp becomes a cul-de-sac in the
@@ -1460,6 +1463,11 @@ Included rooms:
   - **String lights and lanterns** and **Fireflies at night** switch those on and off. The
     string lights follow the **House lights** slider. **Butterflies by day** does the same
     for the few butterflies that flutter over the grass while it is light.
+  - **Light rays** sets how strong the sunbeams through the trees are. They show in the
+    morning and the evening, while the sun is low. **Mist** also lays patches of mist on
+    the lake, thickest at dawn and dusk.
+  - **Autumn colours** turns the birches yellow, the maples red and orange and the oaks
+    russet (the firs and pines stay green). In a co-stream everyone gets the same season.
   - **Fire games (M and T keys)**: hold **M** in the room window and a stick pokes out of your
     avatar picture with a marshmallow over the fire. It browns while you hold: white, golden,
     brown, black, and if you leave it too long it catches fire. Let go while it is golden and it

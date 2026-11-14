@@ -34,6 +34,8 @@ const Builder := preload("res://rooms/campfire/campfire_builder.gd")
 const Games := preload("res://rooms/campfire/campfire_games.gd")
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
 const BUTTERFLY_SHADER := preload("res://rooms/campfire/camp_butterfly.gdshader")
+const SHAFT_SHADER := preload("res://rooms/campfire/camp_shaft.gdshader")
+const MIST_SHADER := preload("res://rooms/campfire/camp_mist.gdshader")
 ## The sky shader's cloud shapes (three noise fields in r, g, b; textures/make_textures.py).
 ## Handed to the sky material in _apply_time, as the material lives in room_info.tres.
 const SKY_NOISE := preload("res://rooms/campfire/textures/sky_noise.png")
@@ -96,6 +98,9 @@ var _burst: CPUParticles3D        # the shower of sparks when the fire flares
 var _smoke: CPUParticles3D
 var _fireflies: CPUParticles3D
 var _butterflies: CPUParticles3D  # out by day (camp_butterflies), as the fireflies are by night
+var _shafts: Array[MeshInstance3D] = []   # the sunbeams through the trees (_build_shafts)
+var _shaft_mat: ShaderMaterial
+var _mist_mat: ShaderMaterial     # the mist sheets on the lake (_build_mist)
 var _hour: float = 18.6           # the room's clock, hours 0..24 (starts at "camp_time")
 var _hour_drawn: float = -99.0    # the hour the sky was last drawn for
 var _env_drawn: int = 0           # instance id of the Environment it was drawn on
@@ -125,6 +130,9 @@ func _ready() -> void:
 	_build_fire()
 	_build_fireflies()
 	_build_butterflies()
+	_build_shafts()
+	_build_mist()
+	_apply_autumn()
 	_coal_look()
 	_games = Games.new()
 	_games.name = "FireGames"
@@ -190,7 +198,12 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "camp_aurora", "label": "Aurora", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "Green and violet northern lights over the lake at night. 0% = none (and lighter on a slow graphics card)."},
 		{"key": "camp_mist", "label": "Mist", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "The haze over the lake and between the mountain ridges."},
+			"tooltip": "The haze over the lake and between the mountain ridges, and the mist lying on the water (thickest at dawn and dusk)."},
+		{"key": "sun_rays", "label": "Light rays", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How visible the sunbeams through the trees are while the sun is low (morning and evening). 0% = off."},
+		{"heading": "Season"},
+		{"key": "camp_autumn", "label": "Autumn colours", "type": "check",
+			"tooltip": "On: the birches turn yellow, the maples red and orange and the oaks russet. The firs and pines stay green. Shared in a co-stream."},
 	]
 
 
@@ -200,7 +213,9 @@ func _on_camp_setting_changed(key: String, _value: Variant) -> void:
 			_apply_fire()
 		"camp_time":
 			_hour = fposmod(float(AppState.get_setting("camp_time")), 24.0)
-		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist", "camp_string_lights", "photosensitive_safe":
+		"camp_autumn":
+			_apply_autumn()
+		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist", "camp_string_lights", "sun_rays", "photosensitive_safe":
 			_hour_drawn = -100.0        # _run_clock redraws the sky and lights next frame
 		"camp_screen":
 			_apply_screen()
@@ -644,6 +659,11 @@ func _apply_time(env: Environment) -> void:
 		w.set_shader_parameter("light_dir", world_dir)
 		w.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
 	_apply_glows()
+	_apply_shafts(turn * sun, light_col)
+	if _mist_mat:
+		# the mist on the lake: a little all day, most at dawn and dusk and through the night
+		_mist_mat.set_shader_parameter("amount", mist * clampf(0.2 + 0.8 * maxf(dusk, 0.7 * (1.0 - _day)), 0.0, 1.0))
+		_mist_mat.set_shader_parameter("color", hor.lerp(Color(0.75, 0.8, 0.86) * (0.08 + 0.92 * _day), 0.5))
 	if _fireflies:
 		var out_tonight := bool(AppState.get_setting("camp_fireflies")) and _day < 0.35
 		_fireflies.emitting = out_tonight
@@ -696,6 +716,104 @@ func _build_fireflies() -> void:
 	_fireflies.emitting = false
 	_fx.add_child(_fireflies)
 	_fireflies.position = Vector3(0.0, 1.5, 0.0)
+
+
+# ── Sunbeams, mist, autumn ───────────────────────────────────
+## Sunbeams: ten long flat strips (camp_shaft.gdshader) that _apply_shafts lays along the
+## sun's direction among the trees on the sun's side of the clearing. They only show while
+## the sun is low; the "sun_rays" slider (Light rays, shared with the Lecture and Forge Halls)
+## scales them.
+func _build_shafts() -> void:
+	_shaft_mat = ShaderMaterial.new()
+	_shaft_mat.shader = SHAFT_SHADER
+	var holder := Node3D.new()
+	holder.name = "Shafts"
+	_fx.add_child(holder)
+	for i in 10:
+		var strip := QuadMesh.new()
+		strip.size = Vector2(1.4 + 0.5 * float(i % 3), 22.0)
+		var mi := MeshInstance3D.new()
+		mi.mesh = strip
+		mi.material_override = _shaft_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.visible = false
+		holder.add_child(mi)
+		_shafts.append(mi)
+
+
+## Called by _apply_time with where the sun is (a unit vector pointing at it, in the room's
+## own turn) and its colour. The beams stand in a fan on the sun's side, 9 to 17 m from the
+## fire, each running from the ground up towards the sun. Strongest with the sun 5 to 20
+## degrees up; none at noon or at night.
+func _apply_shafts(sun: Vector3, sun_col: Color) -> void:
+	var low := smoothstep(0.03, 0.12, sun.y) * smoothstep(0.5, 0.25, sun.y)
+	var strength := low * float(AppState.get_setting("sun_rays")) * 0.16
+	for i in _shafts.size():
+		var mi := _shafts[i]
+		mi.visible = strength > 0.002
+		if not mi.visible:
+			continue
+		var az := atan2(sun.z, sun.x) + (float(i) - 4.5) * 0.2
+		var reach := 9.0 + 8.0 * fposmod(float(i) * 0.37, 1.0)
+		var foot := Vector3(cos(az) * reach * 1.25, 0.0, sin(az) * reach)
+		# the strip's long side follows the sun; its flat side is turned to the camp
+		var across := sun.cross(Vector3(-foot.x, 0.0, -foot.z).normalized()).normalized()
+		mi.global_transform = Transform3D(Basis(across, sun, across.cross(sun)), global_position + foot + sun * 10.5)
+	if _shaft_mat:
+		_shaft_mat.set_shader_parameter("color", Color(sun_col.r, sun_col.g, sun_col.b) * strength)
+
+
+## Mist on the lake: three big flat sheets just above the water (camp_mist.gdshader), one over
+## another. _apply_time sets how thick it is (the Mist slider, most at dawn and dusk).
+func _build_mist() -> void:
+	_mist_mat = ShaderMaterial.new()
+	_mist_mat.shader = MIST_SHADER
+	_mist_mat.set_shader_parameter("noise", SKY_NOISE)
+	var holder := Node3D.new()
+	holder.name = "Mist"
+	_fx.add_child(holder)
+	for i in 3:
+		var sheet := PlaneMesh.new()
+		sheet.size = Vector2(170.0, 80.0)
+		var mi := MeshInstance3D.new()
+		mi.mesh = sheet
+		mi.material_override = _mist_mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(mi)
+		mi.position = Vector3(0.0, Builder.WATER_Y + 0.3 + 0.5 * float(i), -52.0)
+
+
+## Autumn ("camp_autumn", Room tab > Autumn colours; shared in a co-stream): the leafy trees
+## change colour, the firs and pines stay green. The detailed trees do it in their leaf
+## materials (camp_foliage.gdshader `autumn`, with a colour range per species); the low-poly
+## round trees get their MultiMesh colours multiplied (their first, summer colours are kept in
+## the node's "summer" metadata so switching back is exact).
+func _apply_autumn() -> void:
+	var on := bool(AppState.get_setting("camp_autumn"))
+	var mats: Dictionary = _parts.get("plant_mats", {})
+	# [leaf material, the two ends of its autumn colour range]
+	for row: Array in [["leaves", Color(0.62, 0.36, 0.1), Color(0.5, 0.2, 0.07)], ["leaves_birch", Color(0.95, 0.74, 0.1), Color(0.9, 0.58, 0.08)],
+			["leaves_maple", Color(0.9, 0.42, 0.06), Color(0.72, 0.1, 0.05)]]:
+		var m := mats.get(row[0]) as ShaderMaterial
+		if m:
+			m.set_shader_parameter("autumn", 1.0 if on else 0.0)
+			m.set_shader_parameter("fall_a", row[1])
+			m.set_shader_parameter("fall_b", row[2])
+	var turns: Array[Color] = [Color(3.2, 0.75, 0.3), Color(3.2, 1.25, 0.3), Color(3.0, 0.45, 0.3)]      # x green = orange, yellow, red
+	for list_key: String in ["lowpoly_far", "lowpoly_near", "close_woods"]:
+		for n: Node3D in _parts.get(list_key, []):
+			var mmi := n as MultiMeshInstance3D
+			if mmi == null or not String(mmi.name).contains("Round"):
+				continue
+			var mm := mmi.multimesh
+			if not mmi.has_meta("summer"):
+				var first := PackedColorArray()
+				for i in mm.instance_count:
+					first.append(mm.get_instance_color(i))
+				mmi.set_meta("summer", first)
+			var summer: PackedColorArray = mmi.get_meta("summer")
+			for i in mm.instance_count:
+				mm.set_instance_color(i, summer[i] * turns[i % 3] if on else summer[i])
 
 
 # ── Butterflies ──────────────────────────────────────────────

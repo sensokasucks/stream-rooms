@@ -12,7 +12,7 @@ shader_type sky;
 //   5. high, thin, streaky cloud that drifts slowly,
 //   6. low, puffy cloud that drifts faster and slowly changes shape, lit from the sun's or the
 //      moon's side. Both cloud layers read their shapes from a noise picture (cloud_noise),
-//   7. two mountain ridges with haze between them, and
+//   7. snow-capped mountains, then two ridges of hills with haze between them, and
 //   8. the dark tree line on the far shore of the lake.
 // rooms/campfire/campfire_room.gd (_apply_time, _apply_weather) sets every uniform from the
 // Time of day setting, the Clouds / Stars / Aurora sliders and the weather. The outline of the
@@ -260,14 +260,33 @@ void sky() {
 
 	// ── layers 7 and 8: the ridges and the far shore's trees, each paler the further away ──
 	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.74) * (0.06 + 0.94 * day), 0.4);
+	// the mountains, furthest of all: bare rock, one side of every peak in the sun's or moon's
+	// light and the other in shade, snow on the upper slopes from a ragged line upwards, and
+	// the most haze. A second, lower outline in front of the first (the same peaks, shifted
+	// and darker) gives the range some depth.
+	float peak_h = hz_peaks(az);
+	if (d.y < peak_h + 0.004) {
+		float light_az = day > 0.3 ? atan(sun_dir.x, -sun_dir.z) : atan(moon_dir.x, -moon_dir.z);
+		float side = sin(light_az - az);
+		float lean = (hz_peaks(az + 0.01) - hz_peaks(az - 0.01)) * 30.0;        // which way the slope faces here
+		float lit = clamp(0.5 - lean * side * 1.4, 0.0, 1.0);
+		float front_h = 0.045 + 0.62 * hz_peaks(az + 0.83);
+		float in_front = smoothstep(front_h + 0.002, front_h - 0.002, d.y);
+		float front_lean = (hz_peaks(az + 0.84) - hz_peaks(az + 0.82)) * 30.0;
+		lit = mix(lit, clamp(0.5 - front_lean * side * 1.4, 0.0, 1.0), in_front);
+		vec3 rock = mix(vec3(0.17, 0.2, 0.29), vec3(0.34, 0.37, 0.44), lit) * (1.0 - 0.25 * in_front);
+		float snow_line = (in_front > 0.5 ? 0.215 : 0.185) + 0.035 * hz_noise(az, 97.0, 2.0) + 0.03 * (0.5 - lit);
+		float snow = smoothstep(snow_line - 0.006, snow_line + 0.006, d.y);
+		rock = mix(rock, mix(vec3(0.5, 0.58, 0.76), vec3(0.95, 0.96, 1.0), lit), snow);
+		rock = mix(rock * mix(vec3(0.05, 0.06, 0.1), vec3(1.0), day), rock * vec3(0.95, 0.6, 0.55), dusk * 0.55 * day);
+		rock = mix(rock, haze_col, 0.28 + 0.35 * haze - 0.1 * in_front);
+		c = mix(c, rock, smoothstep(peak_h + 0.002, peak_h - 0.002, d.y));
+	}
 	float far_h = hz_far_ridge(az);
 	float near_h = hz_near_ridge(az);
 	float tree_h = hz_tree_line(az);
 	vec3 far_col = mix(vec3(0.16, 0.22, 0.34), vec3(0.01, 0.012, 0.03), night);
 	far_col = mix(far_col, vec3(0.3, 0.16, 0.26), dusk * 0.6);
-	// snow on the highest peaks catches the light
-	float snow = smoothstep(0.13, 0.19, d.y) * smoothstep(far_h - 0.035, far_h, d.y + 0.02 * hz_noise(az, 140.0, 2.0));
-	far_col = mix(far_col, mix(vec3(0.1, 0.11, 0.18), vec3(0.85, 0.88, 0.95), day), snow * 0.7);
 	far_col = mix(far_col, haze_col, 0.35 + 0.45 * haze);
 	c = mix(c, far_col, smoothstep(far_h + 0.002, far_h - 0.002, d.y));
 	vec3 near_col = mix(vec3(0.09, 0.15, 0.17), vec3(0.006, 0.008, 0.016), night);
