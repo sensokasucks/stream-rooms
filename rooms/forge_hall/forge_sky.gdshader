@@ -90,6 +90,50 @@ float range_height(float az, float seed, float base, float tall) {
 	return base + tall * (0.25 + 0.75 * massif) * (0.62 * crease_a + 0.28 * crease_b + 0.1 * crease_c);
 }
 
+// Draws one mountain range over the colour c and hands the result back. az: the compass
+// direction (moved by a different amount for each range, so they don't line up); seed, base,
+// tall: as range_height; rock: the bare rock's colour in full daylight; snow_depth: how far
+// down from the outline the snow reaches on the highest peaks (in view-direction y); haze_col
+// and haze: the air in front of the range (more for the far one); light_side: which side of a
+// slope faces the sun or the moon. Uses the sky's day, dusk and cloud_noise uniforms.
+vec3 draw_range(vec3 c, vec3 v, float az, float seed, float base, float tall, vec3 rock, float snow_depth, vec3 haze_col, float light_side, float haze) {
+	float h = range_height(az, seed, base, tall);
+	if (v.y > h + 0.004) {
+		return c;
+	}
+	// which way the slope faces here: compare the outline a little either side. Further down
+	// from the outline the slope is read over a wider stretch (az +- depth), so each peak's
+	// lit and shaded faces spread out and soften towards its foot instead of running straight
+	// down as stripes.
+	float depth = max(h - v.y, 0.0);
+	float lean = 0.0;
+	for (int k = -1; k <= 1; k++) {
+		float a2 = az + float(k) * depth * 0.9;
+		lean += (range_height(a2 + 0.012, seed, base, tall) - range_height(a2 - 0.012, seed, base, tall)) * 22.0 / 3.0;
+	}
+	float lit = clamp(0.5 - lean * light_side * 1.6, 0.0, 1.0);
+	// the rock's own blotches and ledges (the noise picture, the same scale both ways)
+	vec2 rp = vec2(az * 3.0 + seed, v.y * 3.0);
+	float grain = textureLod(cloud_noise, rp, 0.0).g * 0.6 + textureLod(cloud_noise, rp * 3.1, 0.0).r * 0.4;
+	// gullies running down the faces: the streak noise, stretched upright
+	float gully = textureLod(cloud_noise, vec2(rp.y * 0.5, rp.x * 2.0), 0.0).b;
+	grain = grain * (0.85 + 0.3 * gully);
+	vec3 col = rock * mix(0.45, 1.15, lit) * (0.75 + 0.5 * grain);
+	// snow from a ragged line down from each peak's top, deeper on the tall peaks, patchy where
+	// the rock's blotches are dark (steep ledges hold less snow)
+	float tallness = clamp((h - base) / max(tall, 0.001), 0.0, 1.0);
+	float snow_line = h - snow_depth * (0.25 + 0.75 * tallness) * (0.7 + 0.6 * ring_noise(az, 71.0, seed + 9.0));
+	float snow = smoothstep(snow_line - 0.01, snow_line + 0.01, v.y + (grain - 0.5) * 0.05);
+	col = mix(col, mix(vec3(0.5, 0.57, 0.76), vec3(0.97, 0.97, 1.0), lit), snow);
+	// the time of day: dark blue-grey at night, warm at dusk
+	col *= mix(vec3(0.09, 0.1, 0.17), vec3(1.0), day);
+	col = mix(col, col * vec3(1.0, 0.62, 0.52), dusk * 0.6 * day);
+	// air in front, thicker towards the foot of the range (it stands in the valley haze)
+	float foot = 1.0 - smoothstep(base, base + 0.12, v.y);
+	col = mix(col, haze_col, clamp(haze + foot * 0.45, 0.0, 1.0));
+	return mix(c, col, smoothstep(h + 0.002, h - 0.002, v.y));
+}
+
 // One layer of stars: a grid of cells over the sky (`scale` cells across a unit of direction),
 // a soft dot in the few cells whose random number is above `rare`. Returns brightness in x and
 // the cell's random number in y (for the tint and the twinkle).
@@ -151,16 +195,18 @@ void sky() {
 		if (nebula_amount > 0.001) {
 			// wispy clouds: the noise picture bent by itself, kept only where it is strongest,
 			// in two colours that drift into each other; the streak noise cuts dark dust lanes
-			vec2 q = sheet * 0.11 + vec2(0.31, 0.67);
-			vec2 bend = vec2(textureLod(cloud_noise, q * 0.7 + vec2(0.5, 0.1), soft).g, textureLod(cloud_noise, q * 0.7 + vec2(0.2, 0.8), soft).g) - 0.5;
-			float n = textureLod(cloud_noise, q + bend * 0.3, soft).r * 0.75 + textureLod(cloud_noise, q * 2.6 + bend * 0.5, soft).g * 0.25;
-			float wisp = pow(smoothstep(0.5, 0.82, n), 1.6);
-			float veil = smoothstep(0.35, 0.75, n) * 0.25;                // a faint haze round the wisps
+			vec2 q = sheet * 0.16 + vec2(0.31, 0.67);
+			// (turned and stretched copies of the streak noise give long wisps; the body
+			// noise gathers them into clouds)
+			vec2 qs = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * q;
+			float n = textureLod(cloud_noise, q, soft).r * 0.55 + textureLod(cloud_noise, qs * vec2(1.4, 0.5), soft).b * 0.3 + textureLod(cloud_noise, q * 2.6, soft).g * 0.15;
+			float wisp = pow(smoothstep(0.4, 0.72, n), 1.6);
+			float veil = smoothstep(0.28, 0.65, n) * 0.25;                // a faint haze round the wisps
 			float which = textureLod(cloud_noise, q * 0.35 + vec2(0.71, 0.29), soft).r;
 			vec3 neb = mix(vec3(0.42, 0.16, 0.9), vec3(0.1, 0.24, 0.95), smoothstep(0.38, 0.62, which));
 			neb = mix(neb, vec3(0.85, 0.6, 1.0), wisp * wisp * 0.5);      // the brightest threads go pale
-			dust = smoothstep(0.55, 0.78, textureLod(cloud_noise, q * 1.7 + bend * 0.4 + vec2(0.13, 0.41), soft).b) * 0.8;
-			glow = neb * (wisp * 1.1 + veil * 0.35) * (1.0 - dust) * nebula_amount;
+			dust = smoothstep(0.55, 0.78, textureLod(cloud_noise, qs * 1.7 + vec2(0.13, 0.41), soft).b) * 0.8;
+			glow = neb * (wisp * 0.8 + veil * 0.3) * (1.0 - dust) * nebula_amount;
 		}
 		vec3 stars = vec3(0.0);
 		if (star_amount > 0.001) {
@@ -262,50 +308,27 @@ void sky() {
 	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.76) * (0.05 + 0.95 * day), 0.4);
 	float light_az = day > 0.3 ? atan(sun_dir.x, -sun_dir.z) : atan(moon_dir.x, -moon_dir.z);
 	float light_side = sin(light_az - az);
-	// the light on the rock: dark blue-grey at night, warmer at dusk
-	vec3 rock_light = mix(vec3(0.05, 0.06, 0.1), vec3(1.0), day);
 	if (mountain_amount > 0.001) {
-		// back range: far off, paler, its peaks reach about 12 degrees up
-		float back_h = range_height(az, 11.0, -0.02, 0.24 * mountain_amount);
-		if (v.y < back_h + 0.004) {
-			float lean = (range_height(az + 0.01, 11.0, -0.02, 0.24 * mountain_amount) - range_height(az - 0.01, 11.0, -0.02, 0.24 * mountain_amount)) * 30.0;
-			float lit = clamp(0.5 - lean * light_side * 1.4, 0.0, 1.0);
-			vec3 rock = mix(vec3(0.2, 0.23, 0.32), vec3(0.4, 0.43, 0.5), lit);
-			float snow_line = back_h - 0.07 - 0.03 * ring_noise(az, 61.0, 21.0) + 0.02 * (0.5 - lit);
-			rock = mix(rock, mix(vec3(0.55, 0.62, 0.8), vec3(0.95, 0.96, 1.0), lit), smoothstep(snow_line - 0.006, snow_line + 0.006, v.y));
-			rock *= rock_light;
-			rock = mix(rock, rock * vec3(1.0, 0.62, 0.55), dusk * 0.6 * day);
-			rock = mix(rock, haze_col, 0.5);                          // far: lots of air in front
-			c = mix(c, rock, smoothstep(back_h + 0.002, back_h - 0.002, v.y));
-		}
-		// front range: closer, taller, darker and sharper, peaks up to about 25 degrees
-		float front_h = range_height(az + 2.1, 23.0, -0.06, 0.5 * mountain_amount);
-		if (v.y < front_h + 0.004) {
-			float lean = (range_height(az + 2.11, 23.0, -0.06, 0.5 * mountain_amount) - range_height(az + 2.09, 23.0, -0.06, 0.5 * mountain_amount)) * 30.0;
-			float lit = clamp(0.5 - lean * light_side * 1.2, 0.0, 1.0);
-			vec3 rock = mix(vec3(0.1, 0.11, 0.15), vec3(0.32, 0.33, 0.38), lit);
-			// cracks and gullies running down the rock face (streak noise, stood upright)
-			float gully = textureLod(cloud_noise, vec2(az * 3.0, v.y * 0.6), 1.0).b;
-			rock *= 0.8 + 0.4 * gully;
-			float snow_line = front_h - 0.1 - 0.05 * ring_noise(az, 71.0, 31.0) + 0.03 * (0.5 - lit) - 0.04 * gully;
-			float snow = smoothstep(snow_line - 0.008, snow_line + 0.008, v.y);
-			rock = mix(rock, mix(vec3(0.5, 0.57, 0.75), vec3(0.97, 0.97, 1.0), lit), snow);
-			rock *= rock_light;
-			rock = mix(rock, rock * vec3(1.0, 0.6, 0.52), dusk * 0.6 * day);
-			rock = mix(rock, haze_col, 0.22);
-			c = mix(c, rock, smoothstep(front_h + 0.002, front_h - 0.002, v.y));
-		}
+		// back range: far off and pale, its peaks reach about 12 degrees up
+		c = draw_range(c, v, az, 11.0, -0.02, 0.24 * mountain_amount, vec3(0.26, 0.29, 0.4), 0.075, haze_col, light_side, 0.42);
+		// front range: closer, taller and darker, peaks up to about 25 degrees
+		c = draw_range(c, v, az + 2.1, 23.0, -0.06, 0.5 * mountain_amount, vec3(0.24, 0.23, 0.25), 0.13, haze_col, light_side, 0.15);
 	}
 
 	// ── 6: the sea of cloud filling the valleys below ──
 	float sea_top = -0.03;
 	if (v.y < sea_top + 0.04) {
-		vec2 suv = v.xz / (abs(v.y - 0.05) + 0.05);                     // a flat sheet below
-		float puff = textureLod(cloud_noise, suv * 0.04 + vec2(TIME * cloud_speed * 0.0003, 0.0), 2.0).r;
-		vec3 sea_lit = mix(vec3(0.05, 0.05, 0.1), vec3(0.95, 0.95, 1.0), day);
+		// a flat sheet of cloud below: where this direction meets it; read blurred (a mip
+		// level) towards the horizon, where the sheet is seen at a grazing angle
+		vec2 suv = v.xz / (0.08 - v.y);
+		float sea_soft = 3.5 * (1.0 - smoothstep(0.0, 0.5, -v.y));
+		vec2 drift = vec2(TIME * cloud_speed * 0.0004, TIME * cloud_speed * 0.00015);
+		float puff = textureLod(cloud_noise, suv * 0.022 + drift, sea_soft).r * 0.75 + textureLod(cloud_noise, suv * 0.08 + drift * 1.6, sea_soft).g * 0.25;
+		vec3 sea_lit = mix(vec3(0.08, 0.09, 0.15), vec3(0.95, 0.95, 1.0), day);
 		sea_lit = mix(sea_lit, mix(vec3(0.9, 0.6, 0.65), vec3(1.0, 0.62, 0.35), toward), dusk * 0.8);
-		vec3 sea = mix(sea_lit * 0.55, sea_lit, smoothstep(0.3, 0.75, puff));
-		sea = mix(sea, haze_col, 0.3);
+		// tops of the billows lit, the dips between them in shade
+		vec3 sea = mix(sea_lit * vec3(0.5, 0.54, 0.64), sea_lit, smoothstep(0.3, 0.8, puff));
+		sea = mix(sea, haze_col, 0.35 * (1.0 - smoothstep(0.0, 0.4, -v.y)));
 		c = mix(c, sea, smoothstep(sea_top + 0.04, sea_top - 0.02, v.y));
 	}
 	COLOR = c * exposure;

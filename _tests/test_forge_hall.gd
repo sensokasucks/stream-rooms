@@ -274,7 +274,7 @@ func _ready() -> void:
 		"Look Detailed: rock photos on the stone (%d surfaces) and heat haze over the forge (%d sheets)" % [stone_detailed, hazes.size()])
 	AppState.set_setting("forge_time", 9.5)
 	await _secs(0.5)
-	EventBus.camera_preset_requested.emit(4)          # Fireside: the forge up close
+	EventBus.camera_preset_requested.emit(3)          # Fireside (CAM_04, 0-based 3): the forge up close
 	await _secs(1.0)
 	await _shot(_out + "/forge_detailed_fireside.png")
 	AppState.set_setting("forge_detail", "simple")

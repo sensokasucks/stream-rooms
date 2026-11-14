@@ -81,8 +81,11 @@ const STONE_DETAIL: Dictionary = {
 	"Pillar_Marble": ["marble", 1.8, 0.6, 0.3],
 }
 ## The heat haze sheets over the forge: [metres across the fire, metres towards the room,
-## width, height]. Counted from FIRE_Main (the bottom centre of the flames, +Z into the room).
-const HAZE_SHEETS: Array = [[0.0, 0.25, 2.4, 3.4], [-0.2, 0.7, 2.8, 3.8], [0.25, -0.15, 2.0, 3.0]]
+## height of the sheet's foot, width, height]. Counted from FIRE_Main (the bottom centre of the
+## flames, +Z into the room). The feet stand above the flames' tops (flame_size.y): the haze
+## shows what was drawn before it, which leaves out the see-through flames, so a sheet in
+## front of them would hide them.
+const HAZE_SHEETS: Array = [[0.0, 0.3, 1.5, 2.2, 2.6], [-0.15, 0.75, 1.7, 2.6, 2.8], [0.2, 0.05, 1.9, 1.9, 2.4]]
 const GRANITE := preload("res://rooms/forge_hall/textures/slab_granite.png")
 ## The built-in posters (blender/make_forge_textures.py), %d = 1..ART_POSTERS; the frames take
 ## them in turn.
@@ -1004,7 +1007,7 @@ func _build_haze() -> void:
 	for k in HAZE_SHEETS.size():
 		var h: Array = HAZE_SHEETS[k]
 		var quad := QuadMesh.new()
-		quad.size = Vector2(float(h[2]), float(h[3]))
+		quad.size = Vector2(float(h[3]), float(h[4]))
 		var mat := ShaderMaterial.new()
 		mat.shader = HAZE_SHADER
 		mat.set_shader_parameter("noise", SKY_NOISE)
@@ -1015,9 +1018,8 @@ func _build_haze() -> void:
 		mi.material_override = mat
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_fx.add_child(mi, true)
-		# (QuadMesh faces +Z: the marker's +Z already points into the room; its foot sits a
-		# little below the flames' foot so the shimmer starts among them)
-		mi.global_transform = Transform3D(b, main.global_position + b.x * float(h[0]) + b.z * float(h[1]) + Vector3.UP * (float(h[3]) * 0.5 + 0.1))
+		# (QuadMesh faces +Z: the marker's +Z already points into the room)
+		mi.global_transform = Transform3D(b, main.global_position + b.x * float(h[0]) + b.z * float(h[1]) + Vector3.UP * (float(h[2]) + float(h[4]) * 0.5))
 		_haze_mats.append(mat)
 		_haze_meshes.append(mi)
 
