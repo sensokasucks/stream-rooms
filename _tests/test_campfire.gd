@@ -293,6 +293,12 @@ func _ready() -> void:
 	var mid := CF.Builder.STREAM[4]
 	_check(CF.Builder.ground_height(mid.x, mid.z) < mid.y - 0.1 and CF.Builder.ground_height(mid.x + 4.0, mid.z) > mid.y,
 		"the stream's bed lies under its water and the bank beside it above")
+	# round 11: little cascades with rocks in the brook, and Pebble by the fire ring
+	var in_water: Array = CF.Builder.stream_rocks().filter(func(r: Vector4) -> bool: return r.w > 0.5)
+	_check(in_water.size() > 10 and CF.Builder.stream_steps(1.0) > 0.0 and CF.Builder.stream_steps(2.0) > CF.Builder.stream_steps(1.0),
+		"the brook comes down in steps and has rocks standing in it")
+	_check(CF.Builder.PEBBLE_AT.length() > 1.1 and CF.Builder.PEBBLE_AT.length() < 2.4 and CF.Builder.PEBBLE_AT.y > 0.0,
+		"Pebble sits just outside the fire ring, on the audience's side")
 	_check(float(sky.get_shader_parameter("day")) < 0.05 and float(sky.get_shader_parameter("dusk")) > 0.2,
 		"18.6 h is dusk: night sky with a sunset glow (day %.2f, dusk %.2f)" % [float(sky.get_shader_parameter("day")), float(sky.get_shader_parameter("dusk"))])
 	AppState.set_setting("camp_time", 12.0)

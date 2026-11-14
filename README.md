@@ -1423,8 +1423,10 @@ Included rooms:
   - Seats for 30: three curved rows of split-log benches on the near side of the fire. There is
     no filler crowd.
   - Around the clearing: three modern dome tents with lanterns in them, a small stream that
-    runs down the left side into the lake with a footbridge over it, a little jetty, a pile
-    of sticks, a s'mores table with a cool box, and a forest of fir and round trees.
+    comes down out of the woods on the left in little cascades, over rocks and past an old
+    fallen trunk, and runs under a footbridge into the lake; a little jetty, a pile of sticks,
+    a s'mores table with a cool box, and a forest of fir and round trees. Pebble, a small
+    lavender rock with a face and a gem on its forehead, sits by the fire ring.
   - **Woods close around the camp** (off to start with) plants thick trees right round the
     clearing, a wall of firs along the shore behind the screen, and a wall down each side from
     the screen past the fire to the ends of the benches. The camp becomes a cul-de-sac in the
