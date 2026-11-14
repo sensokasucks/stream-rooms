@@ -1170,14 +1170,36 @@ automatically.
 
 Included rooms:
 - **Home Theater**
-- **Drive-In (1950s)**: night lot with a pickup with lawn chairs, a concession stand and a
-  projector beam. The sky (`rooms/drive_in/night_sky.gdshader`) draws a textured, phase-lit
-  moon, stars with a faint Milky Way, and a few moonlit drifting clouds. The moon sits wherever
-  the room's `Moonlight` light comes from, so rotate that node to move the moon. Tune the moon
-  size, phase, tint, edge softness (`moon_edge_softness`), atmospheric haze (`moon_haze`), cloud
-  coverage and so on in `room_info.tres` > Environment > Sky > Shader Parameters. The moon surface (`moon_albedo.png`) is procedurally generated. Every marker lives in `../blender/drive_in.blend`, so move things
-  there and re-export to `rooms/drive_in/drive_in.glb`. Export the `DriveIn` and
-  `DriveIn_Markers` collections only, not `Preview_Only`.
+- **Drive-In (1950s)**: a 1950s drive-in lot with a pickup with lawn chairs, a concession
+  stand, a projector beam and rows of parked cars, now outdoors at any hour like the Lakeside
+  Campfire (it shares that room's sky, mist and trees). Its controls are on the Room tab:
+  - **Set detail** chooses how detailed the lot is drawn on this PC. **Detailed**: photo
+    textures on the asphalt, the gravel ramps and the grass (the grass turns to forest floor
+    under the trees), wood grain on the fence and the truck bed, cloth on the blanket and the
+    chair, a forest of firs, pines, oaks, maples and birches with real needles and leaves round
+    the lot, and grass tufts and ferns along the fence. **Simple**: the original flat-coloured
+    set with its simple trees, the lightest for a slow graphics card. **Auto (follows Graphics
+    quality)**, the setting it starts on, picks for you: Low = Simple, anything else =
+    Detailed. Each PC in a co-stream chooses its own.
+  - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18 (to the left
+    of the screen), and 21, where it starts, is a moonlit night. The sun, the moon, the sky's
+    colour and the light on the lot follow it, and the lot's lamps come on as it gets dark.
+    **Day length** lets the clock run by itself: the minutes a whole day and night takes
+    (0 = **Clock stopped**).
+  - The sky has stars with a Milky Way and the odd shooting star, an aurora behind the screen,
+    the sun and the moon, high thin cloud and big low cloud, snow-capped mountains and two
+    ridges of hills with a far tree line on the horizon. **Clouds**, **Stars**, **Aurora** and
+    **Mist** set how much of each there is; **Mist** also lays mist low over the lot, thickest
+    at dusk and at night. On a slow graphics card, **Clouds** and **Aurora** at 0% are the
+    lightest. In photosensitive-safe mode the stars hold steady.
+  - **Fireflies at night** lets small lights drift over the grass round the lot after dark.
+  - In a co-stream the hour and the sky are the host's, so everyone sees the same night.
+  - Source: every marker lives in `../blender/drive_in.blend`, so move things there and
+    re-export to `rooms/drive_in/drive_in.glb` (export the `DriveIn` and `DriveIn_Markers`
+    collections only, not `Preview_Only`). `rooms/drive_in/drive_in_room.gd` adds the outdoor
+    look; the asphalt and gravel photos (CC0, Poly Haven) come from
+    `rooms/drive_in/textures/make_textures.py`. The old night sky (`night_sky.gdshader`,
+    `moon_albedo.png`) is no longer used but kept.
 - **Neon City (night)**: a rain-soaked megacity avenue.
   - The main screen is a giant LED video billboard on a tower whose base is a lit traffic portal.
     A street gantry screen mirrors the same video.
