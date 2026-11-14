@@ -1422,7 +1422,7 @@ Included rooms:
     of the fire, facing the main camera (see *Presenters*). No webcam frame.
   - Seats for 30: three curved rows of split-log benches on the near side of the fire. There is
     no filler crowd.
-  - Around the clearing: three modern dome tents with lanterns in them, a small stream that
+  - Around the clearing: two modern dome tents and a canvas ridge tent, with poles, guy ropes and lanterns in them, a small stream that
     comes down out of the woods on the left in little cascades, over rocks and past an old
     fallen trunk, and runs into the lake; a little jetty, a pile of sticks, a s'mores table
     with a cool box, and a forest of fir and round trees. The land is lived in: mossy rock

@@ -46,12 +46,12 @@ const ROWS: Array = [[4.6, 8], [6.1, 10], [7.6, 12]]
 const ROW_ARC: Vector2 = Vector2(18.0, 162.0)
 ## A bench's sitting height above the ground under it.
 const BENCH_Y: float = 0.42
-## The tents: [x, z, turn in degrees (0 = door facing south), kind ("dome" / "tunnel"),
-## main colour, second colour].
+## The tents: [x, z, turn in degrees (0 = door facing south), kind ("dome" = a modern dome
+## tent, "ridge" = a canvas ridge tent; _build_tents), main colour, second colour].
 const TENTS: Array = [
 	[-10.0, -1.4, 110.0, "dome", Color(0.1, 0.42, 0.4), Color(0.75, 0.78, 0.72)],
 	[10.5, -1.75, -105.0, "dome", Color(0.78, 0.5, 0.08), Color(0.2, 0.2, 0.22)],
-	[10.9, 4.6, -70.0, "tunnel", Color(0.3, 0.24, 0.6), Color(0.72, 0.7, 0.8)],
+	[10.9, 4.6, -70.0, "ridge", Color(0.62, 0.55, 0.38), Color(0.82, 0.78, 0.62)],
 ]
 ## The stream's middle line from the lake back up into the hills: x, the water's height, z.
 const STREAM: Array[Vector3] = [
@@ -1772,60 +1772,179 @@ static func _build_chairs(parent: Node3D, markers: Node3D, mat: Material) -> voi
 		chair.transform = Transform3D(marker.transform.basis, at)
 
 
-## The tents, in a mesh of their own so the room script can make them glow from inside at night
-## (camp_prop.gdshader's glow).
+## The tents: two modern dome tents and a canvas ridge tent (TENTS). Their cloth is a mesh of
+## its own ("Tents", MAT_FABRIC) so the room script can make it glow from inside at night
+## (camp_prop.gdshader's glow, _apply_glows); the poles, guy ropes and pegs go in a second
+## mesh ("TentRigging") with the ordinary prop material, so they stay dark.
 static func _build_tents(parent: Node3D, out: Dictionary) -> void:
-	var b := Buf.new()
-	b.mat = MAT_FABRIC
+	var cloth := Buf.new()
+	cloth.mat = MAT_FABRIC
+	var rig := Buf.new()
+	rig.mat = MAT_PLAIN
 	for t: Array in TENTS:
 		var x := float(t[0])
 		var z := float(t[1])
 		var xf := Transform3D(Basis(Vector3.UP, deg_to_rad(float(t[2]))), Vector3(x, ground_height(x, z) - 0.03, z))
-		var main: Color = t[4]
-		var second: Color = t[5]
-		var door := main.darkened(0.75)
 		if String(t[3]) == "dome":
-			# half a ball, 2.6 m across and 1.45 m high, in panels of alternating colour; the
-			# three panels at the front are the door
-			var segs := 12
-			var rings := 5
-			for r in rings:
-				var lat0 := PI * 0.5 * float(r) / float(rings)
-				var lat1 := PI * 0.5 * float(r + 1) / float(rings)
-				for s in segs:
-					var lon0 := TAU * float(s) / float(segs)
-					var lon1 := TAU * float(s + 1) / float(segs)
-					var col := main if s % 2 == 0 else main.lerp(second, 0.85)
-					if (s == 2 or s == 3) and r < 3:
-						col = door                      # (segments 2 and 3 straddle +Z, the front)
-					var corners: Array[Vector3] = []
-					for ll: Array in [[lat0, lon0], [lat0, lon1], [lat1, lon1], [lat1, lon0]]:
-						corners.append(xf * Vector3(cos(float(ll[0])) * cos(float(ll[1])) * 1.3, sin(float(ll[0])) * 1.45, cos(float(ll[0])) * sin(float(ll[1])) * 1.3))
-					b.quad(corners[0], corners[1], corners[2], corners[3], col)
+			_build_dome_tent(cloth, rig, xf, t[4], t[5])
 		else:
-			# a tunnel: half a pipe 3.6 m long and 1.4 m high, striped by its hoops, closed at
-			# the back, with a dark doorway at the front
-			var segs := 8
-			var hoops := 4
-			for hp in hoops:
-				var z0 := -1.8 + 3.6 * float(hp) / float(hoops)
-				var z1 := -1.8 + 3.6 * float(hp + 1) / float(hoops)
-				for s in segs:
-					var a0 := PI * float(s) / float(segs)
-					var a1 := PI * float(s + 1) / float(segs)
-					var col := main if hp % 2 == 0 else main.lerp(second, 0.85)
-					b.quad(xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, z0), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, z0),
-						xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, z1), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, z1), col)
-			for s in segs:
-				var a0 := PI * float(s) / float(segs)
-				var a1 := PI * float(s + 1) / float(segs)
-				b.tri(xf * Vector3(0.0, 0.0, -1.8), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, -1.8), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, -1.8), main.darkened(0.2))
-				b.tri(xf * Vector3(0.0, 0.0, 1.8), xf * Vector3(cos(a0) * 1.25, sin(a0) * 1.4, 1.8), xf * Vector3(cos(a1) * 1.25, sin(a1) * 1.4, 1.8),
-					door if s >= 2 and s <= 5 else main)
+			_build_ridge_tent(cloth, rig, xf, t[4], t[5])
 	var mat := _prop_material()
 	out["tent_mat"] = mat
 	_note_material(out, mat)
-	_add_mesh(parent, "Tents", b.to_mesh(), mat)
+	_add_mesh(parent, "Tents", cloth.to_mesh(), mat)
+	_add_mesh(parent, "TentRigging", rig.to_mesh(), out["prop_mat"])
+
+
+## A point on a dome tent's cloth, in the tent's own space (door towards +Z): `around` is the
+## angle round the tent (radians, PI / 2 = the door's middle), `up` the angle from the ground
+## (0) to the top (PI / 2), `lift` 1 = on the cloth, a little more = just outside it.
+## The floor is a square with rounded corners, 2.4 m across (the poles stand in the corners);
+## the walls rise steeply and round off into the top, 1.4 m high.
+static func dome_point(around: float, up: float, lift: float = 1.0) -> Vector3:
+	var squareness := lerpf(5.0, 2.0, up / (PI * 0.5))       # square at the ground, round at the top
+	var reach := 1.2 / pow(pow(absf(cos(around)), squareness) + pow(absf(sin(around)), squareness), 1.0 / squareness)
+	var flat := pow(cos(up), 0.75)
+	return Vector3(cos(around) * reach * flat, pow(sin(up), 0.9) * 1.4, sin(around) * reach * flat) * lift
+
+
+## One dome tent: smooth cloth in the main colour with a groundsheet rim, a cap in the second
+## colour over the top, an arched doorway with its flap rolled up above it, two crossing poles
+## in sleeves from corner to corner, and a guy rope and a peg at each corner.
+## cloth / rig: the two meshes of _build_tents. xf: where the tent stands and which way it faces.
+static func _build_dome_tent(cloth: Buf, rig: Buf, xf: Transform3D, main: Color, second: Color) -> void:
+	var segs := 32
+	var rings := 9
+	for r in rings:
+		var up0 := PI * 0.5 * float(r) / float(rings)
+		var up1 := PI * 0.5 * float(r + 1) / float(rings)
+		for seg in segs:
+			var a0 := TAU * float(seg) / float(segs)
+			var a1 := TAU * float(seg + 1) / float(segs)
+			var col := main
+			if r == 0:
+				col = main.darkened(0.55)               # the groundsheet's rim
+			elif r >= rings - 3:
+				col = main.lerp(second, 0.85)           # the cap over the top
+			# every other panel a touch darker: the seams between the cloth's panels
+			if (seg >> 2) % 2 == 1 and r > 0:
+				col = col.darkened(0.1)
+			var corners: Array[Vector3] = []
+			var normals: Array[Vector3] = []
+			for au: Array in [[a0, up0], [a1, up0], [a1, up1], [a0, up1]]:
+				var local := dome_point(float(au[0]), float(au[1]))
+				corners.append(xf * local)
+				normals.append((xf.basis * Vector3(local.x, local.y * 0.9 + 0.25, local.z)).normalized())
+			cloth.tri_round(corners[0], corners[1], corners[2], normals[0], normals[1], normals[2], col)
+			cloth.tri_round(corners[0], corners[2], corners[3], normals[0], normals[2], normals[3], col)
+	# the doorway: an arch on the front, dark inside, with a lighter zip line round it
+	var front := PI * 0.5
+	var door_n := xf.basis * Vector3(0.0, 0.5, 1.0).normalized()
+	for layer: Array in [[1.012, 1.08, second.lerp(main, 0.4)], [1.02, 1.0, main.darkened(0.82)]]:      # [lift, size, colour]
+		# drawn in four rings from the arch's middle out to its edge, so it follows the cloth's
+		# curve (flat pieces from the middle would dip under it)
+		var size := float(layer[1])
+		var lift := float(layer[0])
+		# the arch's edge as (around, up) points: over the top, then back along the ground
+		var edge: Array[Vector2] = []
+		for piece in 15:
+			var u := PI * float(piece) / 14.0
+			edge.append(Vector2(front + 0.5 * size * cos(u), 0.03 + 0.8 * size * sin(u)))
+		for piece in 5:
+			edge.append(Vector2(front + 0.5 * size * (-1.0 + 2.0 * float(piece + 1) / 6.0), 0.03))
+		for ring in 4:
+			var f0 := float(ring) / 4.0
+			var f1 := float(ring + 1) / 4.0
+			for piece in edge.size():
+				var e0 := edge[piece]
+				var e1 := edge[(piece + 1) % edge.size()]
+				var quad_pts: Array[Vector3] = []
+				for fe: Array in [[f0, e0], [f0, e1], [f1, e1], [f1, e0]]:
+					var at: Vector2 = Vector2(front, 0.3).lerp(fe[1], float(fe[0]))
+					quad_pts.append(xf * dome_point(at.x, at.y, lift))
+				cloth.tri_round(quad_pts[0], quad_pts[1], quad_pts[2], door_n, door_n, door_n, layer[2])
+				cloth.tri_round(quad_pts[0], quad_pts[2], quad_pts[3], door_n, door_n, door_n, layer[2])
+	# the door's flap, rolled up and tied above the arch
+	cloth.rod(xf * dome_point(front - 0.3, 0.86, 1.04), xf * dome_point(front + 0.3, 0.86, 1.04), 0.055, 7, main.lerp(second, 0.3), main.darkened(0.3))
+	# the two poles, from corner over the top to the opposite corner, in the second colour's sleeves
+	var pole := Color(0.14, 0.14, 0.16)
+	for corner in 2:
+		var around := PI * 0.25 + PI * 0.5 * float(corner)
+		var last := xf * dome_point(around, 0.0, 1.015)
+		for piece in 20:
+			var along := PI * float(piece + 1) / 20.0          # 0 .. PI: up one side and down the other
+			var here := xf * (dome_point(around, along, 1.015) if along <= PI * 0.5 else dome_point(around + PI, PI - along, 1.015))
+			rig.rod(last, here, 0.014, 5, pole)
+			last = here
+	# a guy rope from each corner's pole, a third of the way up, out to a peg
+	for corner in 4:
+		var around := PI * 0.25 + PI * 0.5 * float(corner)
+		var tie := xf * dome_point(around, 0.55, 1.02)
+		var peg := xf * (Vector3(cos(around), 0.0, sin(around)) * 2.35)
+		peg.y = ground_height(peg.x, peg.z)
+		rig.rod(tie, peg, 0.006, 4, Color(0.8, 0.78, 0.6))
+		rig.rod(peg + Vector3(0.0, -0.05, 0.0), peg + Vector3(0.0, 0.1, 0.0) + (peg - tie).normalized() * 0.05, 0.012, 5, Color(0.55, 0.55, 0.58))
+
+
+## The canvas ridge tent: two sloping sides from a ridge pole down to the ground (sagging a
+## little between the poles, as canvas does), a closed back, a front whose two flaps are tied
+## back from a dark doorway, an upright pole at each end, and guy ropes to pegs.
+## 2.4 m wide, 1.6 m high, 3.2 m long; in its own space the door faces +Z.
+static func _build_ridge_tent(cloth: Buf, rig: Buf, xf: Transform3D, main: Color, second: Color) -> void:
+	var half_w := 1.2
+	var high := 1.6
+	var half_l := 1.6
+	var cols := 8
+	var rows := 5
+	for side: float in [-1.0, 1.0]:
+		var n := (xf.basis * Vector3(side * high, half_w, 0.0)).normalized()
+		for col_n in cols:
+			for row in rows:
+				var corners: Array[Vector3] = []
+				for cr: Array in [[col_n, row], [col_n + 1, row], [col_n + 1, row + 1], [col_n, row + 1]]:
+					var along := float(cr[0]) / float(cols)              # 0 = the back, 1 = the front
+					var down := float(cr[1]) / float(rows)               # 0 = the ridge, 1 = the ground
+					var sag := 0.07 * sin(along * PI) * sin(down * PI)    # the canvas hangs in a little
+					corners.append(xf * Vector3(side * (half_w * down - sag * 0.8), high * (1.0 - down) - sag, lerpf(-half_l, half_l + 0.18, along)))
+				# a strip along the ridge and one along the ground in the second colour
+				var shade := main.lerp(second, 0.8) if row == 0 else (main.darkened(0.35) if row == rows - 1 else main)
+				cloth.tri_round(corners[0], corners[1], corners[2], n, n, n, shade)
+				cloth.tri_round(corners[0], corners[2], corners[3], n, n, n, shade)
+	# the back wall, and the front: a flap each side, tied back from the dark doorway
+	var top_back := xf * Vector3(0.0, high, -half_l)
+	var back_n := xf.basis * Vector3(0.0, 0.0, -1.0)
+	cloth.tri_round(xf * Vector3(-half_w, 0.0, -half_l), xf * Vector3(half_w, 0.0, -half_l), top_back, back_n, back_n, back_n, main.darkened(0.2))
+	var front_n := xf.basis * Vector3(0.0, 0.0, 1.0)
+	var top := xf * Vector3(0.0, high, half_l)
+	var gap_top := xf * Vector3(0.0, high * 0.86, half_l + 0.01)
+	var flap := main.lerp(second, 0.35)
+	for side: float in [-1.0, 1.0]:
+		var foot_out := xf * Vector3(side * half_w, 0.0, half_l)
+		var foot_in := xf * Vector3(side * 0.5, 0.0, half_l)
+		cloth.tri_round(foot_out, foot_in, gap_top, front_n, front_n, front_n, flap)
+		cloth.tri_round(foot_out, gap_top, top, front_n, front_n, front_n, flap)
+		# the flap's free edge, rolled back along the doorway
+		cloth.rod(foot_in + front_n * 0.03, gap_top + front_n * 0.03, 0.045, 6, flap.darkened(0.15), flap.darkened(0.3))
+	cloth.tri_round(xf * Vector3(-0.5, 0.0, half_l - 0.02), xf * Vector3(0.5, 0.0, half_l - 0.02), xf * Vector3(0.0, high * 0.86, half_l - 0.02),
+		front_n, front_n, front_n, main.darkened(0.85))
+	# the poles: one upright at each end and the ridge pole between their tops
+	var wood := Color(0.36, 0.26, 0.15)
+	for end: float in [-half_l - 0.03, half_l + 0.2]:
+		rig.rod(xf * Vector3(0.0, 0.0, end), xf * Vector3(0.0, high + 0.14, end), 0.028, 7, wood)
+		# two guy ropes from each pole's top, spread out to pegs
+		for side: float in [-1.0, 1.0]:
+			var tie := xf * Vector3(0.0, high + 0.08, end)
+			var peg := xf * Vector3(side * 1.0, 0.0, end + signf(end) * 1.5)
+			peg.y = ground_height(peg.x, peg.z)
+			rig.rod(tie, peg, 0.007, 4, Color(0.8, 0.78, 0.6))
+			rig.rod(peg + Vector3(0.0, -0.05, 0.0), peg + Vector3(0.0, 0.12, 0.0), 0.014, 5, wood)
+	rig.rod(xf * Vector3(0.0, high + 0.03, -half_l - 0.03), xf * Vector3(0.0, high + 0.03, half_l + 0.2), 0.024, 7, wood)
+	# pegs along the foot of each side, where the canvas is pinned down
+	for side: float in [-1.0, 1.0]:
+		for n in 5:
+			var peg := xf * Vector3(side * (half_w + 0.06), 0.0, lerpf(-half_l + 0.1, half_l - 0.1, float(n) / 4.0))
+			peg.y = ground_height(peg.x, peg.z)
+			rig.rod(peg + Vector3(0.0, -0.04, 0.0), peg + Vector3(0.0, 0.09, 0.0), 0.012, 5, wood)
 
 
 ## The string lights: bulbs on sagging lines from the screen's posts out to the poles by the
