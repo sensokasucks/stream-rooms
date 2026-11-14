@@ -399,16 +399,36 @@ def water_normal(size: int = 256) -> None:
     print("wrote water_normal.png")
 
 
+def tile_puffs(size: int, cells: int, seed: int) -> np.ndarray:
+    """Round bumps that repeat without a seam, 0..1: one random point in each square of a
+    cells x cells grid, and every pixel is as bright as it is close to its nearest point
+    (the "cauliflower" look of a heap cloud; plain noise only gives wisps)."""
+    rng = np.random.default_rng(seed)
+    pts = (np.indices((cells, cells)).transpose(1, 2, 0)[..., ::-1] + rng.random((cells, cells, 2)))  # x, y in cells
+    ys, xs = np.mgrid[0:size, 0:size] * (cells / size)
+    cx, cy = np.floor(xs).astype(int), np.floor(ys).astype(int)
+    best = np.full((size, size), 9.0)
+    for oy in (-1, 0, 1):
+        for ox in (-1, 0, 1):
+            q = pts[(cy + oy) % cells, (cx + ox) % cells]           # the neighbour square's point, wrapped
+            dx = q[..., 0] + (cx + ox - (cx + ox) % cells) - xs
+            dy = q[..., 1] + (cy + oy - (cy + oy) % cells) - ys
+            best = np.minimum(best, dx * dx + dy * dy)
+    return np.clip(1.0 - np.sqrt(best), 0.0, 1.0)
+
+
 def sky_noise(size: int = 512) -> None:
     """sky_noise.png: three seamless noise fields for camp_sky.gdshader's clouds, one per
-    colour channel (0..1). red = big soft billows (a cloud's body), green = fine crumbly
-    detail (eats the edges into puffs), blue = long streaks (the high thin cloud).
-    Ours: made from noise here, no photo."""
+    colour channel (0..1). red = big billows built from round bumps (a heap cloud's body),
+    green = small round bumps (eat the edges into puffs), blue = long streaks (the high
+    thin cloud). Ours: made from noise here, no photo."""
     def unit(n: np.ndarray) -> np.ndarray:
         lo, hi = np.percentile(n, 0.5), np.percentile(n, 99.5)
         return np.clip((n - lo) / (hi - lo), 0.0, 1.0)
-    body = tile_noise(size, 2.1, 11) + 0.35 * np.abs(tile_noise(size, 1.7, 12))
-    fine = 1.0 - np.abs(tile_noise(size, 1.35, 13)) * 0.9 + 0.3 * tile_noise(size, 1.0, 14)
+    # where the clouds are (soft noise), then heaped up out of round bumps of three sizes
+    where = unit(tile_noise(size, 2.3, 11))
+    body = where * 0.55 + tile_puffs(size, 5, 21) * 0.25 + tile_puffs(size, 11, 22) * 0.14 + tile_puffs(size, 23, 23) * 0.06
+    fine = tile_puffs(size, 20, 24) * 0.55 + tile_puffs(size, 41, 25) * 0.3 + 0.15 * unit(tile_noise(size, 1.0, 14))
     streak = tile_noise(size, 1.6, 15, stretch=(1.0, 5.0))
     img = np.stack([unit(body), unit(fine), unit(streak)], axis=-1)
     Image.fromarray((img * 255.0).astype(np.uint8), "RGB").save(os.path.join(HERE, "sky_noise.png"))

@@ -117,8 +117,8 @@ void sky() {
 	vec2 flat_d = normalize(d.xz + vec2(0.0001));
 	vec2 flat_s = normalize(sun_dir.xz + vec2(0.0001));
 	float toward = pow(max(dot(flat_d, flat_s), 0.0), 2.0);
-	hor = mix(hor, vec3(1.0, 0.42, 0.16), dusk * (0.3 + 0.7 * toward));
-	top = mix(top, vec3(0.2, 0.14, 0.4), dusk * 0.45);
+	hor = mix(hor, mix(vec3(0.85, 0.5, 0.55), vec3(1.0, 0.5, 0.2), toward), dusk * (0.45 + 0.55 * toward));
+	top = mix(top, vec3(0.34, 0.27, 0.6), dusk * 0.6);
 	// under storm cloud the open sky is grey
 	float grey = storm * clamp(cloud_amount, 0.0, 1.0);
 	top = mix(top, vec3(0.1, 0.11, 0.13) * (0.12 + 0.88 * day), grey);
@@ -151,7 +151,8 @@ void sky() {
 		// a bright star's colour wavers with its light, bluer as it flares
 		tint = mix(tint, vec3(0.7, 0.85, 1.0), clamp((tw - 1.0) * 0.8, 0.0, 0.5));
 		vec3 stars = vec3(0.8, 0.82, 1.0) * s1.x * (0.25 + 0.5 * fract(s1.y * 57.0)) * tw1 + tint * s2.x * 1.7 * tw;
-		// a few big stars with a cross of light
+		// a few brighter stars: a small round point with a faint soft glow (no cross of light:
+		// that looked drawn-on next to the soft clouds)
 		vec3 p = sd3 * 9.0;
 		vec3 cell = floor(p);
 		float hb = hash3(cell + vec3(5.0));
@@ -161,11 +162,12 @@ void sky() {
 			vec3 t2 = cross(sd3, t1);
 			float a = dot(off, t1);
 			float b = dot(off, t2);
-			float core = exp(-(a * a + b * b) * 900.0);
-			float cross_ = exp(-abs(a) * 90.0) * exp(-abs(b) * 9.0) + exp(-abs(b) * 90.0) * exp(-abs(a) * 9.0);
+			float r2 = a * a + b * b;
+			float core = exp(-r2 * 2600.0);
+			float halo = exp(-r2 * 260.0);
 			float tb = flicker(hb, air * 0.6, TIME);
 			vec3 big = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.82, 0.6), step(0.975, hb));
-			stars += big * (core * 3.0 + cross_ * 0.7) * tb;
+			stars += big * (core * 2.2 + halo * 0.22) * tb;
 		}
 		// the Milky Way: a hazy band across the sky, clumpy, with dark dust lanes, and more
 		// small stars inside it
@@ -235,7 +237,7 @@ void sky() {
 		wisps = wisps * 0.75 + 0.25 * textureLod(cloud_noise, uvh * 0.21 + vec2(wind * 0.0005, 0.3), soft).g;
 		float high = smoothstep(0.5, 0.82, wisps) * min(cloud_amount, 1.0) * 0.5;
 		vec3 high_col = mix(vec3(0.06, 0.065, 0.11), vec3(1.0), day);
-		high_col = mix(high_col, vec3(1.0, 0.6, 0.42), dusk * 0.85);
+		high_col = mix(high_col, vec3(1.0, 0.66, 0.6), dusk * 0.85);
 		c = mix(c, high_col, high * smoothstep(0.03, 0.25, d.y) * (1.0 - grey));
 
 		// ── layer 6: low, puffy cloud; a storm deck in bad weather ──
@@ -247,18 +249,19 @@ void sky() {
 		vec2 cp2 = uv * 0.17 + vec2(0.37, 0.11) + vec2(wind * 0.0014, -wind * 0.0003);
 		float n = textureLod(cloud_noise, cp, soft).r * 0.62 + textureLod(cloud_noise, cp2, soft).r * 0.38;
 		float crumbs = textureLod(cloud_noise, uv * 0.5 + vec2(wind * 0.003, wind * 0.0012), soft).g;
-		float cover = 0.72 - 0.28 * cloud_amount * mix(0.6, 1.0, day) - 0.18 * storm;
+		float cover = 0.64 - 0.28 * cloud_amount * mix(0.75, 1.0, day) - 0.18 * storm;
 		n -= (1.0 - crumbs) * 0.13 * (1.0 - smoothstep(cover, cover + 0.3, n));
-		float dens = smoothstep(cover, cover + 0.1, n);
+		float dens = smoothstep(cover, cover + 0.06, n);
 		if (dens > 0.001) {
 			// lit side: denser here than a step towards the light = this side faces it
-			float n2 = textureLod(cloud_noise, cp + lflat * 0.012, soft).r * 0.62 + textureLod(cloud_noise, cp2 + lflat * 0.012, soft).r * 0.38;
-			float lit = clamp(0.6 + (n - n2) * 7.0, 0.0, 1.0);
+			float n2 = textureLod(cloud_noise, cp + lflat * 0.02, soft).r * 0.62 + textureLod(cloud_noise, cp2 + lflat * 0.02, soft).r * 0.38;
+			float lit = clamp(0.62 + (n - n2) * 11.0, 0.0, 1.0);
 			float thick = smoothstep(cover + 0.05, cover + 0.35, n);
 			vec3 bright = mix(vec3(0.075, 0.075, 0.13), vec3(1.0, 1.0, 1.0), day);
-			vec3 shade = mix(vec3(0.012, 0.013, 0.03), vec3(0.32, 0.38, 0.52), day);
-			bright = mix(bright, vec3(1.0, 0.55, 0.3), dusk * 0.8);
-			shade = mix(shade, vec3(0.3, 0.14, 0.26), dusk * 0.8);
+			vec3 shade = mix(vec3(0.012, 0.013, 0.03), vec3(0.5, 0.56, 0.68), day);
+			// sunset: peach tops on the sun's side, pink away from it, lavender undersides
+			bright = mix(bright, mix(vec3(1.0, 0.6, 0.62), vec3(1.0, 0.68, 0.36), toward), dusk * 0.85);
+			shade = mix(shade, vec3(0.42, 0.3, 0.52), dusk * 0.85);
 			// storm: both ends go slate grey and darker
 			bright = mix(bright, vec3(0.34, 0.36, 0.4) * (0.1 + 0.9 * day), storm);
 			shade = mix(shade, vec3(0.07, 0.075, 0.09) * (0.1 + 0.9 * day), storm);

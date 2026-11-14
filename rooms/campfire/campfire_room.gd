@@ -645,8 +645,8 @@ func _apply_time(env: Environment) -> void:
 	var mist := clampf(float(AppState.get_setting("camp_mist")), 0.0, 1.0)
 	var turn := global_basis.orthonormalized()                   # the shaders work in world space
 	# the same sky colours camp_sky.gdshader mixes, for the water's mirror and the mist
-	var top := Color(0.004, 0.006, 0.02).lerp(Color(0.08, 0.27, 0.72), _day).lerp(Color(0.2, 0.14, 0.4), dusk * 0.45)
-	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.5, 0.68, 0.92), _day).lerp(Color(1.0, 0.42, 0.16), dusk * 0.5)
+	var top := Color(0.004, 0.006, 0.02).lerp(Color(0.08, 0.27, 0.72), _day).lerp(Color(0.34, 0.27, 0.6), dusk * 0.6)
+	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.5, 0.68, 0.92), _day).lerp(Color(0.92, 0.5, 0.38), dusk * 0.6)
 	var grey := _gloom * clampf(clouds, 0.0, 1.0)
 	var lit := 0.12 + 0.88 * _day
 	top = top.lerp(Color(0.1, 0.11, 0.13) * lit, grey)
