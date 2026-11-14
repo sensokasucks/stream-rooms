@@ -381,21 +381,14 @@ static func _prop_material(sway: float = 0.0) -> ShaderMaterial:
 	return m
 
 
-## Puts a material on the lists the room script works through:
-##   out["detail_mats"]  get `detail` 0 / 1 from the Set detail choice (not the detailed plants'
-##                       own materials: those are only ever drawn detailed),
-##   out["wet_mats"]     get `wet` from the rain,
-##   out["wind_mats"]    get `wind` from the storm (only the ones that sway).
-static func _note_material(out: Dictionary, m: ShaderMaterial, detail: bool, windy: bool) -> void:
-	for key: String in ["detail_mats", "wet_mats", "wind_mats"]:
-		if not out.has(key):
-			var empty: Array[ShaderMaterial] = []
-			out[key] = empty
-	if detail:
-		(out["detail_mats"] as Array[ShaderMaterial]).append(m)
-	(out["wet_mats"] as Array[ShaderMaterial]).append(m)
-	if windy:
-		(out["wind_mats"] as Array[ShaderMaterial]).append(m)
+## Puts a material on out["detail_mats"], the list the room script works through to set
+## `detail` 0 / 1 from the Set detail choice (campfire_room.gd _apply_detail). Not for the
+## detailed plants' own materials: those are only ever drawn detailed.
+static func _note_material(out: Dictionary, m: ShaderMaterial) -> void:
+	if not out.has("detail_mats"):
+		var empty: Array[ShaderMaterial] = []
+		out["detail_mats"] = empty
+	(out["detail_mats"] as Array[ShaderMaterial]).append(m)
 
 
 static func _add_mesh(parent: Node3D, node_name: String, mesh: Mesh, mat: Material, shadows: bool = true) -> MeshInstance3D:
@@ -423,7 +416,7 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 
 # ── The whole set ────────────────────────────────────────────
 ## Builds everything under `room`. Returns what the room script goes on using:
-##   ground_mat, prop_mat, tent_mat, tree_mat (ShaderMaterial): for wet / glow / wind,
+##   ground_mat, prop_mat, tent_mat, tree_mat (ShaderMaterial): for glow,
 ##   lake_mat, stream_mat (ShaderMaterial): the two sheets of water,
 ##   ember_mat, bulb_mat (StandardMaterial3D): the fire's coals and the string lights' bulbs,
 ##   bulbs (MultiMeshInstance3D): the string lights,
@@ -433,7 +426,7 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##   lowpoly_near, lowpoly_far (Array[Node3D]): the forest's low-poly trees, near and far (is_near),
 ##   detail_near, detail_far, close_woods_detail, undergrowth (Node3D): the detailed plants,
 ##     built hidden (see _build_detailed_plants),
-##   detail_mats, wet_mats, wind_mats (Array[ShaderMaterial]): see _note_material.
+##   detail_mats (Array[ShaderMaterial]): see _note_material.
 static func build(room: Node3D) -> Dictionary:
 	_setup_noise()
 	var rng := RandomNumberGenerator.new()
@@ -455,7 +448,7 @@ static func build(room: Node3D) -> Dictionary:
 	_build_camp_things(props, rng)
 	_build_screen(props, set_root, out)
 	out["prop_mat"] = _prop_material()
-	_note_material(out, out["prop_mat"], true, false)
+	_note_material(out, out["prop_mat"])
 	_add_mesh(set_root, "CampProps", props.to_mesh(), out["prop_mat"])
 	_build_chairs(set_root, markers, out["prop_mat"])
 	_build_tents(set_root, out)
@@ -507,7 +500,7 @@ static func _build_ground(parent: Node3D, out: Dictionary) -> void:
 	for kind: String in ["grass", "forest", "dirt", "sand"]:
 		mat.set_shader_parameter("tex_" + kind, load(TEX + "ground_%s.jpg" % kind))
 	out["ground_mat"] = mat
-	_note_material(out, mat, true, false)
+	_note_material(out, mat)
 	_add_mesh(parent, "Ground", mesh, mat, false)
 
 
@@ -629,7 +622,6 @@ static func _build_forest(parent: Node3D, out: Dictionary, rng: RandomNumberGene
 			tints_round[lot].append(Color(shade, shade * 1.05, shade * 0.9))
 	var tree_mat := _prop_material(TREE_SWAY)
 	out["tree_mat"] = tree_mat
-	_note_material(out, tree_mat, false, true)     # (the low-poly trees have no textured parts)
 	var far: Array[Node3D] = [
 		_add_trees(parent, "Firs", fir, firs_far, tints_fir[0], tree_mat),
 		_add_trees(parent, "RoundTrees", round_tree, round_far, tints_round[0], tree_mat)]
@@ -671,7 +663,7 @@ static func _add_trees(parent: Node3D, node_name: String, tree: Buf, spots: Arra
 ## trees right round the clearing and a wall of firs along the whole shore, so the lake can't be
 ## seen and the camp sits in the forest. Built once with the rest of the set and left hidden;
 ## campfire_room.gd's _apply_woods() shows and hides the nodes listed in out["close_woods"].
-## They use the forest's two tree shapes and its material (wet, wind).
+## They use the forest's two tree shapes and its material.
 ## Passes: 1) the shore wall, two staggered rows of tall firs and a thinner third; 1b) the
 ## horseshoe, a wall down each side that closes the clearing into a cul-de-sac; 2) the belt, tall trees
 ## scattered round the clearing; 3) young firs between them all, whose branches start at the
@@ -802,8 +794,6 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 ## same on every PC and adding this changed nothing in the low-poly set.
 static func _build_detailed_plants(parent: Node3D, out: Dictionary, forest: Array[Dictionary], close: Array[Dictionary]) -> void:
 	var mats := Trees.materials(TREE_SWAY)
-	for key: String in mats:
-		_note_material(out, mats[key], false, true)
 	out["plant_mats"] = mats
 	var kits: Dictionary = {}                 # species -> its mesh, made the first time it is needed
 	var groups: Dictionary = {"detail_near": {}, "detail_far": {}, "close_woods_detail": {}}      # group -> species -> [spots, tints]
@@ -1279,7 +1269,7 @@ static func _build_tents(parent: Node3D, out: Dictionary) -> void:
 					door if s >= 2 and s <= 5 else main)
 	var mat := _prop_material()
 	out["tent_mat"] = mat
-	_note_material(out, mat, true, false)
+	_note_material(out, mat)
 	_add_mesh(parent, "Tents", b.to_mesh(), mat)
 
 
@@ -1326,7 +1316,7 @@ static func _build_lights(parent: Node3D, room: Node3D, out: Dictionary) -> void
 			house.add_child(lamp)
 			lamp.position = a.lerp(b, 0.5) - Vector3(0.0, sag + 0.25, 0.0)
 	var pole_mat := _prop_material()
-	_note_material(out, pole_mat, true, false)
+	_note_material(out, pole_mat)
 	_add_mesh(parent, "LightPoles", poles.to_mesh(), pole_mat)
 	var bulb := SphereMesh.new()
 	bulb.radius = 0.045

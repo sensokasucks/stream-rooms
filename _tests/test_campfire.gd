@@ -2,9 +2,8 @@ extends Node
 ## Lakeside Campfire: the room loads with everything its markers promise (screen, ten cameras,
 ## four camp chairs, 30 bench seats in three rows, three reaction targets) and the Room tab's
 ## controls do their job: Fire, Big screen (hides the screen and what hangs on it), String
-## lights, Time of day and Day length (sky, sun and moon), Clouds / Stars / Aurora / Mist, Rain
-## and Thunderstorm (clouds roll in, rain falls, lightning strikes within the flash-safety
-## limits). The fire games: roasting a marshmallow (browning, the golden s'more, catching fire),
+## lights, Time of day and Day length (sky, sun and moon), Clouds / Stars / Aurora / Mist.
+## The fire games: roasting a marshmallow (browning, the golden s'more, catching fire),
 ## tossing a stick (the fire flares), the same arriving from a co-stream guest
 ## (EventBus.net_room_event), and a chat reaction thrown at the campfire.
 ## Saves one screenshot per camera and a few of the other looks into the output folder (look at
@@ -52,8 +51,6 @@ func _ready() -> void:
 	AppState.set_setting("camp_stars", 1.0)
 	AppState.set_setting("camp_aurora", 0.0)
 	AppState.set_setting("camp_mist", 0.4)
-	AppState.set_setting("camp_rain", 0.0)
-	AppState.set_setting("camp_storm", false)
 	AppState.set_setting("camp_close_woods", false)
 	# the low-poly set for everything but the "Set detail" part below: the detailed one takes
 	# the software renderer of the pull request check about ten seconds a frame
@@ -118,16 +115,16 @@ func _ready() -> void:
 		if c.has("key"):
 			keys.append(String(c["key"]))
 	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
-		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist", "camp_rain", "camp_storm"]
+		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist"]
 	var all_there := true
 	for k in wanted:
 		all_there = all_there and keys.has(k) and AppState.DEFAULTS.has(k)
 	_check(all_there, "the Room tab gets every camp_ control, each with a default (%s)" % str(keys))
 	var shared := true
-	for k: String in ["camp_fire", "camp_screen", "camp_time", "camp_rain", "camp_storm", "camp_close_woods"]:
+	for k: String in ["camp_fire", "camp_screen", "camp_time", "camp_clouds", "camp_close_woods"]:
 		shared = shared and NetSession.is_shared(k)
 	_check(shared and not NetSession.is_shared("camp_games") and not NetSession.is_shared("camp_detail"),
-		"the fire, screen, hour and weather are shared in a co-stream; the games tick box and Set detail are each PC's own")
+		"the fire, screen, hour and sky are shared in a co-stream; the games tick box and Set detail are each PC's own")
 
 	# ── the fire ──
 	var fx := room.find_child("SunShafts", false, false)
@@ -338,60 +335,14 @@ func _ready() -> void:
 	await _shot("camp_sunset_lake")
 	EventBus.camera_preset_requested.emit(0)
 
-	# ── the weather ──
-	AppState.set_setting("camp_time", 15.0)
-	room.set("weather_seconds", 1.0)          # (roll in fast for the test)
-	AppState.set_setting("camp_rain", 0.6)
-	await _secs(2.0)
-	var rain := fx.get_node_or_null("Rain") as GPUParticles3D
-	_check(rain != null and rain.emitting and is_equal_approx(rain.amount_ratio, 0.6), "Rain 60%% shows 60%% of the drops (%.2f)" % (rain.amount_ratio if rain else -1.0))
-	_check(float(room.call("get_gloom")) > 0.6 and float(sky.get_shader_parameter("storm")) > 0.6, "the clouds close in with the rain (%.2f)" % float(room.call("get_gloom")))
-	_check(float(room.call("get_fire_amount")) < 0.8, "rain takes the fire down (%.2f)" % float(room.call("get_fire_amount")))
-	var ground := (room.find_child("Ground", true, false) as MeshInstance3D).material_override as ShaderMaterial
-	_check(is_equal_approx(float(ground.get_shader_parameter("wet")), 0.6), "the ground is wet")
-	await _shot("camp_rain_day")
-	AppState.set_setting("camp_rain", 0.0)
-	AppState.set_setting("camp_storm", true)
-	AppState.set_setting("camp_time", 21.0)
-	await _secs(2.0)
-	_check(float(room.call("get_rain")) >= 0.79 and is_equal_approx(float(room.call("get_gloom")), 1.0), "a thunderstorm brings heavy rain and full storm cloud by itself (%.2f)" % float(room.call("get_rain")))
-	room.call("strike")
-	await get_tree().process_frame
-	await get_tree().process_frame
-	var bolt := room.find_child("Lightning", false, false) as DirectionalLight3D
-	var peak := float(room.call("get_flash"))
-	_check(peak > 0.5 and bolt.visible and float(sky.get_shader_parameter("flash")) > 0.5, "lightning lights the sky and the camp (%.2f)" % peak)
-	await _shot("camp_lightning")
-	await _secs(1.0)
-	_check(is_zero_approx(float(room.call("get_flash"))) and not bolt.visible, "and is gone within a second")
-	AppState.set_setting("flash_strength", 0.25)
-	room.call("strike")
-	await get_tree().process_frame
-	await get_tree().process_frame
-	_check(float(room.call("get_flash")) <= 0.25, "Flash strength 25%% caps the flash (%.2f)" % float(room.call("get_flash")))
-	await _secs(1.0)
-	AppState.set_setting("flash_strength", 1.0)
+	# ── flash safety: a flare never jumps in photosensitive-safe mode ──
+	AppState.set_setting("camp_time", 18.6)
 	AppState.set_setting("photosensitive_safe", true)
-	room.call("strike")
-	var safe_peak := 0.0
-	var safe_first := -1.0
-	for i in 90:
-		await get_tree().process_frame
-		if safe_first < 0.0:
-			safe_first = float(room.call("get_flash"))
-		safe_peak = maxf(safe_peak, float(room.call("get_flash")))
-	_check(safe_peak <= CF.SAFE_FLASH_CAP + 0.001 and safe_first < 0.1, "in safe mode a strike is a slow swell, never above 30%% (starts %.2f, peaks %.2f)" % [safe_first, safe_peak])
 	room.call("flare", 1.0)
 	await _secs(0.2)
-	_check(float(room.call("get_fire_amount")) < float(AppState.get_setting("camp_fire")) + CF.SAFE_FLASH_CAP, "and a flare grows slowly too")
+	_check(float(room.call("get_fire_amount")) < float(AppState.get_setting("camp_fire")) + CF.SAFE_FLASH_CAP, "in safe mode a flare grows slowly")
 	AppState.set_setting("photosensitive_safe", false)
-	await _secs(3.0)
-	await _shot("camp_storm_night")
-	AppState.set_setting("camp_storm", false)
-	AppState.set_setting("camp_time", 18.6)
-	await _secs(2.5)
-	_check(not rain.emitting and is_zero_approx(float(room.call("get_gloom"))), "the storm clears")
-	await _secs(6.0)       # (the last flare dies down)
+	await _secs(6.0)       # (the flare dies down)
 
 	# ── the fire games ──
 	var games := fx.get_node_or_null("FireGames")

@@ -18,7 +18,7 @@ extends RefCounted
 ##   0  trunk and limbs: camp_prop.gdshader with detail = 1 (UV.x picks the bark, MAT_ below)
 ##   1  the cards: camp_foliage.gdshader with the kind's card picture
 ## Vertex colour: rgb = shade (darker inside the crown), alpha = how far the wind moves it.
-## materials() makes the materials once per room; the room script needs them for wet and wind.
+## materials() makes the materials once per room.
 
 const PROP_SHADER := preload("res://rooms/campfire/camp_prop.gdshader")
 const FOLIAGE_SHADER := preload("res://rooms/campfire/camp_foliage.gdshader")

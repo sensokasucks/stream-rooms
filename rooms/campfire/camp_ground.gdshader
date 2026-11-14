@@ -3,8 +3,7 @@ shader_type spatial;
 // vertex colour says what the ground is at each point: red = trodden dirt (round the fire, under
 // the benches), green = sand and gravel (the lake shore, the stream's bed), blue = forest floor
 // (under the trees); none of them = grass. This shader mixes the four colours by that, breaks
-// them up with noise so no patch is flat, and makes everything darker and shinier when it is
-// wet (the room script sets `wet` from the rain).
+// them up with noise so no patch is flat.
 // With `detail` at 1 (the room's Set detail choice, campfire_room.gd _apply_detail) the four
 // flat colours are replaced by four photo textures (textures/ground_*.jpg, CC0 from Poly Haven),
 // laid over the ground by world position; the same vertex colours and ragged edges mix them.
@@ -24,8 +23,6 @@ uniform sampler2D tex_sand : source_color, filter_linear_mipmap_anisotropic, rep
 uniform float tile_size = 3.2;
 // Tints laid over the photos, so the ground sits with the rest of the set (1 = as photographed).
 uniform vec3 photo_tint : source_color = vec3(0.76, 0.8, 0.68);
-// 0 = dry, 1 = soaked.
-uniform float wet : hint_range(0.0, 1.0) = 0.0;
 
 varying vec3 world_pos;
 
@@ -70,9 +67,7 @@ void fragment() {
 		c = mix(c, sand, smoothstep(0.35, 0.65, COLOR.g + ragged));
 		c *= 0.8 + 0.4 * fine;
 	}
-	// puddles gather in the dirt first
-	float puddle = wet * smoothstep(0.55, 0.75, big * 0.5 + mid * 0.5 + COLOR.r * 0.25);
-	ALBEDO = c * (1.0 - 0.35 * wet);
-	ROUGHNESS = mix(0.95, 0.35, wet * 0.6) - puddle * 0.3;
-	SPECULAR = 0.3 + 0.4 * wet;
+	ALBEDO = c;
+	ROUGHNESS = 0.95;
+	SPECULAR = 0.3;
 }

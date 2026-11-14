@@ -10,12 +10,6 @@ extends Room
 ##     moves the sun and the moon, sets the sky shader (camp_sky.gdshader: stars, Milky Way,
 ##     aurora, two cloud layers, mountain ridges, the far shore), the one sunlight / moonlight
 ##     lamp, the ambient light, the mist and what the lake mirrors (camp_water.gdshader).
-##   - Weather: "camp_rain" (0..1) and "camp_storm" (a thunderstorm) roll in over a few seconds
-##     (_gloom): the clouds close up and darken, the wind rises in the trees, rain falls round the
-##     camera, the ground and props go dark and shiny, rings spread on the lake and the fire
-##     shrinks and hisses. In a thunderstorm lightning lights the clouds and the camp at random
-##     moments (strike()), with thunder a little later. Flashes follow the Flash strength slider;
-##     in photosensitive-safe mode a strike is a slow, dim glow instead of a flash.
 ##   - The fire ("camp_fire", 0..2): flames (the Forge Hall's fire.gdshader), a flickering
 ##     light, sparks, smoke, glowing coals and a crackle. flare() makes it leap up for a few
 ##     seconds: the fire games call it when a stick lands, and so does any chat reaction thrown
@@ -32,9 +26,9 @@ extends Room
 ##     glow weakly by day and fully at night, and dim for a video like any room's lamps.
 ##   - Fire games (campfire_games.gd, "camp_games"): hold M to roast a marshmallow on a stick
 ##     that pokes out of your avatar, press T to toss a stick on the fire.
-##   - A generated soundscape on the Ambience bus: the fire, rain, thunder, and crickets at night.
-## The weather, time and fire settings are shared in a co-stream (NetSession.SHARED_BASE, with the
-## host's "room" group), so everyone sits in the same storm.
+##   - A generated soundscape on the Ambience bus: the fire, and crickets at night.
+## The time, sky and fire settings are shared in a co-stream (NetSession.SHARED_BASE, with the
+## host's "room" group), so everyone sits under the same sky.
 
 const Builder := preload("res://rooms/campfire/campfire_builder.gd")
 const Games := preload("res://rooms/campfire/campfire_games.gd")
@@ -46,15 +40,8 @@ const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const MIX_RATE: float = 22050.0
 ## The flames: [metres east, metres south, size as a share of flame_size].
 const FIRE_FLAMES: Array = [[0.0, 0.0, 1.0], [-0.26, 0.08, 0.7], [0.25, 0.06, 0.76], [-0.1, -0.2, 0.82], [0.12, 0.2, 0.62], [-0.38, -0.08, 0.45], [0.4, -0.05, 0.5]]
-## Raindrops in the air at Rain 100% (the slider scales how many are shown).
-const RAIN_DROPS: int = 2600
 ## The things the app hangs on the big screen, hidden with it (see _apply_screen).
 const SCREEN_PARTS: PackedStringArray = ["ScreenLights", "StageCurtain", "StandbyCard", "SideChats"]
-## Seconds between lightning strikes in a thunderstorm (picked at random between the two).
-const STRIKE_GAP: Vector2 = Vector2(7.0, 22.0)
-## The longest a normal strike's flicker lasts, and a safe-mode strike's slow glow (seconds).
-const STRIKE_SECONDS: float = 0.7
-const SAFE_STRIKE_SECONDS: float = 2.4
 ## In photosensitive-safe mode light never jumps by more than this share of full brightness.
 const SAFE_FLASH_CAP: float = 0.3
 
@@ -70,8 +57,6 @@ const SAFE_FLASH_CAP: float = 0.3
 @export_range(0.0, 0.3) var fire_flicker: float = 0.12
 ## The fire's light drops to this share while the lights are dimmed for a video.
 @export_range(0.0, 1.0) var fire_dimmed: float = 0.45
-## How much rain at 100% takes off the fire (0.45 = it burns at 55%).
-@export_range(0.0, 1.0) var rain_on_fire: float = 0.45
 ## Seconds a flare (a stick landing) takes to die back down.
 @export var flare_seconds: float = 5.0
 
@@ -90,47 +75,31 @@ const SAFE_FLASH_CAP: float = 0.3
 @export_range(0.0, 1.0) var lamps_by_day: float = 0.2
 
 @export_group("Weather")
-## Seconds the weather takes to roll in or clear.
-@export var weather_seconds: float = 6.0
-## Lightning: the pale light it throws over the camp at Flash strength 100%.
-@export var strike_energy: float = 2.6
 
 @export_group("Sound")
 @export var ambience_enabled: bool = true
 @export_range(0.0, 1.0) var fire_loudness: float = 0.06
-@export_range(0.0, 1.0) var rain_loudness: float = 0.07
-@export_range(0.0, 1.0) var thunder_loudness: float = 0.5
 @export_range(0.0, 1.0) var cricket_loudness: float = 0.012
 
 var _parts: Dictionary = {}       # what campfire_builder.gd built (see Builder.build)
-## Holds what this script draws (flames, rain, fireflies). Named "SunShafts" so the app doesn't
+## Holds what this script draws (flames, fireflies). Named "SunShafts" so the app doesn't
 ## count them as the room's own meshes (Room.get_static_meshes).
 var _fx: Node3D
 var _games: Node3D                # campfire_games.gd
 var _sun: DirectionalLight3D      # the sun by day, the moon by night
-var _bolt: DirectionalLight3D     # lightning's light
 var _fire_mats: Array[ShaderMaterial] = []
 var _fire_meshes: Array[MeshInstance3D] = []
 var _fire_light: OmniLight3D
 var _sparks: CPUParticles3D
 var _burst: CPUParticles3D        # the shower of sparks when the fire flares
 var _smoke: CPUParticles3D
-var _rain: GPUParticles3D
 var _fireflies: CPUParticles3D
 var _hour: float = 18.6           # the room's clock, hours 0..24 (starts at "camp_time")
 var _hour_drawn: float = -99.0    # the hour the sky was last drawn for
 var _env_drawn: int = 0           # instance id of the Environment it was drawn on
 var _day: float = 0.0             # 0 = night, 1 = full day (from _apply_time)
-var _gloom: float = 0.0           # 0 = fair, 1 = full storm cloud; eases toward the weather settings
-var _rain_now: float = 0.0        # the rain falling right now, 0..1; eases toward "camp_rain"
-var _gloom_drawn: float = -1.0
 var _flare: float = 0.0           # extra fire from a stick, 0..1.2, dying away
 var _flare_shown: float = 0.0     # what the flames and light show of it (eased; slower in safe mode)
-var _strike_t: float = -1.0       # seconds since the last strike began (below 0 = none)
-var _strike_wait: float = 8.0     # seconds until the next strike in a storm
-var _strike_dir: Vector3 = Vector3(0.0, 0.4, -0.9)
-var _flash: float = 0.0           # the strike's light right now, 0..1
-var _thunder_wait: float = -1.0   # seconds until the last strike's thunder starts (below 0 = none)
 var _retired: bool = false        # another room has taken over (retire()): leave the sky alone
 var _time: float = 0.0
 var _last_level: float = -1.0     # the house light level the glows were last set for
@@ -138,12 +107,8 @@ var _screen_nodes: Array[Node3D] = []     # the screen's parts, found once the a
 # the generated sound
 var _amb_playback: AudioStreamGeneratorPlayback
 var _rng: RandomNumberGenerator = RandomNumberGenerator.new()
-var _lp_fire: float = 0.0         # low-pass states: the fire's roar,
-var _lp_rain: float = 0.0         # the part taken out of the rain's hiss,
-var _lp_thunder: float = 0.0      # and thunder's rumble
+var _lp_fire: float = 0.0         # low-pass state: the fire's roar
 var _pop: float = 0.0             # the current crackle, dying away
-var _thunder: float = 0.0         # thunder's loudness right now, dying away
-var _crack: float = 0.0           # the sharp start of a thunderclap, dying away fast
 var _sample: int = 0              # samples made so far (the crickets' clock)
 
 
@@ -156,7 +121,6 @@ func _ready() -> void:
 	add_child(_fx)
 	_build_sun()
 	_build_fire()
-	_build_rain()
 	_build_fireflies()
 	_coal_look()
 	_games = Games.new()
@@ -164,9 +128,6 @@ func _ready() -> void:
 	_fx.add_child(_games)
 	_games.setup(self)
 	_hour = fposmod(float(AppState.get_setting("camp_time")), 24.0)
-	# start in the weather that is set, instead of watching it roll in on every room load
-	_rain_now = _rain_target()
-	_gloom = _gloom_target()
 	_rng.randomize()
 	if ambience_enabled:
 		_amb_playback = _start_generated_ambience(MIX_RATE, 0.3)
@@ -175,7 +136,6 @@ func _ready() -> void:
 	EventBus.reaction_play.connect(_on_reaction_play)
 	_apply_detail()
 	_apply_fire()
-	_apply_wet()
 
 
 ## The room is freed on a room swap: drop the EventBus connections with it.
@@ -193,12 +153,12 @@ func retire() -> void:
 	_exit_tree()
 
 
-## Room tab: the fire, the screen, the hour, the sky and the weather.
+## Room tab: the fire, the screen, the hour and the sky.
 func get_controls() -> Array[Dictionary]:
 	return [
 		{"heading": "Lakeside Campfire"},
 		{"key": "camp_fire", "label": "Fire", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How big the campfire is: its flames, the light it throws, its sparks and its crackle. 0% = out. Rain makes it smaller."},
+			"tooltip": "How big the campfire is: its flames, the light it throws, its sparks and its crackle. 0% = out."},
 		{"key": "camp_screen", "label": "Big screen", "type": "check",
 			"tooltip": "On: the big screen hangs between the two posts. Off: the screen is taken down, which opens the view over the lake. The sound of whatever is playing carries on."},
 		{"key": "camp_close_woods", "label": "Woods close around the camp", "type": "check",
@@ -219,18 +179,13 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "Lets the clock run: how many minutes a full day and night takes, starting from the Time of day. 0 = the clock stands still."},
 		{"heading": "Sky"},
 		{"key": "camp_clouds", "label": "Clouds", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How much cloud drifts across the sky in fair weather. 0% = a clear sky (and the lightest on a slow graphics card), 200% = overcast. Rain brings its own clouds."},
+			"tooltip": "How much cloud drifts across the sky in fair weather. 0% = a clear sky (and the lightest on a slow graphics card), 200% = overcast."},
 		{"key": "camp_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How bright the stars and the Milky Way are at night. 0% = none."},
 		{"key": "camp_aurora", "label": "Aurora", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "Green and violet northern lights over the lake at night. 0% = none (and lighter on a slow graphics card)."},
 		{"key": "camp_mist", "label": "Mist", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "The haze over the lake and between the mountain ridges."},
-		{"heading": "Weather"},
-		{"key": "camp_rain", "label": "Rain", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0, "zero": "Dry",
-			"tooltip": "How hard it rains. The clouds close in, the ground goes dark and shiny, rings spread on the lake and the fire burns lower. It rolls in over a few seconds."},
-		{"key": "camp_storm", "label": "Thunderstorm", "type": "check",
-			"tooltip": "On: heavy rain, wind in the trees, and lightning with thunder every so often. The flashes follow the Flash strength slider (Sound tab > Accessibility); in photosensitive-safe mode a strike is a slow, dim glow instead."},
 	]
 
 
@@ -246,8 +201,6 @@ func _on_camp_setting_changed(key: String, _value: Variant) -> void:
 			_apply_screen()
 		"camp_close_woods", "camp_detail", "graphics_quality":
 			_apply_detail()
-		"camp_storm":
-			_strike_wait = _rng.randf_range(2.0, 5.0)      # the first strike comes soon
 
 
 ## RoomHost emits room_changed when it has finished setting the room up (the screen's lights,
@@ -266,15 +219,12 @@ func _on_camp_room_changed(_room_id: String) -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	_time += delta
-	_run_weather(delta)
-	_run_lightning(delta)        # before the clock, which draws the sky with this frame's flash
 	_run_clock(delta)
 	_run_fire(delta)
 	if not is_equal_approx(_level, _last_level):
 		_last_level = _level
 		_apply_glows()
 	_keep_screen_hidden()
-	_follow_camera()
 	_fill_ambience()
 
 
@@ -518,13 +468,12 @@ func _coal_look() -> void:
 	m.uv1_scale = Vector3(1.6, 1.6, 1.6)
 
 
-## How big the fire burns right now, 0..2.4: the Fire slider, less what the rain takes, plus a
-## flare. The fire games read it too (a bigger fire toasts faster).
+## How big the fire burns right now, 0..2.4: the Fire slider plus a flare. The fire games read it too (a bigger fire toasts faster).
 func get_fire_amount() -> float:
 	var set_to := clampf(float(AppState.get_setting("camp_fire")), 0.0, 2.0)
 	if set_to <= 0.005:
 		return 0.0
-	return set_to * (1.0 - rain_on_fire * _rain_now) + _flare_shown * 0.9
+	return set_to + _flare_shown * 0.9
 
 
 ## Makes the fire leap up for a few seconds (a stick landed on it): taller flames, more light and
@@ -578,8 +527,7 @@ func _run_fire(delta: float) -> void:
 
 
 # ── Time of day and the sky ──────────────────────────────────
-## One lamp for the sun and the moon (only one of them lights the camp at a time), and one for
-## lightning.
+## One lamp for the sun and the moon (only one of them lights the camp at a time).
 func _build_sun() -> void:
 	_sun = DirectionalLight3D.new()
 	_sun.name = "SunMoon"
@@ -587,17 +535,10 @@ func _build_sun() -> void:
 	_sun.directional_shadow_max_distance = 70.0
 	_sun.light_angular_distance = 1.0
 	add_child(_sun)
-	_bolt = DirectionalLight3D.new()
-	_bolt.name = "Lightning"
-	_bolt.light_color = Color(0.75, 0.82, 1.0)
-	_bolt.shadow_enabled = false
-	_bolt.visible = false
-	add_child(_bolt)
 
 
 ## Called every frame. Moves the clock on while "camp_day_minutes" is above 0, and redraws the
-## sky and lights when the hour has moved by time_step, the weather has changed enough to
-## show, or the app swapped the Environment (a graphics setting changed).
+## sky and lights when the hour has moved by time_step or the app swapped the Environment (a graphics setting changed).
 func _run_clock(delta: float) -> void:
 	if _retired:
 		return
@@ -606,10 +547,9 @@ func _run_clock(delta: float) -> void:
 		_hour = fposmod(_hour + delta * 24.0 / (day_minutes * 60.0), 24.0)
 	var env := get_world_3d().environment if is_inside_tree() else null
 	var env_id := env.get_instance_id() if env else 0
-	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn or absf(_gloom - _gloom_drawn) > 0.01 or _strike_t >= 0.0:
+	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn:
 		_hour_drawn = _hour
 		_env_drawn = env_id
-		_gloom_drawn = _gloom
 		_apply_time(env)
 
 
@@ -632,7 +572,7 @@ static func moon_at(hour: float) -> Vector3:
 	return Vector3(cos(b) * 0.8, sin(b) * 0.75 + 0.12, -0.62).normalized()
 
 
-## Everything that follows the hour and the weather (_hour, _gloom, _flash): the sky shader's
+## Everything that follows the hour (_hour): the sky shader's
 ## uniforms, the sun / moon lamp, the ambient light and mist, and what the water mirrors.
 ## env = the Environment in use; it is only touched when it is this room's own (its sky uses
 ## camp_sky.gdshader), never another room's.
@@ -641,18 +581,14 @@ func _apply_time(env: Environment) -> void:
 	var moon := moon_at(_hour)
 	_day = smoothstep(-0.12, 0.22, sun.y)
 	var dusk := (1.0 - smoothstep(0.0, 0.4, absf(sun.y))) * smoothstep(-0.3, -0.05, sun.y)
-	var clouds := lerpf(clampf(float(AppState.get_setting("camp_clouds")), 0.0, 2.0), 2.0, _gloom)
+	var clouds := clampf(float(AppState.get_setting("camp_clouds")), 0.0, 2.0)
 	var mist := clampf(float(AppState.get_setting("camp_mist")), 0.0, 1.0)
 	var turn := global_basis.orthonormalized()                   # the shaders work in world space
 	# the same sky colours camp_sky.gdshader mixes, for the water's mirror and the mist
 	var top := Color(0.004, 0.006, 0.02).lerp(Color(0.08, 0.27, 0.72), _day).lerp(Color(0.34, 0.27, 0.6), dusk * 0.6)
 	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.5, 0.68, 0.92), _day).lerp(Color(0.92, 0.5, 0.38), dusk * 0.6)
-	var grey := _gloom * clampf(clouds, 0.0, 1.0)
-	var lit := 0.12 + 0.88 * _day
-	top = top.lerp(Color(0.1, 0.11, 0.13) * lit, grey)
-	hor = hor.lerp(Color(0.3, 0.32, 0.35) * lit, grey)
 	if clouds > 0.0:        # cloud cover greys what the water mirrors a little, too
-		var cover := clampf(clouds * 0.3, 0.0, 0.5) * (1.0 - grey)
+		var cover := clampf(clouds * 0.3, 0.0, 0.5)
 		top = top.lerp(Color(0.06, 0.065, 0.11).lerp(Color(0.8, 0.82, 0.86), _day), cover)
 	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
 		var sky := env.sky.sky_material as ShaderMaterial
@@ -663,33 +599,29 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("dusk", dusk)
 		sky.set_shader_parameter("twinkle", 0.0 if bool(AppState.get_setting("photosensitive_safe")) else 1.0)
 		sky.set_shader_parameter("cloud_amount", clouds)
-		sky.set_shader_parameter("cloud_speed", 1.0 + 3.5 * _gloom)
-		sky.set_shader_parameter("storm", _gloom)
-		sky.set_shader_parameter("flash", _flash)
-		sky.set_shader_parameter("flash_dir", turn * _strike_dir)
 		sky.set_shader_parameter("star_amount", float(AppState.get_setting("camp_stars")))
 		sky.set_shader_parameter("aurora_amount", float(AppState.get_setting("camp_aurora")))
 		sky.set_shader_parameter("haze", mist)
 		var amb := night_ambient.lerp(day_ambient, _day).lerp(Color(0.62, 0.42, 0.48), dusk * 0.35)
-		env.ambient_light_color = amb.lerp(Color(0.5, 0.52, 0.56), grey * 0.7)
-		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day) * (1.0 - 0.4 * _gloom) + _flash * 0.5
+		env.ambient_light_color = amb
+		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
 		env.fog_light_color = hor.lerp(Color(0.6, 0.66, 0.74) * (0.06 + 0.94 * _day), 0.4)
-		env.fog_density = 0.0015 + 0.006 * mist + 0.006 * _gloom
-	# the sun by day, the moon by night; whichever it is dims under storm cloud
+		env.fog_density = 0.0015 + 0.006 * mist
+	# the sun by day, the moon by night
 	var light_dir := sun
 	var light_col := Color(1.0, 0.55, 0.25).lerp(Color(1.0, 0.96, 0.88), smoothstep(0.05, 0.45, sun.y))
-	var energy := sun_energy * smoothstep(0.0, 0.2, sun.y) * (1.0 - 0.75 * _gloom)
+	var energy := sun_energy * smoothstep(0.0, 0.2, sun.y)
 	if sun.y <= 0.02:
 		light_dir = moon
 		light_col = moon_color
-		energy = moon_energy * smoothstep(0.05, 0.25, moon.y) * (1.0 - 0.85 * _gloom)
+		energy = moon_energy * smoothstep(0.05, 0.25, moon.y)
 	_sun.light_color = light_col
 	_sun.light_energy = energy
 	_sun.visible = energy > 0.002
 	var world_dir := turn * light_dir
 	_sun.global_basis = Basis.looking_at(-world_dir, Vector3.UP if absf(world_dir.y) < 0.99 else Vector3.FORWARD)
 	# the water: the sky to mirror, the glitter path's light, the fire's streak
-	var glitter := Color(light_col.r, light_col.g, light_col.b) * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0) * (1.0 - grey)
+	var glitter := Color(light_col.r, light_col.g, light_col.b) * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0)
 	var shore := Color(0.03, 0.07, 0.05).lerp(Color(0.003, 0.005, 0.007), 1.0 - _day).lerp(hor, 0.25 * mist)
 	var deep := Color(0.012, 0.05, 0.065) * (0.08 + 0.92 * _day)
 	var fire_now := get_fire_amount()
@@ -703,94 +635,15 @@ func _apply_time(env: Environment) -> void:
 		w.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
 		w.set_shader_parameter("fire_pos", (_parts["fire"] as Node3D).global_position + Vector3(0.0, 0.8, 0.0))
 		w.set_shader_parameter("fire_color", Vector3(1.0, 0.5, 0.2) * minf(fire_now, 2.0) * (1.0 - 0.6 * _day))
-		w.set_shader_parameter("wave", (1.0 if key == "lake_mat" else 2.2) * (1.0 + 1.6 * _gloom))
-		w.set_shader_parameter("rain", _rain_now)
-		w.set_shader_parameter("flash", _flash)
+		w.set_shader_parameter("wave", 1.0 if key == "lake_mat" else 2.2)
 	_apply_glows()
 	if _fireflies:
-		var out_tonight := bool(AppState.get_setting("camp_fireflies")) and _day < 0.35 and _rain_now < 0.05
+		var out_tonight := bool(AppState.get_setting("camp_fireflies")) and _day < 0.35
 		_fireflies.emitting = out_tonight
 		_fireflies.visible = out_tonight or _fireflies.visible and _day < 0.5
 
 
-# ── Weather ──────────────────────────────────────────────────
-## The rain the settings ask for, 0..1: the Rain slider; a thunderstorm brings at least 80%.
-func _rain_target() -> float:
-	var rain := clampf(float(AppState.get_setting("camp_rain")), 0.0, 1.0)
-	return maxf(rain, 0.8) if bool(AppState.get_setting("camp_storm")) else rain
-
-
-## The storm cloud the settings ask for, 0..1: light rain greys the sky a little, a
-## thunderstorm fully.
-func _gloom_target() -> float:
-	return 1.0 if bool(AppState.get_setting("camp_storm")) else clampf(float(AppState.get_setting("camp_rain")) * 1.2, 0.0, 0.9)
-
-
-## How much storm cloud there is right now, 0..1 (for tests).
-func get_gloom() -> float:
-	return _gloom
-
-
-## How hard it is raining right now, 0..1 (for tests).
-func get_rain() -> float:
-	return _rain_now
-
-
-## Called every frame: the weather eases toward the settings over weather_seconds, and
-## everything that shows it follows (the sky and water are redrawn by _run_clock).
-func _run_weather(delta: float) -> void:
-	var step := delta / maxf(weather_seconds, 0.1)
-	var rain_before := _rain_now
-	_gloom = move_toward(_gloom, _gloom_target(), step)
-	_rain_now = move_toward(_rain_now, _rain_target(), step)
-	if not is_equal_approx(rain_before, _rain_now):
-		_apply_wet()
-
-
-## The rain right now (_rain_now): how many drops show, how wet everything looks, the wind.
-func _apply_wet() -> void:
-	_rain.amount_ratio = _rain_now
-	_rain.emitting = _rain_now > 0.01
-	_rain.visible = _rain_now > 0.01
-	# (campfire_builder.gd's _note_material lists every material that has these)
-	for m: ShaderMaterial in _parts["wet_mats"]:
-		m.set_shader_parameter("wet", _rain_now)
-	for m: ShaderMaterial in _parts["wind_mats"]:
-		m.set_shader_parameter("wind", 1.0 + 3.0 * _gloom)
-
-
-## The rain: streaks falling in a box that follows the camera (_follow_camera), so it rains
-## wherever the view is. The Rain slider shows a share of RAIN_DROPS.
-func _build_rain() -> void:
-	_rain = GPUParticles3D.new()
-	_rain.name = "Rain"
-	_rain.amount = RAIN_DROPS
-	_rain.lifetime = 1.0
-	_rain.preprocess = 1.0
-	_rain.visibility_aabb = AABB(Vector3(-20.0, -20.0, -20.0), Vector3(40.0, 40.0, 40.0))
-	_rain.transform_align = GPUParticles3D.TRANSFORM_ALIGN_Z_BILLBOARD_Y_TO_VELOCITY     # streaks along their fall, facing the camera
-	var pm := ParticleProcessMaterial.new()
-	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
-	pm.emission_box_extents = Vector3(13.0, 0.5, 13.0)
-	pm.direction = Vector3(0.12, -1.0, 0.04)
-	pm.spread = 2.0
-	pm.initial_velocity_min = 15.0
-	pm.initial_velocity_max = 19.0
-	pm.gravity = Vector3.ZERO
-	_rain.process_material = pm
-	var streak := QuadMesh.new()
-	streak.size = Vector2(0.014, 0.55)
-	var sm := StandardMaterial3D.new()
-	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	sm.albedo_color = Color(0.75, 0.8, 0.9, 0.3)
-	sm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	streak.material = sm
-	_rain.draw_pass_1 = streak
-	_rain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_fx.add_child(_rain)
-
-
+# ── Fireflies ────────────────────────────────────────────────
 ## Fireflies: slow drifting specks in a ring round the edge of the clearing.
 func _build_fireflies() -> void:
 	_fireflies = CPUParticles3D.new()
@@ -833,67 +686,6 @@ func _build_fireflies() -> void:
 	_fireflies.position = Vector3(0.0, 1.5, 0.0)
 
 
-## Keeps the rain's box over the camera.
-func _follow_camera() -> void:
-	if not _rain.visible:
-		return
-	var cam := get_viewport().get_camera_3d()
-	if cam:
-		_rain.global_position = Vector3(cam.global_position.x, cam.global_position.y + 11.0, cam.global_position.z)
-
-
-## Lightning now, somewhere over the lake or the forest: the clouds and the camp light up, and
-## thunder follows a moment later. Called at random in a thunderstorm (_run_lightning); tests and
-## anything else may call it too.
-func strike() -> void:
-	_strike_t = 0.0
-	var ang := _rng.randf_range(-PI, PI)
-	_strike_dir = Vector3(sin(ang), _rng.randf_range(0.25, 0.6), -absf(cos(ang)) * 0.9 - 0.1).normalized()
-	_thunder_wait = _rng.randf_range(0.5, 2.6)        # further away = later (and it is always close enough to hear)
-	_bolt.global_basis = Basis.looking_at(-(global_basis.orthonormalized() * _strike_dir), Vector3.UP)
-
-
-## The lightning's light right now, 0..1 (for tests).
-func get_flash() -> float:
-	return _flash
-
-
-## Called every frame: starts strikes while a thunderstorm is on, and plays the current one.
-## A normal strike flickers twice within STRIKE_SECONDS, as bright as Flash strength allows; in
-## photosensitive-safe mode it is one slow swell over SAFE_STRIKE_SECONDS, capped at SAFE_FLASH_CAP.
-func _run_lightning(delta: float) -> void:
-	if bool(AppState.get_setting("camp_storm")) and _gloom > 0.6:
-		_strike_wait -= delta
-		if _strike_wait <= 0.0:
-			_strike_wait = _rng.randf_range(STRIKE_GAP.x, STRIKE_GAP.y)
-			strike()
-	if _thunder_wait >= 0.0:
-		_thunder_wait -= delta
-		if _thunder_wait < 0.0:
-			_thunder = 1.0
-			_crack = 1.0
-	if _strike_t < 0.0:
-		return
-	# (the light is worked out for where the strike is now, then the time moves on: so the very
-	# first frame of a strike is its brightest, however slowly the frames come)
-	var k := clampf(float(AppState.get_setting("flash_strength")), 0.0, 1.0)
-	var done := false
-	if bool(AppState.get_setting("photosensitive_safe")):
-		_flash = minf(k, SAFE_FLASH_CAP) * sin(clampf(_strike_t / SAFE_STRIKE_SECONDS, 0.0, 1.0) * PI)
-		done = _strike_t >= SAFE_STRIKE_SECONDS
-	else:
-		var second := 0.7 * exp(-(_strike_t - 0.22) * 12.0) if _strike_t > 0.22 else 0.0
-		_flash = k * maxf(exp(-_strike_t * 9.0), second)
-		done = _strike_t >= STRIKE_SECONDS
-	_strike_t += delta
-	if done:
-		_flash = 0.0
-		_strike_t = -1.0
-		_hour_drawn = -100.0         # one more redraw, with the flash gone
-	_bolt.visible = _flash > 0.002
-	_bolt.light_energy = strike_energy * _flash
-
-
 # ── Chat feeding the fire ────────────────────────────────────
 ## EventBus.reaction_play (Reactions, and NetSession for a co-stream, so it plays on every PC):
 ## anything thrown at the "campfire" target makes the fire flare when it lands.
@@ -915,8 +707,7 @@ func _on_reaction_play(d: Dictionary) -> void:
 
 # ── Sound ────────────────────────────────────────────────────
 ## Called every frame: tops the generator buffer up with the camp's sound: the fire (a soft roar
-## with crackles, louder with a bigger fire), the rain's hiss, thunder (a sharp crack, then a long
-## low rumble), and crickets on dry nights.
+## with crackles, louder with a bigger fire) and crickets at night.
 func _fill_ambience() -> void:
 	if _amb_playback == null:
 		return
@@ -924,7 +715,7 @@ func _fill_ambience() -> void:
 	if n <= 0:
 		return
 	var fire := minf(get_fire_amount(), 2.0)
-	var crickets := cricket_loudness * (1.0 - _day) * (1.0 - clampf(_rain_now * 4.0, 0.0, 1.0))
+	var crickets := cricket_loudness * (1.0 - _day)
 	var buf := PackedVector2Array()
 	buf.resize(n)
 	for i in n:
@@ -934,14 +725,6 @@ func _fill_ambience() -> void:
 			_pop = maxf(_pop, 0.4 + _rng.randf() * 0.6)
 		_pop *= 0.992
 		var s := (_lp_fire * 1.6 + w * _pop * 0.5) * fire_loudness * fire
-		if _rain_now > 0.01:
-			_lp_rain += (w - _lp_rain) * 0.3
-			s += (w - _lp_rain) * rain_loudness * _rain_now
-		if _thunder > 0.001:
-			_lp_thunder += (w - _lp_thunder) * 0.012
-			s += (_lp_thunder * 6.0 * _thunder + w * _crack * 0.35) * thunder_loudness
-			_thunder *= 0.99994
-			_crack *= 0.9992
 		if crickets > 0.0005:
 			# chirps: a high tone switched on and off 28 times a second, in bursts
 			_sample += 1

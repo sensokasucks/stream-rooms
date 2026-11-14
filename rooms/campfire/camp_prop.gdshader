@@ -4,10 +4,9 @@ render_mode cull_disabled;
 // chairs, the dock, rocks, the screen's posts...) and the trees. The colour comes from each
 // corner of the mesh (its vertex colour), so one material covers a whole group of objects.
 //   glow   makes the colour shine by itself (the tents, lit from inside at night),
-//   wet    darkens it and adds shine (rain),
 //   sway   bends the mesh in the wind: how far (metres) the parts whose vertex alpha is 1 move.
 //          Alpha runs from 0 at a tree's foot to 1 at its top; everything else has sway 0.
-// The room script (campfire_room.gd) sets glow, wet and wind.
+// The room script (campfire_room.gd) sets glow.
 // With `detail` at 1 (the room's Set detail choice) the colour is also multiplied by a photo
 // "detail" texture: bark, rock, planks or cloth, picked by the number in the mesh's UV.x (the
 // MAT_ constants in campfire_builder.gd; 0 = plain, no texture). The texture is laid on by
@@ -16,9 +15,8 @@ render_mode cull_disabled;
 // textures/make_textures.py makes them (CC0 photos from Poly Haven).
 
 uniform float glow = 0.0;
-uniform float wet : hint_range(0.0, 1.0) = 0.0;
 uniform float sway = 0.0;
-// How hard the wind blows (1 = a light breeze; a storm raises it).
+// How hard the wind blows (1 = a light breeze).
 uniform float wind = 1.0;
 uniform float roughness = 0.85;
 // 0 = plain colours (the low-poly look), 1 = with the detail textures.
@@ -77,7 +75,7 @@ void fragment() {
 			grain = three_sides(tex_bark_birch, w_pos, n, 1.1);
 		}
 	}
-	ALBEDO = COLOR.rgb * grain * 2.0 * (1.0 - 0.3 * wet);
-	ROUGHNESS = mix(roughness, 0.4, wet * 0.6);
+	ALBEDO = COLOR.rgb * grain * 2.0;
+	ROUGHNESS = roughness;
 	EMISSION = COLOR.rgb * grain * 2.0 * glow;
 }

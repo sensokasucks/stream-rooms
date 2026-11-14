@@ -11,8 +11,7 @@ shader_type sky;
 //   4. the sun and the moon with their glow,
 //   5. high, thin, streaky cloud that drifts slowly,
 //   6. low, puffy cloud that drifts faster and slowly changes shape, lit from the sun's or the
-//      moon's side; in rain it thickens into a dark storm deck, which lightning lights up from
-//      inside. Both cloud layers read their shapes from a noise picture (cloud_noise),
+//      moon's side. Both cloud layers read their shapes from a noise picture (cloud_noise),
 //   7. two mountain ridges with haze between them, and
 //   8. the dark tree line on the far shore of the lake.
 // rooms/campfire/campfire_room.gd (_apply_time, _apply_weather) sets every uniform from the
@@ -41,14 +40,8 @@ uniform float twinkle : hint_range(0.0, 1.0) = 1.0;
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 // How much of the sky the clouds cover: 0 = none (and no cost), 1 = fair weather, 2 = overcast.
 uniform float cloud_amount : hint_range(0.0, 2.0) = 1.0;
-// How fast the clouds drift (the wind; a storm raises it).
-uniform float cloud_speed : hint_range(0.0, 6.0) = 1.0;
-// 0 = fair weather clouds, 1 = a dark storm deck (rain and thunderstorm).
-uniform float storm : hint_range(0.0, 1.0) = 0.0;
-// Lightning right now, 0..1: lights the clouds from inside and lifts the whole sky a little.
-uniform float flash : hint_range(0.0, 1.0) = 0.0;
-// Where in the sky the lightning is (a unit vector).
-uniform vec3 flash_dir = vec3(0.0, 0.4, -0.9);
+// How fast the clouds drift (the wind).
+uniform float cloud_speed = 1.0;
 // The aurora's strength: 0 = none (and no cost).
 uniform float aurora_amount : hint_range(0.0, 2.0) = 0.0;
 // The haze over the lake and between the ridges (the room's Mist slider).
@@ -119,10 +112,6 @@ void sky() {
 	float toward = pow(max(dot(flat_d, flat_s), 0.0), 2.0);
 	hor = mix(hor, mix(vec3(0.85, 0.5, 0.55), vec3(1.0, 0.5, 0.2), toward), dusk * (0.45 + 0.55 * toward));
 	top = mix(top, vec3(0.34, 0.27, 0.6), dusk * 0.6);
-	// under storm cloud the open sky is grey
-	float grey = storm * clamp(cloud_amount, 0.0, 1.0);
-	top = mix(top, vec3(0.1, 0.11, 0.13) * (0.12 + 0.88 * day), grey);
-	hor = mix(hor, vec3(0.3, 0.32, 0.35) * (0.1 + 0.9 * day), grey);
 	vec3 c = mix(hor, top, pow(up, 0.5));
 	float above = smoothstep(0.0, 0.12, d.y);         // fades the things in the sky out at the horizon
 
@@ -193,7 +182,7 @@ void sky() {
 				stars += vec3(1.0, 0.97, 0.9) * streak * 2.5 * sin(t / 0.9 * 3.14159);
 			}
 		}
-		c += (stars * 1.6 * star_amount + milk * min(star_amount, 1.3)) * night * above * (1.0 - grey);
+		c += (stars * 1.6 * star_amount + milk * min(star_amount, 1.3)) * night * above;
 	}
 
 	// ── layer 3: the aurora, curtains hanging in the north ──
@@ -206,24 +195,22 @@ void sky() {
 		float rays = 0.55 + 0.45 * noise3(vec3(uv.x * 26.0 + fold * 30.0, 2.0, TIME * 0.15));
 		float height = smoothstep(0.03, 0.2, d.y) * smoothstep(0.85, 0.3, d.y);
 		vec3 acol = mix(vec3(0.1, 1.0, 0.45), vec3(0.55, 0.25, 0.95), smoothstep(0.25, 0.7, d.y));
-		c += acol * curtain * rays * height * north * 0.5 * aurora_amount * night * (1.0 - grey);
+		c += acol * curtain * rays * height * north * 0.5 * aurora_amount * night;
 	}
 
 	// ── layer 4: the sun and the moon ──
-	float clear_sky = 1.0 - grey * 0.9;
-	c += sun_col * smoothstep(0.9990, 0.9995, sd) * 5.0 * sun_up * clear_sky;
-	c += sun_col * pow(max(sd, 0.0), 260.0) * 0.6 * sun_up * clear_sky;
-	c += sun_col * pow(max(sd, 0.0), 30.0) * 0.16 * sun_up * clear_sky;
-	c += sun_col * pow(max(sd, 0.0), 6.0) * 0.05 * sun_up * day * clear_sky;
+	c += sun_col * smoothstep(0.9990, 0.9995, sd) * 5.0 * sun_up;
+	c += sun_col * pow(max(sd, 0.0), 260.0) * 0.6 * sun_up;
+	c += sun_col * pow(max(sd, 0.0), 30.0) * 0.16 * sun_up;
+	c += sun_col * pow(max(sd, 0.0), 6.0) * 0.05 * sun_up * day;
 	float disc = smoothstep(0.9987, 0.9992, md);
 	float marks = 0.75 + 0.25 * noise3((d - moon_dir) * 140.0);
-	c = mix(c, vec3(0.9, 0.92, 0.98) * marks * 1.4, disc * moon_up * clear_sky);
-	c += vec3(0.5, 0.52, 0.85) * pow(max(md, 0.0), 220.0) * 0.3 * moon_up * (1.0 - disc) * clear_sky;
-	c += vec3(0.3, 0.3, 0.6) * pow(max(md, 0.0), 24.0) * 0.07 * moon_up * night * clear_sky;
+	c = mix(c, vec3(0.9, 0.92, 0.98) * marks * 1.4, disc * moon_up);
+	c += vec3(0.5, 0.52, 0.85) * pow(max(md, 0.0), 220.0) * 0.3 * moon_up * (1.0 - disc);
+	c += vec3(0.3, 0.3, 0.6) * pow(max(md, 0.0), 24.0) * 0.07 * moon_up * night;
 
 	// which light the clouds are lit by
 	vec2 lflat = normalize(mix(moon_dir.xz, sun_dir.xz, step(0.0, sun_dir.y)) + vec2(0.0001));
-	float fd = max(dot(d, normalize(flash_dir)), 0.0);
 
 	if (cloud_amount > 0.001 && d.y > 0.0) {
 		// The clouds are a flat sheet high overhead: uv = where this pixel's direction meets it.
@@ -238,9 +225,9 @@ void sky() {
 		float high = smoothstep(0.5, 0.82, wisps) * min(cloud_amount, 1.0) * 0.5;
 		vec3 high_col = mix(vec3(0.06, 0.065, 0.11), vec3(1.0), day);
 		high_col = mix(high_col, vec3(1.0, 0.66, 0.6), dusk * 0.85);
-		c = mix(c, high_col, high * smoothstep(0.03, 0.25, d.y) * (1.0 - grey));
+		c = mix(c, high_col, high * smoothstep(0.03, 0.25, d.y));
 
-		// ── layer 6: low, puffy cloud; a storm deck in bad weather ──
+		// ── layer 6: low, puffy cloud ──
 		// Two copies of the body noise at different sizes drift at different speeds, so the
 		// clouds slowly change shape as they cross the sky; the detail noise eats their edges
 		// into puffs (more at the thin rim than in the thick middle).
@@ -249,7 +236,7 @@ void sky() {
 		vec2 cp2 = uv * 0.17 + vec2(0.37, 0.11) + vec2(wind * 0.0014, -wind * 0.0003);
 		float n = textureLod(cloud_noise, cp, soft).r * 0.62 + textureLod(cloud_noise, cp2, soft).r * 0.38;
 		float crumbs = textureLod(cloud_noise, uv * 0.5 + vec2(wind * 0.003, wind * 0.0012), soft).g;
-		float cover = 0.64 - 0.28 * cloud_amount * mix(0.75, 1.0, day) - 0.18 * storm;
+		float cover = 0.64 - 0.28 * cloud_amount * mix(0.75, 1.0, day);
 		n -= (1.0 - crumbs) * 0.13 * (1.0 - smoothstep(cover, cover + 0.3, n));
 		float dens = smoothstep(cover, cover + 0.06, n);
 		if (dens > 0.001) {
@@ -262,23 +249,17 @@ void sky() {
 			// sunset: peach tops on the sun's side, pink away from it, lavender undersides
 			bright = mix(bright, mix(vec3(1.0, 0.6, 0.62), vec3(1.0, 0.68, 0.36), toward), dusk * 0.85);
 			shade = mix(shade, vec3(0.42, 0.3, 0.52), dusk * 0.85);
-			// storm: both ends go slate grey and darker
-			bright = mix(bright, vec3(0.34, 0.36, 0.4) * (0.1 + 0.9 * day), storm);
-			shade = mix(shade, vec3(0.07, 0.075, 0.09) * (0.1 + 0.9 * day), storm);
 			vec3 cc = mix(shade, bright, lit * (1.0 - thick * 0.45));
 			// a bright rim where the cloud is thin and the sun or moon is behind it
-			cc += bright * (1.0 - smoothstep(0.0, 0.5, thick)) * 0.18 * (1.0 - storm);
-			cc += sun_col * pow(max(sd, 0.0), 14.0) * (1.0 - thick) * 0.7 * sun_up * (1.0 - storm);
-			cc += vec3(0.25, 0.27, 0.4) * pow(max(md, 0.0), 30.0) * (1.0 - thick) * moon_up * night * (1.0 - storm);
-			// lightning inside the cloud: brightest round where it struck
-			cc += vec3(0.75, 0.82, 1.0) * flash * (0.25 + 1.6 * pow(fd, 6.0)) * (0.5 + 0.5 * n);
+			cc += bright * (1.0 - smoothstep(0.0, 0.5, thick)) * 0.18;
+			cc += sun_col * pow(max(sd, 0.0), 14.0) * (1.0 - thick) * 0.7 * sun_up;
+			cc += vec3(0.25, 0.27, 0.4) * pow(max(md, 0.0), 30.0) * (1.0 - thick) * moon_up * night;
 			c = mix(c, cc, dens * smoothstep(0.02, 0.2, d.y) * 0.96);
 		}
 	}
-	c += vec3(0.35, 0.4, 0.55) * flash * 0.12;        // the whole sky lifts a little in a flash
 
 	// ── layers 7 and 8: the ridges and the far shore's trees, each paler the further away ──
-	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.74) * (0.06 + 0.94 * day), 0.4) + vec3(0.35, 0.4, 0.55) * flash * 0.1;
+	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.74) * (0.06 + 0.94 * day), 0.4);
 	float far_h = hz_far_ridge(az);
 	float near_h = hz_near_ridge(az);
 	float tree_h = hz_tree_line(az);

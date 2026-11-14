@@ -8,13 +8,12 @@ render_mode cull_disabled;
 //   COLOR.rgb  a tint: the card's own shade (darker inside the crown) times the tree's
 //              (a MultiMesh instance colour); 1 = as photographed
 //   COLOR.a    how far the wind moves this corner (0 at the trunk, 1 at the tips and the top)
-// The room script (campfire_room.gd) sets wet and wind, like camp_prop.gdshader's.
+// `wind` and `sway` work as in camp_prop.gdshader.
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float cut = 0.33;
 // Laid over every card of this material (the species' colour).
 uniform vec3 tint : source_color = vec3(1.0);
-uniform float wet : hint_range(0.0, 1.0) = 0.0;
 uniform float sway = 0.02;
 uniform float wind = 1.0;
 // How much light comes through a leaf from behind (0 = none).
@@ -33,8 +32,8 @@ void fragment() {
 	vec4 t = texture(card, UV);
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = cut;
-	ALBEDO = t.rgb * COLOR.rgb * tint * (1.0 - 0.25 * wet);
-	ROUGHNESS = mix(0.7, 0.4, wet * 0.6);
+	ALBEDO = t.rgb * COLOR.rgb * tint;
+	ROUGHNESS = 0.7;
 	SPECULAR = 0.25;
 	BACKLIGHT = ALBEDO * see_through;
 	// The cards' normals point out of the crown, the same on both faces: undo the flip the

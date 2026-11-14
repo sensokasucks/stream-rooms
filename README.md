@@ -1414,7 +1414,7 @@ Included rooms:
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
-  lake, with mountains behind it and a sky that changes with the hour and the weather.
+  lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
     (Room tab) and the screen is taken down, which opens the view over the water; the posts and
     the string lights stay, and the sound of whatever is playing carries on.
@@ -1431,7 +1431,7 @@ Included rooms:
     forest, open only towards the main camera, with the tents tucked in among the trees. The
     lake is hidden. The stream and the jetty still peek through a little, and
     the Lake and Sky camera stands at the water past the trees, so it keeps its view. In a
-    co-stream it is the host's, like the weather.
+    co-stream it is the host's, like the sky.
   - **Set detail** chooses how detailed the camp is drawn on this PC. **Detailed everywhere**:
     photo textures on the ground, the logs, the rocks and the tents, trees with real needles
     and leaves (firs, pines, oaks, birches and maples mixed together), grass tufts and ferns.
@@ -1440,8 +1440,7 @@ Included rooms:
     flat-coloured set, the lightest. **Auto (follows Graphics quality)**, the setting it starts
     on, picks for you: High = everywhere, Medium = near the fire, Low = low-poly. Each PC in a
     co-stream chooses its own.
-  - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night
-    and it burns lower in the rain.
+  - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night.
   - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
     moon, the colour of the sky, the light on the ground and the reflection on the lake all
     follow it. **Day length** lets the clock run by itself: the number of minutes a whole day
@@ -1454,10 +1453,6 @@ Included rooms:
   - The stars twinkle and turn slowly around the sky over the night, and a shooting star
     crosses now and then. In photosensitive-safe mode the stars hold steady. The clouds drift
     and the lake carries small ripples that move with the wind.
-  - **Rain** makes it rain, as hard as you like: the clouds close in, the ground goes dark and
-    shiny and rings spread on the lake. **Thunderstorm** adds heavy rain, wind in the trees and
-    lightning with thunder. The lightning follows **Flash strength**, and in photosensitive-safe
-    mode a strike is a slow, dim glow instead of a flash.
   - **String lights and lanterns** and **Fireflies at night** switch those on and off. The
     string lights follow the **House lights** slider.
   - **Fire games (M and T keys)**: hold **M** in the room window and a stick pokes out of your
@@ -1466,15 +1461,14 @@ Included rooms:
     counts as a s'more. Press **T** to toss a stick on the fire and watch it flare up. In a
     co-stream every guest has their own stick and everyone sees everyone's. Chat can feed the
     fire too: any reaction thrown at the campfire (`!tomato campfire`) makes it flare.
-  - In a co-stream the fire, the screen, the time of day, the sky and the weather are the
+  - In a co-stream the fire, the screen, the time of day and the sky are the
     host's and everyone sees the same (a co-host can change them too).
   - Cameras: across the fire at the screen (the default), beside the fire from the right and
     the left, back from the screen at everyone, from a tent, the lake shore, a drone view from
     high up, close on the marshmallows, a Reaction camera, and the lake and the sky with the
     camp behind you. Press **0** for the 10th.
   - Reaction targets: `!tomato campfire`, `lake`, `tent`.
-  - Almost no reverb (it is outdoors). The fire crackles, crickets sing at night, and the rain and
-    the thunder have their own sound.
+  - Almost no reverb (it is outdoors). The fire crackles and crickets sing at night.
   - Source: the whole set is built in code when the room loads (`rooms/campfire/campfire_builder.gd`),
     so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`. The detailed
     trees are built in `rooms/campfire/campfire_trees.gd`. The photo textures in

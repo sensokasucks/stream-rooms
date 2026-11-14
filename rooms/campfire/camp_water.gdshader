@@ -11,9 +11,7 @@ render_mode unshaded, cull_back;
 //     script), the far shore's ridges and trees (the same outline the sky shader draws, from
 //     camp_horizon.gdshaderinc), a glitter path under the sun or the moon, and a warm streak
 //     from the campfire; looking down into it shows the dark water colour,
-//   - rain covers it in small spreading rings,
-//   - lightning brightens it for a moment.
-// rooms/campfire/campfire_room.gd (_apply_time, _apply_weather) sets the uniforms. It is drawn
+// rooms/campfire/campfire_room.gd (_apply_time) sets the uniforms. It is drawn
 // unshaded (the colours here are final), so the room's lamps do not light it.
 #include "res://rooms/campfire/camp_horizon.gdshaderinc"
 
@@ -29,28 +27,16 @@ uniform vec3 fire_pos = vec3(0.0, 1.0, 0.0);
 uniform vec3 fire_color = vec3(1.0, 0.5, 0.2);
 // Which way the water drifts (world x, z metres a second): slow on the lake, quick in the stream.
 uniform vec2 flow = vec2(0.05, 0.02);
-// Wave size: 1 = the lake on a still evening; wind and rain raise it.
+// Wave size: 1 = the lake on a still evening; the stream runs rougher.
 uniform float wave = 1.0;
-// 0 = dry, 1 = pouring: rings from the drops.
-uniform float rain = 0.0;
 // How much the far shore shows in the reflection (the stream has none).
 uniform float shore_amount = 1.0;
-// Extra light added to everything (lightning).
-uniform float flash = 0.0;
 
 // The ripple picture: red = slope along x, green = slope along z, 0.5 = flat. Set by
 // campfire_builder.gd (_build_water).
 uniform sampler2D ripples : filter_linear_mipmap_anisotropic, repeat_enable;
 
 varying vec3 world_pos;
-
-// A random number 0..1 for a grid cell (the raindrops). Built from fract and dot only: the
-// usual sin() version gives different numbers on different graphics cards at large inputs.
-float hash2(vec2 p) {
-	vec3 q = fract(vec3(p.xyx) * 0.1031);
-	q += dot(q, q.yzx + 33.33);
-	return fract((q.x + q.y) * q.z);
-}
 
 // The water's slope (x, z) at a point: three copies of the ripple picture.
 //   long swells, 22 m to a copy, drifting with the flow
@@ -65,23 +51,6 @@ vec2 ripple_slope(vec2 p, float fine) {
 	return a * 1.3 + b * 0.9 + c * 0.7 * fine;
 }
 
-// Rings from raindrops: the surface is cut into cells, each with one drop that lands at a
-// random moment and spreads as a ring that fades. Returns the push on the surface's slope.
-vec2 rain_rings(vec2 p) {
-	vec2 push = vec2(0.0);
-	for (int k = 0; k < 2; k++) {
-		vec2 q = p * (1.4 + float(k) * 0.9) + vec2(float(k) * 17.3);
-		vec2 cell = floor(q);
-		vec2 centre = cell + 0.2 + 0.6 * vec2(hash2(cell), hash2(cell + 7.7));
-		float age = fract(TIME * (0.7 + 0.5 * hash2(cell + 3.1)) + hash2(cell + 1.3));
-		vec2 off = q - centre;
-		float dist = length(off);
-		float ring = sin((dist - age * 0.45) * 60.0) * smoothstep(0.06, 0.0, abs(dist - age * 0.45)) * (1.0 - age);
-		push += normalize(off + vec2(0.0001)) * ring;
-	}
-	return push;
-}
-
 void vertex() {
 	world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
@@ -91,12 +60,9 @@ void fragment() {
 	vec3 cam = (INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	float dist = length(cam - world_pos);
 	float near_water = 1.0 / (1.0 + dist * 0.02);          // 1 at the camera, 1/3 at 100 m
-	// the surface's slope from the ripple picture, plus the rain's rings
+	// the surface's slope from the ripple picture
 	// (gentler far away: seen at a grazing angle, steep far ripples only make hard patches)
 	vec2 slope = ripple_slope(p, near_water) * mix(0.2, 0.4, near_water) * wave;
-	if (rain > 0.01) {
-		slope += rain_rings(p) * 0.35 * rain * near_water;
-	}
 	vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
 	vec3 view = normalize(cam - world_pos);
 	vec3 r = reflect(-view, n);
@@ -125,6 +91,5 @@ void fragment() {
 	// that face the camera (light coming through the wave)
 	vec3 body = deep_color + vec3(0.0, 0.035, 0.03) * clamp(dot(slope, view.xz) * 4.0, 0.0, 1.0) * (0.3 + 0.7 * clamp(light_dir.y * 3.0, 0.0, 1.0));
 	vec3 c = mix(body, mirror, clamp(fres, 0.0, 1.0));
-	c += vec3(0.35, 0.4, 0.55) * flash * 0.25;
 	ALBEDO = c;
 }

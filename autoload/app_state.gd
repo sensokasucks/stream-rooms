@@ -80,12 +80,10 @@ const BASE_DEFAULTS: Dictionary = {
 	"camp_screen": true,         # the big screen hangs between its posts; false = taken down (open view of the lake)
 	"camp_time": 18.6,           # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
 	"camp_day_minutes": 0.0,     # minutes one full day takes while the clock runs; 0 = the clock stands still at camp_time
-	"camp_clouds": 0.7,          # fair-weather cloud: 0 = clear, 1 = normal, 2 = overcast (rain adds its own)
+	"camp_clouds": 0.7,          # fair-weather cloud: 0 = clear, 1 = normal, 2 = overcast
 	"camp_stars": 1.0,           # how bright the stars and the Milky Way are at night (0 = none)
 	"camp_aurora": 0.0,          # northern lights over the lake at night: 0 = none, 1 = normal, 2 = strong
 	"camp_mist": 0.4,            # haze over the lake and between the mountain ridges, 0..1
-	"camp_rain": 0.0,            # how hard it rains, 0..1 (0 = dry)
-	"camp_storm": false,         # a thunderstorm: heavy rain, wind, lightning and thunder
 	"camp_close_woods": false,   # thick trees right round the clearing and behind the screen, hiding the lake
 	"camp_detail": "auto",       # how detailed the camp is drawn on this PC: auto (from graphics_quality) | low | near | full
 	"camp_string_lights": true,  # the string lights and tent lanterns (this room's house lights)
