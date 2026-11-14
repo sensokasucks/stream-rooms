@@ -1,16 +1,26 @@
 shader_type sky;
 // Forge Hall: the sky seen through the slanted windows, for every time of day, with a dark
-// fantasy look. By day a deep blue sky with billowing clouds lit by the sun (bright tops, grey
-// undersides, a silver edge near the sun) and soft rays fanning out from it; a warm band and
-// pink-orange clouds at sunrise and sunset; by night a field of stars with a few bright ones
-// that sparkle, and purple and blue nebula clouds with dark dust lanes. The sun and the moon
-// are discs. rooms/forge_hall/forge_hall_room.gd (_apply_time) sets every uniform from the
-// Time of day setting and the room's Clouds / Nebula / Stars sliders. Nothing here moves on its
-// own except the clouds' slow drift (cloud_speed) and a slow twinkle of the stars (`twinkle`,
-// set to 0 in photosensitive-safe mode).
-// Cost: the clouds and the nebula are layered noise, worked out for every sky pixel on
-// screen. Each is skipped entirely when its amount is 0, which is the cheap setting for a
-// slow graphics card.
+// fantasy look: the hall stands high in the mountains. Built in layers from the back to the front:
+//   1. the sky's own colour for the hour (deep blue day, warm band at sunrise and sunset, near
+//      black night with a trace of violet),
+//   2. night: purple and blue nebula clouds with dark dust lanes, and stars: a fine field,
+//      brighter ones and a few round bright ones with a soft glow. Every star flickers at its own
+//      speed. With `twinkle` at 0 (photosensitive-safe mode) they are steady,
+//   3. the sun (disc, glow, faint rays) and the moon (a pale disc with marks, a halo),
+//   4. high, thin, streaky cloud that drifts slowly, then low, puffy cloud that drifts faster and
+//      slowly changes shape, lit from the sun's or the moon's side,
+//   5. snow-capped mountains all round: a pale, hazy range far off and a closer, taller one in
+//      front, each peak lit on one side, snow from a ragged line upwards,
+//   6. below them a sea of cloud filling the valleys (the hall is above it).
+// rooms/forge_hall/forge_hall_room.gd (_apply_time) sets every uniform from the Time of day
+// setting and the room's Clouds / Nebula / Stars / Mountains sliders.
+// The clouds, the nebula and the cloud sea read their shapes from a noise picture
+// (textures/sky_noise.png: r = a cloud's body, g = crumbly detail, b = long streaks; made by
+// rooms/campfire/textures/make_textures.py, sky_noise(), and shared in look with the Lakeside
+// Campfire's sky). Reading a picture is far cheaper than working noise out for every pixel (the
+// old version of this sky did that) and looks the same on every graphics card.
+// Cost: a handful of texture reads per sky pixel. Clouds, nebula and stars are each skipped when
+// their amount is 0, which is the cheap setting for a slow graphics card.
 
 // Unit vectors pointing AT the sun and the moon, in world space.
 uniform vec3 sun_dir = vec3(-0.6, 0.7, -0.3);
@@ -20,13 +30,18 @@ uniform float day : hint_range(0.0, 1.0) = 1.0;
 // 0..1: how much sunrise / sunset colour the horizon has.
 uniform float dusk : hint_range(0.0, 1.0) = 0.0;
 uniform float star_amount : hint_range(0.0, 2.0) = 1.0;
+// 0 = steady stars (photosensitive-safe mode), 1 = they twinkle.
 uniform float twinkle : hint_range(0.0, 1.0) = 1.0;
+// The shapes of the clouds, the nebula and the cloud sea (textures/sky_noise.png).
+uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 // How much of the sky the clouds cover: 0 = none (and no cost), 1 = the room's look, 2 = heavy.
 uniform float cloud_amount : hint_range(0.0, 2.0) = 1.0;
 // How fast the clouds drift (0 = they stand still).
 uniform float cloud_speed : hint_range(0.0, 4.0) = 1.0;
 // How strong the night's nebula clouds are: 0 = none (and no cost), 1 = the room's look.
 uniform float nebula_amount : hint_range(0.0, 2.0) = 1.0;
+// How tall the mountains stand: 0 = none (only the cloud sea), 1 = the room's look, 2 = towering.
+uniform float mountain_amount : hint_range(0.0, 2.0) = 1.0;
 // Overall brightness (the room lowers it a little so the windows don't wash the room out).
 uniform float exposure = 1.0;
 
@@ -36,7 +51,15 @@ float hash3(vec3 p) {
 	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
 }
 
-// Smooth value noise.
+// A random number 0..1 for a whole number n (no sin(): that repeats badly on some graphics cards).
+float hash1(float n) {
+	n = fract(n * 0.1031);
+	n *= n + 33.33;
+	n *= n + n;
+	return fract(n);
+}
+
+// Smooth value noise (only used for the sun's rays and the moon's marks: small areas).
 float noise3(vec3 p) {
 	vec3 i = floor(p);
 	vec3 f = fract(p);
@@ -45,18 +68,26 @@ float noise3(vec3 p) {
 		mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
 
-// Layered noise (each layer twice as fine and half as strong), 0..1.
-float fbm(vec3 p, int layers) {
-	float sum = 0.0;
-	float amp = 0.5;
-	float total = 0.0;
-	for (int i = 0; i < layers; i++) {
-		sum += noise3(p) * amp;
-		total += amp;
-		p = p * 2.03 + vec3(11.7, 3.1, 7.9);
-		amp *= 0.5;
-	}
-	return sum / total;
+// Smooth noise round the compass. az: the direction's angle in radians; freq: bumps per turn
+// (a whole number, so the outline joins up where the angle wraps).
+float ring_noise(float az, float freq, float seed) {
+	float x = (az / 6.2831853 + 0.5) * freq;
+	float i = floor(x);
+	float f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(hash1(mod(i, freq) + seed * 7.13), hash1(mod(i + 1.0, freq) + seed * 7.13), f);
+}
+
+// A mountain range's outline: how far up (the true view direction's y) the rock reaches in the
+// direction az. Creased noise gives sharp, jagged peaks; `massif` raises whole groups of them
+// and leaves gaps between. seed picks a different range; base and tall are its foot and how far
+// its highest peaks rise above that.
+float range_height(float az, float seed, float base, float tall) {
+	float crease_a = 1.0 - abs(2.0 * ring_noise(az, 13.0, seed + 1.0) - 1.0);
+	float crease_b = 1.0 - abs(2.0 * ring_noise(az, 37.0, seed + 2.0) - 1.0);
+	float crease_c = 1.0 - abs(2.0 * ring_noise(az, 97.0, seed + 3.0) - 1.0);
+	float massif = ring_noise(az, 5.0, seed + 4.0);
+	return base + tall * (0.25 + 0.75 * massif) * (0.62 * crease_a + 0.28 * crease_b + 0.1 * crease_c);
 }
 
 // One layer of stars: a grid of cells over the sky (`scale` cells across a unit of direction),
@@ -69,29 +100,36 @@ vec2 star_layer(vec3 d, float scale, float rare) {
 	return vec2(step(rare, h) * dot_, h);
 }
 
+// How much a star's light flickers right now, around 1: two sine waves at speeds of its own
+// (h = the star's random number), as air shimmer does. `amount` 0 = steady.
+// t = TIME (handed in: the simple renderer only knows TIME inside sky() itself).
+float flicker(float h, float amount, float t) {
+	float a = sin(t * (2.1 + h * 3.7) + h * 311.0);
+	float b = sin(t * (5.3 + fract(h * 17.0) * 4.0) + h * 97.0);
+	return 1.0 + amount * (0.38 * a + 0.22 * b);
+}
+
 void sky() {
-	// v: the true view direction (the sun and the moon use it). d: the same direction with the
-	// horizon pushed down about 30 degrees, used for the sky's colours, stars, nebula and
-	// clouds: the hall's windows are high and its cameras often look level or down through
-	// them, so the sky has to carry on well below eye level, as if the hall stood on a peak.
+	// v: the true view direction (the sun, the moon and the mountains use it). d: the same
+	// direction with the horizon pushed down about 30 degrees, used for the sky's colours, stars,
+	// nebula and clouds: the hall's windows are high and its cameras often look level or down
+	// through them, so the sky has to carry on well below eye level, as if the hall stood on a peak.
 	vec3 v = normalize(EYEDIR);
 	vec3 d = normalize(vec3(v.x, v.y + 0.5, v.z));
 	float up = clamp(d.y, 0.0, 1.0);
 	float night = 1.0 - day;
-	// the day sky is a deeper, moodier blue than a postcard's; the night is near black with a
-	// trace of violet
+	float az = atan(v.x, -v.z);
+
+	// ── 1: the sky's own colour ──
 	vec3 top = mix(vec3(0.006, 0.004, 0.022), vec3(0.07, 0.25, 0.72), day);
 	vec3 hor = mix(vec3(0.02, 0.018, 0.06), vec3(0.42, 0.62, 0.9), day);
 	// sunrise / sunset: the horizon warms, most of all on the sun's side
 	vec2 flat_d = normalize(d.xz + vec2(0.0001));
 	vec2 flat_s = normalize(sun_dir.xz + vec2(0.0001));
 	float toward = pow(max(dot(flat_d, flat_s), 0.0), 2.0);
-	hor = mix(hor, vec3(1.0, 0.38, 0.14), dusk * (0.3 + 0.7 * toward));
+	hor = mix(hor, mix(vec3(0.85, 0.45, 0.5), vec3(1.0, 0.42, 0.16), toward), dusk * (0.35 + 0.65 * toward));
 	top = mix(top, vec3(0.26, 0.16, 0.42), dusk * 0.4);
 	vec3 c = mix(hor, top, pow(up, 0.45));
-	if (d.y < 0.0) {
-		c = mix(hor * 0.5, vec3(0.012), clamp(-d.y * 5.0, 0.0, 1.0));    // below the horizon: dark ground
-	}
 	float above = smoothstep(0.0, 0.15, d.y);       // fades everything in the sky out at the horizon
 
 	float sd = dot(v, sun_dir);
@@ -99,52 +137,65 @@ void sky() {
 	vec3 sun_col = mix(vec3(1.0, 0.5, 0.2), vec3(1.0, 0.95, 0.85), clamp(sun_dir.y * 2.5, 0.0, 1.0));
 	float md = dot(v, moon_dir);
 	float moon_up = clamp(moon_dir.y * 6.0 + 0.4, 0.0, 1.0);
+	// where this direction meets a flat sheet high overhead (the clouds and the nebula are
+	// drawn on it); the +0.22 flattens it toward the horizon
+	vec2 sheet = d.xz / (d.y + 0.22);
+	// near the horizon the sheet is seen at a grazing angle: read the noise picture blurred
+	// there (a mip level) instead of sparkling
+	float soft = 3.0 * (1.0 - smoothstep(0.0, 0.45, d.y));
 
-	// ── night: nebula and stars ──
+	// ── 2: night: nebula and stars ──
 	if (night > 0.01 && d.y > 0.0) {
 		vec3 glow = vec3(0.0);
 		float dust = 0.0;
 		if (nebula_amount > 0.001) {
-			// wispy clouds: noise bent by more noise, kept only where it is strongest, in
-			// two colours that drift into each other; a second noise cuts dark dust lanes
-			vec3 q = d * 2.1;
-			vec3 bend = vec3(fbm(q + vec3(3.1, 0.0, 1.7), 3), fbm(q + vec3(8.3, 2.8, 0.0), 3), fbm(q + vec3(0.0, 5.2, 9.1), 3)) - 0.5;
-			float n = fbm(q + bend * 2.4, 5);
-			float wisp = pow(smoothstep(0.42, 0.78, n), 1.6);
-			float veil = smoothstep(0.3, 0.75, n) * 0.25;                 // a faint haze round the wisps
-			float which = fbm(d * 1.3 + vec3(40.0, 17.0, 5.0), 3);
+			// wispy clouds: the noise picture bent by itself, kept only where it is strongest,
+			// in two colours that drift into each other; the streak noise cuts dark dust lanes
+			vec2 q = sheet * 0.11 + vec2(0.31, 0.67);
+			vec2 bend = vec2(textureLod(cloud_noise, q * 0.7 + vec2(0.5, 0.1), soft).g, textureLod(cloud_noise, q * 0.7 + vec2(0.2, 0.8), soft).g) - 0.5;
+			float n = textureLod(cloud_noise, q + bend * 0.3, soft).r * 0.75 + textureLod(cloud_noise, q * 2.6 + bend * 0.5, soft).g * 0.25;
+			float wisp = pow(smoothstep(0.5, 0.82, n), 1.6);
+			float veil = smoothstep(0.35, 0.75, n) * 0.25;                // a faint haze round the wisps
+			float which = textureLod(cloud_noise, q * 0.35 + vec2(0.71, 0.29), soft).r;
 			vec3 neb = mix(vec3(0.42, 0.16, 0.9), vec3(0.1, 0.24, 0.95), smoothstep(0.38, 0.62, which));
 			neb = mix(neb, vec3(0.85, 0.6, 1.0), wisp * wisp * 0.5);      // the brightest threads go pale
-			dust = smoothstep(0.52, 0.72, fbm(q * 1.9 + bend * 1.5 + vec3(21.0, 4.0, 13.0), 4)) * 0.8;
-			glow = neb * (wisp * 1.2 + veil * 0.35) * (1.0 - dust) * nebula_amount;
+			dust = smoothstep(0.55, 0.78, textureLod(cloud_noise, q * 1.7 + bend * 0.4 + vec2(0.13, 0.41), soft).b) * 0.8;
+			glow = neb * (wisp * 1.1 + veil * 0.35) * (1.0 - dust) * nebula_amount;
 		}
-		// stars: a dense fine layer, a sparser brighter one, and a few big ones with a cross of
-		// light (four points); fewer show through the dust lanes
-		vec2 s1 = star_layer(d, 420.0, 0.975);
-		vec2 s2 = star_layer(d, 190.0, 0.992);
-		float tw = 1.0 - twinkle * 0.35 * (0.5 + 0.5 * sin(TIME * (0.6 + s2.y * 1.7) + s2.y * 40.0));
-		vec3 tint = mix(vec3(0.72, 0.8, 1.0), vec3(1.0, 0.86, 0.78), fract(s2.y * 91.0));
-		vec3 stars = vec3(0.8, 0.82, 1.0) * s1.x * (0.25 + 0.5 * fract(s1.y * 57.0)) + tint * s2.x * 1.7 * tw;
-		vec3 p = d * 9.0;
-		vec3 cell = floor(p);
-		float hb = hash3(cell + vec3(5.0));
-		if (hb > 0.9) {
-			// where the star sits in its cell, and how far this pixel is from it across the sky
-			vec3 off = fract(p) - 0.5 - (vec3(hash3(cell + vec3(1.0)), hash3(cell + vec3(2.0)), hash3(cell + vec3(3.0))) - 0.5) * 0.5;
-			vec3 t1 = normalize(cross(d, vec3(0.0, 1.0, 0.001)));
-			vec3 t2 = cross(d, t1);
-			float a = dot(off, t1);
-			float b = dot(off, t2);
-			float core = exp(-(a * a + b * b) * 900.0);
-			float cross_ = exp(-abs(a) * 90.0) * exp(-abs(b) * 9.0) + exp(-abs(b) * 90.0) * exp(-abs(a) * 9.0);
-			float tb = 1.0 - twinkle * 0.3 * (0.5 + 0.5 * sin(TIME * (0.4 + hb * 1.3) + hb * 60.0));
-			vec3 big = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.82, 0.6), step(0.975, hb));
-			stars += big * (core * 3.0 + cross_ * 0.7) * tb;
+		vec3 stars = vec3(0.0);
+		if (star_amount > 0.001) {
+			vec2 s1 = star_layer(d, 420.0, 0.972);
+			vec2 s2 = star_layer(d, 190.0, 0.991);
+			// every star flickers at its own speed; near the horizon (more air) more
+			float air = twinkle * (0.55 + 0.45 * (1.0 - up));
+			float tw1 = flicker(s1.y, air * 0.8, TIME);
+			float tw = flicker(s2.y, air, TIME);
+			vec3 tint = mix(vec3(0.72, 0.8, 1.0), vec3(1.0, 0.86, 0.78), fract(s2.y * 91.0));
+			tint = mix(tint, vec3(0.7, 0.85, 1.0), clamp((tw - 1.0) * 0.8, 0.0, 0.5));   // bluer as it flares
+			stars = vec3(0.8, 0.82, 1.0) * s1.x * (0.25 + 0.5 * fract(s1.y * 57.0)) * tw1 + tint * s2.x * 1.7 * tw;
+			// a few brighter stars: a small round point with a faint soft glow
+			vec3 p = d * 9.0;
+			vec3 cell = floor(p);
+			float hb = hash3(cell + vec3(5.0));
+			if (hb > 0.9) {
+				// where the star sits in its cell, and how far this pixel is from it across the sky
+				vec3 off = fract(p) - 0.5 - (vec3(hash3(cell + vec3(1.0)), hash3(cell + vec3(2.0)), hash3(cell + vec3(3.0))) - 0.5) * 0.5;
+				vec3 t1 = normalize(cross(d, vec3(0.0, 1.0, 0.001)));
+				vec3 t2 = cross(d, t1);
+				float a = dot(off, t1);
+				float b = dot(off, t2);
+				float r2 = a * a + b * b;
+				float core = exp(-r2 * 2600.0);
+				float halo = exp(-r2 * 260.0);
+				float tb = flicker(hb, air * 0.6, TIME);
+				vec3 big = mix(vec3(0.8, 0.85, 1.0), vec3(1.0, 0.82, 0.6), step(0.975, hb));
+				stars += big * (core * 2.2 + halo * 0.22) * tb;
+			}
 		}
 		c += (stars * 1.6 * (1.0 - dust * 0.7) * star_amount + glow) * night * above;
 	}
 
-	// ── the sun: a bright disc, a wide soft glow and faint rays fanning out, fading as it sets ──
+	// ── 3: the sun: a bright disc, a wide soft glow and faint rays fanning out, fading as it sets ──
 	c += sun_col * smoothstep(0.9990, 0.9995, sd) * 5.0 * sun_up;
 	c += sun_col * pow(max(sd, 0.0), 260.0) * 0.6 * sun_up;
 	c += sun_col * pow(max(sd, 0.0), 30.0) * 0.16 * sun_up;
@@ -157,39 +208,105 @@ void sky() {
 		float ray = noise3(vec3(ang * 7.0, 3.0, 0.0)) * noise3(vec3(ang * 19.0, 9.0, 4.0));
 		c += sun_col * ray * smoothstep(0.55, 0.98, sd) * (1.0 - smoothstep(0.985, 0.999, sd)) * 0.32 * sun_up * day;
 	}
-	// ── the moon: a pale disc with darker marks, and a halo ──
+	// the moon: a pale disc with darker marks, and a halo
 	float disc = smoothstep(0.9989, 0.9993, md);
 	float marks = 0.75 + 0.25 * noise3((v - moon_dir) * 140.0);
 	c = mix(c, vec3(0.85, 0.88, 0.95) * marks * 1.3, disc * moon_up);
 	c += vec3(0.45, 0.45, 0.8) * pow(max(md, 0.0), 220.0) * 0.25 * moon_up * (1.0 - disc);
 	c += vec3(0.3, 0.25, 0.6) * pow(max(md, 0.0), 24.0) * 0.06 * moon_up * night;
 
-	// ── clouds: a layer high overhead, drawn over the sun, the moon and the stars ──
+	// which light the clouds and the mountains are lit by
+	vec2 lflat = normalize(mix(moon_dir.xz, sun_dir.xz, step(0.0, sun_dir.y)) + vec2(0.0001));
+
+	// ── 4: clouds, drawn over the sun, the moon and the stars ──
 	if (cloud_amount > 0.001 && d.y > 0.0) {
-		// where this direction meets the layer (the +0.22 flattens it toward the horizon)
-		vec2 uv = d.xz / (d.y + 0.22);
-		vec3 cp = vec3(uv * 1.15, 0.0) + vec3(TIME * 0.004 * cloud_speed, 0.0, TIME * 0.0015 * cloud_speed);
-		// big shapes, with finer noise eating into their edges so they billow instead of blur
-		float n = fbm(cp, 5) + (fbm(cp * 4.3 + vec3(7.0, 2.0, 0.0), 3) - 0.5) * 0.14;
+		float wind = TIME * cloud_speed;
+		// high, thin, streaky cloud
+		vec2 uvh = d.xz / (d.y + 0.12);
+		float wisps = textureLod(cloud_noise, uvh * vec2(0.035, 0.09) + vec2(wind * 0.0002, wind * 0.00045), soft).b;
+		wisps = wisps * 0.75 + 0.25 * textureLod(cloud_noise, uvh * 0.21 + vec2(wind * 0.0005, 0.3), soft).g;
+		float high = smoothstep(0.5, 0.82, wisps) * min(cloud_amount, 1.0) * 0.5;
+		vec3 high_col = mix(vec3(0.06, 0.065, 0.11), vec3(1.0), day);
+		high_col = mix(high_col, vec3(1.0, 0.62, 0.55), dusk * 0.85);
+		c = mix(c, high_col, high * smoothstep(0.03, 0.25, d.y));
+		// low, puffy cloud: two copies of the body noise at different sizes drift at different
+		// speeds, so the clouds slowly change shape as they cross the sky; the detail noise
+		// eats their edges into puffs
+		vec2 cp = sheet * 0.085 + vec2(wind * 0.0009, wind * 0.00035);
+		vec2 cp2 = sheet * 0.17 + vec2(0.37, 0.11) + vec2(wind * 0.0014, -wind * 0.0003);
+		float n = textureLod(cloud_noise, cp, soft).r * 0.62 + textureLod(cloud_noise, cp2, soft).r * 0.38;
+		float crumbs = textureLod(cloud_noise, sheet * 0.5 + vec2(wind * 0.003, wind * 0.0012), soft).g;
 		// fewer clouds at night, so the nebula shows between them
-		float cover = 0.62 - 0.17 * cloud_amount * mix(0.55, 1.0, day);
-		float dens = smoothstep(cover, cover + 0.07, n);
+		float cover = 0.64 - 0.28 * cloud_amount * mix(0.6, 1.0, day);
+		n -= (1.0 - crumbs) * 0.13 * (1.0 - smoothstep(cover, cover + 0.3, n));
+		float dens = smoothstep(cover, cover + 0.06, n);
 		if (dens > 0.001) {
-			// lit from the sun's (or the moon's) side: compare with the cloud a step toward it
-			vec2 lflat = normalize(mix(moon_dir.xz, sun_dir.xz, step(0.0, sun_dir.y)) + vec2(0.0001));
-			float n2 = fbm(cp + vec3(lflat * 0.09, 0.0), 5);
-			float lit = clamp(0.6 + (n - n2) * 5.0, 0.0, 1.0);
-			float thick = smoothstep(cover + 0.05, cover + 0.35, n);          // the deep middle of a cloud is darker
+			// lit side: denser here than a step towards the light = this side faces it
+			float n2 = textureLod(cloud_noise, cp + lflat * 0.02, soft).r * 0.62 + textureLod(cloud_noise, cp2 + lflat * 0.02, soft).r * 0.38;
+			float lit = clamp(0.62 + (n - n2) * 11.0, 0.0, 1.0);
+			float thick = smoothstep(cover + 0.05, cover + 0.35, n);
 			vec3 bright = mix(vec3(0.075, 0.07, 0.13), vec3(1.0, 1.0, 1.0), day);
-			vec3 shade = mix(vec3(0.012, 0.012, 0.03), vec3(0.3, 0.36, 0.5), day);
-			bright = mix(bright, vec3(1.0, 0.55, 0.3), dusk * 0.8);
-			shade = mix(shade, vec3(0.3, 0.14, 0.26), dusk * 0.8);
+			vec3 shade = mix(vec3(0.012, 0.012, 0.03), vec3(0.36, 0.42, 0.56), day);
+			// sunset: peach tops on the sun's side, pink away from it, lavender undersides
+			bright = mix(bright, mix(vec3(1.0, 0.6, 0.62), vec3(1.0, 0.62, 0.32), toward), dusk * 0.85);
+			shade = mix(shade, vec3(0.36, 0.2, 0.38), dusk * 0.85);
 			vec3 cc = mix(shade, bright, lit * (1.0 - thick * 0.45));
-			// a bright edge on thin cloud near the sun, a pale one near the moon
+			cc += bright * (1.0 - smoothstep(0.0, 0.5, thick)) * 0.18;           // bright thin rims
 			cc += sun_col * pow(max(sd, 0.0), 14.0) * (1.0 - thick) * 0.7 * sun_up;
 			cc += vec3(0.25, 0.27, 0.4) * pow(max(md, 0.0), 30.0) * (1.0 - thick) * moon_up * night;
 			c = mix(c, cc, dens * smoothstep(0.02, 0.2, d.y) * 0.95);
 		}
+	}
+
+	// ── 5: the mountains (true view direction: they rise round the hall's own peak) ──
+	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.76) * (0.05 + 0.95 * day), 0.4);
+	float light_az = day > 0.3 ? atan(sun_dir.x, -sun_dir.z) : atan(moon_dir.x, -moon_dir.z);
+	float light_side = sin(light_az - az);
+	// the light on the rock: dark blue-grey at night, warmer at dusk
+	vec3 rock_light = mix(vec3(0.05, 0.06, 0.1), vec3(1.0), day);
+	if (mountain_amount > 0.001) {
+		// back range: far off, paler, its peaks reach about 12 degrees up
+		float back_h = range_height(az, 11.0, -0.02, 0.24 * mountain_amount);
+		if (v.y < back_h + 0.004) {
+			float lean = (range_height(az + 0.01, 11.0, -0.02, 0.24 * mountain_amount) - range_height(az - 0.01, 11.0, -0.02, 0.24 * mountain_amount)) * 30.0;
+			float lit = clamp(0.5 - lean * light_side * 1.4, 0.0, 1.0);
+			vec3 rock = mix(vec3(0.2, 0.23, 0.32), vec3(0.4, 0.43, 0.5), lit);
+			float snow_line = back_h - 0.07 - 0.03 * ring_noise(az, 61.0, 21.0) + 0.02 * (0.5 - lit);
+			rock = mix(rock, mix(vec3(0.55, 0.62, 0.8), vec3(0.95, 0.96, 1.0), lit), smoothstep(snow_line - 0.006, snow_line + 0.006, v.y));
+			rock *= rock_light;
+			rock = mix(rock, rock * vec3(1.0, 0.62, 0.55), dusk * 0.6 * day);
+			rock = mix(rock, haze_col, 0.5);                          // far: lots of air in front
+			c = mix(c, rock, smoothstep(back_h + 0.002, back_h - 0.002, v.y));
+		}
+		// front range: closer, taller, darker and sharper, peaks up to about 25 degrees
+		float front_h = range_height(az + 2.1, 23.0, -0.06, 0.5 * mountain_amount);
+		if (v.y < front_h + 0.004) {
+			float lean = (range_height(az + 2.11, 23.0, -0.06, 0.5 * mountain_amount) - range_height(az + 2.09, 23.0, -0.06, 0.5 * mountain_amount)) * 30.0;
+			float lit = clamp(0.5 - lean * light_side * 1.2, 0.0, 1.0);
+			vec3 rock = mix(vec3(0.1, 0.11, 0.15), vec3(0.32, 0.33, 0.38), lit);
+			// cracks and gullies running down the rock face (streak noise, stood upright)
+			float gully = textureLod(cloud_noise, vec2(az * 3.0, v.y * 0.6), 1.0).b;
+			rock *= 0.8 + 0.4 * gully;
+			float snow_line = front_h - 0.1 - 0.05 * ring_noise(az, 71.0, 31.0) + 0.03 * (0.5 - lit) - 0.04 * gully;
+			float snow = smoothstep(snow_line - 0.008, snow_line + 0.008, v.y);
+			rock = mix(rock, mix(vec3(0.5, 0.57, 0.75), vec3(0.97, 0.97, 1.0), lit), snow);
+			rock *= rock_light;
+			rock = mix(rock, rock * vec3(1.0, 0.6, 0.52), dusk * 0.6 * day);
+			rock = mix(rock, haze_col, 0.22);
+			c = mix(c, rock, smoothstep(front_h + 0.002, front_h - 0.002, v.y));
+		}
+	}
+
+	// ── 6: the sea of cloud filling the valleys below ──
+	float sea_top = -0.03;
+	if (v.y < sea_top + 0.04) {
+		vec2 suv = v.xz / (abs(v.y - 0.05) + 0.05);                     // a flat sheet below
+		float puff = textureLod(cloud_noise, suv * 0.04 + vec2(TIME * cloud_speed * 0.0003, 0.0), 2.0).r;
+		vec3 sea_lit = mix(vec3(0.05, 0.05, 0.1), vec3(0.95, 0.95, 1.0), day);
+		sea_lit = mix(sea_lit, mix(vec3(0.9, 0.6, 0.65), vec3(1.0, 0.62, 0.35), toward), dusk * 0.8);
+		vec3 sea = mix(sea_lit * 0.55, sea_lit, smoothstep(0.3, 0.75, puff));
+		sea = mix(sea, haze_col, 0.3);
+		c = mix(c, sea, smoothstep(sea_top + 0.04, sea_top - 0.02, v.y));
 	}
 	COLOR = c * exposure;
 }

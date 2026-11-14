@@ -44,6 +44,13 @@ extends Room
 ##   - A "please stand by" card replaces the curtain (RoomInfo.standby_card on room_info.tres;
 ##     core/standby_card.gd), and a ReflectionProbe gives the polished granite its reflections.
 ##   - A generated fire sound (a low roar with crackles) on the Ambience bus.
+##   - The sky (forge_sky.gdshader): clouds, nebula and cloud sea from a noise picture, round
+##     twinkling stars, and snow-capped mountains all round ("forge_mountains").
+##   - Look ("forge_detail", Room tab, each PC's own, not shared in a co-stream): Detailed lays
+##     close-up rock photos over the stone (forge_stone.gdshader, _build_stone_detail) and puts a
+##     heat haze over the forge (forge_haze.gdshader, _build_haze); Simple leaves both out, the
+##     lighter choice for a slow graphics card. "auto" follows the Graphics quality. See
+##     _apply_detail().
 
 const MIX_RATE: float = 22050.0
 ## The small live screens' names (screen n = LIVE_NAMES[n - 1]): on their controls, and on the
@@ -58,6 +65,24 @@ const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const SUN_PATCH := preload("res://rooms/forge_hall/textures/sun_patch.png")
 const ART_HOLO_SHADER := preload("res://rooms/forge_hall/art_holo.gdshader")
 const SKY_SHADER := preload("res://rooms/forge_hall/forge_sky.gdshader")
+## The sky's cloud, nebula and cloud-sea shapes; the heat haze's shimmer and smoke use it too.
+## (A copy of the Lakeside Campfire's rooms/campfire/textures/sky_noise.png, made there by
+## make_textures.py, sky_noise(); kept here so this room does not need the campfire room.)
+const SKY_NOISE := preload("res://rooms/forge_hall/textures/sky_noise.png")
+const STONE_SHADER := preload("res://rooms/forge_hall/forge_stone.gdshader")
+const HAZE_SHADER := preload("res://rooms/forge_hall/forge_haze.gdshader")
+## The close-up photo detail for each imported stone material (blender/forge_hall_gen.py,
+## setup_materials): [the photo's name in textures/stone_<name>_grain.jpg / _normal.jpg (made by
+## textures/make_stone_detail.py), metres one copy of the photo covers, grain strength, relief
+## strength]. Polished stone gets less relief than the rough forge.
+const STONE_DETAIL: Dictionary = {
+	"Stone_Slab": ["slab", 1.6, 0.9, 0.35],
+	"Forge_Granite": ["forge", 1.2, 1.0, 0.9],
+	"Pillar_Marble": ["marble", 1.8, 0.6, 0.3],
+}
+## The heat haze sheets over the forge: [metres across the fire, metres towards the room,
+## width, height]. Counted from FIRE_Main (the bottom centre of the flames, +Z into the room).
+const HAZE_SHEETS: Array = [[0.0, 0.25, 2.4, 3.4], [-0.2, 0.7, 2.8, 3.8], [0.25, -0.15, 2.0, 3.0]]
 const GRANITE := preload("res://rooms/forge_hall/textures/slab_granite.png")
 ## The built-in posters (blender/make_forge_textures.py), %d = 1..ART_POSTERS; the frames take
 ## them in turn.
@@ -236,6 +261,9 @@ var _lift_tween: Tween
 var _retired: bool = false       # another room has taken over (retire()): leave the sky alone
 var _webcam_claimed: bool = false   # this room told AppState a live screen shows the webcam
 var _time: float = 0.0
+var _stone: Array[Dictionary] = []     # each stone surface: {mi, surface, mat} (_build_stone_detail)
+var _haze_mats: Array[ShaderMaterial] = []
+var _haze_meshes: Array[MeshInstance3D] = []
 var _last_level: float = -1.0    # the house light level the patches / fire were last set for
 
 
@@ -257,6 +285,9 @@ func _ready() -> void:
 	_build_fire()
 	_build_sunbeams()
 	_build_live_screens()
+	_build_stone_detail()
+	_build_haze()
+	_apply_detail()
 	_apply_neon()
 	_apply_fire()
 	_hour = fposmod(float(AppState.get_setting("forge_time")), 24.0)
@@ -303,6 +334,9 @@ func reload_keys() -> PackedStringArray:
 func get_controls() -> Array[Dictionary]:
 	var out: Array[Dictionary] = [
 		{"heading": "Forge Hall"},
+		{"key": "forge_detail", "label": "Look", "type": "option",
+			"options": [["auto", "Auto (from Graphics quality)"], ["detailed", "Detailed"], ["simple", "Simple"]],
+			"tooltip": "How detailed the hall is drawn on this PC. Detailed: rock photos on the granite, the forge and the pillars that show when the camera is close, and heat haze shimmering over the fire. Simple: plain stone and no haze, the lightest for a slow graphics card. Auto picks from Graphics quality: Low = Simple, otherwise Detailed. Each PC in a co-stream chooses its own."},
 		{"key": "forge_fire", "label": "Fire", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How big the forge fire is: its flames, the light it throws and its crackle. 0% = out."},
 		{"key": "forge_neon", "label": "Inlay brightness", "min": 0.0, "max": 3.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
@@ -320,6 +354,8 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "How strong the purple and blue nebula clouds in the night sky are. 0% = stars only (and lighter on a slow graphics card)."},
 		{"key": "forge_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How bright the stars in the night sky are. 0% = none."},
+		{"key": "forge_mountains", "label": "Mountains", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How tall the snow-capped mountains outside the windows stand. 0% = none, only the sea of cloud below the hall. 200% = towering."},
 	]
 	if _shafts != null:
 		out.append({"key": "sun_rays", "label": "Light rays", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
@@ -392,10 +428,12 @@ func _on_fh_setting_changed(key: String, _value: Variant) -> void:
 			_apply_neon()
 		"forge_time":
 			_hour = fposmod(float(AppState.get_setting("forge_time")), 24.0)
-		"forge_clouds", "forge_nebula", "forge_stars":
+		"forge_clouds", "forge_nebula", "forge_stars", "forge_mountains":
 			_hour_drawn = -100.0    # _run_clock redraws the sky next frame (_apply_time sets these)
 		"forge_lift_up":
 			_move_lift(true)
+		"forge_detail", "graphics_quality":
+			_apply_detail()
 		"sun_rays":
 			_apply_sun_rays()
 		"forge_screen_x", "forge_screen_y", "forge_screen_size", "forge_screen_bend":
@@ -890,6 +928,10 @@ func _apply_fire() -> void:
 		if _sparks.amount != want:
 			_sparks.amount = want
 	_scale_glow(FIRE_MATERIALS, amount)
+	for m in _haze_mats:
+		m.set_shader_parameter("amount", amount)
+	for mi in _haze_meshes:
+		mi.visible = amount > 0.005 and detail_level() == "detailed"
 
 
 ## Called every frame: the fire light's energy from the Fire slider and the house light level,
@@ -905,6 +947,92 @@ func _flicker_fire() -> void:
 	if fire_flicker > 0.0 and not bool(AppState.get_setting("photosensitive_safe")):
 		waver += fire_flicker * (0.6 * sin(_time * 5.3) + 0.4 * sin(_time * 8.9 + 1.7))
 	_fire_light.light_energy = fire_light_energy * amount * lerpf(fire_dimmed, 1.0, _level) * waver
+
+
+# ── Look: close-up stone detail and heat haze ────────────────
+## The look the hall is drawn in on this PC: "detailed" or "simple". From "forge_detail" (Room tab
+## > Look, each PC's own); its "auto" follows "graphics_quality": low = "simple", anything
+## else (medium, high, custom) = "detailed". The second PC (a slow Quadro) runs Low.
+func detail_level() -> String:
+	var choice := String(AppState.get_setting("forge_detail"))
+	if choice == "detailed" or choice == "simple":
+		return choice
+	return "simple" if String(AppState.get_setting("graphics_quality")) == "low" else "detailed"
+
+
+## Finds every mesh surface that uses one of the STONE_DETAIL materials and makes one
+## forge_stone.gdshader material per imported material (shared by all its surfaces), copying the
+## imported material's picture, colour, roughness and metallic so it looks the same from afar.
+## _apply_detail swaps them in and out.
+func _build_stone_detail() -> void:
+	var made: Dictionary = {}    # imported material -> its detailed copy
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s) as BaseMaterial3D
+			if m == null or not STONE_DETAIL.has(m.resource_name) or mi.get_surface_override_material(s) != null:
+				continue
+			if not made.has(m):
+				var spec: Array = STONE_DETAIL[m.resource_name]
+				var sm := ShaderMaterial.new()
+				sm.shader = STONE_SHADER
+				sm.set_shader_parameter("base_tex", m.albedo_texture)
+				sm.set_shader_parameter("base_color", m.albedo_color)
+				sm.set_shader_parameter("base_roughness", m.roughness)
+				sm.set_shader_parameter("base_metallic", m.metallic)
+				sm.set_shader_parameter("base_specular", m.metallic_specular)
+				sm.set_shader_parameter("uv_scale", m.uv1_scale)
+				sm.set_shader_parameter("uv_offset", m.uv1_offset)
+				sm.set_shader_parameter("grain_tex", load("res://rooms/forge_hall/textures/stone_%s_grain.jpg" % String(spec[0])))
+				sm.set_shader_parameter("normal_tex", load("res://rooms/forge_hall/textures/stone_%s_normal.jpg" % String(spec[0])))
+				sm.set_shader_parameter("tile_metres", float(spec[1]))
+				sm.set_shader_parameter("grain_strength", float(spec[2]))
+				sm.set_shader_parameter("bump_strength", float(spec[3]))
+				made[m] = sm
+			_stone.append({"mi": mi, "surface": s, "mat": made[m]})
+
+
+## Stands the heat haze sheets (HAZE_SHEETS) over the firebox, facing into the room.
+## _apply_fire scales them with the Fire slider; _apply_detail hides them in the Simple look.
+func _build_haze() -> void:
+	var main := find_child("FIRE_Main", true, false) as Node3D
+	if main == null:
+		return
+	var b := main.global_basis.orthonormalized()
+	for k in HAZE_SHEETS.size():
+		var h: Array = HAZE_SHEETS[k]
+		var quad := QuadMesh.new()
+		quad.size = Vector2(float(h[2]), float(h[3]))
+		var mat := ShaderMaterial.new()
+		mat.shader = HAZE_SHADER
+		mat.set_shader_parameter("noise", SKY_NOISE)
+		mat.set_shader_parameter("seed", 0.37 * float(k + 1))
+		var mi := MeshInstance3D.new()
+		mi.name = "HeatHaze"
+		mi.mesh = quad
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_fx.add_child(mi, true)
+		# (QuadMesh faces +Z: the marker's +Z already points into the room; its foot sits a
+		# little below the flames' foot so the shimmer starts among them)
+		mi.global_transform = Transform3D(b, main.global_position + b.x * float(h[0]) + b.z * float(h[1]) + Vector3.UP * (float(h[3]) * 0.5 + 0.1))
+		_haze_mats.append(mat)
+		_haze_meshes.append(mi)
+
+
+## Called when the room loads and whenever "forge_detail" or "graphics_quality" changes:
+## Detailed puts the forge_stone.gdshader materials on the stone and shows the heat haze;
+## Simple puts the imported stone back and hides the haze.
+func _apply_detail() -> void:
+	var detailed := detail_level() == "detailed"
+	for st in _stone:
+		var mat: Material = null          # null = the imported material shows again
+		if detailed:
+			mat = st["mat"]
+		(st["mi"] as MeshInstance3D).set_surface_override_material(int(st["surface"]), mat)
+	_apply_fire()
 
 
 # ── Time of day, sky and sunbeams ────────────────────────────
@@ -969,8 +1097,8 @@ func get_hour() -> float:
 
 
 ## Everything that follows the hour (_hour, 0..24; 6 = sunrise, 12 = noon, 18 = sunset).
-## Also hands the sky its Clouds / Nebula / Stars amounts ("forge_clouds", "forge_nebula",
-## "forge_stars").
+## Also hands the sky its Clouds / Nebula / Stars / Mountains amounts ("forge_clouds",
+## "forge_nebula", "forge_stars", "forge_mountains") and its noise picture (SKY_NOISE).
 ## The sun climbs from the left wall's side (the room's -X), passes high over the hall and
 ## sets on the right; the moon is opposite it. Sets the sky shader's uniforms, the ambient
 ## light and the window glass, then the beams: from the sun while it is up, from the moon at
@@ -995,6 +1123,8 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("cloud_amount", float(AppState.get_setting("forge_clouds")))
 		sky.set_shader_parameter("nebula_amount", float(AppState.get_setting("forge_nebula")))
 		sky.set_shader_parameter("star_amount", float(AppState.get_setting("forge_stars")))
+		sky.set_shader_parameter("mountain_amount", float(AppState.get_setting("forge_mountains")))
+		sky.set_shader_parameter("cloud_noise", SKY_NOISE)
 		env.ambient_light_color = night_ambient.lerp(day_ambient, day)
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, day)
 	if _glass_mat:
