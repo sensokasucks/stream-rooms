@@ -33,6 +33,7 @@ extends Room
 const Builder := preload("res://rooms/campfire/campfire_builder.gd")
 const Games := preload("res://rooms/campfire/campfire_games.gd")
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
+const BUTTERFLY_SHADER := preload("res://rooms/campfire/camp_butterfly.gdshader")
 ## The sky shader's cloud shapes (three noise fields in r, g, b; textures/make_textures.py).
 ## Handed to the sky material in _apply_time, as the material lives in room_info.tres.
 const SKY_NOISE := preload("res://rooms/campfire/textures/sky_noise.png")
@@ -94,6 +95,7 @@ var _sparks: CPUParticles3D
 var _burst: CPUParticles3D        # the shower of sparks when the fire flares
 var _smoke: CPUParticles3D
 var _fireflies: CPUParticles3D
+var _butterflies: CPUParticles3D  # out by day (camp_butterflies), as the fireflies are by night
 var _hour: float = 18.6           # the room's clock, hours 0..24 (starts at "camp_time")
 var _hour_drawn: float = -99.0    # the hour the sky was last drawn for
 var _env_drawn: int = 0           # instance id of the Environment it was drawn on
@@ -122,6 +124,7 @@ func _ready() -> void:
 	_build_sun()
 	_build_fire()
 	_build_fireflies()
+	_build_butterflies()
 	_coal_look()
 	_games = Games.new()
 	_games.name = "FireGames"
@@ -170,6 +173,8 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "The string lights between the posts and the lanterns in the tents. They glow softly by day and fully at night, and follow the House lights slider."},
 		{"key": "camp_fireflies", "label": "Fireflies at night", "type": "check",
 			"tooltip": "Small drifting lights round the edge of the clearing on dry nights."},
+		{"key": "camp_butterflies", "label": "Butterflies by day", "type": "check",
+			"tooltip": "A few small butterflies flutter over the grass and the flowers while it is light."},
 		{"key": "camp_games", "label": "Fire games (M and T keys)", "type": "check",
 			"tooltip": "On: hold M in the room window to roast a marshmallow on a stick that pokes out of your avatar, and press T to toss a stick on the fire. In a co-stream everyone sees everyone's. Chat can feed the fire too, by throwing a reaction at the target \"campfire\"."},
 		{"heading": "Time of day"},
@@ -643,6 +648,11 @@ func _apply_time(env: Environment) -> void:
 		var out_tonight := bool(AppState.get_setting("camp_fireflies")) and _day < 0.35
 		_fireflies.emitting = out_tonight
 		_fireflies.visible = out_tonight or _fireflies.visible and _day < 0.5
+	if _butterflies:
+		# out while it is light; at dusk the last ones finish their flight and no new ones come
+		var out_today := bool(AppState.get_setting("camp_butterflies")) and _day > 0.55
+		_butterflies.emitting = out_today
+		_butterflies.visible = out_today or _butterflies.visible and _day > 0.35
 
 
 # ── Fireflies ────────────────────────────────────────────────
@@ -686,6 +696,53 @@ func _build_fireflies() -> void:
 	_fireflies.emitting = false
 	_fx.add_child(_fireflies)
 	_fireflies.position = Vector3(0.0, 1.5, 0.0)
+
+
+# ── Butterflies ──────────────────────────────────────────────
+## Butterflies: a few small ones wandering low over the grass round the clearing by day
+## (setting camp_butterflies; _apply_time switches them with the daylight). Each is one small
+## square drawn by camp_butterfly.gdshader, which cuts it to two wings and makes them beat.
+func _build_butterflies() -> void:
+	_butterflies = CPUParticles3D.new()
+	_butterflies.name = "Butterflies"
+	_butterflies.amount = 16
+	_butterflies.lifetime = 14.0
+	_butterflies.randomness = 1.0
+	_butterflies.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	_butterflies.emission_ring_axis = Vector3.UP
+	_butterflies.emission_ring_radius = 14.0
+	_butterflies.emission_ring_inner_radius = 3.5
+	_butterflies.emission_ring_height = 0.9
+	_butterflies.direction = Vector3(1.0, 0.0, 0.0)
+	_butterflies.spread = 180.0
+	_butterflies.flatness = 0.8                       # they wander sideways more than up and down
+	_butterflies.gravity = Vector3.ZERO
+	_butterflies.initial_velocity_min = 0.25
+	_butterflies.initial_velocity_max = 0.7
+	_butterflies.tangential_accel_min = -0.25         # a curving path round the fire, either way
+	_butterflies.tangential_accel_max = 0.25
+	var fade := Gradient.new()                        # alpha only: each one fades in and out
+	fade.set_color(0, Color(1.0, 1.0, 1.0, 0.0))
+	fade.add_point(0.08, Color(1.0, 1.0, 1.0, 1.0))
+	fade.add_point(0.92, Color(1.0, 1.0, 1.0, 1.0))
+	fade.set_color(fade.get_point_count() - 1, Color(1.0, 1.0, 1.0, 0.0))
+	_butterflies.color_ramp = fade
+	var kinds := Gradient.new()                       # each one takes a colour from along this
+	kinds.set_color(0, Color(0.98, 0.85, 0.25))
+	kinds.add_point(0.35, Color(0.95, 0.95, 0.9))
+	kinds.add_point(0.7, Color(0.95, 0.55, 0.15))
+	kinds.set_color(kinds.get_point_count() - 1, Color(0.45, 0.6, 0.95))
+	_butterflies.color_initial_ramp = kinds
+	var wing := QuadMesh.new()
+	wing.size = Vector2(0.13, 0.1)
+	var wm := ShaderMaterial.new()
+	wm.shader = BUTTERFLY_SHADER
+	wing.material = wm
+	_butterflies.mesh = wing
+	_butterflies.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_butterflies.emitting = false
+	_fx.add_child(_butterflies)
+	_butterflies.position = Vector3(0.0, 0.75, 0.0)
 
 
 # ── Chat feeding the fire ────────────────────────────────────

@@ -1,7 +1,7 @@
 extends RefCounted
 ## Builds the Lakeside Campfire's set out of plain shapes, in code: the ground with its lake bed
 ## and stream bed, the two sheets of water, the forest, the tents, the log benches, the camp
-## chairs, the fire pit, the big screen on its posts, the string lights, the dock and footbridge,
+## chairs, the fire pit, the big screen on its posts, the string lights, the dock,
 ## and every marker the app looks for (rooms/room.gd lists them: TVScreen, CAM_*, PRESENTER_n,
 ## PODIUM_n, AUDIENCE_*, TARGET_*, LIGHTS_House with LAMP_* inside).
 ##
@@ -69,9 +69,9 @@ const STREAM_BED_HALF: float = 4.1
 ## Uphill from the camp the stream comes down in steps: level pools this much apart in height
 ## (metres), each ending in a short drop (stream_steps).
 const STREAM_STEP: float = 0.45
-## Where Pebble sits (x, z, metres): just outside the fire ring's stones, on the audience's side
-## and to the right, clear of the marshmallow camera's view down the middle (_build_pebble).
-const PEBBLE_AT: Vector2 = Vector2(1.2, 0.85)
+## Which of the fire ring's 11 stones is Pebble (_build_pebble): counted from due east of the
+## fire round by the south, so 3 is the one on the audience's side nearest the main camera.
+const PEBBLE_STONE: int = 3
 ## Where the things beside the fire stand (x, z).
 const STICK_PILE: Vector2 = Vector2(4.2, 0.6)
 const SMORES_TABLE: Vector2 = Vector2(-4.3, 0.6)
@@ -217,12 +217,9 @@ static func stream_steps(y: float) -> float:
 
 ## Half the width of the stream's water near a point (metres): it narrows and widens into
 ## pools along its way (noise), as a real brook does. ground_height() digs the bed this wide.
-## At the footbridge it is kept narrow enough for the bridge to span.
 static func stream_half_width(x: float, z: float) -> float:
 	_setup_noise()
-	var half := lerpf(STREAM_NARROW, STREAM_WIDE, clampf(0.5 + 0.9 * _noise.get_noise_2d(x * 3.2 + 50.0, z * 3.2 - 20.0), 0.0, 1.0))
-	var bridge := STREAM[3]
-	return lerpf(minf(half, 0.75), half, smoothstep(1.5, 4.0, Vector2(x - bridge.x, z - bridge.z).length()))
+	return lerpf(STREAM_NARROW, STREAM_WIDE, clampf(0.5 + 0.9 * _noise.get_noise_2d(x * 3.2 + 50.0, z * 3.2 - 20.0), 0.0, 1.0))
 
 
 ## The stream's middle line as short pieces `step` metres long (finer than smooth_stream, for
@@ -557,6 +554,7 @@ static func build(room: Node3D) -> Dictionary:
 	_build_fire_pit(props, set_root, markers, out, rng)
 	_build_benches(props, markers)
 	_build_camp_things(props, rng)
+	_build_wild(props)
 	_build_screen(props, set_root, out)
 	out["prop_mat"] = _prop_material()
 	_note_material(out, out["prop_mat"])
@@ -1228,9 +1226,12 @@ static func _build_fire_pit(props: Buf, parent: Node3D, markers: Node3D, out: Di
 		var a := TAU * float(i) / 11.0 + rng.randf_range(-0.08, 0.08)
 		var size := rng.randf_range(0.16, 0.24)
 		var grey := rng.randf_range(0.22, 0.38)
+		if i == PEBBLE_STONE:                     # this one is Pebble: a stone like the rest, with a face
+			_build_pebble(props, Vector3(cos(a) * 0.84, 0.0, sin(a) * 0.84), 0.22, grey)
+			props.mat = MAT_ROCK
+			continue
 		props.blob(Vector3(cos(a) * 0.82, size * 0.45, sin(a) * 0.82), Vector3(size, size * 0.7, size * 0.85), 6, 4,
 			Color(grey, grey, grey * 1.05), Color(grey * 0.5, grey * 0.5, grey * 0.5), 0.35, rng)
-	_build_pebble(props)
 	props.mat = MAT_BARK
 	for i in 6:                                   # the logs: feet on a circle, tops meeting over the middle
 		var a := TAU * float(i) / 6.0 + 0.3
@@ -1251,51 +1252,54 @@ static func _build_fire_pit(props: Buf, parent: Node3D, markers: Node3D, out: Di
 	out["fire"] = _marker_facing(markers, "FIRE_Camp", Vector3(0.0, 0.12, 0.0), Vector3(0.0, 0.0, 5.0))
 
 
-## Pebble: the owner's own little character (drawn for them; the design is theirs), a smooth
-## lavender rock with a face and a gem on its forehead, sitting by the fire ring at PEBBLE_AT
-## and looking towards the main camera. Called by _build_fire_pit. Everything is placed by two
-## angles on the dome (radians): `yaw` round it from the face's middle (positive = the viewer's
-## right) and `pitch` up from the ground (PI / 2 = the very top). It uses its own random
-## numbers, so adding it moved nothing else in the camp.
-static func _build_pebble(props: Buf) -> void:
-	props.mat = MAT_PLAIN
+## Pebble: the owner's own little character (drawn for them; the design is theirs), kept
+## subtle: it is one of the fire ring's ordinary grey stones (number PEBBLE_STONE, the one
+## nearest the main camera) with a small face and a gem on its forehead, looking out at the
+## camera. Called by _build_fire_pit with that stone's place on the ground (`at`), its size
+## (metres) and its grey (0..1). Everything on it is placed by two angles (radians): `yaw`
+## round the stone from the face's middle (positive = the viewer's right) and `pitch` up from
+## the stone's middle (PI / 2 = the very top). It uses its own random numbers.
+static func _build_pebble(props: Buf, at: Vector3, size: float, grey: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	var radii := Vector3(0.23, 0.27, 0.23)              # a dome: the lower half is in the ground
-	var c := Vector3(PEBBLE_AT.x, ground_height(PEBBLE_AT.x, PEBBLE_AT.y) - 0.015, PEBBLE_AT.y)
+	var radii := Vector3(size, size * 0.74, size * 0.9)
+	var c := Vector3(at.x, size * 0.4, at.z)
 	var f := (Vector3(CAMERAS[0][1].x, 0.0, CAMERAS[0][1].z) - Vector3(c.x, 0.0, c.z)).normalized()
 	var side := Vector3.UP.cross(f)                     # the viewer's right
-	props.blob(c, radii, 18, 12, Color(0.66, 0.6, 0.78), Color(0.5, 0.44, 0.62), 0.0, rng)
-	# a point on the dome (lift 1 = on it, a little more = just above it) and its way out
+	# the stone itself: rock like the others, only smooth enough for a face to sit on
+	props.mat = MAT_ROCK
+	props.blob(c, radii, 12, 8, Color(grey, grey, grey * 1.05), Color(grey * 0.5, grey * 0.5, grey * 0.5), 0.0, rng)
+	props.mat = MAT_PLAIN
+	# a point on the stone (lift 1 = on it, a little more = just above it) and its way out
 	var out_of := func(yaw: float, pitch: float) -> Vector3:
 		return (f * cos(yaw) + side * sin(yaw)) * cos(pitch) + Vector3.UP * sin(pitch)
 	var on := func(yaw: float, pitch: float, lift: float) -> Vector3:
 		return c + out_of.call(yaw, pitch) * radii * lift
-	# a round or oval spot lying on the dome: w, h = half its width and height (radians)
+	# a round or oval spot lying on the stone: w, h = half its width and height (radians)
 	var spot := func(yaw: float, pitch: float, w: float, h: float, lift: float, col: Color) -> void:
 		var n: Vector3 = out_of.call(yaw, pitch)
 		var mid: Vector3 = on.call(yaw, pitch, lift)
-		for i in 12:
-			var a0 := TAU * float(i) / 12.0
-			var a1 := TAU * float(i + 1) / 12.0
+		for i in 10:
+			var a0 := TAU * float(i) / 10.0
+			var a1 := TAU * float(i + 1) / 10.0
 			props.tri_round(mid, on.call(yaw + w * cos(a0), pitch + h * sin(a0), lift),
 				on.call(yaw + w * cos(a1), pitch + h * sin(a1), lift), n, n, n, col)
+	var blush := Color(grey, grey, grey).lerp(Color(0.9, 0.55, 0.58), 0.55)      # a faint pink on the grey
 	for sx: float in [-1.0, 1.0]:
-		spot.call(sx * 0.56, 0.24, 0.15, 0.085, 1.012, Color(0.96, 0.74, 0.76))      # blush
-		spot.call(sx * 0.33, 0.36, 0.12, 0.112, 1.024, Color(0.03, 0.03, 0.04))      # eye
-		spot.call(sx * 0.33 - 0.045, 0.32, 0.055, 0.052, 1.036, Color(1.0, 1.0, 1.0)) # its white dot: looking down and to its right
+		spot.call(sx * 0.5, 0.06, 0.12, 0.075, 1.015, blush)
+		spot.call(sx * 0.3, 0.2, 0.095, 0.1, 1.03, Color(0.03, 0.03, 0.04))            # eye
+		spot.call(sx * 0.3 - 0.035, 0.165, 0.042, 0.045, 1.045, Color(0.95, 0.95, 0.95)) # its white dot: looking down and to its right
 	# the mouth: a small "v"
 	var dark := Color(0.05, 0.04, 0.06)
-	props.rod(on.call(-0.055, 0.3, 1.01), on.call(0.0, 0.245, 1.01), 0.004, 4, dark)
-	props.rod(on.call(0.055, 0.3, 1.01), on.call(0.0, 0.245, 1.01), 0.004, 4, dark)
+	props.rod(on.call(-0.045, 0.13, 1.015), on.call(0.0, 0.08, 1.015), 0.003, 4, dark)
+	props.rod(on.call(0.045, 0.13, 1.015), on.call(0.0, 0.08, 1.015), 0.003, 4, dark)
 	# the gem on the forehead: a kite, longer below, cut with a flat middle and four slopes
-	var gem_mid := 0.74
+	var gem_mid := 0.62
 	var rim: Array[Vector3] = []
 	var flat: Array[Vector3] = []
-	for corner: Vector2 in [Vector2(0.0, 0.28), Vector2(0.24, 0.06), Vector2(0.0, -0.3), Vector2(-0.24, 0.06)]:
-		var pitch := gem_mid + corner.y
-		rim.append(on.call(corner.x / cos(gem_mid), pitch, 0.99))
-		flat.append(on.call(corner.x * 0.45 / cos(gem_mid), gem_mid + corner.y * 0.45, 1.09))
+	for corner: Vector2 in [Vector2(0.0, 0.22), Vector2(0.17, 0.05), Vector2(0.0, -0.24), Vector2(-0.17, 0.05)]:
+		rim.append(on.call(corner.x / cos(gem_mid), gem_mid + corner.y, 0.99))
+		flat.append(on.call(corner.x * 0.45 / cos(gem_mid), gem_mid + corner.y * 0.45, 1.08))
 	var slopes: Array[Color] = [Color(0.85, 0.5, 0.72), Color(0.85, 0.2, 0.5), Color(0.18, 0.18, 0.75), Color(0.35, 0.7, 0.9)]
 	var gem_out: Vector3 = out_of.call(0.0, gem_mid)
 	for i in 4:
@@ -1306,9 +1310,6 @@ static func _build_pebble(props: Buf) -> void:
 		props.tri_round(rim[i], flat[j], flat[i], n, n, n, slopes[i])
 	props.tri_round(flat[0], flat[1], flat[2], gem_out, gem_out, gem_out, Color(0.3, 0.2, 0.8))
 	props.tri_round(flat[0], flat[2], flat[3], gem_out, gem_out, gem_out, Color(0.3, 0.2, 0.8))
-	# two glints on its shoulder, as on the drawing
-	spot.call(0.95, 0.95, 0.2, 0.05, 1.012, Color(1.0, 1.0, 1.0))
-	spot.call(1.25, 0.72, 0.07, 0.04, 1.012, Color(1.0, 1.0, 1.0))
 
 
 ## The log benches (the chat audience's seats): each row is an arc of logs with one AUDIENCE_
@@ -1342,7 +1343,7 @@ static func _build_benches(props: Buf, markers: Node3D) -> void:
 
 
 ## The loose things round the camp: the stick pile, the s'mores table and cooler, the dock, the
-## footbridge over the stream, and rocks along the water.
+## rocks along the water and the old fallen trunk over the stream.
 static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 	var wood := Color(0.34, 0.24, 0.14)
 	var dark_wood := Color(0.2, 0.14, 0.09)
@@ -1378,16 +1379,6 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 	for z: float in [DOCK_Z.x - 0.6, (DOCK_Z.x + DOCK_Z.y) * 0.5, DOCK_Z.y + 0.3]:
 		for sx: float in [-0.6, 0.6]:
 			props.cyl(Transform3D(Basis.IDENTITY, Vector3(DOCK_X + sx, WATER_Y - 1.4, z)), 0.07, 0.07, 2.1, 6, dark_wood)
-	# the footbridge where the path crosses the stream
-	var mid := STREAM[3]
-	var along := (STREAM[4] - STREAM[2])
-	along.y = 0.0
-	var across := along.normalized().cross(Vector3.UP)
-	var bridge := Transform3D(Basis(across, Vector3.UP, across.cross(Vector3.UP)), Vector3(mid.x, mid.y + 0.42, mid.z))
-	for i in 9:
-		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(-1.6 + float(i) * 0.4, 0.0, 0.0)), Vector3(0.36, 0.05, 1.1), wood)
-	for sz: float in [-0.5, 0.5]:
-		props.box(bridge * Transform3D(Basis.IDENTITY, Vector3(0.0, -0.08, sz)), Vector3(3.6, 0.1, 0.08), dark_wood)
 	props.mat = MAT_ROCK
 	# rocks: the stream's (stream_rocks: ledges, boulders, loose stones; mossy on top in the
 	# woods' damp shade) and a scatter along the lake's shore
@@ -1422,13 +1413,151 @@ static func _build_camp_things(props: Buf, rng: RandomNumberGenerator) -> void:
 		at.y = ground_height(at.x, at.z) + size * 0.12
 		props.blob(at, Vector3(size, size * 0.4, size * rng.randf_range(0.7, 1.2)), 6, 3,
 			Color(grey * 1.05, grey, grey * 0.95), Color(grey * 0.5, grey * 0.5, grey * 0.5), 0.3, rng)
-	# an old fallen trunk across the stream above the footbridge, mossy on top
+	# an old fallen trunk across the stream where it leaves the woods, mossy on top
 	props.mat = MAT_BARK
 	var fall := STREAM[5]
 	var trunk_dir := Vector3(0.85, 0.07, 0.5).normalized()
 	var trunk_from := Vector3(fall.x - 2.3, ground_height(fall.x - 2.3, fall.z - 1.35) + 0.12, fall.z - 1.35)
 	var trunk_side := trunk_dir.cross(Vector3.UP).normalized()
 	props.cyl(Transform3D(Basis(trunk_side, trunk_dir, trunk_side.cross(trunk_dir)), trunk_from), 0.24, 0.17, 5.2, 9, Color(0.2, 0.17, 0.11), Color(0.42, 0.33, 0.2))
+	props.mat = MAT_ROCK
+
+
+## Whether something wild (a rock outcrop, a stump, flowers) may stand at p (x, z): `gap` metres
+## clear of every camera, and not in a tent, on the benches' side of the fire inside the
+## rows, under the screen, or on the camp's things (_undergrowth_free).
+static func _wild_free(p: Vector2, gap: float) -> bool:
+	for c: Array in CAMERAS:
+		var cam: Vector3 = c[1]
+		if p.distance_to(Vector2(cam.x, cam.z)) < gap:
+			return false
+	for t: Array in TENTS:
+		if p.distance_to(Vector2(float(t[0]), float(t[1]))) < 2.3 + gap * 0.5:
+			return false
+	return _undergrowth_free(p)
+
+
+## What makes the land look lived in, all in the shared props mesh (so both looks of Set detail
+## get it): rock outcrops on the stream's banks, the lake's shore and the clearing's edge, tree
+## stumps and mushrooms, reeds and cattails at the water's edge, lily pads (some in flower) on
+## the lake, and wildflowers in drifts through the grass. Called by build(). It has its own
+## random numbers, so it is the same on every PC and moves nothing else.
+static func _build_wild(props: Buf) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20261114
+	# -- rock outcrops: two to four big mossy boulders leaning on each other
+	var outcrops: Array[Vector2] = [Vector2(-7.2, shore_z(-7.2) + 0.5), Vector2(13.2, shore_z(13.2) + 0.9),
+		Vector2(15.0, -4.6), Vector2(14.0, 9.6), Vector2(-12.6, 10.4), Vector2(-17.5, -2.6)]
+	var line := stream_fine(0.5)
+	var k := 34
+	var bank := 1.0
+	while k < line.size() - 4 and line[k].x > -40.0:        # up the stream, now one bank, now the other
+		var along := (line[k + 1] - line[k - 1])
+		var across := Vector3(along.x, 0.0, along.z).normalized().cross(Vector3.UP)
+		var off := bank * (stream_half_width(line[k].x, line[k].z) + rng.randf_range(1.5, 2.4))
+		outcrops.append(Vector2(line[k].x + across.x * off, line[k].z + across.z * off))
+		bank = -bank
+		k += rng.randi_range(7, 12)
+	props.mat = MAT_ROCK
+	for spot_at in outcrops:
+		if not _wild_free(spot_at, 2.6):
+			continue
+		for n in rng.randi_range(2, 4):
+			var size := rng.randf_range(0.55, 1.25) * (1.0 if n == 0 else 0.7)
+			var p := spot_at + Vector2(rng.randf_range(-1.0, 1.0), rng.randf_range(-1.0, 1.0)) * (0.0 if n == 0 else 1.1)
+			var grey := rng.randf_range(0.2, 0.32)
+			var moss := rng.randf_range(0.2, 0.75)
+			props.blob(Vector3(p.x, ground_height(p.x, p.y) + size * 0.22, p.y),
+				Vector3(size, size * rng.randf_range(0.55, 0.9), size * rng.randf_range(0.7, 1.0)), 10, 7,
+				Color(grey, grey, grey * 1.06).lerp(Color(0.13, 0.2, 0.07), moss), Color(grey * 0.45, grey * 0.5, grey * 0.45), 0.3, rng)
+	# -- stumps at the edge of the clearing, each with a few mushrooms at its foot
+	var cap_red := Color(0.62, 0.12, 0.08)
+	var cap_tan := Color(0.6, 0.45, 0.28)
+	for spot_at: Vector2 in [Vector2(-8.6, 6.4), Vector2(9.2, 8.3), Vector2(13.4, 1.4), Vector2(-15.8, 6.0), Vector2(7.6, -5.9), Vector2(-5.4, 11.3)]:
+		if not _wild_free(spot_at, 1.5):
+			continue
+		var y := ground_height(spot_at.x, spot_at.y)
+		props.mat = MAT_BARK
+		var r := rng.randf_range(0.2, 0.32)
+		props.cyl(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(spot_at.x, y - 0.1, spot_at.y)), r * 1.25, r, rng.randf_range(0.35, 0.6), 9, Color(0.2, 0.15, 0.1), Color(0.5, 0.4, 0.25))
+		props.mat = MAT_PLAIN
+		for n in rng.randi_range(2, 5):
+			var a := rng.randf() * TAU
+			var m := Vector3(spot_at.x + cos(a) * (r + 0.2), 0.0, spot_at.y + sin(a) * (r + 0.2))
+			m.y = ground_height(m.x, m.z)
+			var tall := rng.randf_range(0.05, 0.11)
+			props.rod(m, m + Vector3(0.0, tall, 0.0), 0.012, 5, Color(0.85, 0.82, 0.72))
+			props.blob(m + Vector3(0.0, tall, 0.0), Vector3(0.045, 0.028, 0.045), 7, 3, cap_red if rng.randf() < 0.5 else cap_tan, Color(0.8, 0.75, 0.65), 0.0, rng)
+	# -- reeds and cattails: clumps along the lake's shore and at the stream's quiet pools
+	var clumps: Array[Vector2] = []
+	for n in 34:
+		var x := rng.randf_range(-8.5, 15.0)
+		if absf(x - DOCK_X) > 1.1:
+			clumps.append(Vector2(x, shore_z(x) + rng.randf_range(-0.9, 0.15)))
+	for n in 30:
+		var at := line[rng.randi_range(5, 30)]
+		var edge := (stream_half_width(at.x, at.z) + rng.randf_range(-0.1, 0.25)) * (-1.0 if rng.randf() < 0.5 else 1.0)
+		var from_mid := stream_near(at.x + edge, at.z).x
+		if absf(from_mid - absf(edge)) < 0.35:        # (only where that really is the water's edge: the stream bends)
+			clumps.append(Vector2(at.x + edge, at.z))
+	props.mat = MAT_PLAIN
+	for clump in clumps:
+		for n in rng.randi_range(4, 9):
+			var foot := Vector3(clump.x + rng.randf_range(-0.22, 0.22), 0.0, clump.y + rng.randf_range(-0.22, 0.22))
+			foot.y = maxf(ground_height(foot.x, foot.z), WATER_Y - 0.25) - 0.05
+			var tall := rng.randf_range(0.5, 0.95)
+			var tip := foot + Vector3(rng.randf_range(-0.12, 0.12), tall, rng.randf_range(-0.12, 0.12))
+			var green := rng.randf_range(0.8, 1.15)
+			props.rod(foot, tip, 0.007, 4, Color(0.2 * green, 0.34 * green, 0.1 * green), Color(0.45 * green, 0.55 * green, 0.2 * green))
+			if rng.randf() < 0.3:                      # a cattail's brown head
+				props.rod(foot.lerp(tip, 0.8), foot.lerp(tip, 0.97), 0.017, 6, Color(0.15, 0.09, 0.05), Color(0.15, 0.09, 0.05))
+	# -- lily pads on the lake near the shore: a round leaf with a notch, one in four in flower
+	for n in 34:
+		var x := rng.randf_range(-8.5, 15.0)
+		var c := Vector3(x, WATER_Y + 0.012, shore_z(x) - rng.randf_range(1.3, 5.2))
+		if absf(x - DOCK_X) < 1.0 and c.z > DOCK_Z.y - 0.5:
+			continue
+		var r := rng.randf_range(0.14, 0.3)
+		var turn := rng.randf() * TAU
+		var green := Color(0.1, 0.3, 0.09).lerp(Color(0.22, 0.4, 0.1), rng.randf())
+		for w in 10:                                   # (wedge 0 of 11 is left out: the notch)
+			var a0 := turn + TAU * float(w + 1) / 11.0
+			var a1 := turn + TAU * float(w + 2) / 11.0
+			props.tri_round(c, c + Vector3(cos(a0), 0.0, sin(a0)) * r, c + Vector3(cos(a1), 0.0, sin(a1)) * r, Vector3.UP, Vector3.UP, Vector3.UP, green)
+		if rng.randf() < 0.26:
+			var heart := c + Vector3(cos(turn) * r * 0.9, 0.03, sin(turn) * r * 0.9)
+			var pink := Color(0.95, 0.6, 0.78).lerp(Color(1.0, 0.92, 0.95), rng.randf() * 0.6)
+			for petal in 8:
+				var a := TAU * float(petal) / 8.0
+				var out_dir := Vector3(cos(a), 0.0, sin(a))
+				var wide := out_dir.cross(Vector3.UP) * 0.022
+				var tip := heart + out_dir * 0.085 + Vector3(0.0, 0.045 if petal % 2 == 0 else 0.015, 0.0)
+				var up := (Vector3.UP + out_dir * 0.5).normalized()
+				props.tri_round(heart - wide, heart + wide, tip, up, up, up, pink)
+				props.tri_round(heart - wide, tip, heart + wide, -up, -up, -up, pink.darkened(0.25))
+			props.blob(heart + Vector3(0.0, 0.012, 0.0), Vector3(0.018, 0.014, 0.018), 5, 3, Color(0.98, 0.8, 0.15), Color(0.9, 0.6, 0.1), 0.0, rng)
+	# -- wildflowers in drifts through the open grass: each drift mostly one colour
+	var petals: Array[Color] = [Color(0.95, 0.95, 0.9), Color(0.98, 0.82, 0.18), Color(0.58, 0.4, 0.85), Color(0.93, 0.5, 0.65), Color(0.35, 0.5, 0.9)]
+	for n in 2600:
+		var radius := sqrt(rng.randf()) * 19.0
+		var ang := rng.randf() * TAU
+		var p := Vector2(cos(ang) * radius * 1.25, sin(ang) * radius)
+		var pick := rng.randf()
+		var tall := rng.randf_range(0.14, 0.3)
+		var lean := Vector3(rng.randf_range(-0.04, 0.04), 0.0, rng.randf_range(-0.04, 0.04))
+		if _noise.get_noise_2d(p.x * 4.0 - 500.0, p.y * 4.0 + 200.0) < 0.12:
+			continue                                   # between the drifts
+		if shore_z(p.x) - p.y > -0.5 or stream_near(p.x, p.y).x < stream_half_width(p.x, p.y) + 0.3 or not _wild_free(p, 0.6):
+			continue
+		var kind := ground_kind(p.x, p.y)
+		if kind.r > 0.2 or kind.g > 0.3 or kind.b > 0.75:
+			continue                                   # trodden dirt, sand, deep forest floor
+		var drift := clampf(0.5 + _noise.get_noise_2d(p.x * 1.3 + 800.0, p.y * 1.3 - 300.0), 0.0, 0.999)
+		var col := petals[int(drift * float(petals.size()))] if pick < 0.8 else petals[int(pick * 977.0) % petals.size()]
+		var foot := Vector3(p.x, ground_height(p.x, p.y), p.y)
+		props.rod(foot, foot + lean + Vector3(0.0, tall, 0.0), 0.005, 3, Color(0.16, 0.32, 0.08))
+		props.blob(foot + lean + Vector3(0.0, tall, 0.0), Vector3(0.045, 0.014, 0.045), 7, 3, col, col.darkened(0.3), 0.0, rng)
+		props.blob(foot + lean + Vector3(0.0, tall + 0.012, 0.0), Vector3(0.015, 0.012, 0.015), 5, 3, Color(0.95, 0.75, 0.15), Color(0.8, 0.55, 0.1), 0.0, rng)   # its yellow heart
 	props.mat = MAT_ROCK
 
 

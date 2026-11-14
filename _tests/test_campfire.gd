@@ -58,6 +58,7 @@ func _ready() -> void:
 	AppState.set_setting("graphics_quality", "high")
 	AppState.set_setting("camp_string_lights", true)
 	AppState.set_setting("camp_fireflies", true)
+	AppState.set_setting("camp_butterflies", true)
 	AppState.set_setting("camp_games", true)
 	for n in range(1, 5):
 		AppState.set_setting(AppState.presenter_key(n, "on"), n <= 2)
@@ -114,7 +115,7 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_games", "camp_time", "camp_day_minutes",
+	var wanted: Array[String] = ["camp_fire", "camp_screen", "camp_close_woods", "camp_detail", "camp_string_lights", "camp_fireflies", "camp_butterflies", "camp_games", "camp_time", "camp_day_minutes",
 		"camp_clouds", "camp_stars", "camp_aurora", "camp_mist"]
 	var all_there := true
 	for k in wanted:
@@ -297,8 +298,9 @@ func _ready() -> void:
 	var in_water: Array = CF.Builder.stream_rocks().filter(func(r: Vector4) -> bool: return r.w > 0.5)
 	_check(in_water.size() > 10 and CF.Builder.stream_steps(1.0) > 0.0 and CF.Builder.stream_steps(2.0) > CF.Builder.stream_steps(1.0),
 		"the brook comes down in steps and has rocks standing in it")
-	_check(CF.Builder.PEBBLE_AT.length() > 1.1 and CF.Builder.PEBBLE_AT.length() < 2.4 and CF.Builder.PEBBLE_AT.y > 0.0,
-		"Pebble sits just outside the fire ring, on the audience's side")
+	_check(sin(TAU * float(CF.Builder.PEBBLE_STONE) / 11.0) > 0.8, "Pebble is the fire ring's stone on the audience's side")
+	_check(CF.Builder.stream_half_width(CF.Builder.STREAM[3].x, CF.Builder.STREAM[3].z) >= CF.Builder.STREAM_NARROW,
+		"the stream runs free where the footbridge was")
 	_check(float(sky.get_shader_parameter("day")) < 0.05 and float(sky.get_shader_parameter("dusk")) > 0.2,
 		"18.6 h is dusk: night sky with a sunset glow (day %.2f, dusk %.2f)" % [float(sky.get_shader_parameter("day")), float(sky.get_shader_parameter("dusk"))])
 	AppState.set_setting("camp_time", 12.0)
@@ -321,6 +323,8 @@ func _ready() -> void:
 	_check(is_equal_approx(float(sky.get_shader_parameter("aurora_amount")), 1.0), "the Aurora slider reaches the sky")
 	var flies := fx.get_node_or_null("Fireflies") as CPUParticles3D
 	_check(flies != null and flies.emitting, "fireflies are out on a dry night")
+	var wings := fx.get_node_or_null("Butterflies") as CPUParticles3D
+	_check(wings != null and not wings.emitting, "the butterflies stay in at night")
 	await _shot("camp_midnight_lake")
 	EventBus.camera_preset_requested.emit(9)
 	await _secs(1.2)
