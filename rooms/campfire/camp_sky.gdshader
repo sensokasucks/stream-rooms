@@ -2,7 +2,7 @@ shader_type sky;
 // Lakeside Campfire: the whole sky, built in layers from the back to the front so it has depth:
 //   1. the sky's own colour for the hour (deep blue day, warm band at sunrise and sunset, near
 //      black night),
-//   2. stars: a fine field, brighter ones, a few with a cross of light and the Milky Way as a
+//   2. stars: a fine field, brighter ones, a few round bright ones with a soft glow and the Milky Way as a
 //      hazy band. Every star flickers at its own speed (more near the horizon), the whole
 //      field turns slowly round the pole star, and a shooting star crosses every few seconds.
 //      With `twinkle` at 0 (photosensitive-safe mode) the stars are steady and none shoot;
