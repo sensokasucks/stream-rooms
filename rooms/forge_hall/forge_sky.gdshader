@@ -105,12 +105,10 @@ vec3 draw_range(vec3 c, vec3 v, float az, float seed, float base, float tall, ve
 	// from the outline the slope is read over a wider stretch (az +- depth), so each peak's
 	// lit and shaded faces spread out and soften towards its foot instead of running straight
 	// down as stripes.
-	float depth = max(h - v.y, 0.0);
-	float lean = 0.0;
-	for (int k = -1; k <= 1; k++) {
-		float a2 = az + float(k) * depth * 0.9;
-		lean += (range_height(a2 + 0.012, seed, base, tall) - range_height(a2 - 0.012, seed, base, tall)) * 22.0 / 3.0;
-	}
+	// (two outline reads per pixel: this runs for every pixel of rock, also when the sky's
+	// lighting picture is redrawn)
+	float w = 0.012 + max(h - v.y, 0.0) * 0.9;
+	float lean = (range_height(az + w, seed, base, tall) - range_height(az - w, seed, base, tall)) / (2.0 * w) * 0.528;
 	float lit = clamp(0.5 - lean * light_side * 1.6, 0.0, 1.0);
 	// the rock's own blotches and ledges (the noise picture, the same scale both ways)
 	vec2 rp = vec2(az * 3.0 + seed, v.y * 3.0);
@@ -308,7 +306,8 @@ void sky() {
 	vec3 haze_col = mix(hor, vec3(0.6, 0.66, 0.76) * (0.05 + 0.95 * day), 0.4);
 	float light_az = day > 0.3 ? atan(sun_dir.x, -sun_dir.z) : atan(moon_dir.x, -moon_dir.z);
 	float light_side = sin(light_az - az);
-	if (mountain_amount > 0.001) {
+	// (below -0.05 the sea of cloud covers them completely: skip the work there)
+	if (mountain_amount > 0.001 && v.y > -0.05) {
 		// back range: far off and pale, its peaks reach about 12 degrees up
 		c = draw_range(c, v, az, 11.0, -0.02, 0.24 * mountain_amount, vec3(0.26, 0.29, 0.4), 0.075, haze_col, light_side, 0.42);
 		// front range: closer, taller and darker, peaks up to about 25 degrees

@@ -63,7 +63,9 @@ func _ready() -> void:
 	AppState.set_setting("forge_nebula", 1.0)
 	AppState.set_setting("forge_stars", 1.0)
 	AppState.set_setting("forge_mountains", 1.0)
-	AppState.set_setting("forge_detail", "detailed")
+	# Simple except in the Look checks: the rock photos and haze are slow on the software
+	# renderer GitHub and the cloud use, and slow frames upset the timed small-screen checks
+	AppState.set_setting("forge_detail", "simple")
 	AppState.set_setting("forge_lift_up", false)
 	AppState.set_setting("forge_live_1_source", "webcam")
 	AppState.set_setting("forge_live_2_source", "off")
@@ -262,6 +264,8 @@ func _ready() -> void:
 		await _secs(1.0)
 		await _shot(_out + "/%s.png" % String(shot[1]))
 	# Look: Detailed puts the rock-photo stone and the heat haze in; Simple takes them out
+	AppState.set_setting("forge_detail", "detailed")
+	await _secs(0.2)
 	var hazes := room.find_children("HeatHaze*", "MeshInstance3D", true, false)
 	var stone_detailed := 0
 	for n in room.find_children("*", "MeshInstance3D", true, false):
@@ -295,6 +299,7 @@ func _ready() -> void:
 	AppState.set_setting("graphics_quality", "high")
 	await _secs(0.2)
 	_check(room.detail_level() == "detailed" and (hazes[0] as MeshInstance3D).visible, "and High = Detailed")
+	AppState.set_setting("forge_detail", "simple")
 	AppState.set_setting("forge_time", 22.0)
 	await _secs(0.3)
 	AppState.set_setting("forge_day_minutes", 1.0)        # a whole day in a minute: 0.4 hours a second
@@ -423,6 +428,12 @@ func _ready() -> void:
 		wishes = feeds.tab_wishes()
 		_check(String((wishes[1] as Dictionary).get("name")) == "Upper left screen" and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
 			"a second screen gets the next row without disturbing the first")
+		# (a fresh picture first, as a sharing tab sends them all the time: on a slow software
+		# renderer the seconds since the last one can pass ExtraFeeds.TAB_QUIET_S during the
+		# wait, and the screen would go dark for that reason instead)
+		sf.call("_on_presenter_frame", CaptureServer.EXTRA_SLOT0, frame)
+		await _secs(0.1)
+		ttex = (pic3.material_override as StandardMaterial3D).albedo_texture
 		EventBus.room_changed.emit("forge_hall")
 		await _secs(ExtraFeeds.STALE_S + 0.6)
 		_check((feeds.get("_slots") as Dictionary).has("forge_live_3") and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
