@@ -39,6 +39,9 @@ extends Room
 const Builder := preload("res://rooms/campfire/campfire_builder.gd")
 const Games := preload("res://rooms/campfire/campfire_games.gd")
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
+## The sky shader's cloud shapes (three noise fields in r, g, b; textures/make_textures.py).
+## Handed to the sky material in _apply_time, as the material lives in room_info.tres.
+const SKY_NOISE := preload("res://rooms/campfire/textures/sky_noise.png")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 const MIX_RATE: float = 22050.0
 ## The flames: [metres east, metres south, size as a share of flame_size].
@@ -653,6 +656,7 @@ func _apply_time(env: Environment) -> void:
 		top = top.lerp(Color(0.06, 0.065, 0.11).lerp(Color(0.8, 0.82, 0.86), _day), cover)
 	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
 		var sky := env.sky.sky_material as ShaderMaterial
+		sky.set_shader_parameter("cloud_noise", SKY_NOISE)
 		sky.set_shader_parameter("sun_dir", turn * sun)
 		sky.set_shader_parameter("moon_dir", turn * moon)
 		sky.set_shader_parameter("day", _day)

@@ -18,6 +18,9 @@ What it writes:
         one of them (times 2), which keeps the set's colours and adds the photo's grain.
   card_fir / card_pine / card_grass / card_fern .png   see-through pictures of a fir bough, a
         pine tuft, a grass tuft and a fern frond, put together here from single photographed twigs;
+  water_normal.png   the lake's ripples (a normal map) for camp_water.gdshader
+  sky_noise.png      cloud shapes for camp_sky.gdshader (three noise fields in r, g, b)
+        Both are made from noise by this script: no photo, no download.
   card_oak / card_maple / card_birch .png   sprays of oak, maple and birch leaves. These leaves
         are not photos: this script draws them (leaf_outline, drawn_leaf), one shape per species; the trees are built out of flat cards showing them
         (campfire_trees.gd, camp_foliage.gdshader). The stem end of each is at the bottom middle.
@@ -359,6 +362,59 @@ def bark_birch() -> None:
     save_jpg(img.convert("RGB"), "detail_bark_birch.jpg")
 
 
+def tile_noise(size: int, slope: float, seed: int, stretch=(1.0, 1.0)) -> np.ndarray:
+    """Noise that repeats without a seam (made in frequency space): values with mean 0 and
+    spread 1. slope = how fast the fine detail falls away (2 = soft billows, 1 = rough);
+    stretch pulls the features out along x or y."""
+    rng = np.random.default_rng(seed)
+    fy = np.fft.fftfreq(size)[:, None] * size * stretch[1]
+    fx = np.fft.fftfreq(size)[None, :] * size * stretch[0]
+    f = np.sqrt(fx * fx + fy * fy)
+    f[0, 0] = 1.0
+    amp = 1.0 / f ** slope
+    amp[0, 0] = 0.0
+    amp[f < 1.5] *= 0.35                      # no single huge blob across the whole tile
+    spec = amp * np.exp(2j * np.pi * rng.random((size, size)))
+    n = np.fft.ifft2(spec).real
+    return (n - n.mean()) / n.std()
+
+
+def water_normal(size: int = 256) -> None:
+    """water_normal.png: the lake's ripples as a seamless normal map (red = slope along x,
+    green = slope along z, 0.5 = flat). camp_water.gdshader slides three copies of it across
+    each other. Ours: made from noise here, no photo."""
+    # smooth swells, with ridged noise taken off so crests are sharper than troughs
+    # (Kept small and fairly rough on purpose: the file has 256 steps of slope, and a big
+    # smooth picture changes by less than one step from pixel to pixel, which shows as
+    # terraces in the reflection. The shader blends between pixels and layers three copies.)
+    h = tile_noise(size, 2.1, 3) + 0.45 * tile_noise(size, 1.7, 4) - 0.5 * np.abs(tile_noise(size, 1.9, 5))
+    dx = (np.roll(h, -1, axis=1) - np.roll(h, 1, axis=1)) * 0.5
+    dy = (np.roll(h, -1, axis=0) - np.roll(h, 1, axis=0)) * 0.5
+    k = 0.5 / (3.0 * max(dx.std(), dy.std()))          # three spreads fill the range; rarer slopes are clipped
+    img = np.zeros((size, size, 3), dtype=np.uint8)
+    img[..., 0] = np.clip((0.5 + dx * k) * 255.0, 0, 255)
+    img[..., 1] = np.clip((0.5 + dy * k) * 255.0, 0, 255)
+    img[..., 2] = 255
+    Image.fromarray(img, "RGB").save(os.path.join(HERE, "water_normal.png"))
+    print("wrote water_normal.png")
+
+
+def sky_noise(size: int = 512) -> None:
+    """sky_noise.png: three seamless noise fields for camp_sky.gdshader's clouds, one per
+    colour channel (0..1). red = big soft billows (a cloud's body), green = fine crumbly
+    detail (eats the edges into puffs), blue = long streaks (the high thin cloud).
+    Ours: made from noise here, no photo."""
+    def unit(n: np.ndarray) -> np.ndarray:
+        lo, hi = np.percentile(n, 0.5), np.percentile(n, 99.5)
+        return np.clip((n - lo) / (hi - lo), 0.0, 1.0)
+    body = tile_noise(size, 2.1, 11) + 0.35 * np.abs(tile_noise(size, 1.7, 12))
+    fine = 1.0 - np.abs(tile_noise(size, 1.35, 13)) * 0.9 + 0.3 * tile_noise(size, 1.0, 14)
+    streak = tile_noise(size, 1.6, 15, stretch=(1.0, 5.0))
+    img = np.stack([unit(body), unit(fine), unit(streak)], axis=-1)
+    Image.fromarray((img * 255.0).astype(np.uint8), "RGB").save(os.path.join(HERE, "sky_noise.png"))
+    print("wrote sky_noise.png")
+
+
 if __name__ == "__main__":
     ground("ground_grass.jpg", "forrest_ground_01")
     ground("ground_forest.jpg", "forest_leaves_04", (0.62, 0.6, 0.62))
@@ -376,3 +432,5 @@ if __name__ == "__main__":
         card_broadleaf(leaf_kind)
     card_grass()
     card_fern()
+    water_normal()
+    sky_noise()

@@ -286,6 +286,9 @@ func _ready() -> void:
 	var sky := env.sky.sky_material as ShaderMaterial
 	var sun := room.find_child("SunMoon", false, false) as DirectionalLight3D
 	_check(sky != null and sky.shader == CF.SKY_SHADER, "the room's own sky shader is in use")
+	_check(sky.get_shader_parameter("cloud_noise") is Texture2D, "the sky has its cloud shapes picture")
+	_check((room.get("_parts")["lake_mat"] as ShaderMaterial).get_shader_parameter("ripples") is Texture2D
+		and (room.get("_parts")["stream_mat"] as ShaderMaterial).get_shader_parameter("ripples") is Texture2D, "the lake and the stream have their ripple picture")
 	_check(float(sky.get_shader_parameter("day")) < 0.05 and float(sky.get_shader_parameter("dusk")) > 0.2,
 		"18.6 h is dusk: night sky with a sunset glow (day %.2f, dusk %.2f)" % [float(sky.get_shader_parameter("day")), float(sky.get_shader_parameter("dusk"))])
 	AppState.set_setting("camp_time", 12.0)

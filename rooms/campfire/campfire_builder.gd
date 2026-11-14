@@ -518,6 +518,7 @@ static func _build_water(parent: Node3D, out: Dictionary) -> void:
 	lake.size = Vector2(1400.0, 1400.0)
 	var lake_mat := ShaderMaterial.new()
 	lake_mat.shader = WATER_SHADER
+	lake_mat.set_shader_parameter("ripples", load(TEX + "water_normal.png"))
 	out["lake_mat"] = lake_mat
 	var mi := _add_mesh(parent, "Lake", lake, lake_mat, false)
 	mi.position = Vector3(0.0, WATER_Y, -700.0 - 3.0)       # its south edge is 3 m north of the fire
@@ -542,6 +543,7 @@ static func _build_water(parent: Node3D, out: Dictionary) -> void:
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var stream_mat := ShaderMaterial.new()
 	stream_mat.shader = WATER_SHADER
+	stream_mat.set_shader_parameter("ripples", load(TEX + "water_normal.png"))
 	stream_mat.set_shader_parameter("flow", Vector2(0.14, -0.3))      # downhill: north-east to the lake
 	stream_mat.set_shader_parameter("shore_amount", 0.0)
 	out["stream_mat"] = stream_mat

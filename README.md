@@ -1451,6 +1451,9 @@ Included rooms:
     with mist between them and a far tree line. **Clouds**, **Stars**, **Aurora** and **Mist**
     set how much of each there is. On a slow graphics card, **Clouds** and **Aurora** at 0% are
     the lightest.
+  - The stars twinkle and turn slowly around the sky over the night, and a shooting star
+    crosses now and then. In photosensitive-safe mode the stars hold steady. The clouds drift
+    and the lake carries small ripples that move with the wind.
   - **Rain** makes it rain, as hard as you like: the clouds close in, the ground goes dark and
     shiny and rings spread on the lake. **Thunderstorm** adds heavy rain, wind in the trees and
     lightning with thunder. The lightning follows **Flash strength**, and in photosensitive-safe
@@ -1537,7 +1540,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
-- `rooms/campfire/textures/` (ground, bark, rock, plank, cloth and leaf pictures made from Poly Haven photos): CC0
+- `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.

@@ -2,7 +2,11 @@ shader_type spatial;
 render_mode unshaded, cull_back;
 // Lakeside Campfire: the lake and the stream. One flat sheet each; this shader makes it look
 // like water without any costly reflection pass:
-//   - small waves are a rippled "which way is up" worked out from drifting noise,
+//   - small waves are a rippled "which way is up" read from a ripple picture
+//     (textures/water_normal.png, made by textures/make_textures.py) that is laid over the
+//     water three times at different sizes, each copy sliding its own way, so the pattern
+//     never repeats to the eye. (It used to be worked out from maths noise on the spot; on a
+//     real graphics card that broke up into square blocks far from the camp.)
 //   - looking along the water it mirrors the sky (the hour's colours, handed over by the room
 //     script), the far shore's ridges and trees (the same outline the sky shader draws, from
 //     camp_horizon.gdshaderinc), a glitter path under the sun or the moon, and a warm streak
@@ -34,24 +38,31 @@ uniform float shore_amount = 1.0;
 // Extra light added to everything (lightning).
 uniform float flash = 0.0;
 
+// The ripple picture: red = slope along x, green = slope along z, 0.5 = flat. Set by
+// campfire_builder.gd (_build_water).
+uniform sampler2D ripples : filter_linear_mipmap_anisotropic, repeat_enable;
+
 varying vec3 world_pos;
 
+// A random number 0..1 for a grid cell (the raindrops). Built from fract and dot only: the
+// usual sin() version gives different numbers on different graphics cards at large inputs.
 float hash2(vec2 p) {
-	return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+	vec3 q = fract(vec3(p.xyx) * 0.1031);
+	q += dot(q, q.yzx + 33.33);
+	return fract((q.x + q.y) * q.z);
 }
 
-float noise2(vec2 p) {
-	vec2 i = floor(p);
-	vec2 f = fract(p);
-	f = f * f * (3.0 - 2.0 * f);
-	return mix(mix(hash2(i), hash2(i + vec2(1.0, 0.0)), f.x), mix(hash2(i + vec2(0.0, 1.0)), hash2(i + vec2(1.0, 1.0)), f.x), f.y);
-}
-
-// The water's height at a point: two layers of noise drifting across each other.
-float height(vec2 p) {
-	vec2 a = p * 0.9 + flow * TIME * 6.0;
-	vec2 b = p * 2.3 - flow.yx * TIME * 9.0 + vec2(TIME * 0.11, 0.0);
-	return noise2(a) * 0.6 + noise2(b) * 0.3 + noise2(p * 6.1 + vec2(0.0, TIME * 0.35)) * 0.1;
+// The water's slope (x, z) at a point: three copies of the ripple picture.
+//   long swells, 22 m to a copy, drifting with the flow
+//   middling waves, 9 m, turned a quarter and drifting against them
+//   fine ripples, 3 m, sliding sideways; `fine` fades them out far away, where they would
+//   only shimmer
+vec2 ripple_slope(vec2 p, float fine) {
+	vec2 drift = flow * TIME;
+	vec2 a = texture(ripples, (p + drift * 5.0) * 0.045).rg - 0.5;
+	vec2 b = texture(ripples, (p.yx - drift.yx * 8.0) * 0.11 + vec2(0.37, 0.61)).gr - 0.5;
+	vec2 c = texture(ripples, p * 0.31 + vec2(TIME * 0.013, -TIME * 0.019)).rg - 0.5;
+	return a * 1.3 + b * 0.9 + c * 0.7 * fine;
 }
 
 // Rings from raindrops: the surface is cut into cells, each with one drop that lands at a
@@ -77,16 +88,16 @@ void vertex() {
 
 void fragment() {
 	vec2 p = world_pos.xz;
-	// the surface's slope from three height samples, plus the rain's rings
-	float e = 0.12;
-	float h0 = height(p);
-	vec2 slope = vec2(height(p + vec2(e, 0.0)) - h0, height(p + vec2(0.0, e)) - h0) / e;
-	slope *= 0.11 * wave;
+	vec3 cam = (INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+	float dist = length(cam - world_pos);
+	float near_water = 1.0 / (1.0 + dist * 0.02);          // 1 at the camera, 1/3 at 100 m
+	// the surface's slope from the ripple picture, plus the rain's rings
+	// (gentler far away: seen at a grazing angle, steep far ripples only make hard patches)
+	vec2 slope = ripple_slope(p, near_water) * mix(0.2, 0.4, near_water) * wave;
 	if (rain > 0.01) {
-		slope += rain_rings(p) * 0.35 * rain;
+		slope += rain_rings(p) * 0.35 * rain * near_water;
 	}
 	vec3 n = normalize(vec3(-slope.x, 1.0, -slope.y));
-	vec3 cam = (INV_VIEW_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
 	vec3 view = normalize(cam - world_pos);
 	vec3 r = reflect(-view, n);
 	r.y = abs(r.y);
@@ -94,10 +105,15 @@ void fragment() {
 	vec3 mirror = mix(sky_horizon, sky_top, pow(clamp(r.y, 0.0, 1.0), 0.5));
 	float az = atan(r.x, -r.z);
 	float shore = max(max(hz_far_ridge(az), hz_near_ridge(az)), hz_tree_line(az));
-	mirror = mix(mirror, shore_color, smoothstep(shore + 0.02, shore - 0.02, r.y) * shore_amount * 0.9);
+	// (a soft edge: a ripple smears the shore's outline, it does not cut it out)
+	mirror = mix(mirror, shore_color, smoothstep(shore + 0.1, shore - 0.05, r.y) * shore_amount * 0.9);
+	// starlight: on the darkest night the ripples still catch a faint sheen, so the lake is
+	// never a flat black hole (it only shows when the mirrored sky itself is near black)
+	mirror = max(mirror, vec3(0.022, 0.034, 0.07) * (0.4 + 3.0 * clamp(r.y, 0.0, 1.0)));
 	// the glitter path under the sun or the moon: a tight sparkle and a wide soft sheen
 	float ld = max(dot(r, normalize(light_dir)), 0.0);
-	mirror += light_color * (pow(ld, 420.0) * 6.0 + pow(ld, 48.0) * 0.35);
+	// (the sparkle is tight close by and wider far off, where a pixel covers many ripples)
+	mirror += light_color * (pow(ld, mix(140.0, 420.0, near_water)) * mix(2.5, 6.0, near_water) + pow(ld, 48.0) * 0.35);
 	// the fire's light on the water: a warm streak toward the camp
 	vec3 to_fire = normalize(fire_pos - world_pos);
 	float fd = max(dot(r, to_fire), 0.0);
@@ -105,7 +121,10 @@ void fragment() {
 	mirror += fire_color * (pow(fd, 90.0) * 2.2 + pow(fd, 12.0) * 0.12) * near;
 	// looking along the water you see the mirror, looking down you see into it
 	float fres = 0.03 + 0.97 * pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 5.0);
-	vec3 c = mix(deep_color, mirror, clamp(fres, 0.0, 1.0));
+	// the water's own colour: dark looking down, a little greener and lighter on the slopes
+	// that face the camera (light coming through the wave)
+	vec3 body = deep_color + vec3(0.0, 0.035, 0.03) * clamp(dot(slope, view.xz) * 4.0, 0.0, 1.0) * (0.3 + 0.7 * clamp(light_dir.y * 3.0, 0.0, 1.0));
+	vec3 c = mix(body, mirror, clamp(fres, 0.0, 1.0));
 	c += vec3(0.35, 0.4, 0.55) * flash * 0.25;
 	ALBEDO = c;
 }
