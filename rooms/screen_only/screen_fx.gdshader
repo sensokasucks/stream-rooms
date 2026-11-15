@@ -389,7 +389,9 @@ void fragment() {
 	vec2 half_size = rect_px * 0.5;
 	float rad = corner * min(rect_px.x, rect_px.y) * 0.08;
 	vec2 q = abs(pix) - (half_size - rad);
-	float sdf = length(max(q, 0.0)) - rad;
+	// signed distance to the rounded box: the min() term makes it negative inside. Without it a
+	// square corner (rad 0) gave 0 everywhere inside, and the smoothstep below halved the picture.
+	float sdf = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - rad;
 	float glass = on_glass ? smoothstep(1.5, -1.5, sdf) : 0.0;
 	vec3 frame_col = vec3(0.0);
 	if (bezel > 0.001) {

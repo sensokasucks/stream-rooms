@@ -109,6 +109,11 @@ func _ready() -> void:
 		await _shot("look_" + id)
 	AppState.set_setting("so_preset", "clean")
 	await _secs(0.2)
+	# the clean look must not change the picture: the red disc in the middle keeps its colour
+	await RenderingServer.frame_post_draw
+	var mid := get_viewport().get_texture().get_image()
+	var mid_px := mid.get_pixel(mid.get_width() / 2, mid.get_height() / 2)
+	_check(absf(mid_px.r - 0.9) < 0.05 and absf(mid_px.g - 0.2) < 0.05, "the clean look shows the picture at full brightness (%s)" % mid_px)
 	_check(is_zero_approx(float(AppState.get_setting("so_curve"))) and String(AppState.get_setting("so_fun")) == "none",
 		"Clean picture puts every effect back")
 
@@ -140,6 +145,74 @@ func _ready() -> void:
 	await _secs(0.1)
 	_check(float(mat.get_shader_parameter("flicker")) <= float(AppState.get_setting("so_flicker")) * 0.26, "safe mode cuts the flicker")
 	AppState.set_setting("photosensitive_safe", false)
+
+	# Extra screens: sources of their own, placed by the layout
+	var asked: Dictionary = {}      # slot -> [kind, address], as the set asks ExtraFeeds
+	var ask_cb := func(slot: String, kind: String, address: String) -> void: asked[slot] = [kind, address]
+	EventBus.extra_feed_requested.connect(ask_cb)
+	var win := get_viewport().get_visible_rect().size
+	var ex1 := room.find_child("Extra1", true, false) as ColorRect
+	var ex2 := room.find_child("Extra2", true, false) as ColorRect
+	_check(ex1 != null and ex2 != null and not ex1.visible, "extra screens exist and start off")
+	var pic_path := OS.get_user_data_dir().path_join("so_test_extra.png")
+	var pic := Image.create(320, 240, false, Image.FORMAT_RGBA8)     # 4:3, so the inset's shape can be told apart
+	pic.fill(Color(0.1, 0.6, 0.9))
+	pic.fill_rect(Rect2i(110, 70, 100, 100), Color(1.0, 0.85, 0.1))
+	pic.save_png(pic_path)
+	AppState.set_setting("so_extra_layout", "free")
+	AppState.set_setting("so_extra_frame", 0.25)
+	AppState.set_setting("so_extra_1_picture", pic_path)
+	AppState.set_setting("so_extra_1_size", 0.25)
+	AppState.set_setting("so_extra_1_x", 1.0)
+	AppState.set_setting("so_extra_1_y", 1.0)
+	AppState.set_setting("so_extra_1_source", "picture")
+	await _secs(0.3)
+	var m1 := ex1.material as ShaderMaterial
+	_check(ex1.visible and bool(m1.get_shader_parameter("has_video")), "a picture file shows on extra screen 1")
+	_check(absf(ex1.size.x - win.x * 0.25) < 2.0 and absf(ex1.size.x / ex1.size.y - 4.0 / 3.0) < 0.02, "the inset has its size and its picture's shape (%s)" % ex1.size)
+	_check(absf(ex1.position.x + ex1.size.x - win.x) < 1.5 and absf(ex1.position.y + ex1.size.y - win.y) < 1.5, "and stays inside the window (%s)" % ex1.position)
+	_check(rect.size.is_equal_approx(win), "insets leave the main picture filling the window")
+	AppState.set_setting("so_extra_2_address", "rtmp://127.0.0.1:9/live/none")
+	AppState.set_setting("so_extra_2_source", "stream")
+	AppState.set_setting("so_extra_3_source", "tab")
+	await _secs(0.3)
+	_check(asked.get("so_extra_2", []) == ["stream", "rtmp://127.0.0.1:9/live/none"], "a stream address is asked from ExtraFeeds (%s)" % [asked.get("so_extra_2", [])])
+	_check(asked.get("so_extra_3", []) == ["tab", "Extra screen 3"], "a browser tab is asked for by the screen's name")
+	_check(asked.get("so_extra_1", ["x"]) == ["", ""], "a picture file needs no feed")
+	_check(ex2.visible and not bool((ex2.material as ShaderMaterial).get_shader_parameter("has_video")), "a feed with no picture yet shows between videos")
+	EventBus.extra_feed_texture_changed.emit("so_extra_2", tex)
+	await _secs(0.2)
+	_check(bool((ex2.material as ShaderMaterial).get_shader_parameter("has_video")), "ExtraFeeds' picture lands on its screen")
+	AppState.set_setting("so_preset", "crt_tv")
+	await _secs(0.2)
+	_check(float(m1.get_shader_parameter("curve")) > 0.5, "extra screens wear the Look too")
+	await _shot("extras_insets")
+	AppState.set_setting("so_extra_fx", false)
+	await _secs(0.2)
+	_check(float(m1.get_shader_parameter("curve")) == 0.0 and float(mat.get_shader_parameter("curve")) > 0.5, "or stay clean while the main picture keeps it")
+	AppState.set_setting("so_extra_layout", "side")
+	await _secs(0.3)
+	_check(absf(rect.size.x - win.x * 0.75) < 2.0 and ex1.position.x >= rect.size.x - 1.0, "Column on the right: the main picture moves left (%s)" % rect.size)
+	_check(absf(ex1.size.y - ex2.size.y) < 1.0 and ex2.position.y > ex1.position.y, "the extra screens stack in the column")
+	await _shot("extras_side")
+	AppState.set_setting("so_extra_layout", "grid")
+	await _secs(0.3)
+	_check(rect.size.is_equal_approx(win * 0.5) and ex1.position.x >= win.x * 0.5 and ex2.position.y >= win.y * 0.5, "Two by two: four quarters")
+	await _shot("extras_grid")
+	get_window().size = Vector2i(900, 900)
+	await _secs(0.4)
+	_check(rect.size.is_equal_approx(get_viewport().get_visible_rect().size * 0.5), "the layout follows a resized window")
+	get_window().size = Vector2i(1280, 720)
+	for n in [1, 2, 3]:
+		AppState.set_setting("so_extra_%d_source" % n, "off")
+	AppState.set_setting("so_extra_fx", true)
+	AppState.set_setting("so_extra_layout", "free")
+	AppState.set_setting("so_preset", "clean")
+	await _secs(0.4)
+	_check(not ex1.visible and not ex2.visible and rect.size.is_equal_approx(get_viewport().get_visible_rect().size), "all off: the main picture has the window again")
+	_check(asked.get("so_extra_2", ["x"]) == ["", ""], "and the feeds are stopped")
+	EventBus.extra_feed_requested.disconnect(ask_cb)
+	DirAccess.remove_absolute(pic_path)
 
 	# Stream Core hooks: video_prep and the "video" line
 	var remote := ChatFeed.get_remote()
