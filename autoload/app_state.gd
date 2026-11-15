@@ -200,6 +200,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"window_mode": "",           # "" | windowed | borderless (no frame, covers the screen) | fullscreen
 	"window_screen": -1,         # which monitor, from 0 (-1 = the one it opened on)
 	"window_size": "",           # "1920x1080" etc. for Windowed / Borderless ("" = fill the screen)
+	"window_size_presets": "",   # sizes saved from the Esc menu's Custom size box, comma separated ("1440x1080,1080x1920")
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)

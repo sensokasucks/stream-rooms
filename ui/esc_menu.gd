@@ -6,7 +6,8 @@ extends Node
 ## opens it, and Esc or Resume closes it.
 ## Created by core/main.gd at start. It also owns the window settings (window_mode, window_screen,
 ## window_size): DisplayMode.apply runs at start and whenever one of them changes, from here or
-## from anywhere else.
+## from anywhere else. The Display page's Custom size row also keeps window_size_presets (sizes the
+## streamer saved, shown in the Window size dropdown; DisplayMode.presets / add_preset).
 ## Everything here is a setting the control panel also has (except the window ones), read and
 ## written through AppState, so both stay in step. Work list item 4 (rooms-menu/WORK_LIST.md).
 
@@ -212,9 +213,10 @@ func _build_display() -> void:
 	var screens: Array = [[-1, "The one it opens on"]]
 	screens.append_array(DisplayMode.screens())
 	_row("Monitor", _dropdown("window_screen", screens, "Which monitor the room window goes on."))
-	_row("Window size", _dropdown("window_size", DisplayMode.SIZES,
-		"The room window's size for Windowed and Borderless. Pick your OBS canvas size (often 1920 × 1080) so the capture fits exactly."))
-	_page_box.add_child(_hint("Window size is used for Windowed and Borderless. \"Fill the screen\" makes the window as big as the monitor."))
+	_row("Window size", _dropdown("window_size", DisplayMode.size_options(),
+		"The room window's size for Windowed and Borderless. Pick your OBS canvas size (often 1920 × 1080) so the capture fits exactly. Sizes you saved from Custom size are in this list too."))
+	_row("Custom size", _custom_size_box())
+	_page_box.add_child(_hint("Window size is used for Windowed and Borderless. \"Fill the screen\" makes the window as big as the monitor; a size bigger than the monitor is cut down to fit it."))
 	_row("Graphics quality", _choice([["low", "Low"], ["medium", "Medium"], ["high", "High"], ["custom", "Custom"]],
 		String(AppState.get_setting("graphics_quality")),
 		func(v: Variant) -> void:
@@ -227,6 +229,62 @@ func _build_display() -> void:
 		"The most frames per second the room draws. 60 is smooth; 30 saves power for OBS and games."))
 	_row("V-Sync", _tick("vsync", "On", "Waits for the monitor's refresh, so the picture never tears."))
 	_page_box.add_child(_hint("Graphics details (bounce light, shadows, fog, 3D resolution) are in the control panel: Room tab > Performance."))
+
+
+## The Display page's Custom size row: width × height boxes (pixels), "Use" (sets window_size),
+## "Save as preset" (uses it and adds it to window_size_presets, so it stays in the Window size
+## dropdown) and, when the current size is a saved one, "Remove preset". The boxes start at the
+## current window_size, or the window's real size while that is "Fill the screen".
+## Limits come from DisplayMode.MIN_SIZE / MAX_SIZE (the same ones parse_size accepts).
+func _custom_size_box() -> VBoxContainer:
+	# two lines (the boxes, then the buttons), so the row fits the menu window's width
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 6)
+	var box := HBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	col.add_child(box)
+	var btns := HBoxContainer.new()
+	btns.add_theme_constant_override("separation", 6)
+	col.add_child(btns)
+	var now := String(AppState.get_setting("window_size"))
+	var start := DisplayMode.parse_size(now)
+	if start == Vector2i.ZERO:
+		start = get_window().size
+	var w := _size_spin(start.x, DisplayMode.MIN_SIZE.x, DisplayMode.MAX_SIZE.x, "Width in pixels.")
+	var h := _size_spin(start.y, DisplayMode.MIN_SIZE.y, DisplayMode.MAX_SIZE.y, "Height in pixels.")
+	var x := Label.new()
+	x.text = "×"
+	box.add_child(w)
+	box.add_child(x)
+	box.add_child(h)
+	var typed := func() -> Vector2i: return Vector2i(int(w.value), int(h.value))
+	btns.add_child(_btn("Use", "Make the room window this size now (Windowed and Borderless). Kept for the next start.", func() -> void:
+		_write("window_size", DisplayMode.size_text(typed.call()))
+		_queue_rebuild()))
+	btns.add_child(_btn("Save as preset", "Use this size and keep it in the Window size list, so you can pick it again later.", func() -> void:
+		var v: Vector2i = typed.call()
+		if DisplayMode.add_preset(v):
+			_write("window_size", DisplayMode.size_text(v))
+			EventBus.status_message.emit("Window size %s saved as a preset." % DisplayMode.size_label(v), false)
+		_queue_rebuild()))
+	if DisplayMode.presets().has(now):
+		btns.add_child(_btn("Remove preset", "Take %s out of the Window size list (the window keeps its size)." % DisplayMode.size_label(DisplayMode.parse_size(now)), func() -> void:
+			DisplayMode.remove_preset(now)
+			_queue_rebuild()))
+	return col
+
+
+## A whole-pixel number box for the Custom size row.
+func _size_spin(value: int, lo: int, hi: int, tip: String) -> SpinBox:
+	var sp := SpinBox.new()
+	sp.min_value = lo
+	sp.max_value = hi
+	sp.step = 1
+	sp.value = clampi(value, lo, hi)
+	sp.custom_minimum_size = Vector2(96, 0)
+	sp.select_all_on_focus = true
+	sp.tooltip_text = tip
+	return sp
 
 
 func _build_sound() -> void:

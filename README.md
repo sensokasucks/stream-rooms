@@ -394,8 +394,13 @@ of the room never shows it. **Esc** or **Resume** goes back.
 
 - **Display**: **Window** (**Windowed**, **Borderless** with no frame covering the monitor, or
   **Fullscreen**), **Monitor**, **Window size** (pick your OBS canvas size, often 1920 × 1080; used
-  for Windowed and Borderless), **Graphics quality**, **Frame rate cap** and **V-Sync**. The window
-  choice is kept for the next start. Until you pick something, the window opens as it always did.
+  for Windowed and Borderless), **Custom size**, **Graphics quality**, **Frame rate cap** and **V-Sync**.
+  The window choice is kept for the next start. Until you pick something, the window opens as it
+  always did.
+  - **Custom size**: type a width and height in pixels (for example 1440 × 1080 for a 4:3 screen,
+    or 1080 × 1920 for a portrait one) and press **Use**. **Save as preset** also keeps that size in
+    the **Window size** list (marked "saved"), so you can pick it again later. When a saved size is
+    picked, **Remove preset** takes it out of the list. A size bigger than the monitor is cut down to fit.
 - **Sound**: **Video volume**, **Room ambience** and **Curtain sounds**.
 - **Co-stream**: host or join, who's in (with **Co-host** and **Remove** for the host), **Copy
   invite address**, **Resync**, **End session** / **Leave**, the big screen remote (**Give remote**,
