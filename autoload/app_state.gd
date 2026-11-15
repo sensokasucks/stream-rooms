@@ -74,6 +74,23 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_live_2_x": 0.0, "forge_live_2_y": 0.0, "forge_live_2_size": 1.0, "forge_live_2_tilt": 0.0, "forge_live_2_turn": 0.0,
 	"forge_live_3_x": 0.0, "forge_live_3_y": 0.0, "forge_live_3_size": 1.0, "forge_live_3_tilt": 0.0, "forge_live_3_turn": 0.0,
 	"forge_live_align": true,    # the upper right screen mirrors the upper left one's place (its own five are ignored)
+	# Lakeside Campfire (rooms/campfire/campfire_room.gd). The first ten are shared in a co-stream
+	# with the host's "room" group (NetSession.SHARED_BASE): keep that list in step with these.
+	"camp_fire": 1.0,            # the campfire (flames, light, sparks, crackle): 0 = out, 1 = normal, 2 = roaring
+	"camp_screen": true,         # the big screen hangs between its posts; false = taken down (open view of the lake)
+	"camp_time": 18.6,           # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"camp_day_minutes": 0.0,     # minutes one full day takes while the clock runs; 0 = the clock stands still at camp_time
+	"camp_clouds": 0.7,          # fair-weather cloud: 0 = clear, 1 = normal, 2 = overcast
+	"camp_stars": 1.0,           # how bright the stars and the Milky Way are at night (0 = none)
+	"camp_aurora": 0.0,          # northern lights over the lake at night: 0 = none, 1 = normal, 2 = strong
+	"camp_mist": 0.4,            # haze over the lake and between the mountain ridges, 0..1
+	"camp_close_woods": false,   # thick trees right round the clearing and behind the screen, hiding the lake
+	"camp_detail": "auto",       # how detailed the camp is drawn on this PC: auto (from graphics_quality) | low | near | full
+	"camp_string_lights": true,  # the string lights and tent lanterns (this room's house lights)
+	"camp_fireflies": true,      # fireflies round the clearing on dry nights
+	"camp_autumn": false,        # autumn colours on the birches, maples and oaks (shared in a co-stream)
+	"camp_butterflies": true,    # a few butterflies over the grass by day (each PC's own, like the fireflies)
+	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
