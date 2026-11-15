@@ -108,6 +108,43 @@ const BASE_DEFAULTS: Dictionary = {
 	"drive_mist": 0.35,          # haze in the air and mist lying low over the lot, 0..1
 	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
 	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
+	# Screen Only set (rooms/screen_only): no 3D room, the big screen's picture fills the window with
+	# a stack of effects (screen_fx.gdshader). Room tab > Screen Only, and Core's Stream Rooms settings.
+	"so_preset": "clean",        # last look picked from the Look list; picking one sets the sliders below
+	"so_fit": "fit",             # fit (whole picture, bars) / fill (crop to fill) / stretch
+	"so_bars": "black",          # what fills the bars beside the picture: black / color / glow (blurred picture)
+	"so_bar_color": Color(0.0, 0.0, 0.0),
+	"so_idle": "static",         # between videos and while the curtain is closed: static / bars / black / standby
+	"so_curve": 0.0,             # CRT glass curvature, 0-1 (bent corners)
+	"so_corner": 0.0,            # rounded picture corners, 0-1
+	"so_scanlines": 0.0,         # scanline strength, 0-1
+	"so_scan_px": 3.0,           # one scanline every this many window pixels
+	"so_mask": 0.0,              # RGB phosphor mask strength, 0-1
+	"so_mask_type": "grille",    # grille (stripes) / shadow (dots) / slot
+	"so_glow": 0.0,              # phosphor glow, 0-1
+	"so_vignette": 0.0,          # darker edges, 0-1
+	"so_fringe": 0.0,            # colour fringing, 0-1
+	"so_flicker": 0.0,           # brightness flicker, 0-1 (cut in photosensitive-safe mode)
+	"so_roll": 0.0,              # rolling bright bar, 0-1 (cut in photosensitive-safe mode)
+	"so_bezel": 0.0,             # plastic frame round the glass, 0-1
+	"so_led": 0.0,               # LED wall dots, 0-1
+	"so_led_count": 160,         # LEDs across the window
+	"so_holo": 0.0,              # hologram look, 0-1
+	"so_bend": 0.0,              # cinema screen bend, 0-1
+	"so_vhs": 0.0,               # tape tracking band, wobble and noise, 0-1
+	"so_bleed": 0.0,             # colour bleed, 0-1
+	"so_stamp": false,           # tape PLAY and date text in the corners
+	"so_grain": 0.0,             # film grain, 0-1
+	"so_scratches": 0.0,         # film dust, scratches and gate weave, 0-1
+	"so_sepia": 0.0,             # faded brown film colour, 0-1
+	"so_pixelate": 0.0,          # chunky pixels, 0-1 (1 = 24-pixel blocks)
+	"so_palette": "none",        # none / handheld / amber / green / grey / retro4
+	"so_dither": 0.0,            # ordered dither with a palette, 0-1
+	"so_fun": "none",            # none / night / thermal / halftone / ascii / posterize / invert
+	"so_fun_amount": 1.0,        # how much of the fun look, 0-1
+	"so_saturation": 1.0,        # colour, 0-2
+	"so_brightness": 1.0,        # 0.5-1.5
+	"so_contrast": 1.0,          # 0.5-1.5
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible

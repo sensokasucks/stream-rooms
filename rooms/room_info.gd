@@ -35,6 +35,12 @@ extends Resource
 ## See-through hologram screen: adds Hologram, Transparency and Glitch controls to the Room tab.
 @export var screen_hologram: bool = false
 
+## A flat set with no 3D room (Screen Only, rooms/screen_only): the room draws the picture itself
+## over the whole window, so RoomHost skips the curtain / stand-by card and the side chat windows
+## (they would sit hidden behind it). The curtain still works: with no curtain in the room,
+## AppState covers the screen at once and the set shows its "between videos" picture.
+@export var flat_screen: bool = false
+
 ## A "please stand by" picture shown over the screen instead of the red stage curtain
 ## (core/standby_card.gd). Empty = the curtain.
 @export var standby_card: Texture2D
