@@ -74,11 +74,13 @@ const HAZE_SHADER := preload("res://rooms/forge_hall/forge_haze.gdshader")
 ## The close-up photo detail for each imported stone material (blender/forge_hall_gen.py,
 ## setup_materials): [the photo's name in textures/stone_<name>_grain.jpg / _normal.jpg (made by
 ## textures/make_stone_detail.py), metres one copy of the photo covers, grain strength, relief
-## strength]. Polished stone gets less relief than the rough forge.
+## strength, how much rougher the pits are]. The polished slabs and pillars get grain only: relief
+## or rougher pits there dulled their mirror shine near the camera (the reflections of the
+## inlays and lamps), so the room looked darker round the camera wherever it went.
 const STONE_DETAIL: Dictionary = {
-	"Stone_Slab": ["slab", 1.6, 0.9, 0.35],
-	"Forge_Granite": ["forge", 1.2, 1.0, 0.9],
-	"Pillar_Marble": ["marble", 1.8, 0.6, 0.3],
+	"Stone_Slab": ["slab", 1.6, 0.9, 0.0, 0.0],
+	"Forge_Granite": ["forge", 1.2, 1.0, 0.9, 0.25],
+	"Pillar_Marble": ["marble", 1.8, 0.6, 0.0, 0.0],
 }
 ## The heat haze sheets over the forge: [metres across the fire, metres towards the room,
 ## height of the sheet's foot, width, height]. Counted from FIRE_Main (the bottom centre of the
@@ -993,6 +995,7 @@ func _build_stone_detail() -> void:
 				sm.set_shader_parameter("tile_metres", float(spec[1]))
 				sm.set_shader_parameter("grain_strength", float(spec[2]))
 				sm.set_shader_parameter("bump_strength", float(spec[3]))
+				sm.set_shader_parameter("rough_vary", float(spec[4]))
 				made[m] = sm
 			_stone.append({"mi": mi, "surface": s, "mat": made[m]})
 
