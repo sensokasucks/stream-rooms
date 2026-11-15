@@ -206,6 +206,19 @@ func _ready() -> void:
 	AppState.set_setting("sun_rays", 1.0)
 	await _secs(0.3)
 	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and (flames[0] as MeshInstance3D).visible and beams.visible, "back at 100% everything is on again")
+	# the inlays light themselves: dimming the house lights leaves them as they are (the
+	# lantern glass still dims)
+	var lantern_full := _glow_of(room, "Lantern_Glass")
+	AppState.set_setting("house_lights", 0.0)
+	await _secs(3.0)
+	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and _glow_of(room, "Lantern_Glass") < lantern_full * 0.5,
+		"house lights down: the inlays keep their glow (%.2f), the lanterns dim (%.2f -> %.2f)" % [_glow_of(room, "Neon_Cyan"), lantern_full, _glow_of(room, "Lantern_Glass")])
+	AppState.set_setting("forge_neon", 0.0)
+	await _secs(0.2)
+	_check(is_zero_approx(_glow_of(room, "Neon_Cyan")), "and Inlay brightness still turns them off with the house lights down")
+	AppState.set_setting("forge_neon", 1.0)
+	AppState.set_setting("house_lights", 1.0)
+	await _secs(3.0)
 
 	# Inlay glow off: the bloom starts higher and the inlays stay under it, however high the slider
 	AppState.set_setting("forge_neon_bloom", false)

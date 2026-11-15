@@ -14,8 +14,9 @@ extends Room
 ##     layer, Neon_Fine_Cyan / Neon_Fine_Amber; plus the glowing pipes and the round sign) are
 ##     scaled by the Inlay brightness slider ("forge_neon"). With Inlay glow ("forge_neon_bloom")
 ##     off they are held just under the brightness where the picture's bloom starts, so they
-##     stay crisp lines with no halo. Like the lantern glass they also dim with the house
-##     lights (glow_materials on the room scene).
+##     stay crisp lines with no halo. They light themselves like the lines in a sci-fi film:
+##     unlike the lantern glass they keep their glow when the house lights dim
+##     (self_lit_materials on the room scene); only the slider changes them.
 ##   - The screen: the model only has a flat TVScreen rectangle. _shape_screen() swaps its mesh
 ##     for one that is moved, resized and bent from the "forge_screen_*" settings (Room tab >
 ##     Screen shape). The LED dots and hologram look are the app's own (RoomInfo.screen_led_amount
@@ -285,6 +286,7 @@ func _ready() -> void:
 	_fx.name = "SunShafts"          # Room.get_static_meshes() skips everything under this name
 	add_child(_fx)
 	_setup_glass()
+	_darken_inlays()
 	_build_probe()
 	_build_art()
 	_build_fire()
@@ -517,6 +519,18 @@ func _apply_neon() -> void:
 	_apply_bloom_threshold(get_world_3d().environment if is_inside_tree() else null)
 
 
+## The inlays' own surface colour (albedo) is turned nearly black, so all their colour comes
+## from their glow: at Inlay brightness 0% they go dark, like switched-off light strips, instead
+## of staying bright cyan / orange / purple lines lit by the room's lamps (which made the
+## slider look as if it did nothing). Called once from _ready, on the room's own copies.
+func _darken_inlays() -> void:
+	for g in _glow:
+		var m := g["mat"] as BaseMaterial3D
+		if NEON_MATERIALS.has(m.resource_name):
+			m.albedo_color = Color(0.03, 0.03, 0.035, m.albedo_color.a)
+			m.roughness = 0.3            # a little gloss, like dark glass over the light
+
+
 ## Sets where the bloom starts on the Environment in use: BLOOM_THRESHOLD with Inlay glow on,
 ## NO_BLOOM_THRESHOLD with it off. Called when the setting changes and from _run_clock when
 ## the app has swapped the Environment (a graphics setting changed). The Environment is this
@@ -540,7 +554,7 @@ func _scale_glow(names: PackedStringArray, amount: float, top: float = INF) -> v
 		if names.has(m.resource_name):
 			var peak := maxf(maxf(m.emission.r, m.emission.g), maxf(m.emission.b, 0.01))
 			g["energy"] = minf(float(g["base"]) * amount, top / peak)
-			m.emission_energy_multiplier = float(g["energy"]) * _level
+			m.emission_energy_multiplier = float(g["energy"]) * glow_level(g)
 
 
 # ── The screen's shape ───────────────────────────────────────
@@ -682,8 +696,9 @@ func _apply_art_frame() -> void:
 	_apply_art_level()
 
 
-## What follows the house lights and the Light strips slider in the art: the "Light strip"
-## frame's glow and the holograms' brightness. Called when either changes.
+## What follows the house lights and the Inlay brightness slider in the art: the "Light strip"
+## frame's glow (the slider only: it lights itself like the inlays) and the holograms'
+## brightness (the house lights). Called when either changes.
 func _apply_art_level() -> void:
 	if _art_frame_mat == null:
 		return
@@ -691,7 +706,7 @@ func _apply_art_level() -> void:
 	var glow := art_neon_energy * _neon_gain(strips)
 	if not bool(AppState.get_setting("forge_neon_bloom")):
 		glow = minf(glow, NO_BLOOM_GLOW)
-	_art_frame_mat.emission_energy_multiplier = glow * _level
+	_art_frame_mat.emission_energy_multiplier = glow
 	for a in _art:
 		var sm := (a["canvas"] as MeshInstance3D).material_override as ShaderMaterial
 		if sm:
