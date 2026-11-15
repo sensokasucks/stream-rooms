@@ -14,13 +14,14 @@ shader_type sky;
 //   6. below them a sea of cloud filling the valleys (the hall is above it).
 // rooms/forge_hall/forge_hall_room.gd (_apply_time) sets every uniform from the Time of day
 // setting and the room's Clouds / Nebula / Stars / Mountains sliders.
-// The clouds, the nebula and the cloud sea read their shapes from a noise picture
+// The clouds and the cloud sea read their shapes from a noise picture
 // (textures/sky_noise.png: r = a cloud's body, g = crumbly detail, b = long streaks; made by
 // rooms/campfire/textures/make_textures.py, sky_noise(), and shared in look with the Lakeside
 // Campfire's sky). Reading a picture is far cheaper than working noise out for every pixel (the
 // old version of this sky did that) and looks the same on every graphics card.
-// Cost: a handful of texture reads per sky pixel. Clouds, nebula and stars are each skipped when
-// their amount is 0, which is the cheap setting for a slow graphics card.
+// Cost: a handful of texture reads per sky pixel; the nebula (night only) is layered maths noise,
+// the dearest part. Clouds, nebula and stars are each skipped when their amount is 0, which is
+// the cheap setting for a slow graphics card.
 
 // Unit vectors pointing AT the sun and the moon, in world space.
 uniform vec3 sun_dir = vec3(-0.6, 0.7, -0.3);
@@ -59,13 +60,27 @@ float hash1(float n) {
 	return fract(n);
 }
 
-// Smooth value noise (only used for the sun's rays and the moon's marks: small areas).
+// Smooth value noise (the sun's rays, the moon's marks and, through fbm, the nebula).
 float noise3(vec3 p) {
 	vec3 i = floor(p);
 	vec3 f = fract(p);
 	f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(mix(hash3(i), hash3(i + vec3(1, 0, 0)), f.x), mix(hash3(i + vec3(0, 1, 0)), hash3(i + vec3(1, 1, 0)), f.x), f.y),
 		mix(mix(hash3(i + vec3(0, 0, 1)), hash3(i + vec3(1, 0, 1)), f.x), mix(hash3(i + vec3(0, 1, 1)), hash3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+
+// Layered noise (each layer twice as fine and half as strong), 0..1. The nebula's wisps.
+float fbm(vec3 p, int layers) {
+	float sum = 0.0;
+	float amp = 0.5;
+	float total = 0.0;
+	for (int i = 0; i < layers; i++) {
+		sum += noise3(p) * amp;
+		total += amp;
+		p = p * 2.03 + vec3(11.7, 3.1, 7.9);
+		amp *= 0.5;
+	}
+	return sum / total;
 }
 
 // Smooth noise round the compass. az: the direction's angle in radians; freq: bumps per turn
@@ -191,20 +206,20 @@ void sky() {
 		vec3 glow = vec3(0.0);
 		float dust = 0.0;
 		if (nebula_amount > 0.001) {
-			// wispy clouds: the noise picture bent by itself, kept only where it is strongest,
-			// in two colours that drift into each other; the streak noise cuts dark dust lanes
-			vec2 q = sheet * 0.16 + vec2(0.31, 0.67);
-			// (turned and stretched copies of the streak noise give long wisps; the body
-			// noise gathers them into clouds)
-			vec2 qs = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * q;
-			float n = textureLod(cloud_noise, q, soft).r * 0.55 + textureLod(cloud_noise, qs * vec2(1.4, 0.5), soft).b * 0.3 + textureLod(cloud_noise, q * 2.6, soft).g * 0.15;
-			float wisp = pow(smoothstep(0.4, 0.72, n), 1.6);
-			float veil = smoothstep(0.28, 0.65, n) * 0.25;                // a faint haze round the wisps
-			float which = textureLod(cloud_noise, q * 0.35 + vec2(0.71, 0.29), soft).r;
+			// wispy clouds: noise bent by more noise, kept only where it is strongest, in
+			// two colours that drift into each other; a second noise cuts dark dust lanes.
+			// (Worked out per pixel, not read from the cloud picture: drawn from that picture
+			// it looked like the clouds in purple. Night only, and skipped at Nebula 0%.)
+			vec3 q = d * 2.1;
+			vec3 bend = vec3(fbm(q + vec3(3.1, 0.0, 1.7), 3), fbm(q + vec3(8.3, 2.8, 0.0), 3), fbm(q + vec3(0.0, 5.2, 9.1), 3)) - 0.5;
+			float n = fbm(q + bend * 2.4, 5);
+			float wisp = pow(smoothstep(0.42, 0.78, n), 1.6);
+			float veil = smoothstep(0.3, 0.75, n) * 0.25;                 // a faint haze round the wisps
+			float which = fbm(d * 1.3 + vec3(40.0, 17.0, 5.0), 3);
 			vec3 neb = mix(vec3(0.42, 0.16, 0.9), vec3(0.1, 0.24, 0.95), smoothstep(0.38, 0.62, which));
 			neb = mix(neb, vec3(0.85, 0.6, 1.0), wisp * wisp * 0.5);      // the brightest threads go pale
-			dust = smoothstep(0.55, 0.78, textureLod(cloud_noise, qs * 1.7 + vec2(0.13, 0.41), soft).b) * 0.8;
-			glow = neb * (wisp * 0.8 + veil * 0.3) * (1.0 - dust) * nebula_amount;
+			dust = smoothstep(0.52, 0.72, fbm(q * 1.9 + bend * 1.5 + vec3(21.0, 4.0, 13.0), 4)) * 0.8;
+			glow = neb * (wisp * 1.2 + veil * 0.35) * (1.0 - dust) * nebula_amount;
 		}
 		vec3 stars = vec3(0.0);
 		if (star_amount > 0.001) {

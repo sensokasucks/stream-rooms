@@ -10,7 +10,10 @@ render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_sc
 //   - the grain picture darkens the pits and cracks and brightens the crystals (128 grey = no
 //     change, so the stone's own colour stays),
 //   - the normal picture bends the light, so lamps and the fire catch the surface's relief,
-//   - pits are a little rougher (less shiny) than the polished face.
+//   - pits are a little rougher (less shiny) than the face.
+// The last two are for the rough forge only (bump_strength / rough_vary 0 on the polished slabs
+// and pillars: there they dulled the mirror shine near the camera, which looked like the room
+// getting darker round the camera wherever it went). At 0 the surface's own normal is kept.
 // The photos are laid on by world position from three sides (triplanar), so they need no UVs
 // and never stretch, and they fade out between fade_start and fade_end metres from the camera,
 // which also hides that they repeat.
@@ -70,15 +73,17 @@ void fragment() {
 		// relief: each side's normal picture, turned to that side and added onto the
 		// surface's own normal ("UDN" triplanar blend), then handed over in view space
 		float k = bump_strength * near;
-		vec2 tx = (texture(normal_tex, uv_x).xy * 2.0 - 1.0) * k;
-		vec2 ty = (texture(normal_tex, uv_y).xy * 2.0 - 1.0) * k;
-		vec2 tz = (texture(normal_tex, uv_z).xy * 2.0 - 1.0) * k;
-		// (side x reads the picture across z and y, side y across x and z, side z across x and y)
-		vec3 n = normalize(w_nrm
-			+ vec3(0.0, tx.y, tx.x) * w.x
-			+ vec3(ty.x, 0.0, ty.y) * w.y
-			+ vec3(tz.x, tz.y, 0.0) * w.z);
-		NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+		if (k > 0.001) {
+			vec2 tx = (texture(normal_tex, uv_x).xy * 2.0 - 1.0) * k;
+			vec2 ty = (texture(normal_tex, uv_y).xy * 2.0 - 1.0) * k;
+			vec2 tz = (texture(normal_tex, uv_z).xy * 2.0 - 1.0) * k;
+			// (side x reads the picture across z and y, side y across x and z, side z across x and y)
+			vec3 n = normalize(w_nrm
+				+ vec3(0.0, tx.y, tx.x) * w.x
+				+ vec3(ty.x, 0.0, ty.y) * w.y
+				+ vec3(tz.x, tz.y, 0.0) * w.z);
+			NORMAL = normalize((VIEW_MATRIX * vec4(n, 0.0)).xyz);
+		}
 	}
 	ALBEDO = albedo;
 	ROUGHNESS = rough;
