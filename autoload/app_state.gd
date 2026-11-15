@@ -111,6 +111,29 @@ const BASE_DEFAULTS: Dictionary = {
 	"so_saturation": 1.0,        # colour, 0-2
 	"so_brightness": 1.0,        # 0.5-1.5
 	"so_contrast": 1.0,          # 0.5-1.5
+	# Screen Only extra screens (rooms/screen_only/screen_only_room.gd): up to three smaller pictures in the window,
+	# each with a source of its own. Each PC's own (not shared in a co-stream).
+	"so_extra_layout": "free",   # free (insets over the picture) / side (column on the right) / grid (two by two)
+	"so_extra_fx": true,         # the extra screens wear the Look's effects too
+	"so_extra_frame": 0.25,      # dark outline round each extra screen, 0-1 (1 = 8 window pixels)
+	"so_extra_1_source": "off",  # off / webcam / picture / tab / ndi / spout / stream (the last four: core/extra_feeds.gd)
+	"so_extra_2_source": "off",
+	"so_extra_3_source": "off",
+	"so_extra_1_address": "",    # for ndi / spout the source's name (or part of it), for stream an address ffmpeg can open
+	"so_extra_2_address": "",
+	"so_extra_3_address": "",
+	"so_extra_1_picture": "",    # the picture file for source "picture" (png, jpg, webp)
+	"so_extra_2_picture": "",
+	"so_extra_3_picture": "",
+	"so_extra_1_size": 0.28,     # insets layout: the screen's width as a share of the window's, 0.05-1
+	"so_extra_2_size": 0.28,
+	"so_extra_3_size": 0.28,
+	"so_extra_1_x": 0.84,        # insets layout: where the screen's middle sits, 0-1 across the window
+	"so_extra_2_x": 0.16,        # (1 starts bottom right, 2 bottom left, 3 top right)
+	"so_extra_3_x": 0.84,
+	"so_extra_1_y": 0.82,        # ... and 0-1 down the window
+	"so_extra_2_y": 0.82,
+	"so_extra_3_y": 0.18,
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible

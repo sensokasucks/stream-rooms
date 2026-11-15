@@ -19,6 +19,11 @@ extends Room
 ##     the shader every frame, so curvature, fit and bezel follow; pixel-sized effects use real
 ##     window pixels (see the shader's header).
 ##   - Flicker, rolling bar and moving static respect flash_strength and photosensitive_safe.
+##   - Extra screens: up to EXTRA_COUNT smaller pictures in the same window, each with a source
+##     of its own (so_extra_n_source: webcam, a picture file, or a feed from core/extra_feeds.gd:
+##     browser tab, NDI, Spout, stream address), like the Forge Hall's small live screens. Each is
+##     one more ColorRect with its own copy of the effect shader; _layout() places them (and the
+##     main picture) from so_extra_layout every frame. Each PC's own: not sent to co-stream guests.
 
 const FX_SHADER: Shader = preload("res://rooms/screen_only/screen_fx.gdshader")
 
@@ -67,6 +72,17 @@ const MASK_TYPES: Dictionary = {"grille": 0, "shadow": 1, "slot": 2}
 const PALETTES: Dictionary = {"none": 0, "handheld": 1, "amber": 2, "green": 3, "grey": 4, "retro4": 5}
 const FUN_MODES: Dictionary = {"none": 0, "night": 1, "thermal": 2, "halftone": 3, "ascii": 4, "posterize": 5, "invert": 6}
 
+## How many extra screens there are (settings so_extra_1.. so_extra_3). ExtraFeeds slots are
+## "so_extra_n"; a browser-tab one shows on the sender page as EXTRA_NAMES[n - 1].
+const EXTRA_COUNT: int = 3
+const EXTRA_NAMES: PackedStringArray = ["Extra screen 1", "Extra screen 2", "Extra screen 3"]
+## Extra-screen sources that are a feed fetched by ExtraFeeds (core/extra_feeds.gd).
+const OWN_FEEDS: Array[String] = ["ndi", "spout", "stream", "tab"]
+## Share of the window's width the extra screens' column takes in the "side" layout.
+const SIDE_SHARE: float = 0.25
+## Thickest outline round an extra screen (so_extra_frame = 1), in window pixels.
+const FRAME_PX: float = 8.0
+
 var _layer: CanvasLayer
 var _rect: ColorRect
 var _mat: ShaderMaterial
@@ -76,6 +92,12 @@ var _stamp_date: Label         # tape date text (so_stamp), bottom left
 var _texture: Texture2D        # the big screen's picture (EventBus.screen_texture_changed)
 var _applying_preset: bool = false
 var _stamp_wait: float = 0.0   # seconds until the date stamp's clock is redrawn
+## The extra screens, index n - 1: {"n", "back" (ColorRect outline behind), "rect" (ColorRect
+## with the shader), "mat" (its ShaderMaterial), "tex" (the picture now, or null),
+## "file" (ImageTexture loaded for source "picture"), "file_path" (what "file" was loaded from)}.
+var _extras: Array[Dictionary] = []
+var _webcam: Texture2D         # the sender page's webcam (EventBus.webcam_texture_changed)
+var _retired: bool = false     # another room took over (retire()): stop asking for feeds
 
 
 func _ready() -> void:
@@ -83,7 +105,11 @@ func _ready() -> void:
 	_build_layer()
 	EventBus.setting_changed.connect(_on_setting_changed)
 	EventBus.screen_texture_changed.connect(_on_screen_texture)
+	EventBus.webcam_texture_changed.connect(_on_webcam_texture)
+	EventBus.extra_feed_texture_changed.connect(_on_extra_texture)
+	EventBus.room_changed.connect(_on_so_room_changed)
 	_apply_all()
+	_request_feeds.call_deferred()
 	# ask ScreenFeed for the picture it already has (a video playing before the room switch)
 	EventBus.feed_textures_requested.emit()
 
@@ -92,6 +118,15 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	EventBus.setting_changed.disconnect(_on_setting_changed)
 	EventBus.screen_texture_changed.disconnect(_on_screen_texture)
+	EventBus.webcam_texture_changed.disconnect(_on_webcam_texture)
+	EventBus.extra_feed_texture_changed.disconnect(_on_extra_texture)
+	EventBus.room_changed.disconnect(_on_so_room_changed)
+
+
+## RoomHost._retire calls this (propagate_call) when another room takes over; this one is freed
+## a little later.
+func retire() -> void:
+	_retired = true
 
 
 ## Every frame: the window's size (resizing), the picture's size (a tab can change size) and
@@ -100,6 +135,7 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if _mat == null:
 		return
+	_layout()
 	var size := _rect.size
 	_mat.set_shader_parameter("rect_px", Vector2(maxf(size.x, 1.0), maxf(size.y, 1.0)))
 	var showing := _texture != null and AppState.get_source_mode() != "none" and not AppState.is_curtain_covering()
@@ -130,23 +166,127 @@ func _build_layer() -> void:
 	add_child(_layer)
 	_rect = ColorRect.new()
 	_rect.name = "Picture"
-	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	# placed by _layout() every frame (the whole window, or its share in a split layout)
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rect.color = Color.BLACK
 	_mat = ShaderMaterial.new()
 	_mat.shader = FX_SHADER
 	_rect.material = _mat
+	# a black sheet behind everything, so a split layout's gaps are black, not the empty 3D world
+	var floor_rect := ColorRect.new()
+	floor_rect.name = "Backdrop"
+	floor_rect.color = Color.BLACK
+	floor_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_layer.add_child(floor_rect)
+	floor_rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_layer.add_child(_rect)
+	# the extra screens sit above the main picture and below the labels
+	for n in range(1, EXTRA_COUNT + 1):
+		var back := ColorRect.new()
+		back.name = "Extra%dFrame" % n
+		back.color = Color(0.02, 0.02, 0.025)
+		back.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		back.visible = false
+		_layer.add_child(back)
+		var r := ColorRect.new()
+		r.name = "Extra%d" % n
+		r.color = Color.BLACK
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		r.visible = false
+		var m := ShaderMaterial.new()
+		m.shader = FX_SHADER
+		r.material = m
+		_layer.add_child(r)
+		_extras.append({"n": n, "back": back, "rect": r, "mat": m, "tex": null, "file": null, "file_path": ""})
 
 	# full-window labels (anchors AND offsets, so they stretch with the window), aligned inside
 	_standby = _make_label(HORIZONTAL_ALIGNMENT_CENTER, VERTICAL_ALIGNMENT_CENTER)
 	_stamp_play = _make_label(HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_TOP)
-	_stamp_play.offset_left = 40.0
-	_stamp_play.offset_top = 30.0
 	_stamp_play.text = "PLAY ▶"
 	_stamp_date = _make_label(HORIZONTAL_ALIGNMENT_LEFT, VERTICAL_ALIGNMENT_BOTTOM)
-	_stamp_date.offset_left = 40.0
-	_stamp_date.offset_bottom = -30.0
+
+
+## Where everything sits, in window pixels. Run every frame from _process (a handful of rects,
+## so it costs nothing), which is what makes the set follow a window being resized.
+## so_extra_layout:
+##   "free"  the main picture fills the window; each extra screen is an inset at its own
+##           so_extra_n_x / _y (its centre, 0-1 across / down the window) and _size (its width
+##           as a share of the window's), in the shape of its own picture
+##   "side"  the main picture takes the left of the window; the extra screens that are on are
+##           stacked in a column on the right (SIDE_SHARE of the width)
+##   "grid"  two by two: the main picture top left, the extra screens in the other cells
+func _layout() -> void:
+	var win := Vector2(get_viewport().get_visible_rect().size)
+	var mode := String(AppState.get_setting("so_extra_layout"))
+	var on: Array[Dictionary] = []
+	for e in _extras:
+		if String(AppState.get_setting("so_extra_%d_source" % int(e["n"]))) != "off":
+			on.append(e)
+	var main := Rect2(Vector2.ZERO, win)
+	if on.is_empty():
+		mode = "free"
+	var frame := float(AppState.get_setting("so_extra_frame")) * FRAME_PX
+	match mode:
+		"side":
+			var col_w := floorf(win.x * SIDE_SHARE)
+			main = Rect2(0.0, 0.0, win.x - col_w, win.y)
+			var cell_h := win.y / float(on.size())
+			for i in on.size():
+				_place_extra(on[i], Rect2(win.x - col_w, cell_h * i, col_w, cell_h).grow(-frame), frame)
+		"grid":
+			var half := win * 0.5
+			main = Rect2(Vector2.ZERO, half)
+			var cells: Array[Vector2] = [Vector2(half.x, 0.0), Vector2(0.0, half.y), half]
+			for i in on.size():
+				_place_extra(on[i], Rect2(cells[i], half).grow(-frame), frame)
+		_:
+			for e in on:
+				var n := int(e["n"])
+				var w := clampf(float(AppState.get_setting("so_extra_%d_size" % n)), 0.05, 1.0) * win.x
+				var shape := 16.0 / 9.0
+				var tex: Texture2D = e["tex"]
+				if tex != null and tex.get_height() > 0:
+					shape = float(tex.get_width()) / float(tex.get_height())
+				var box := Vector2(w, w / shape)
+				if box.y > win.y:              # a tall picture: never taller than the window
+					box *= win.y / box.y
+				var centre := Vector2(float(AppState.get_setting("so_extra_%d_x" % n)), float(AppState.get_setting("so_extra_%d_y" % n))) * win
+				var pos := (centre - box * 0.5).clamp(Vector2.ZERO, (win - box).max(Vector2.ZERO))
+				_place_extra(e, Rect2(pos, box), frame)
+	for e in _extras:
+		if not on.has(e):
+			(e["rect"] as ColorRect).visible = false
+			(e["back"] as ColorRect).visible = false
+	_rect.position = main.position
+	_rect.size = main.size
+	# the labels sit over the main picture, the tape stamps a little in from its corners
+	_standby.position = main.position
+	_standby.size = main.size
+	var inset := Vector2(40.0, 30.0)
+	for l: Label in [_stamp_play, _stamp_date]:
+		l.position = main.position + inset
+		l.size = (main.size - inset * 2.0).max(Vector2.ONE)
+
+
+## Puts one extra screen (and its outline, `frame` pixels wider all round) at `box`, and tells
+## its shader the box's size and whether it has a picture.
+func _place_extra(e: Dictionary, box: Rect2, frame: float) -> void:
+	var r: ColorRect = e["rect"]
+	var back: ColorRect = e["back"]
+	var m: ShaderMaterial = e["mat"]
+	box.size = box.size.max(Vector2.ONE)
+	r.position = box.position
+	r.size = box.size
+	r.visible = true
+	back.position = box.position - Vector2(frame, frame)
+	back.size = box.size + Vector2(frame, frame) * 2.0
+	back.visible = frame > 0.0
+	m.set_shader_parameter("rect_px", box.size)
+	var tex: Texture2D = e["tex"]
+	var showing := tex != null and tex.get_width() > 0 and tex.get_height() > 0
+	if showing:
+		m.set_shader_parameter("video_size", tex.get_size())
+	m.set_shader_parameter("has_video", showing)
 
 
 func _make_label(h: HorizontalAlignment, v: VerticalAlignment) -> Label:
@@ -160,8 +300,7 @@ func _make_label(h: HorizontalAlignment, v: VerticalAlignment) -> Label:
 	l.add_theme_constant_override("shadow_offset_y", 3)
 	l.visible = false
 	_layer.add_child(l)
-	l.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	return l
+	return l       # placed over the main picture by _layout()
 
 
 ## "NOV 14 2026  3:26 PM": the tape date stamp (this PC's clock).
@@ -182,12 +321,93 @@ func _on_screen_texture(tex: Texture2D) -> void:
 		_mat.set_shader_parameter("video", tex)
 
 
+func _on_webcam_texture(tex: Texture2D) -> void:
+	_webcam = tex
+	_refresh_extras()
+
+
+## ExtraFeeds' picture for one of this set's slots ("so_extra_n"): a tab, NDI, Spout or stream.
+func _on_extra_texture(slot: String, tex: Texture2D) -> void:
+	for e in _extras:
+		if slot == "so_extra_%d" % int(e["n"]) and String(AppState.get_setting("so_extra_%d_source" % int(e["n"]))) in OWN_FEEDS:
+			_set_extra_texture(e, tex)
+
+
+## EventBus.room_changed: ExtraFeeds stops every feed nobody asks for again shortly after a
+## room change, so ask again a frame later (unless this set is the one that just left).
+func _on_so_room_changed(_room_id: String) -> void:
+	if not _retired:
+		_request_feeds.call_deferred()
+
+
+## Asks ExtraFeeds (through EventBus.extra_feed_requested) for each extra screen's own feed:
+## slot "so_extra_n", kind = its source when that is one of OWN_FEEDS, address =
+## so_extra_n_address (for a browser tab: the screen's name, shown on the sender page). Any
+## other source stops the slot. Called at start, after a room change and when a so_extra_
+## setting changes.
+func _request_feeds() -> void:
+	if _retired or not is_inside_tree():
+		return
+	for e in _extras:
+		var n := int(e["n"])
+		var src := String(AppState.get_setting("so_extra_%d_source" % n))
+		var own := src in OWN_FEEDS
+		var address := EXTRA_NAMES[n - 1] if src == "tab" else String(AppState.get_setting("so_extra_%d_address" % n))
+		EventBus.extra_feed_requested.emit("so_extra_%d" % n, src if own else "", address if own else "")
+	_refresh_extras()
+
+
+## Gives every extra screen the picture its source asks for, for the sources this script holds
+## itself (webcam, picture file). ExtraFeeds' ones arrive through _on_extra_texture; switching
+## to one of those starts from "no picture yet".
+func _refresh_extras() -> void:
+	for e in _extras:
+		var n := int(e["n"])
+		match String(AppState.get_setting("so_extra_%d_source" % n)):
+			"webcam":
+				_set_extra_texture(e, _webcam)
+			"picture":
+				_set_extra_texture(e, _picture_for(e))
+			"off":
+				_set_extra_texture(e, null)
+
+
+func _set_extra_texture(e: Dictionary, tex: Texture2D) -> void:
+	e["tex"] = tex
+	(e["mat"] as ShaderMaterial).set_shader_parameter("video", tex)
+
+
+## The picture file of an extra screen (so_extra_n_picture: png, jpg or webp), loaded once per
+## path. A missing or unreadable file gives null (the screen shows "between videos").
+func _picture_for(e: Dictionary) -> Texture2D:
+	var path := String(AppState.get_setting("so_extra_%d_picture" % int(e["n"]))).strip_edges()
+	if path == String(e["file_path"]):
+		return e["file"]
+	e["file_path"] = path
+	e["file"] = null
+	if path != "" and FileAccess.file_exists(path):
+		var img := Image.load_from_file(path)
+		if img != null and not img.is_empty():
+			if img.get_width() > 2560:       # a huge photo: no point keeping more than the window shows
+				img.resize(2560, int(2560.0 * img.get_height() / img.get_width()), Image.INTERPOLATE_BILINEAR)
+			e["file"] = ImageTexture.create_from_image(img)
+	return e["file"]
+
+
 ## EventBus.setting_changed: a Look writes its whole set; any so_* key or the safety settings
 ## re-send the uniforms.
 func _on_setting_changed(key: String, _value: Variant) -> void:
 	if key == "so_preset" and not _applying_preset:
 		apply_preset(String(AppState.get_setting("so_preset")))
 		return
+	if key.begins_with("so_extra_"):
+		# a source, address or picture changed: (re)ask for feeds; _request_feeds ignores the rest cheaply
+		if key.ends_with("_source") or key.ends_with("_address") or key.ends_with("_picture"):
+			if key.ends_with("_source"):
+				for e in _extras:
+					if key == "so_extra_%d_source" % int(e["n"]):
+						_set_extra_texture(e, null)
+			_request_feeds()
 	if key.begins_with("so_") or key in ["photosensitive_safe", "flash_strength", "curtain_sign"]:
 		_apply_all()
 
@@ -209,14 +429,32 @@ func apply_preset(id: String) -> void:
 func _apply_all() -> void:
 	if _mat == null:
 		return
-	var f := func(key: String) -> float: return float(AppState.get_setting(key))
-	_mat.set_shader_parameter("fit_mode", int(FIT_MODES.get(String(AppState.get_setting("so_fit")), 0)))
-	_mat.set_shader_parameter("bars_mode", int(BAR_MODES.get(String(AppState.get_setting("so_bars")), 0)))
-	_mat.set_shader_parameter("bar_color", AppState.get_setting("so_bar_color"))
-	_mat.set_shader_parameter("idle_mode", int(IDLE_MODES.get(String(AppState.get_setting("so_idle")), 0)))
-	_mat.set_shader_parameter("mask_type", int(MASK_TYPES.get(String(AppState.get_setting("so_mask_type")), 0)))
-	_mat.set_shader_parameter("palette", int(PALETTES.get(String(AppState.get_setting("so_palette")), 0)))
-	_mat.set_shader_parameter("fun_mode", int(FUN_MODES.get(String(AppState.get_setting("so_fun")), 0)))
+	_apply_to(_mat, true, int(FIT_MODES.get(String(AppState.get_setting("so_fit")), 0)))
+	# the extra screens: the same Look when "Extra screens get the Look too" is on, else a clean
+	# picture; always shown whole (fit) in their box
+	var extras_fx := bool(AppState.get_setting("so_extra_fx"))
+	for e in _extras:
+		_apply_to(e["mat"], extras_fx, 0)
+	var sign_text := String(AppState.get_setting("curtain_sign")).strip_edges()
+	_standby.text = sign_text if sign_text != "" else "Please stand by"
+	var stamp := bool(AppState.get_setting("so_stamp"))
+	_stamp_play.visible = stamp
+	_stamp_date.visible = stamp
+	_stamp_wait = 0.0
+
+
+## The so_* settings -> one material's uniforms. effects = false leaves every effect at its
+## AppState default (a clean picture) and only sets fit, bars and the between-videos picture.
+func _apply_to(mat: ShaderMaterial, effects: bool, fit: int) -> void:
+	var s := func(key: String) -> Variant: return AppState.get_setting(key) if effects else AppState.DEFAULTS[key]
+	var f := func(key: String) -> float: return float(s.call(key))
+	mat.set_shader_parameter("fit_mode", fit)
+	mat.set_shader_parameter("bars_mode", int(BAR_MODES.get(String(AppState.get_setting("so_bars")), 0)))
+	mat.set_shader_parameter("bar_color", AppState.get_setting("so_bar_color"))
+	mat.set_shader_parameter("idle_mode", int(IDLE_MODES.get(String(AppState.get_setting("so_idle")), 0)))
+	mat.set_shader_parameter("mask_type", int(MASK_TYPES.get(String(s.call("so_mask_type")), 0)))
+	mat.set_shader_parameter("palette", int(PALETTES.get(String(s.call("so_palette")), 0)))
+	mat.set_shader_parameter("fun_mode", int(FUN_MODES.get(String(s.call("so_fun")), 0)))
 	for pair: Array in [["curve", "so_curve"], ["corner", "so_corner"], ["scanlines", "so_scanlines"],
 			["scan_px", "so_scan_px"], ["mask", "so_mask"], ["glow", "so_glow"], ["vignette", "so_vignette"],
 			["fringe", "so_fringe"], ["bezel", "so_bezel"], ["led", "so_led"], ["led_count", "so_led_count"],
@@ -224,19 +462,13 @@ func _apply_all() -> void:
 			["scratches", "so_scratches"], ["sepia", "so_sepia"], ["pixelate", "so_pixelate"], ["dither", "so_dither"],
 			["fun", "so_fun_amount"], ["saturation", "so_saturation"], ["brightness", "so_brightness"],
 			["contrast", "so_contrast"]]:
-		_mat.set_shader_parameter(pair[0], f.call(pair[1]))
+		mat.set_shader_parameter(pair[0], f.call(pair[1]))
 	# flashing parts: scaled by Flash strength, and cut to a quarter (with slower motion) in safe mode
 	var safe := bool(AppState.get_setting("photosensitive_safe"))
 	var flash := clampf(float(AppState.get_setting("flash_strength")), 0.0, 1.0) * (0.25 if safe else 1.0)
-	_mat.set_shader_parameter("flicker", f.call("so_flicker") * flash)
-	_mat.set_shader_parameter("roll", f.call("so_roll") * flash)
-	_mat.set_shader_parameter("motion_scale", 0.35 if safe else 1.0)
-	var sign_text := String(AppState.get_setting("curtain_sign")).strip_edges()
-	_standby.text = sign_text if sign_text != "" else "Please stand by"
-	var stamp := bool(AppState.get_setting("so_stamp"))
-	_stamp_play.visible = stamp
-	_stamp_date.visible = stamp
-	_stamp_wait = 0.0
+	mat.set_shader_parameter("flicker", f.call("so_flicker") * flash)
+	mat.set_shader_parameter("roll", f.call("so_roll") * flash)
+	mat.set_shader_parameter("motion_scale", 0.35 if safe else 1.0)
 
 
 ## Room tab > Screen Only (and Core's Stream Rooms settings, through the panel's schema).
@@ -261,6 +493,65 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "so_idle", "label": "Between videos", "type": "option",
 			"options": [["static", "Static snow"], ["bars", "Colour bars"], ["black", "Black"], ["standby", "Please stand by"]],
 			"tooltip": "What shows while nothing plays, and while the curtain is closed (B). Please stand by uses the curtain sign text if you set one."},
+		{"heading": "Extra screens"},
+		{"key": "so_extra_layout", "label": "Layout", "type": "option",
+			"options": [["free", "Insets over the picture"], ["side", "Column on the right"], ["grid", "Two by two"]],
+			"tooltip": "Where the extra screens go. Insets: small pictures over the main one, placed with their own sliders. Column on the right: the main picture moves left and the extra screens stack beside it. Two by two: four equal quarters. Only screens that are switched on take up room."},
+		{"key": "so_extra_fx", "label": "Extra screens get the Look too", "type": "check",
+			"tooltip": "Ticked: the extra screens wear the same effects as the main picture (each its own little CRT). Unticked: they stay a clean picture."},
+		{"key": "so_extra_frame", "label": "Outline", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "A dark outline round each extra screen. 0% = none."},
+		{"key": "so_extra_1_source", "label": "Extra screen 1", "type": "option",
+			"options": [["off", "Off"], ["webcam", "Webcam"], ["picture", "Picture file"], ["tab", "Browser tab or window (pick it in the sender)"],
+				["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"]],
+			"tooltip": "What this extra screen shows. Webcam = the webcam from the sender page. Browser tab or window: a row called Extra screen 1 appears under Extra screens on the sender page (Share to Stream Rooms in Stream Core); click its Pick a tab or window button there. NDI source, Spout sender and Stream address use the name or address in the box below. Picture only, no sound. Extra screens are this PC's own: co-stream guests don't get them."},
+		{"key": "so_extra_1_address", "label": "Extra screen 1 address", "type": "text",
+			"placeholder": "NDI or Spout name, or rtmp:// rtsp:// address",
+			"pick_feeds": "so_extra_1_source", "hide_login": true,
+			"tooltip": "Pick lists the NDI sources and Spout senders found right now; choosing one fills this box and switches the screen to it. Or type it: the source's name or just part of it, or for Stream address an rtmp://, rtsp://, srt:// or http stream address or a video file (it loops; needs ffmpeg in the tools folder). Put listen: in front to wait for a camera or phone app to connect to this PC. An address with a login in it shows as dots until you click into the box. Press Enter to apply."},
+		{"key": "so_extra_1_picture", "label": "Extra screen 1 picture", "type": "picture",
+			"placeholder": "used when it shows Picture file",
+			"tooltip": "The picture this extra screen shows when it is set to Picture file. PNG, JPG or WebP."},
+		{"key": "so_extra_1_size", "label": "Extra screen 1: size", "min": 0.05, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How wide this inset is, as a share of the window's width. Used by the Insets layout."},
+		{"key": "so_extra_1_x", "label": "Extra screen 1: left/right", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits across the window: 0% = left edge, 100% = right edge. It never leaves the window. Used by the Insets layout."},
+		{"key": "so_extra_1_y", "label": "Extra screen 1: up/down", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits down the window: 0% = top, 100% = bottom. Used by the Insets layout."},
+		{"key": "so_extra_2_source", "label": "Extra screen 2", "type": "option",
+			"options": [["off", "Off"], ["webcam", "Webcam"], ["picture", "Picture file"], ["tab", "Browser tab or window (pick it in the sender)"],
+				["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"]],
+			"tooltip": "What this extra screen shows. Webcam = the webcam from the sender page. Browser tab or window: a row called Extra screen 2 appears under Extra screens on the sender page (Share to Stream Rooms in Stream Core); click its Pick a tab or window button there. NDI source, Spout sender and Stream address use the name or address in the box below. Picture only, no sound. Extra screens are this PC's own: co-stream guests don't get them."},
+		{"key": "so_extra_2_address", "label": "Extra screen 2 address", "type": "text",
+			"placeholder": "NDI or Spout name, or rtmp:// rtsp:// address",
+			"pick_feeds": "so_extra_2_source", "hide_login": true,
+			"tooltip": "Pick lists the NDI sources and Spout senders found right now; choosing one fills this box and switches the screen to it. Or type it: the source's name or just part of it, or for Stream address an rtmp://, rtsp://, srt:// or http stream address or a video file (it loops; needs ffmpeg in the tools folder). Put listen: in front to wait for a camera or phone app to connect to this PC. An address with a login in it shows as dots until you click into the box. Press Enter to apply."},
+		{"key": "so_extra_2_picture", "label": "Extra screen 2 picture", "type": "picture",
+			"placeholder": "used when it shows Picture file",
+			"tooltip": "The picture this extra screen shows when it is set to Picture file. PNG, JPG or WebP."},
+		{"key": "so_extra_2_size", "label": "Extra screen 2: size", "min": 0.05, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How wide this inset is, as a share of the window's width. Used by the Insets layout."},
+		{"key": "so_extra_2_x", "label": "Extra screen 2: left/right", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits across the window: 0% = left edge, 100% = right edge. It never leaves the window. Used by the Insets layout."},
+		{"key": "so_extra_2_y", "label": "Extra screen 2: up/down", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits down the window: 0% = top, 100% = bottom. Used by the Insets layout."},
+		{"key": "so_extra_3_source", "label": "Extra screen 3", "type": "option",
+			"options": [["off", "Off"], ["webcam", "Webcam"], ["picture", "Picture file"], ["tab", "Browser tab or window (pick it in the sender)"],
+				["ndi", "NDI source (name below)"], ["spout", "Spout sender (name below)"], ["stream", "Stream address (below)"]],
+			"tooltip": "What this extra screen shows. Webcam = the webcam from the sender page. Browser tab or window: a row called Extra screen 3 appears under Extra screens on the sender page (Share to Stream Rooms in Stream Core); click its Pick a tab or window button there. NDI source, Spout sender and Stream address use the name or address in the box below. Picture only, no sound. Extra screens are this PC's own: co-stream guests don't get them."},
+		{"key": "so_extra_3_address", "label": "Extra screen 3 address", "type": "text",
+			"placeholder": "NDI or Spout name, or rtmp:// rtsp:// address",
+			"pick_feeds": "so_extra_3_source", "hide_login": true,
+			"tooltip": "Pick lists the NDI sources and Spout senders found right now; choosing one fills this box and switches the screen to it. Or type it: the source's name or just part of it, or for Stream address an rtmp://, rtsp://, srt:// or http stream address or a video file (it loops; needs ffmpeg in the tools folder). Put listen: in front to wait for a camera or phone app to connect to this PC. An address with a login in it shows as dots until you click into the box. Press Enter to apply."},
+		{"key": "so_extra_3_picture", "label": "Extra screen 3 picture", "type": "picture",
+			"placeholder": "used when it shows Picture file",
+			"tooltip": "The picture this extra screen shows when it is set to Picture file. PNG, JPG or WebP."},
+		{"key": "so_extra_3_size", "label": "Extra screen 3: size", "min": 0.05, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How wide this inset is, as a share of the window's width. Used by the Insets layout."},
+		{"key": "so_extra_3_x", "label": "Extra screen 3: left/right", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits across the window: 0% = left edge, 100% = right edge. It never leaves the window. Used by the Insets layout."},
+		{"key": "so_extra_3_y", "label": "Extra screen 3: up/down", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Where this inset's middle sits down the window: 0% = top, 100% = bottom. Used by the Insets layout."},
 		{"heading": "Tube (CRT)"},
 		pct.call("so_curve", "Glass curve", "Bends the picture like thick, curved CRT glass. The corners bend most."),
 		pct.call("so_corner", "Round corners", "Rounds the picture's corners."),
