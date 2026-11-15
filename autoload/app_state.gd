@@ -28,6 +28,11 @@ const BASE_DEFAULTS: Dictionary = {
 	"film_look": 1.0,            # old-film rooms: 0 = clean picture, 1 = the room's look, 2 = extra dirt
 	"sun_rays": 1.0,             # Lecture Hall / Forge Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
+	"lh_detail": "auto",         # Lecture Hall (both): how its woods and walls are drawn on this PC: auto (from graphics_quality) | simple | detailed (photo textures)
+	"lh_time": 16.5,             # Lecture Hall time of day outside the windows, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"lh_day_minutes": 0.0,       # Lecture Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at lh_time
+	"lh_clouds": 1.0,            # Lecture Hall sky outside the windows: 0 = clear, 1 = some clouds, 2 = overcast
+	"lh_glass": "quarries",      # Lecture Hall tall windows: stained (all coloured glass) | quarries (the pale diamond panes are clear) | clear (every pane clear)
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
