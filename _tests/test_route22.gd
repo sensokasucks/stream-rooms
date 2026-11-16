@@ -230,6 +230,24 @@ func _ready() -> void:
 	await _secs(1.0)
 	await _shot("r22_cruise_night_chase")
 	EventBus.camera_preset_requested.emit(0)
+	# coyotes: send a pack across now (night), and one howl
+	AppState.set_setting("r22_coyotes", true)
+	var extras := cruise.find_child("Extras", true, false)
+	extras.set("_pack_wait", 0.0)
+	await _secs(1.0)
+	var dogs := 0
+	for c in extras.find_children("Coyote", "MeshInstance3D", false, false):
+		dogs += 1 if (c as Node3D).visible else 0
+	_check(dogs >= 1, "a pack of coyotes trots across at night (%d)" % dogs)
+	desert.call("howl", 0.6)
+	await _secs(0.5)
+	_check(float(desert.get("_howl_t")) >= 0.0, "a howl starts in the desert sound")
+	AppState.set_setting("r22_coyotes", false)
+	await _secs(0.5)
+	dogs = 0
+	for c in extras.find_children("Coyote", "MeshInstance3D", false, false):
+		dogs += 1 if (c as Node3D).visible else 0
+	_check(dogs == 0, "Coyotes off sends them away")
 
 	# ── and back ──
 	AppState.set_setting("r22_scene", "drivein")

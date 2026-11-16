@@ -104,6 +104,9 @@ var _lp_road: float = 0.0
 var _lp_rumble: float = 0.0
 var _rumble: float = 0.0          # thunder, dying away
 var _whoosh: float = 0.0          # a vehicle passing, dying away
+var _howl_t: float = -1.0         # seconds into a coyote howl (-1 = none)
+var _howl_lv: float = 0.0         # its loudness 0..1
+var _howl_ph: Array[float] = [0.0, 0.0]   # the two voices' phases
 var _sample: int = 0
 
 
@@ -205,6 +208,15 @@ static func moon_at(hour: float) -> Vector3:
 ## A vehicle went by: a rush of air and tyres in the sound (0..1, louder for big ones).
 func whoosh(amount: float) -> void:
 	_whoosh = maxf(_whoosh, clampf(amount, 0.0, 1.0))
+
+
+## Coyotes (r22_extras.gd): a howl from out in the desert, 0..1. Two voices rise, waver and fall
+## over about four seconds, the second a beat later and a little higher, with a few yips.
+func howl(amount: float) -> void:
+	if _howl_t >= 0.0:
+		return
+	_howl_t = 0.0
+	_howl_lv = clampf(amount, 0.0, 1.0)
 
 
 ## Called every frame by the room. travel = metres driven (the Cruise; 0 in the Drive-In),
@@ -511,5 +523,33 @@ func _fill_ambience(wind: float) -> void:
 		s += _lp_road * _whoosh * 0.35
 		if cricket_lv > 0.0005 and fmod(t, 1.1) < 0.4 and sin(t * 180.0) > 0.0:
 			s += sin(t * 26000.0) * cricket_lv
+		if _howl_t >= 0.0:
+			s += _howl_sample() * 0.05 * _howl_lv
 		buf[i] = Vector2(s, s * 0.94)
 	_amb.push_buffer(buf)
+
+
+## One sample of the coyotes' howl (advances it by one sample; ends it after HOWL_LEN seconds).
+## Each voice glides up from a low note, holds with a waver, and drops away; short yips follow.
+func _howl_sample() -> float:
+	var out := 0.0
+	for v in 2:
+		var lt := _howl_t - 0.7 * float(v)
+		if lt < 0.0 or lt > 3.2:
+			continue
+		var top := 780.0 + 120.0 * float(v)
+		var f := lerpf(380.0, top, smoothstep(0.0, 0.7, lt)) - 340.0 * smoothstep(2.2, 3.2, lt)
+		f += 14.0 * sin(lt * TAU * 5.5)
+		_howl_ph[v] = fmod(_howl_ph[v] + f / MIX_RATE, 1.0)
+		var env := smoothstep(0.0, 0.25, lt) * (1.0 - smoothstep(2.6, 3.2, lt))
+		var ph := _howl_ph[v] * TAU
+		out += (sin(ph) + 0.25 * sin(ph * 2.0)) * env
+	# a few yips at the end
+	var yt := _howl_t - 3.4
+	if yt > 0.0 and yt < 1.2 and fmod(yt, 0.3) < 0.09:
+		_howl_ph[0] = fmod(_howl_ph[0] + (900.0 + 300.0 * fmod(yt, 0.3) / 0.09) / MIX_RATE, 1.0)
+		out += sin(_howl_ph[0] * TAU) * 0.6
+	_howl_t += 1.0 / MIX_RATE
+	if _howl_t > 4.8:
+		_howl_t = -1.0
+	return out

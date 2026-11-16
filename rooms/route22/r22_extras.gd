@@ -1,9 +1,10 @@
 extends Node3D
 ## Route 22's roadside life, in both rooms: tumbleweeds bouncing across in the wind, dust devils
-## spinning up out in the desert, vultures circling high overhead, and now and then a jackrabbit
-## bounding across or a lizard skittering over the gravel. Each has its own tick box on the Room
-## tab (r22_tumbleweeds, r22_dust_devils, r22_birds, r22_critters; shared in a co-stream, though
-## where each one turns up is every PC's own luck).
+## spinning up out in the desert, vultures circling high overhead, now and then a jackrabbit
+## bounding across or a lizard skittering over the gravel, and from dusk to dawn a few coyotes
+## trotting across further out, howling at night (the howl is r22_desert.gd howl()). Each has its
+## own tick box on the Room tab (r22_tumbleweeds, r22_dust_devils, r22_birds, r22_critters,
+## r22_coyotes; shared in a co-stream, though where each one turns up is every PC's own luck).
 ## The room makes one, calls setup() once and tick() every frame with the scenery's speed: in
 ## the Cruise everything here also slides back past the car at that speed (+Z), in the Drive-In
 ## the speed is 0. Their meshes use the prop material, so they bend with the road too.
@@ -14,6 +15,8 @@ const Geo := preload("res://rooms/route22/r22_geo.gd")
 const TUMBLEWEEDS: int = 3
 const DUST_DEVILS: int = 2
 const VULTURES: int = 3
+## Most coyotes in a pack.
+const COYOTES: int = 3
 
 var _kit: Dictionary
 ## The area things turn up in (room space): x from -half.x to half.x, z from near to far.
@@ -35,11 +38,20 @@ var _critter_wait: float = 8.0
 var _hop: float = 0.0
 var _rabbit_mesh: ArrayMesh
 var _lizard_mesh: ArrayMesh
+var _sound: Node                         # r22_desert.gd (the coyotes' howl), may be null
+var _pack: Array[Node3D] = []            # the coyotes (hidden while none are crossing)
+var _pack_vel: Vector3 = Vector3.ZERO
+var _pack_wait: float = 20.0             # seconds until the next pack crosses
+var _pack_out: bool = false
+var _howl_in: float = 60.0               # seconds until a far-off howl (night only)
+var _trot: float = 0.0
 
 
 ## area: x = half width, y = farthest z (negative, ahead), z = nearest z (behind), room space.
-func setup(kit: Dictionary, area: Vector3) -> void:
+## sound: the room's r22_desert.gd, for the coyotes' howls (null = silent coyotes).
+func setup(kit: Dictionary, area: Vector3, sound: Node = null) -> void:
 	_kit = kit
+	_sound = sound
 	_half_x = area.x
 	_z_far = area.y
 	_z_near = area.z
@@ -77,6 +89,15 @@ func setup(kit: Dictionary, area: Vector3) -> void:
 	(_critter as MeshInstance3D).material_override = kit["prop"]
 	_critter.visible = false
 	add_child(_critter)
+	var dog := _coyote()
+	for i in COYOTES:
+		var c := MeshInstance3D.new()
+		c.name = "Coyote"
+		c.mesh = dog
+		c.material_override = kit["prop"]
+		c.visible = false
+		add_child(c)
+		_pack.append(c)
 
 
 ## Called every frame by the room. speed = metres a second the scenery slides back (+Z), wind 0..1.
@@ -126,6 +147,7 @@ func tick(delta: float, speed: float, wind: float, day: float) -> void:
 		b.position = Vector3(cos(a) * r - 10.0, 42.0 + 7.0 * float(i) + 2.0 * sin(a * 2.0), sin(a) * r * 0.7 - 70.0)
 		b.rotation = Vector3(0.0, -a, 0.35)
 	_run_critter(delta, drift)
+	_run_coyotes(delta, drift, day)
 
 
 ## Now and then a jackrabbit bounds across, or a lizard skitters over the gravel, close to the road.
@@ -154,6 +176,54 @@ func _run_critter(delta: float, drift: Vector3) -> void:
 	_critter.rotation = Vector3(0.0, -PI * 0.5 * dir, 0.0)
 	_hop = 0.0
 	_critter.visible = true
+
+
+## From dusk to dawn (and less often by day) a pack of one to three coyotes trots across at a
+## distance, one behind another. At night they sometimes howl as they come, and now and then a
+## far-off howl is heard with none in sight.
+func _run_coyotes(delta: float, drift: Vector3, day: float) -> void:
+	var on := bool(AppState.get_setting("r22_coyotes"))
+	var night := 1.0 - day
+	if on and night > 0.5 and _sound and _sound.has_method("howl"):
+		_howl_in -= delta
+		if _howl_in <= 0.0:
+			_howl_in = _rng.randf_range(70.0, 180.0)
+			_sound.call("howl", _rng.randf_range(0.25, 0.5))
+	if _pack_out:
+		_trot += delta
+		var gone := true
+		for i in _pack.size():
+			var c := _pack[i]
+			if not c.visible:
+				continue
+			var p := c.position + _pack_vel * delta + drift
+			# a trot: a quick small bob, each a little out of step
+			p.y = absf(sin(_trot * 9.0 + float(i) * 1.3)) * 0.06
+			c.position = p
+			if absf(p.x) < _half_x + 10.0 and p.z < _z_near:
+				gone = false
+		if gone or not on:
+			_pack_out = false
+			for c in _pack:
+				c.visible = false
+			_pack_wait = _rng.randf_range(40.0, 90.0) if night > 0.3 else _rng.randf_range(120.0, 240.0)
+		return
+	_pack_wait -= delta
+	if _pack_wait > 0.0 or not on:
+		return
+	_pack_out = true
+	_trot = 0.0
+	var dir := 1.0 if _rng.randf() < 0.5 else -1.0
+	_pack_vel = Vector3(dir * _rng.randf_range(3.0, 4.5), 0.0, 0.0)
+	var z := _rng.randf_range(_z_far * 0.45, _z_far * 0.2)
+	var count := _rng.randi_range(1, COYOTES)
+	for i in _pack.size():
+		var c := _pack[i]
+		c.visible = i < count
+		c.position = Vector3(-dir * (_half_x * 0.6 + float(i) * _rng.randf_range(2.5, 4.0)), 0.0, z + _rng.randf_range(-1.5, 1.5))
+		c.rotation = Vector3(0.0, -PI * 0.5 * dir, 0.0)
+	if night > 0.5 and _sound and _sound.has_method("howl") and _rng.randf() < 0.5:
+		_sound.call("howl", 0.6)
 
 
 func _respawn_weed(i: int, anywhere: bool) -> void:
@@ -262,4 +332,31 @@ func _lizard() -> ArrayMesh:
 	var skin := Color(0.5, 0.45, 0.3)
 	b.blob(Vector3(0.0, 0.04, 0.0), Vector3(0.05, 0.03, 0.12), 6, 4, skin, skin.darkened(0.3), 0.1, rng)
 	b.rod(Vector3(0.0, 0.03, 0.1), Vector3(0.02, 0.02, 0.35), 0.015, 4, skin)
+	return b.to_mesh()
+
+
+## A coyote, trotting (front = -Z): a lean grey-tan body, long legs, a pointed snout, big ears and
+## a bushy black-tipped tail held low.
+func _coyote() -> ArrayMesh:
+	var b := Geo.Buf.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 9
+	var fur := Color(0.58, 0.5, 0.4)
+	var belly := Color(0.78, 0.72, 0.62)
+	b.blob(Vector3(0.0, 0.58, 0.0), Vector3(0.14, 0.15, 0.42), 8, 5, fur, belly, 0.08, rng)
+	b.blob(Vector3(0.0, 0.66, -0.38), Vector3(0.12, 0.14, 0.14), 7, 4, fur, belly, 0.05, rng)
+	# the head, a long snout, and the ears
+	b.blob(Vector3(0.0, 0.78, -0.56), Vector3(0.09, 0.09, 0.11), 7, 4, fur, fur, 0.04, rng)
+	b.rod(Vector3(0.0, 0.76, -0.62), Vector3(0.0, 0.73, -0.78), 0.035, 5, fur.darkened(0.1))
+	for sx: float in [-1.0, 1.0]:
+		b.tri(Vector3(sx * 0.03, 0.85, -0.55), Vector3(sx * 0.09, 0.85, -0.52), Vector3(sx * 0.065, 0.99, -0.54), fur.darkened(0.25))
+	# four legs, mid-stride
+	var leg := fur.darkened(0.15)
+	b.rod(Vector3(-0.07, 0.5, -0.3), Vector3(-0.08, 0.0, -0.42), 0.025, 4, leg)
+	b.rod(Vector3(0.07, 0.5, -0.3), Vector3(0.07, 0.0, -0.18), 0.025, 4, leg)
+	b.rod(Vector3(-0.07, 0.5, 0.3), Vector3(-0.07, 0.0, 0.42), 0.028, 4, leg)
+	b.rod(Vector3(0.07, 0.5, 0.3), Vector3(0.08, 0.0, 0.2), 0.028, 4, leg)
+	# the tail, low and bushy, dark at the tip
+	b.blob(Vector3(0.0, 0.45, 0.58), Vector3(0.06, 0.07, 0.2), 6, 4, fur, fur.darkened(0.2), 0.05, rng)
+	b.blob(Vector3(0.0, 0.38, 0.76), Vector3(0.04, 0.045, 0.07), 5, 3, Color(0.15, 0.13, 0.12), Color(0.15, 0.13, 0.12), 0.0, rng)
 	return b.to_mesh()

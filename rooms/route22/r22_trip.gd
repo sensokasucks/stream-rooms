@@ -174,8 +174,9 @@ func _place() -> void:
 			_placed[k] = t
 			piece.visible = true
 			_boards.fill(piece.get_node("Boards"), k, piece.get_meta("slots", []))
-			var mile := piece.get_meta("mile", null) as Label3D
-			if mile:
+			# (only pieces with a mile marker have one)
+			if piece.has_meta("mile"):
+				var mile := piece.get_meta("mile") as Label3D
 				mile.text = "MILE\n%d" % (22 + int(float(k) * Pieces.LENGTH / 1609.34))
 		piece.position = Vector3(0.0, 0.0, travel - float(k) * Pieces.LENGTH)
 

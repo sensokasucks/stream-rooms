@@ -11,7 +11,7 @@ extends Room
 ##   r22_drivein_builder.gd  builds the lot, the screen, the seats, the buildings and the rocks
 ##   r22_desert.gd   hour, sky, weather, sun, fog, rain, sand, shimmer, sound (shared with the Cruise)
 ##   r22_traffic.gd  vehicles on Route 22 (two-way here, laid along the road's frame)
-##   r22_extras.gd   tumbleweeds, dust devils, vultures, a jackrabbit, a lizard
+##   r22_extras.gd   tumbleweeds, dust devils, vultures, a jackrabbit, a lizard, coyotes
 ## The house lights are the four lot light poles (LIGHTS_House / LAMP_Lot_n): on at night only,
 ## dimmed while a film plays (Room._target_level), off with Lot lights. Their bulbs and the lit
 ## windows glow with them (r22_desert.gd lamp_scale).
@@ -59,7 +59,7 @@ func _ready() -> void:
 	_traffic.setup(_kit, _desert, true, Vector2(-400.0, 400.0))
 	_extras = Extras.new()
 	_desert.add_child(_extras)
-	_extras.setup(_kit, Vector3(90.0, -140.0, 110.0))
+	_extras.setup(_kit, Vector3(90.0, -140.0, 110.0), _desert)
 	_show_marquee()
 	EventBus.setting_changed.connect(_on_r22_setting_changed)
 	# the Scene switch shows where we are

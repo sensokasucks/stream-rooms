@@ -120,6 +120,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"r22_dust_devils": true,
 	"r22_birds": true,
 	"r22_critters": true,
+	"r22_coyotes": true,         # coyotes trotting across from dusk to dawn, howling at night (r22_extras.gd)
 	"r22_neon": true,            # neon signs glow at night (gas station, motel, diner, marquee, neon-arrow boards)
 	"r22_marquee": "TONIGHT: CHAT'S PICK",  # Drive-In: the marquee's second line
 	"r22_lot_lights": true,      # Drive-In: the lot light poles (this room's house lights)

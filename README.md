@@ -1543,7 +1543,8 @@ Included rooms:
       and a rainbow). Changes ease in. **Clouds**, **Stars**, **Heat shimmer** (the air
       wobbles and the far road shines like water on hot afternoons) and **Wind**.
     - **Roadside**: **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
-      lizards** and **Neon signs** (the neon glows at night).
+      lizards**, **Coyotes** (a few trot across out in the desert from dusk to dawn, and at night
+      you sometimes hear them howl) and **Neon signs** (the neon glows at night).
     - **Set detail**: **Detailed** adds photo grain to the rock, the ground and the road, haze
       and sunbeams in the air, and the woody's chrome and paint reflect the passing desert.
       **Low** is flat colours, the lightest. **Auto** follows Graphics quality. Each PC in a

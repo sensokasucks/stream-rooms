@@ -16,7 +16,7 @@ extends Room
 ##   r22_trip.gd     the road pieces (r22_pieces.gd), curves, the speed, co-stream travel sync
 ##   r22_billboards.gd  boards along the road with Sen's pictures
 ##   r22_traffic.gd  oncoming and overtaking vehicles
-##   r22_extras.gd   tumbleweeds, dust devils, vultures, a jackrabbit, a lizard
+##   r22_extras.gd   tumbleweeds, dust devils, vultures, a jackrabbit, a lizard, coyotes
 ##   r22_car.gd      the woody
 ## The presenters (PRESENTER_1..4) sit in the woody: two on the front bench, two up on the rear
 ## deck behind the back seat so the Windshield camera sees all four.
@@ -83,7 +83,7 @@ func _ready() -> void:
 	_traffic.setup(_kit, _desert, false, Vector2(-420.0, 320.0))
 	_extras = Extras.new()
 	_desert.add_child(_extras)
-	_extras.setup(_kit, Vector3(70.0, -170.0, 60.0))
+	_extras.setup(_kit, Vector3(70.0, -170.0, 60.0), _desert)
 	EventBus.setting_changed.connect(_on_r22_setting_changed)
 	# the Scene switch shows where we are
 	if String(AppState.get_setting("r22_scene")) != "cruise":
@@ -271,5 +271,6 @@ static func desert_controls() -> Array[Dictionary]:
 		{"key": "r22_dust_devils", "label": "Dust devils", "type": "check", "tooltip": "Little whirlwinds of dust spinning up out in the desert by day."},
 		{"key": "r22_birds", "label": "Vultures overhead", "type": "check", "tooltip": "A few vultures circling high up by day. (Ravens perch on the telephone wires either way.)"},
 		{"key": "r22_critters", "label": "Jackrabbits and lizards", "type": "check", "tooltip": "Now and then a jackrabbit bounds across or a lizard skitters over the gravel."},
+		{"key": "r22_coyotes", "label": "Coyotes", "type": "check", "tooltip": "From dusk to dawn (and once in a while by day) a few coyotes trot across out in the desert. At night you sometimes hear them howl."},
 		{"key": "r22_neon", "label": "Neon signs", "type": "check", "tooltip": "The neon on the gas station, motel, diner, the drive-in's marquee and the neon-arrow billboards glows at night."},
 	]
