@@ -1487,6 +1487,75 @@ Included rooms:
     trees are built in `rooms/campfire/campfire_trees.gd`. The photo textures in
     `rooms/campfire/textures/` come from [Poly Haven](https://polyhaven.com) (CC0, free for any
     use); `make_textures.py` in that folder downloads them and makes the files again.
+- **Route 22**: a desert highway at sunset, with red sandstone all round. It has two scenes in
+  the same desert, and the **Scene** choice at the top of the Room tab jumps between them (the
+  room list shows them as **Route 22 Drive-In** and **Route 22 Cruise**).
+  - **Drive-in lot (with the audience)**: a desert drive-in beside Route 22. The big screen
+    stands on its tower at the far end, red rocks and an arch behind it. The chat audience sits
+    on blankets and lawn chairs at the front (seats 1 to 8), two to a car in four convertibles
+    nosed up to the screen (9 to 16), three to a bed in four pickups backed in with their
+    tailgates down (17 to 28), and at the picnic table by the snack bar (29 and 30). Up to four
+    presenters stand at podiums on the little stage under the screen. Speaker posts between the
+    cars, the snack bar with the projection booth on its roof (the beam reaches the screen), a
+    ticket booth, an old gas pump, and the neon **ROUTE 22 DRIVE-IN** sign by the road. Traffic
+    goes by both ways on Route 22.
+    - **Marquee text** is the second line on the sign (shown in capitals).
+    - **Lot lights** are the four light poles: they come on at dusk and dim while a film plays,
+      like the house lights in the other rooms (the **House lights** slider works on them too).
+    - **How busy** sets the traffic on Route 22: 100 = about one vehicle every 10 seconds,
+      0 = **Empty road**.
+    - Cameras: from behind the cars at the screen (the default), the front row, from the stage
+      at everyone, the convertibles, the pickup beds, the snack bar, the marquee from across the
+      road, a drone view, a Reaction camera and the red rocks over the screen.
+    - Reaction targets: `!tomato stage`, `snacks`, `marquee` (and the screen, as everywhere).
+  - **Cruise (just chatting, in the car)**: a backdrop for the chatting part of a stream. No
+    big screen and no chat audience: up to four co-stream guests ride in a red woody
+    convertible (two on the front bench, two up on the rear deck) down an endless two-lane
+    highway. The car never moves; the desert slides past it. The roadside comes from 24 road
+    pieces in a shuffled order (rock fins, an arch, a natural bridge, hoodoos, balanced rocks,
+    slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
+    an old wreck, buttes, a varnished cliff and more), never the same one twice in view, with
+    telephone poles, ravens on the wires, reflector posts and mile markers.
+    - **Speed** is how fast the woody drives (0 = **Parked**). **Curves and hills** is how
+      much the road winds and rolls away in the distance.
+    - **How busy** sets the other traffic: pickups, old sedans, semis, motorhomes, motorcycles
+      and the odd tour bus, mostly oncoming, now and then one overtaking you.
+    - **Billboards** show your own pictures, for example your friends' promo pictures. Put
+      PNG, JPG, WebP or GIF files (animated GIFs play) in a folder and type it in **Picture
+      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or type the
+      names of pictures from Stream Core's Stored files in **Stream Core pictures**, separated
+      by commas. **How common** sets how often a board comes by (40 = about one every 15
+      seconds at 50 km/h, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
+      night** puts lamps on them. **Filler ads when the set is empty** shows made-up roadside
+      ads until you add pictures. Six shapes, each with its own tick box: a classic two-post
+      board, a tall single pole, a weathered wooden sign, one on an old roadside stop's roof, a
+      neon arrow, and a parked trailer.
+    - Cameras: through the windshield at everyone (the default), from the back seat down the
+      road, from each side, from the hood, a chase camera behind, a drone, from the roadside as
+      you pass, a Reaction camera, and the road ahead.
+    - Reaction targets: `!tomato car`, `road`.
+  - Shared by both scenes:
+    - **Time of day** (sunset at 18 lies straight down the road ahead and behind the drive-in
+      screen; night brings the Milky Way) and **Day length** to let the clock run.
+    - **Weather**: **Clear**, **Cloud deck** (a ceiling of cloud that glows orange at sunset),
+      **Dust storm** (brown air and blowing sand), **Thunderstorm** (rain and lightning; soft
+      and slow in photosensitive-safe mode) and **After rain** (a wet, shining road with puddles
+      and a rainbow). Changes ease in. **Clouds**, **Stars**, **Heat shimmer** (the air
+      wobbles and the far road shines like water on hot afternoons) and **Wind**.
+    - **Roadside**: **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
+      lizards** and **Neon signs** (the neon glows at night).
+    - **Set detail**: **Detailed** adds photo grain to the rock, the ground and the road, haze
+      and sunbeams in the air, and the woody's chrome and paint reflect the passing desert.
+      **Low** is flat colours, the lightest. **Auto** follows Graphics quality. Each PC in a
+      co-stream chooses its own.
+  - In a co-stream the hour, the weather, the speed, the traffic, the billboard rules and the
+    roadside are the host's, and the guests' road keeps pace with the host's. The billboard
+    pictures are each PC's own (so are which vehicle comes when and which picture is on which
+    board).
+  - Source: the whole set is built in code (`rooms/route22/`, shared by both scenes, and
+    `rooms/route22_cruise/`). The rock, ground and road photo grain comes from
+    `rooms/route22/textures/make_textures.py`; the filler ads from `make_ads.py` there (all
+    made up).
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

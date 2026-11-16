@@ -91,6 +91,38 @@ const BASE_DEFAULTS: Dictionary = {
 	"camp_autumn": false,        # autumn colours on the birches, maples and oaks (shared in a co-stream)
 	"camp_butterflies": true,    # a few butterflies over the grass by day (each PC's own, like the fireflies)
 	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
+	# Route 22 (rooms/route22 Drive-In, rooms/route22_cruise Cruise): one desert, two scenes.
+	"r22_scene": "drivein",      # Scene switch: drivein | cruise (each room sets it to its own on load; changing it loads the other)
+	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
+	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
+	"r22_weather": "clouddeck",  # clear | clouddeck | dust | storm | afterrain (r22_desert.gd WEATHER)
+	"r22_clouds": 1.0,           # cloud on top of what the weather brings: 0 = none, 1 = normal, 2 = double
+	"r22_stars": 1.0,            # stars and the Milky Way at night (0 = none)
+	"r22_heat": 0.5,             # heat shimmer and the road mirage on hot afternoons, 0..1
+	"r22_wind": 0.35,            # wind 0..1: brush sway, tumbleweeds, cloud shadows, blowing sand at the top
+	"r22_detail": "auto",        # how detailed the desert is drawn on this PC: auto (from graphics_quality) | low | full
+	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked)
+	"r22_curves": 0.5,           # Cruise: how much the road winds and rolls in the distance, 0..1
+	"r22_traffic": 30.0,         # other vehicles: 0 = none, 100 = about one every 10 s (r22_traffic.gd)
+	"r22_bb_amount": 40.0,       # Cruise billboards: how common, 0..100 (40 = about one every 15 s at 50 km/h)
+	"r22_bb_folder": "",         # billboard picture folder on this PC; empty = user://billboards
+	"r22_bb_core": "",           # Stream Core stored-file names for the billboards, comma-separated
+	"r22_bb_order": "shuffle",   # shuffle | order
+	"r22_bb_lit": true,          # billboards lit at night
+	"r22_bb_filler": true,       # made-up roadside ads when no pictures are set
+	"r22_bb_classic": true,      # billboard shapes in use (r22_billboards.gd SHAPES)
+	"r22_bb_monopole": true,
+	"r22_bb_wooden": true,
+	"r22_bb_rooftop": true,
+	"r22_bb_neon": true,
+	"r22_bb_trailer": true,
+	"r22_tumbleweeds": true,     # roadside life (r22_extras.gd)
+	"r22_dust_devils": true,
+	"r22_birds": true,
+	"r22_critters": true,
+	"r22_neon": true,            # neon signs glow at night (gas station, motel, diner, marquee, neon-arrow boards)
+	"r22_marquee": "TONIGHT: CHAT'S PICK",  # Drive-In: the marquee's second line
+	"r22_lot_lights": true,      # Drive-In: the lot light poles (this room's house lights)
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
