@@ -28,6 +28,13 @@ extends Node3D
 const Geo := preload("res://rooms/route22/r22_geo.gd")
 const SKY_SHADER := preload("res://rooms/route22/r22_sky.gdshader")
 const HEAT_SHADER := preload("res://rooms/route22/r22_heat.gdshader")
+## The coyotes' howls: three short cuts from Yellowstone National Park's sound library (US
+## National Park Service, public domain; see sounds/README.md), played by howl().
+const HOWLS: Array[AudioStream] = [
+	preload("res://rooms/route22/sounds/coyote_1.ogg"),
+	preload("res://rooms/route22/sounds/coyote_2.ogg"),
+	preload("res://rooms/route22/sounds/coyote_3.ogg"),
+]
 const MIX_RATE: float = 22050.0
 ## Travel (metres) is handed to the shaders wrapped at this, so float precision never runs out;
 ## every texture that scrolls with it must repeat evenly into it (see r22_common.gdshaderinc).
@@ -105,9 +112,7 @@ var _lp_rumble: float = 0.0
 var _rumble: float = 0.0          # thunder, dying away
 var _whoosh: float = 0.0          # a vehicle passing, dying away
 var _whoosh_lv: float = 0.0       # what is heard of it: swells in over a moment (no sudden burst)
-var _howl_t: float = -1.0         # seconds into a coyote howl (-1 = none)
-var _howl_lv: float = 0.0         # its loudness 0..1
-var _howl_ph: Array[float] = [0.0, 0.0]   # the two voices' phases
+var _howl_player: AudioStreamPlayer   # plays the coyotes' howls (null when this desert is silent)
 var _sample: int = 0
 
 
@@ -154,6 +159,9 @@ func setup(room: Node3D, kit: Dictionary, centre: Vector3, heat: Array[Transform
 	_snap_weather(w)
 	if sound and room.has_method("_start_generated_ambience"):
 		_amb = room.call("_start_generated_ambience", MIX_RATE, 0.3)
+		_howl_player = AudioStreamPlayer.new()
+		_howl_player.bus = AudioManager.AMBIENCE_BUS
+		add_child(_howl_player)
 	EventBus.setting_changed.connect(_on_setting_changed)
 
 
@@ -161,6 +169,8 @@ func setup(room: Node3D, kit: Dictionary, centre: Vector3, heat: Array[Transform
 ## touching the sky, which belongs to the next room now.
 func retire() -> void:
 	_retired = true
+	if _howl_player:
+		_howl_player.stop()
 	_exit_tree()
 
 
@@ -226,13 +236,20 @@ func whoosh(amount: float) -> void:
 	_whoosh = maxf(_whoosh, clampf(amount, 0.0, 1.0))
 
 
-## Coyotes (r22_extras.gd): a howl from out in the desert, 0..1. Two voices rise, waver and fall
-## over about four seconds, the second a beat later and a little higher, with a few yips.
+## Coyotes (r22_extras.gd): a howl from out in the desert, amount 0..1 = how near it sounds.
+## One of HOWLS (real coyotes, picked at random) on the ambience bus; a howl already in the air
+## is left to finish.
 func howl(amount: float) -> void:
-	if _howl_t >= 0.0:
+	if _howl_player == null or _howl_player.playing:
 		return
-	_howl_t = 0.0
-	_howl_lv = clampf(amount, 0.0, 1.0)
+	_howl_player.stream = HOWLS[randi() % HOWLS.size()]
+	_howl_player.volume_db = linear_to_db(lerpf(0.2, 1.0, clampf(amount, 0.0, 1.0)))
+	_howl_player.play()
+
+
+## True while a howl is playing (for tests).
+func is_howling() -> bool:
+	return _howl_player != null and _howl_player.playing
 
 
 ## Called every frame by the room. travel = metres driven (the Cruise; 0 in the Drive-In),
@@ -469,42 +486,46 @@ func _build_rain(centre: Vector3) -> void:
 	_rain.position = centre + Vector3(0.0, 14.0, 0.0)
 
 
-## Blowing sand: fast, low specks streaming across in the wind (a dust storm, or a gale).
+## Blowing sand: long, low, ragged streaks of dust streaming across in the wind (a dust storm,
+## or a gale), with thinner veils higher up. Each particle is a wide strip wearing
+## r22_dust.gdshader with its noise stretched along the wind, so it reads as a torn sheet of
+## sand, not a speck. tick() turns it on and sets its drift from the wind and the car's speed.
 func _build_sand(centre: Vector3) -> void:
 	_sand = CPUParticles3D.new()
 	_sand.name = "BlowingSand"
-	_sand.amount = 420
-	_sand.lifetime = 2.0
+	_sand.amount = 220
+	_sand.lifetime = 3.2
 	_sand.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	_sand.emission_box_extents = Vector3(4.0, 1.2, 30.0)
-	_sand.direction = Vector3(1.0, 0.05, 0.0)
-	_sand.spread = 8.0
-	_sand.initial_velocity_min = 8.0
-	_sand.initial_velocity_max = 16.0
+	_sand.emission_box_extents = Vector3(6.0, 0.9, 34.0)
+	_sand.direction = Vector3(1.0, 0.03, 0.0)
+	_sand.spread = 6.0
+	_sand.initial_velocity_min = 7.0
+	_sand.initial_velocity_max = 13.0
 	_sand.gravity = Vector3(10.0, 0.0, 0.0)
-	_sand.scale_amount_min = 0.5
-	_sand.scale_amount_max = 1.6
+	_sand.scale_amount_min = 0.6
+	_sand.scale_amount_max = 1.8
+	# each streak swells as it travels
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.6))
+	grow.add_point(Vector2(1.0, 1.5))
+	_sand.scale_amount_curve = grow
 	var fade := Gradient.new()
-	fade.set_color(0, Color(0.85, 0.6, 0.4, 0.0))
-	fade.add_point(0.2, Color(0.8, 0.55, 0.35, 0.5))
-	fade.set_color(fade.get_point_count() - 1, Color(0.75, 0.5, 0.3, 0.0))
+	fade.set_color(0, Color(0.82, 0.66, 0.5, 0.0))
+	fade.add_point(0.25, Color(0.8, 0.64, 0.48, 0.26))
+	fade.add_point(0.7, Color(0.8, 0.64, 0.48, 0.18))
+	fade.set_color(fade.get_point_count() - 1, Color(0.8, 0.64, 0.48, 0.0))
 	_sand.color_ramp = fade
-	var speck := QuadMesh.new()
-	speck.size = Vector2(0.25, 0.06)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.billboard_keep_scale = true
-	speck.material = m
-	_sand.mesh = speck
+	# a strip 10 m long and 1.6 m high (the wind blows along x, across the view)
+	var streak := QuadMesh.new()
+	streak.size = Vector2(10.0, 1.6)
+	streak.material = Geo.dust_material(Vector2(0.3, 2.2), 1.0)
+	_sand.mesh = streak
 	_sand.local_coords = false
 	_sand.emitting = false
 	_sand.visible = false
 	_sand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_sand)
-	_sand.position = centre + Vector3(-22.0, 0.8, 0.0)
+	_sand.position = centre + Vector3(-26.0, 0.9, 0.0)
 
 
 # ── Sound ────────────────────────────────────────────────────
@@ -548,33 +569,5 @@ func _fill_ambience(wind: float) -> void:
 		s += (_lp_wind2 * 0.7 + _lp_road * 0.3) * _whoosh_lv * 0.3
 		if cricket_lv > 0.0005 and fmod(t, 1.1) < 0.4 and sin(t * 180.0) > 0.0:
 			s += sin(t * 26000.0) * cricket_lv
-		if _howl_t >= 0.0:
-			s += _howl_sample() * 0.05 * _howl_lv
 		buf[i] = Vector2(s, s * 0.94)
 	_amb.push_buffer(buf)
-
-
-## One sample of the coyotes' howl (advances it by one sample; ends it after HOWL_LEN seconds).
-## Each voice glides up from a low note, holds with a waver, and drops away; short yips follow.
-func _howl_sample() -> float:
-	var out := 0.0
-	for v in 2:
-		var lt := _howl_t - 0.7 * float(v)
-		if lt < 0.0 or lt > 3.2:
-			continue
-		var top := 780.0 + 120.0 * float(v)
-		var f := lerpf(380.0, top, smoothstep(0.0, 0.7, lt)) - 340.0 * smoothstep(2.2, 3.2, lt)
-		f += 14.0 * sin(lt * TAU * 5.5)
-		_howl_ph[v] = fmod(_howl_ph[v] + f / MIX_RATE, 1.0)
-		var env := smoothstep(0.0, 0.25, lt) * (1.0 - smoothstep(2.6, 3.2, lt))
-		var ph := _howl_ph[v] * TAU
-		out += (sin(ph) + 0.25 * sin(ph * 2.0)) * env
-	# a few yips at the end
-	var yt := _howl_t - 3.4
-	if yt > 0.0 and yt < 1.2 and fmod(yt, 0.3) < 0.09:
-		_howl_ph[0] = fmod(_howl_ph[0] + (900.0 + 300.0 * fmod(yt, 0.3) / 0.09) / MIX_RATE, 1.0)
-		out += sin(_howl_ph[0] * TAU) * 0.6
-	_howl_t += 1.0 / MIX_RATE
-	if _howl_t > 4.8:
-		_howl_t = -1.0
-	return out

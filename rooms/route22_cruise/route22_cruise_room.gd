@@ -18,8 +18,9 @@ extends Room
 ##   r22_traffic.gd  oncoming and overtaking vehicles
 ##   r22_extras.gd   tumbleweeds, dust devils, vultures, a jackrabbit, a lizard, coyotes
 ##   r22_car.gd      the woody
-## The presenters (PRESENTER_1..4) sit in the woody: two on the front bench, two up on the rear
-## deck behind the back seat so the Windshield camera sees all four.
+## The presenters (PRESENTER_1..4) sit in the woody: two in the front seats, two on the back
+## seat, sitting a little closer together than the front pair so the Windshield camera sees them
+## between the front two.
 ## Settings: see get_controls(); defaults in AppState.DEFAULTS ("r22_" keys), the ones a
 ## co-stream shares in NetSession.SHARED_BASE.
 
@@ -35,8 +36,11 @@ const MY_ID := "route22_cruise"
 const OTHER_ID := "route22"
 ## The woody's place: its middle, in the right-hand lane.
 const CAR_AT := Vector3(1.8, 0.0, 0.0)
-## Where the riders sit, car space: front bench, and up on the rear deck behind the back seat.
-const SEATS: Array[Vector3] = [Vector3(-0.42, 0.67, -0.2), Vector3(0.42, 0.67, -0.2), Vector3(-0.5, 1.02, 1.95), Vector3(0.5, 1.02, 1.95)]
+## Where the riders sit (the bottom middle of each picture), car space, metres: on the two front
+## seats and on the back seat's cushion, each a hand's width in front of its backrest (the
+## backrests lean back, so an upright picture any closer would cut into them). Must stay in step with the woody's seats in
+## rooms/route22/models/make_woody.py (SeatFront / SeatRear; the model's y is -z here).
+const SEATS: Array[Vector3] = [Vector3(-0.42, 0.67, -0.02), Vector3(0.42, 0.67, -0.02), Vector3(-0.3, 0.7, 1.36), Vector3(0.3, 0.7, 1.36)]
 ## Camera views: [name (after "CAM_"; the number sets the order), where it stands, what it looks at].
 const CAMERAS: Array = [
 	["01_Windshield", Vector3(1.8, 1.9, -6.0), Vector3(1.8, 1.2, 0.6)],
@@ -219,7 +223,7 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "r22_bb_folder", "label": "Picture folder", "type": "text", "placeholder": "empty = the app's billboards folder",
 			"tooltip": "A folder of pictures (PNG, JPG, WebP or GIF, animated GIFs play) for the billboards, for example your friends' promo pictures. Empty = the \"billboards\" folder in Stream Rooms' data folder. Changes are read when you change this box (or switch rooms)."},
 		{"key": "r22_bb_core", "label": "Stream Core pictures", "type": "text", "placeholder": "stored file names, comma-separated",
-			"tooltip": "Names of pictures in Stream Core's Stored files to add to the billboards, separated by commas. Stream Rooms fetches them from Core."},
+			"tooltip": "Names of pictures in Stream Core's Stored files to add to the billboards, separated by commas. Stream Rooms fetches them from Core. Easier in Core's dashboard: Setup > Stream Rooms settings > Room & sound > Billboards > Choose pictures picks and uploads them."},
 		{"key": "r22_bb_order", "label": "Order", "type": "option", "options": [["shuffle", "Shuffle"], ["order", "In order"]],
 			"tooltip": "Shuffle: every picture once in a random order, then a new round. In order: the folder's pictures by file name, then the Core ones as typed."},
 		{"key": "r22_bb_lit", "label": "Lit at night", "type": "check",

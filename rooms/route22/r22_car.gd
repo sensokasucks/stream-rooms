@@ -258,27 +258,17 @@ func _build_dust() -> void:
 	_dust.scale_amount_curve = grow
 	var fade := Gradient.new()
 	fade.set_color(0, Color(0.8, 0.6, 0.45, 0.0))
-	fade.add_point(0.15, Color(0.78, 0.58, 0.42, 0.12))
+	fade.add_point(0.15, Color(0.78, 0.58, 0.42, 0.22))
 	fade.set_color(fade.get_point_count() - 1, Color(0.75, 0.58, 0.45, 0.0))
 	_dust.color_ramp = fade
 	var puff := QuadMesh.new()
-	puff.size = Vector2(1.0, 1.0)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.billboard_keep_scale = true
-	var dot := GradientTexture2D.new()
-	dot.fill = GradientTexture2D.FILL_RADIAL
-	dot.fill_from = Vector2(0.5, 0.5)
-	dot.fill_to = Vector2(1.0, 0.5)
-	var g := Gradient.new()
-	g.set_color(0, Color.WHITE)
-	g.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
-	dot.gradient = g
-	m.albedo_texture = dot
-	puff.material = m
+	puff.size = Vector2(1.4, 1.4)
+	# a ragged wisp, not a round blob (r22_dust.gdshader), each turned its own way and slowly turning
+	puff.material = Geo.dust_material()
+	_dust.angle_min = 0.0
+	_dust.angle_max = 360.0
+	_dust.angular_velocity_min = -25.0
+	_dust.angular_velocity_max = 25.0
 	_dust.mesh = puff
 	_dust.local_coords = false
 	_dust.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

@@ -1549,7 +1549,7 @@ Included rooms:
     - Reaction targets: `!tomato stage`, `snacks`, `marquee` (and the screen, as everywhere).
   - **Cruise (just chatting, in the car)**: a backdrop for the chatting part of a stream. No
     big screen and no chat audience: up to four co-stream guests ride in a red woody
-    convertible (two on the front bench, two up on the rear deck) down an endless two-lane
+    convertible (two in the front seats, two on the back seat) down an endless two-lane
     highway. The car never moves; the desert slides past it. The roadside comes from 24 road
     pieces in a shuffled order (rock fins, an arch, a natural bridge, hoodoos, balanced rocks,
     slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
@@ -1565,9 +1565,12 @@ Included rooms:
       road**, nothing but poles, brush and the far buttes, like a real desert highway.
     - **Billboards** show your own pictures, for example your friends' promo pictures. Put
       PNG, JPG, WebP or GIF files (animated GIFs play) in a folder and type it in **Picture
-      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or type the
-      names of pictures from Stream Core's Stored files in **Stream Core pictures**, separated
-      by commas. **How common** sets how often a board comes by (40 = about one every 15
+      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or pick them
+      in Stream Core's dashboard: Setup > Stream Rooms settings > Room & sound, **Billboards**
+      card, **Choose pictures** lists the pictures in Core's Stored files and uploads new ones
+      (in the game the same list is the **Stream Core pictures** box, names separated by
+      commas). Every board is built to its picture's shape (wide, square or tall), so the
+      whole picture shows, and no post, lamp or catwalk stands in front of it. **How common** sets how often a board comes by (40 = about one every 15
       seconds at 50 km/h, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
       night** puts lamps on them. **Filler ads when the set is empty** shows made-up roadside
       ads until you add pictures. Six shapes, each with its own tick box: a classic two-post
@@ -1672,6 +1675,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
+- `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.
