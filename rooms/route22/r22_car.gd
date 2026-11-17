@@ -29,6 +29,9 @@ var _tail_mat: StandardMaterial3D
 var _beams: Array[SpotLight3D] = []
 var _glows: Array[MeshInstance3D] = []
 var _dust: CPUParticles3D
+## The render layer (bit 12) the car's own meshes are also on, so the reflection probe can be
+## told to light only them (ReflectionProbe.reflection_mask).
+const REFLECT_LAYER: int = 1 << 11
 var _probe: ReflectionProbe
 var _probe_in: float = 0.0
 var _time: float = 0.0
@@ -103,8 +106,14 @@ func build(kit: Dictionary) -> void:
 	_probe.update_mode = ReflectionProbe.UPDATE_ONCE
 	_probe.max_distance = 300.0
 	_probe.mesh_lod_threshold = 4.0
+	# only the car wears these reflections: without the mask everything inside the probe's box
+	# (80 m of ground, road and rocks) took its ambient light from the probe too, which showed as
+	# a square of lighter ground round the car
+	_probe.reflection_mask = REFLECT_LAYER
 	add_child(_probe)
 	_probe.position = Vector3(0.0, 1.2, 0.0)
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).layers |= REFLECT_LAYER
 
 
 ## The car's materials, by part.

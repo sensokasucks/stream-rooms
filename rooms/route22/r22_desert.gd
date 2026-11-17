@@ -104,6 +104,7 @@ var _lp_road: float = 0.0
 var _lp_rumble: float = 0.0
 var _rumble: float = 0.0          # thunder, dying away
 var _whoosh: float = 0.0          # a vehicle passing, dying away
+var _whoosh_lv: float = 0.0       # what is heard of it: swells in over a moment (no sudden burst)
 var _howl_t: float = -1.0         # seconds into a coyote howl (-1 = none)
 var _howl_lv: float = 0.0         # its loudness 0..1
 var _howl_ph: Array[float] = [0.0, 0.0]   # the two voices' phases
@@ -516,8 +517,11 @@ func _fill_ambience(wind: float) -> void:
 	var n := _amb.get_frames_available()
 	if n <= 0:
 		return
-	var gust := 0.6 + 0.4 * sin(float(Time.get_ticks_msec()) * 0.0007) * sin(float(Time.get_ticks_msec()) * 0.00023)
-	var wind_lv := (0.006 + 0.03 * wind * gust + 0.04 * dust) * (0.6 + 0.4 * gust)
+	# gusts: slow, gentle swells (about 25 s and 60 s waves). They were quick and deep before,
+	# and the low wind band swelling every few seconds sounded like an engine revving.
+	var ms := float(Time.get_ticks_msec())
+	var gust := 0.75 + 0.17 * sin(ms * 0.00025) + 0.08 * sin(ms * 0.000105 + 1.0)
+	var wind_lv := (0.006 + 0.03 * wind * gust + 0.04 * dust) * (0.8 + 0.2 * gust)
 	var rain_lv := 0.03 * storm
 	var cricket_lv := 0.01 * night * (1.0 - storm) * (1.0 - dust)
 	var road_lv := 0.045 * road_noise
@@ -530,15 +534,18 @@ func _fill_ambience(wind: float) -> void:
 		_lp_road += (w - _lp_road) * 0.06
 		_lp_rumble += (w - _lp_rumble) * 0.008
 		_rumble *= 0.99997
-		_whoosh *= 0.99992
+		_whoosh *= 0.99996
+		_whoosh_lv += (_whoosh - _whoosh_lv) * 0.00025
 		_sample += 1
 		var t := float(_sample) / MIX_RATE
-		var s := _lp_wind * wind_lv * 3.0 + _lp_wind2 * wind_lv * 0.6
+		# the wind: more of the airy band than the low one (the low band alone is a rumble)
+		var s := _lp_wind * wind_lv * 1.6 + _lp_wind2 * wind_lv * 1.1
 		s += w * rain_lv * 0.5 + _lp_wind2 * rain_lv
 		s += _lp_rumble * _rumble * 0.9
 		if road_lv > 0.0:
 			s += _lp_road * road_lv * 2.0 + sin(t * TAU * 46.0) * road_lv * 0.25 + sin(t * TAU * 92.0) * road_lv * 0.1
-		s += _lp_road * _whoosh * 0.35
+		# a passing vehicle: a soft rush of air (the airy band), not the engine's low band
+		s += (_lp_wind2 * 0.7 + _lp_road * 0.3) * _whoosh_lv * 0.3
 		if cricket_lv > 0.0005 and fmod(t, 1.1) < 0.4 and sin(t * 180.0) > 0.0:
 			s += sin(t * 26000.0) * cricket_lv
 		if _howl_t >= 0.0:
