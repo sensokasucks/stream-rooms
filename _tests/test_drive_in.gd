@@ -2,7 +2,7 @@ extends Node
 ## Drive-In's outdoor look (rooms/drive_in/drive_in_room.gd): the room loads with its five
 ## cameras and its screen, the Room tab lists its controls, Set detail swaps the Simple and the
 ## Detailed look (photo ground, the belt of detailed trees, grass tufts and ferns, the model's
-## simple trees hidden), Time of day moves the sun and the moon and turns the lot's lamps down
+## simple trees hidden, modelled props in place of the plain blocks), Time of day moves the sun and the moon and turns the lot's lamps down
 ## by day, the fireflies come out at night only, and the sky is the Lakeside Campfire's.
 ## Saves screenshots of the looks into the output folder (look at them: the look is not checked
 ## here). Pass "quick" after the folder to skip the slow Detailed screenshots.
@@ -106,6 +106,13 @@ func _ready() -> void:
 			if m and m.resource_name == "Asphalt" and mi.get_surface_override_material(s) is ShaderMaterial:
 				swapped = true
 	_check(swapped and detailed.visible and not trees.is_visible_in_tree(), "Detailed: photo asphalt and the detailed trees in place of the simple ones")
+	var props: Dictionary = room.call("get_prop_counts")
+	var blocks := room.find_child("Speaker_Posts", true, false) as Node3D
+	var modelled := room.find_child("DetailedProps", true, false) as Node3D
+	_check(int(props.get("speaker_post", 0)) >= 100 and int(props.get("light_pole", 0)) == 8 and int(props.get("wall_lamp", 0)) == 2
+			and int(props.get("lawn_chair", 0)) >= 1 and int(props.get("cooler", 0)) == 1 and int(props.get("popcorn", 0)) == 1,
+			"Detailed: modelled speaker posts, lot lights, lamps, chairs, cooler and popcorn (%s)" % str(props))
+	_check(modelled != null and modelled.visible and blocks != null and not blocks.visible, "Detailed: the model's plain blocks are hidden under the modelled props")
 	AppState.set_setting("drive_detail", "auto")
 	AppState.set_setting("graphics_quality", "low")
 	await _secs(0.3)

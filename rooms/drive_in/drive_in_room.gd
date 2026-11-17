@@ -17,7 +17,11 @@ extends Room
 ##     textures/ here and the campfire's), wood and cloth grain on the fence, truck bed, blanket
 ##     and chair (drive_detail.gdshader), puts a belt of leaf-card trees round the lot in place of
 ##     the simple ones (the campfire's campfire_trees.gd: firs, pines, oaks, maples, birches) and
-##     grass tufts and ferns along the fence. Auto follows Graphics quality (Low = Simple).
+##     grass tufts and ferns along the fence, plaster and concrete grain on the snack bar and
+##     the screen tower, and swaps the model's plain blocks for modelled props
+##     (models/props.glb from models/make_props.py: the speaker posts, the lot lights, the snack
+##     bar's lamps, the lawn chairs, the cooler and the popcorn; _build_detailed_props).
+##     Auto follows Graphics quality (Low = Simple).
 ##     Both looks are built when the room loads; _apply_detail() only shows one, so switching is
 ##     instant.
 ## The shared settings (all drive_* but drive_detail and drive_fireflies) travel in a co-stream
@@ -47,9 +51,35 @@ const GRAIN_LOOKS: Dictionary = {
 	"Truck_Bed_Wood": [CAMP_TEX + "detail_planks.jpg", 1.1],
 	"Blanket": [CAMP_TEX + "detail_fabric.jpg", 0.45],
 	"Canvas_Chair": [CAMP_TEX + "detail_fabric.jpg", 0.45],
+	"Stand_Wall": [OWN_TEX + "detail_plaster.jpg", 2.4],
+	"Stand_Roof": [OWN_TEX + "detail_plaster.jpg", 2.4],
+	"Screen_Frame": [OWN_TEX + "detail_concrete.jpg", 3.5],
 }
 ## The model's simple trees, hidden in the Detailed look (the belt of detailed trees replaces them).
 const SIMPLE_TREES: PackedStringArray = ["Trees", "Tree_Trunks"]
+## The model's plain blocks that the Detailed look hides, as _build_detailed_props puts modelled
+## props in their places.
+const SIMPLE_PROPS: PackedStringArray = ["Speaker_Posts", "Speaker_Boxes", "Light_Poles", "Lamp_Heads", "Lawn_Chair_Canvas",
+	"Lawn_Chair_Frames", "Cooler", "Popcorn", "Popcorn_Bucket"]
+## The modelled props (made by models/make_props.py; one mesh per prop, surfaces named by material).
+const PROPS := "res://rooms/drive_in/models/props.glb"
+## How each prop surface looks: material name -> [colour, metallic, roughness], or the name of
+## the drive_in.glb material it borrows (so the cooler, the popcorn bucket and the lamps keep
+## the colours and glow the Simple look has).
+const PROP_LOOKS: Dictionary = {
+	"post": [Color(0.2, 0.27, 0.22), 0.4, 0.5], "concrete": [Color(0.5, 0.5, 0.47), 0.0, 0.95],
+	"speaker": [Color(0.6, 0.62, 0.6), 0.7, 0.35], "grille": [Color(0.04, 0.04, 0.04), 0.3, 0.6],
+	"chrome": [Color(0.8, 0.8, 0.82), 1.0, 0.15], "cord": [Color(0.02, 0.02, 0.02), 0.0, 0.6],
+	"steel": [Color(0.3, 0.34, 0.33), 0.5, 0.5], "shade": [Color(0.26, 0.32, 0.29), 0.5, 0.45],
+	"alu": [Color(0.82, 0.82, 0.84), 0.9, 0.3], "web_a": [Color(0.1, 0.42, 0.24), 0.0, 0.75],
+	"web_b": [Color(0.88, 0.88, 0.84), 0.0, 0.75], "armrest": [Color(0.42, 0.26, 0.13), 0.0, 0.6],
+	"white": [Color(0.9, 0.9, 0.87), 0.0, 0.5],
+	"lamp_glow": "Lamp_Glow", "cooler": "Cooler_Blue", "stripe_red": "Stripe_Red", "stripe_white": "Stripe_White",
+	"popcorn": "Popcorn",
+}
+## The middle of the screen on the ground: the speaker posts' rows curve round it, and each
+## post's front faces it (its speakers hang left and right, towards the cars either side).
+const SCREEN_MIDDLE := Vector2(0.0, -60.0)
 ## Where the snack bar and the screen's legs stand (x min, z min, size): no grass tufts there.
 const NO_GRASS: Array[Rect2] = [Rect2(-11.5, 20.5, 23.0, 9.5), Rect2(-15.8, -65.0, 31.6, 6.0)]
 
@@ -76,6 +106,9 @@ const NO_GRASS: Array[Rect2] = [Rect2(-11.5, 20.5, 23.0, 9.5), Rect2(-15.8, -65.
 var _sun: DirectionalLight3D      # the sun by day, the moon by night
 var _fx: Node3D                   # everything this script adds (mist, fireflies, detailed plants)
 var _detailed: Node3D             # the detailed trees and undergrowth (shown in the Detailed look)
+var _detailed_props: Node3D       # the modelled props (shown in the Detailed look)
+var _prop_meshes: Dictionary = {} # prop name -> its mesh with this room's materials (_prop_mesh)
+var _prop_counts: Dictionary = {} # how many of each prop were placed (for tests)
 var _fireflies: Array[CPUParticles3D] = []
 var _mist_mat: ShaderMaterial
 var _ground_swaps: Array[Dictionary] = []   # {mesh, surface, simple, detailed}: see _swap_materials
@@ -102,6 +135,7 @@ func _ready() -> void:
 	_build_fireflies()
 	_swap_materials()
 	_build_detailed_plants()
+	_build_detailed_props()
 	_hour = fposmod(float(AppState.get_setting("drive_time")), 24.0)
 	EventBus.setting_changed.connect(_on_drive_setting_changed)
 	_apply_detail()
@@ -178,12 +212,14 @@ func _apply_detail() -> void:
 	var detailed := detail_level() == "full"
 	for s: Dictionary in _ground_swaps:
 		(s["mesh"] as MeshInstance3D).set_surface_override_material(int(s["surface"]), s["detailed"] if detailed else s["simple"])
-	for tree_name: String in SIMPLE_TREES:
-		var n := find_child(tree_name, true, false) as Node3D
+	for simple_name: String in SIMPLE_TREES + SIMPLE_PROPS:
+		var n := find_child(simple_name, true, false) as Node3D
 		if n:
 			n.visible = not detailed
 	if _detailed:
 		_detailed.visible = detailed
+	if _detailed_props:
+		_detailed_props.visible = detailed
 
 
 ## Makes the Detailed look's materials for the ground (GROUND_LOOKS) and the wood and cloth
@@ -378,6 +414,187 @@ static func _on_no_grass(p: Vector2) -> bool:
 ## How many of each kind of plant the Detailed look has (for tests): {"fir": n, "grass": n, ...}.
 func get_plant_counts() -> Dictionary:
 	return _plant_counts
+
+
+# ── The modelled props ───────────────────────────────────────
+## Builds the Detailed look's props (hidden until _apply_detail shows them) where the model's
+## plain blocks stand, finding them from the blocks' own shapes (so moving a block in Blender
+## moves its prop):
+##   - a speaker post at the foot of every post in "Speaker_Posts" (one MultiMesh), facing
+##     the middle of the screen;
+##   - a lot light at the foot of every pole in "Light_Poles", its arm towards the lamp head
+##     the model has next to it ("Lamp_Heads"); the two low lamp heads under the snack bar's
+##     canopy get the small wall lamp;
+##   - lawn chairs where "Lawn_Chair_Canvas" has one, the cooler and the popcorn bucket on the
+##     truck bed where the blocks are.
+## The lamps' light still comes from the room's LAMP_ markers (Room), which stay where they are.
+func _build_detailed_props() -> void:
+	if not ResourceLoader.exists(PROPS):
+		return
+	var scene := load(PROPS) as PackedScene
+	var root := scene.instantiate()
+	var meshes: Dictionary = {}       # prop name -> its Mesh as made in Blender
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		meshes[String(n.name)] = (n as MeshInstance3D).mesh
+	root.free()
+	_detailed_props = Node3D.new()
+	_detailed_props.name = "DetailedProps"
+	_detailed_props.visible = false
+	_fx.add_child(_detailed_props)
+	# speaker posts: one MultiMesh for all of them
+	var posts := _feet("Speaker_Posts", 0.05, 1.0)
+	if not posts.is_empty() and meshes.has("speaker_post"):
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _prop_mesh(meshes, "speaker_post")
+		mm.instance_count = posts.size()
+		for i in posts.size():
+			var p: Vector3 = posts[i]
+			var to_screen := Vector3(SCREEN_MIDDLE.x - p.x, 0.0, SCREEN_MIDDLE.y - p.z)
+			mm.set_instance_transform(i, Transform3D(Basis.looking_at(to_screen.normalized()), p))
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "SpeakerPosts"
+		mmi.multimesh = mm
+		_detailed_props.add_child(mmi)
+		_prop_counts["speaker_post"] = posts.size()
+	# lot lights, their arms towards the model's lamp heads; the low heads get wall lamps
+	var heads := _feet("Lamp_Heads", 99.0, 1.5)
+	var high_heads: Array[Vector3] = []
+	for h: Vector3 in heads:
+		if h.y > 6.0:
+			high_heads.append(h)
+		elif meshes.has("wall_lamp"):
+			# (_feet gives the lowest point: the lamp's lens; the prop hangs 0.22 m below its top)
+			_place_prop(meshes, "wall_lamp", Transform3D(Basis.IDENTITY, h + Vector3(0.0, 0.22, 0.0)))
+	for p: Vector3 in _feet("Light_Poles", 0.05, 1.0):
+		var toward := Vector3.FORWARD
+		var best := INF
+		for h: Vector3 in high_heads:
+			var d := Vector2(h.x - p.x, h.z - p.z)
+			if d.length() < best and d.length() > 0.05:
+				best = d.length()
+				toward = Vector3(d.x, 0.0, d.y).normalized()
+		if meshes.has("light_pole"):
+			_place_prop(meshes, "light_pole", Transform3D(Basis.looking_at(toward), p))
+	# on the truck bed: the chairs face the screen (the truck is backed in)
+	# (one chair per piece of canvas: the frames' tubes are too far apart to group; the chair
+	# stands where the frames reach lowest, on the bed floor)
+	var floor_y := 0.0
+	var frames := find_child("Lawn_Chair_Frames", true, false) as MeshInstance3D
+	if frames:
+		floor_y = _room_aabb(frames).position.y
+	for p: Vector3 in _feet("Lawn_Chair_Canvas", 99.0, 0.15):
+		if meshes.has("lawn_chair"):
+			_place_prop(meshes, "lawn_chair", Transform3D(Basis.IDENTITY, Vector3(p.x, floor_y, p.z)))
+	for pair: Array in [["Cooler", "cooler"], ["Popcorn_Bucket", "popcorn"]]:
+		var block := find_child(String(pair[0]), true, false) as MeshInstance3D
+		if block and meshes.has(pair[1]):
+			var box := _room_aabb(block)
+			_place_prop(meshes, String(pair[1]), Transform3D(Basis.IDENTITY, Vector3(box.get_center().x, box.position.y, box.get_center().z)))
+
+
+## Adds one prop (a MeshInstance3D with this room's materials) at xf, room space.
+func _place_prop(meshes: Dictionary, prop: String, xf: Transform3D) -> void:
+	var mi := MeshInstance3D.new()
+	mi.name = "Prop" + prop.to_pascal_case()     # (not the model's own block names, which find_child looks up)
+	mi.mesh = _prop_mesh(meshes, prop)
+	_detailed_props.add_child(mi)
+	mi.transform = xf
+	_prop_counts[prop] = int(_prop_counts.get(prop, 0)) + 1
+
+
+## A prop's mesh with the room's materials on its surfaces (PROP_LOOKS, by the surface's
+## material name); made once per prop. A copy, so the props.glb resource stays untouched.
+func _prop_mesh(meshes: Dictionary, prop: String) -> Mesh:
+	if _prop_meshes.has(prop):
+		return _prop_meshes[prop]
+	var mesh := (meshes[prop] as Mesh).duplicate() as Mesh
+	var imported: Dictionary = {}     # drive_in.glb material name -> material (for PROP_LOOKS' borrowed ones)
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or _fx.is_ancestor_of(mi):
+			continue
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s)
+			if m:
+				imported[m.resource_name] = m
+	for s in mesh.get_surface_count():
+		var from := mesh.surface_get_material(s)
+		var look: Variant = PROP_LOOKS.get(from.resource_name if from else "", null)
+		if look is String and imported.has(look):
+			mesh.surface_set_material(s, imported[look])
+		elif look is Array:
+			var sm := StandardMaterial3D.new()
+			sm.albedo_color = look[0]
+			sm.metallic = float(look[1])
+			sm.roughness = float(look[2])
+			mesh.surface_set_material(s, sm)
+	_prop_meshes[prop] = mesh
+	return mesh
+
+
+## Where the separate pieces of one of the model's meshes stand: its triangles between the
+## ground and `top` (metres up), grouped into pieces whose outlines seen from above are more
+## than `gap` metres apart. Returns one point per piece: the middle of its outline (x, z) at its
+## lowest vertex (y), room space.
+func _feet(mesh_name: String, top: float, gap: float) -> Array[Vector3]:
+	var found: Array[Vector3] = []
+	var mi := find_child(mesh_name, true, false) as MeshInstance3D
+	if mi == null or mi.mesh == null:
+		return found
+	var to_room := global_transform.affine_inverse() * mi.global_transform
+	var outlines: Array[Rect2] = []   # per piece: its outline from above (x, z)
+	var lows: Array[float] = []       # per piece: its lowest y
+	# triangle by triangle (a big quad has its corners far apart; the triangle keeps them together)
+	var corners := mi.mesh.get_faces()
+	for t in range(0, corners.size(), 3):
+		var p0 := to_room * corners[t]
+		var p1 := to_room * corners[t + 1]
+		var p2 := to_room * corners[t + 2]
+		if maxf(p0.y, maxf(p1.y, p2.y)) > top:
+			continue
+		var tri := Rect2(Vector2(p0.x, p0.z), Vector2.ZERO).expand(Vector2(p1.x, p1.z)).expand(Vector2(p2.x, p2.z))
+		var low := minf(p0.y, minf(p1.y, p2.y))
+		var hit := -1
+		for c in outlines.size():
+			if outlines[c].grow(gap).intersects(tri, true):
+				hit = c
+				break
+		if hit < 0:
+			outlines.append(tri)
+			lows.append(low)
+		else:
+			outlines[hit] = outlines[hit].merge(tri)
+			lows[hit] = minf(lows[hit], low)
+	# pieces started apart can grow into each other (their vertices came in any order): join those
+	var joined := true
+	while joined:
+		joined = false
+		for a in outlines.size():
+			for b in range(a + 1, outlines.size()):
+				if outlines[a].grow(gap).intersects(outlines[b], true):
+					outlines[a] = outlines[a].merge(outlines[b])
+					lows[a] = minf(lows[a], lows[b])
+					outlines.remove_at(b)
+					lows.remove_at(b)
+					joined = true
+					break
+			if joined:
+				break
+	for c in outlines.size():
+		var mid := outlines[c].get_center()
+		found.append(Vector3(mid.x, lows[c], mid.y))
+	return found
+
+
+## A mesh's box in room space.
+func _room_aabb(mi: MeshInstance3D) -> AABB:
+	return (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+
+
+## How many of each modelled prop the Detailed look has (for tests): {"speaker_post": n, ...}.
+func get_prop_counts() -> Dictionary:
+	return _prop_counts
 
 
 # ── Time of day and the sky ──────────────────────────────────

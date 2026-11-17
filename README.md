@@ -1177,7 +1177,11 @@ Included rooms:
     textures on the asphalt, the gravel ramps and the grass (the grass turns to forest floor
     under the trees), wood grain on the fence and the truck bed, cloth on the blanket and the
     chair, a forest of firs, pines, oaks, maples and birches with real needles and leaves round
-    the lot, and grass tufts and ferns along the fence. **Simple**: the original flat-coloured
+    the lot, grass tufts and ferns along the fence, plaster on the snack bar and concrete on
+    the screen tower, and modelled speaker posts (two speakers on hooks with curly cords),
+    lot lights with floodlight shades, lamps under the snack bar's canopy, aluminium lawn
+    chairs with webbing, a picnic cooler and a striped popcorn bucket in place of the plain
+    blocks. **Simple**: the original flat-coloured
     set with its simple trees, the lightest for a slow graphics card. **Auto (follows Graphics
     quality)**, the setting it starts on, picks for you: Low = Simple, anything else =
     Detailed. Each PC in a co-stream chooses its own.
@@ -1198,7 +1202,10 @@ Included rooms:
     re-export to `rooms/drive_in/drive_in.glb` (export the `DriveIn` and `DriveIn_Markers`
     collections only, not `Preview_Only`). `rooms/drive_in/drive_in_room.gd` adds the outdoor
     look; the asphalt and gravel photos (CC0, Poly Haven) come from
-    `rooms/drive_in/textures/make_textures.py`. The old night sky (`night_sky.gdshader`,
+    `rooms/drive_in/textures/make_textures.py`, and the modelled props from
+    `rooms/drive_in/models/make_props.py` (Blender as a Python module, `pip install bpy`; it
+    borrows the Route 22 woody's tools). Moving a speaker post, a light pole or the chairs in
+    the `.blend` moves its modelled prop too. The old night sky (`night_sky.gdshader`,
     `moon_albedo.png`) is no longer used but kept.
 - **Neon City (night)**: a rain-soaked megacity avenue.
   - The main screen is a giant LED video billboard on a tower whose base is a lit traffic portal.
