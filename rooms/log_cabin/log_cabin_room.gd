@@ -45,7 +45,7 @@ const DEN_FIRE_SHARE: float = 0.55
 ## gets DEN_FIRE_SHARE of the energy and range (its light has no shadows, so a short range keeps
 ## it from shining through the log wall into the great room).
 @export var fire_light_energy: float = 3.0
-@export var fire_light_range: float = 11.0
+@export var fire_light_range: float = 9.5
 @export var fire_light_color: Color = Color(1.0, 0.52, 0.2)
 ## How much the fire's light wavers (share of its energy). 0 = steady.
 @export_range(0.0, 0.3) var fire_flicker: float = 0.12
@@ -107,6 +107,10 @@ func _ready() -> void:
 	_sun.shadow_enabled = true
 	_sun.directional_shadow_max_distance = 60.0
 	add_child(_sun)
+	# pools of light, not a flat wash: the lamps (Room made them from the LAMP_ markers with the
+	# scene's lamp_energy / lamp_range) fall off faster than Room's default
+	for l in find_child("LIGHTS_House", false, false).find_children("*", "OmniLight3D", true, false):
+		(l as OmniLight3D).omni_attenuation = 1.9
 	_build_fire()
 	_build_smoke()
 	_build_probe()
@@ -370,7 +374,7 @@ func _build_fire() -> void:
 		light.name = "FireLight"
 		light.light_color = fire_light_color
 		light.omni_range = fire_light_range * share
-		light.omni_attenuation = 1.1
+		light.omni_attenuation = 1.5
 		light.shadow_enabled = false
 		add_child(light, true)
 		light.global_position = marker.global_transform * Vector3(0.0, 0.5, 0.75)

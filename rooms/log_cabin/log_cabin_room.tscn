@@ -7,5 +7,5 @@ script = ExtResource("1_lc")
 dimmed_level = 0.3
 fade_speed = 0.5
 lamp_color = Color(1, 0.74, 0.46, 1)
-lamp_energy = 1.4
-lamp_range = 8.0
+lamp_energy = 1.1
+lamp_range = 5.5
