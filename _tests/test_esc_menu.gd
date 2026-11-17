@@ -139,6 +139,38 @@ func _ready() -> void:
 	_check(not room_win.borderless and room_win.mode == Window.MODE_WINDOWED, "Windowed has a frame again")
 	_check(room_win.size.x <= 1280 and room_win.size.y <= 720 and room_win.size.x >= 1000, "Windowed uses the picked size (%s)" % room_win.size)
 	_check(DisplayMode.parse_size("1920x1080") == Vector2i(1920, 1080) and DisplayMode.parse_size("") == Vector2i.ZERO and DisplayMode.parse_size("12x9") == Vector2i.ZERO, "window sizes are read safely")
+	# Custom size: type a size, Save as preset -> the window uses it and the dropdown keeps it
+	AppState.set_setting("window_size_presets", "")
+	AppState.set_setting("window_mode", "windowed")
+	menu._show_page("Display")
+	await get_tree().process_frame
+	var spins: Array = _controls(menu._page_box, []).filter(func(c: Variant) -> bool: return c is SpinBox)
+	_check(spins.size() == 2, "Custom size has width and height boxes")
+	if spins.size() == 2:
+		(spins[0] as SpinBox).value = 1024
+		(spins[1] as SpinBox).value = 768
+		_button(menu._page_box, "Save as preset").pressed.emit()
+		await _secs(0.5)
+		_check(String(AppState.get_setting("window_size")) == "1024x768", "Save as preset uses the typed size")
+		_check(String(AppState.get_setting("window_size_presets")) == "1024x768", "...and keeps it as a preset")
+		_check(room_win.size.x <= 1024 and room_win.size.y <= 768 and room_win.size.x >= 800, "the window takes the custom size (%s)" % room_win.size)
+		var dd: OptionButton = null
+		for c: Variant in _controls(menu._page_box, []):
+			if c is OptionButton and (c as OptionButton).tooltip_text.begins_with("The room window's size"):
+				dd = c
+		_check(dd != null and dd.get_item_text(dd.selected).begins_with("1024 × 768 (4:3)"), "the Window size list shows the saved size picked (%s)" % (dd.get_item_text(dd.selected) if dd else "none"))
+		DisplayMode.add_preset(Vector2i(1024, 768))
+		DisplayMode.add_preset(Vector2i(1920, 1080))
+		_check(String(AppState.get_setting("window_size_presets")) == "1024x768", "no repeats, built-in sizes aren't added twice")
+		_check(DisplayMode.parse_size("100x100") == Vector2i.ZERO and not DisplayMode.add_preset(Vector2i(100, 100)), "too small a size is refused")
+		var rm := _button(menu._page_box, "Remove preset")
+		_check(rm != null, "Remove preset shows for a saved size")
+		if rm:
+			rm.pressed.emit()
+			await _secs(0.3)
+		_check(String(AppState.get_setting("window_size_presets")) == "", "Remove preset takes it out of the list")
+		AppState.set_setting("window_size", "1440x1080")
+		_check(DisplayMode.size_options().back()[1] == "1440 × 1080 (4:3) · custom", "an unsaved size still shows in the list")
 	AppState.set_setting("window_size", "")
 	AppState.set_setting("window_mode", "")
 
