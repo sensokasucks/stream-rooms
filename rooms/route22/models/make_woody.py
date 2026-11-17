@@ -228,12 +228,15 @@ def cut(body, cutter, name: str):
 
 
 # ── flat pieces laid onto the body (wood panels, trim, seams, arch lips) ──
-def decal(name: str, poly, material: str, body, axis: str, side: float, offset: float, thick: float = 0.0, spacing: float = 0.05):
+def decal(name: str, poly, material: str, body, axis: str, side: float, offset: float, thick: float = 0.0, spacing: float = 0.05,
+          start_at: float = 0.0):
     """A flat shape pressed onto the body's surface. poly = its outline (shapely, may have
     holes) in (y, z) for a side panel (axis 'X'), (x, z) for one on the tail / nose (axis 'Y') or
     (x, y) for one on the hood / deck (axis 'Z', side +1 = pressed down from above).
     side = +1 / -1: which side of the car it lies on. offset = how far it stands off the paint,
-    thick = its own thickness (0 = a skin)."""
+    thick = its own thickness (0 = a skin). start_at = where along the axis the shape starts
+    its fall onto the body (0: just outside a car; make_vehicles.py's longer and taller vehicles
+    give their own, a little outside the face it should land on)."""
     if poly.is_empty:
         return None
     polys = list(poly.geoms) if hasattr(poly, "geoms") else [poly]
@@ -256,7 +259,8 @@ def decal(name: str, poly, material: str, body, axis: str, side: float, offset: 
         if len(pts) < 3:
             continue
         tri = Delaunay(pts)
-        start = {"X": lambda u, v: (side * 1.4, u, v), "Y": lambda u, v: (u, side * 3.2, v), "Z": lambda u, v: (u, v, side * 2.0)}[axis]
+        far = start_at or {"X": side * 1.4, "Y": side * 3.2, "Z": side * 2.0}[axis]
+        start = {"X": lambda u, v: (far, u, v), "Y": lambda u, v: (u, far, v), "Z": lambda u, v: (u, v, far)}[axis]
         verts = [bm.verts.new(start(u, v)) for u, v in pts]
         for a, b, c in tri.simplices:
             if pg.contains(Point(*(pts[[a, b, c]].mean(axis=0)))):
@@ -284,7 +288,9 @@ def circle(cx: float, cy: float, r: float):
     return Point(cx, cy).buffer(r, resolution=24)
 
 
-def build_body():
+def build_body(open_cabin: bool = True):
+    """The body with its arches, wood and trim. open_cabin False leaves the top closed
+    (make_vehicles.py's sedan, which gets a roof there)."""
     body = body_shell()
     # the wheel arches (their insides dark) and the open cabin (its walls in the seats' vinyl)
     for sx, sy, _z in [(w[0], w[1], 0) for w in WHEELS]:
@@ -293,12 +299,13 @@ def build_body():
     # The rear wheels reach in under the back seat, so each gets a housing: a vinyl-covered hump
     # that shows in the cabin as the block either side of the back seat, hollowed out round the
     # wheel (dark inside, seen through the arch).
-    for sx in (-1.0, 1.0):
+    for sx in (-1.0, 1.0) if open_cabin else ():
         hump = box("WheelHump", (0.285, 0.98, 0.47), (sx * 0.7175, -WHEEL_Y, 0.645), "leather", bevel=0.05)
         hollow = cyl("cut_hump", ARCH_R, ARCH_R, 0.6, (sx * 0.90, -WHEEL_Y, WHEEL_R + 0.02), "X", "dark", 48, export=False)
         cut(hump, hollow, "wheel")
-    tub = box("cut_cabin", (1.70, 2.56, 1.2), (0.0, -0.44, 1.02), "leather", bevel=0.09, export=False)
-    cut(body, tub, "cabin")
+    if open_cabin:
+        tub = box("cut_cabin", (1.70, 2.56, 1.2), (0.0, -0.44, 1.02), "leather", bevel=0.09, export=False)
+        cut(body, tub, "cabin")
     grille = box("cut_grille", (1.78, 0.16, 0.24), (0.0, HALF_L, 0.70), "dark", bevel=0.02, export=False)
     cut(body, grille, "grille")
 
