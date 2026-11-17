@@ -22,6 +22,14 @@ What it writes (all seamless, so they tile):
         texture like the sandstone: r22_prop.gdshader's wood (fences, signs, sheds, the stage).
   prop_rust.jpg         rusty painted metal (Poly Haven rusty_metal_02): r22_prop.gdshader's rust
         blotches take this photo's colour on the Detailed look.
+  car_wood.jpg, car_wood_nor.jpg  the woody's wood panels (Poly Haven teak_veneer, warmed to a
+        varnished honey brown) and their grain's normal map; car_maple.jpg the paler frames round
+        them (white_maple_veneer). The grain runs along the picture's width (U): make_woody.py's
+        decals lay U along the car. Used by r22_car.gd _materials().
+  car_leather.jpg, car_leather_nor.jpg  the woody's red seat vinyl: the grain of Poly Haven
+        leather_red_02 recoloured to the car's red, and its normal map.
+  car_carpet.jpg, car_carpet_nor.jpg  the woody's dark floor carpet (dirty_carpet, recoloured
+        charcoal).
   rock_noise.png        made here from noise, no photo: r = honeycomb cells (the rows of little
         holes wind carves in sandstone, "tafoni"), g = long vertical streaks (desert varnish
         running down cliffs), b = soft lumpy noise (warps the rock bands so they aren't ruler-straight),
@@ -48,6 +56,8 @@ def fetch(asset: str, kind: str = "Diffuse", res: str = "1k") -> Image.Image:
     if not os.path.exists(out):
         req = urllib.request.Request(API + asset, headers={"User-Agent": "texture-bake-script"})
         files = json.load(urllib.request.urlopen(req, timeout=60))
+        if kind == "Diffuse" and kind not in files:
+            kind = "coll1"                       # some assets name their colour maps coll1, coll2
         url = files[kind][res]["jpg"]["url"]
         req = urllib.request.Request(url, headers={"User-Agent": "texture-bake-script"})
         with open(out, "wb") as f:
@@ -65,6 +75,20 @@ def photo(name: str, asset: str, size: int = 1024, gain=(1.0, 1.0, 1.0)) -> None
     img = fetch(asset).convert("RGB").resize((size, size), Image.LANCZOS)
     a = np.asarray(img).astype(np.float32) * np.array(gain, dtype=np.float32)
     save_jpg(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)), name)
+
+
+def recolour(name: str, asset: str, mean, size: int = 512, contrast: float = 1.0, keep_hue: float = 0.0) -> None:
+    """A photo's light and dark pattern in a colour of our own: its average becomes `mean`
+    (r, g, b, 0..1). keep_hue: how much of the photo's own colour variation stays (0 = none,
+    the result is one hue; 1 = all of it, only the average moves)."""
+    img = fetch(asset).convert("RGB").resize((size, size), Image.LANCZOS)
+    a = np.asarray(img).astype(np.float32) / 255.0
+    a = np.power(a, 2.2)                                         # work in linear light
+    lum = a.mean(axis=2, keepdims=True).repeat(3, axis=2)
+    rel = (lum / lum.mean()) * (1.0 - keep_hue) + (a / a.reshape(-1, 3).mean(axis=0)) * keep_hue
+    rel = np.clip(1.0 + (rel - 1.0) * contrast, 0.0, None)
+    out = np.power(np.clip(rel * np.power(np.array(mean, dtype=np.float32), 2.2), 0.0, 1.0), 1.0 / 2.2)
+    save_jpg(Image.fromarray((out * 255.0).astype(np.uint8)), name, quality=90)
 
 
 def detail(name: str, asset: str, size: int = 1024, contrast: float = 1.2) -> None:
@@ -140,4 +164,12 @@ if __name__ == "__main__":
     normal("road_asphalt_nor.jpg", "asphalt_04", strength=0.6)
     detail("detail_planks_weathered.jpg", "weathered_planks", size=512)
     photo("prop_rust.jpg", "rusty_metal_02", size=512)
+    # the Cruise's woody (r22_car.gd)
+    recolour("car_wood.jpg", "teak_veneer", (0.56, 0.33, 0.15), size=1024, contrast=1.25, keep_hue=1.0)
+    normal("car_wood_nor.jpg", "teak_veneer", strength=1.0)
+    recolour("car_maple.jpg", "white_maple_veneer", (0.84, 0.70, 0.46), contrast=1.6, keep_hue=1.0)
+    recolour("car_leather.jpg", "leather_red_02", (0.50, 0.06, 0.05), contrast=1.1)
+    normal("car_leather_nor.jpg", "leather_red_02", size=512, strength=1.0)
+    recolour("car_carpet.jpg", "dirty_carpet", (0.085, 0.08, 0.08), contrast=1.0)
+    normal("car_carpet_nor.jpg", "dirty_carpet", size=512, strength=1.0)
     rock_noise()

@@ -1629,7 +1629,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
-- `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
+- `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, and the woody's teak and maple veneer, seat vinyl and carpet, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.

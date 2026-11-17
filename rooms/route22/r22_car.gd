@@ -150,16 +150,17 @@ func _materials() -> Dictionary:
 	paint.clearcoat = 1.0
 	paint.clearcoat_roughness = 0.08
 	m["paint"] = paint
-	# the wood panels (honey) and their frames (pale maple): the same varnished grain, two tints
+	# The wood panels (teak) and their frames (pale maple): CC0 Poly Haven veneer photos
+	# (textures/make_textures.py car_*), varnished. The model's own UVs are in metres, U along
+	# the grain (make_woody.py decal): one photo covers 1.4 m along the car and 0.7 m across.
 	for key: String in ["wood", "trim"]:
 		var wood := StandardMaterial3D.new()
-		wood.albedo_texture = load(Geo.CAMP_TEX + "detail_planks.jpg")
-		var tint := Color(0.62, 0.36, 0.17) if key == "wood" else Color(0.9, 0.78, 0.55)
-		wood.albedo_color = tint * 2.0                     # the grain picture averages 0.5: x2 = the tint
-		# the model's own UVs are in metres, U across the grain and V along it (make_woody.py
-		# decal): planks about 0.6 m wide, the grain drawn out along the car
-		wood.uv1_scale = Vector3(1.6, 0.3, 1.0)
-		wood.roughness = 0.4
+		wood.albedo_texture = load(Geo.TEX + ("car_wood.jpg" if key == "wood" else "car_maple.jpg"))
+		wood.uv1_scale = Vector3(0.7, 1.4, 1.0)
+		wood.normal_enabled = true
+		wood.normal_texture = load(Geo.TEX + "car_wood_nor.jpg")
+		wood.normal_scale = 0.6
+		wood.roughness = 0.38
 		wood.clearcoat_enabled = true
 		wood.clearcoat = 0.8
 		wood.clearcoat_roughness = 0.15
@@ -185,12 +186,32 @@ func _materials() -> Dictionary:
 	plate.albedo_color = Color(0.95, 0.8, 0.2)
 	plate.roughness = 0.5
 	m["plate"] = plate
-	var leather := StandardMaterial3D.new()
-	leather.albedo_color = Color(0.5, 0.05, 0.045)
-	leather.roughness = 0.45
-	leather.clearcoat_enabled = true
-	leather.clearcoat = 0.3
-	m["leather"] = leather
+	# The seats' red vinyl, the black padding (dash top, the folded top's cover) and the floor
+	# carpet: photo grain laid on from three sides (the seats and floor have no UVs of their
+	# own), in the car's own space so it stays put. uv1_scale = repeats per metre.
+	for key: String in ["leather", "pad", "carpet"]:
+		var soft := StandardMaterial3D.new()
+		var grain := "car_carpet" if key == "carpet" else "car_leather"
+		soft.albedo_texture = load(Geo.TEX + grain + ".jpg")
+		soft.normal_enabled = true
+		soft.normal_texture = load(Geo.TEX + grain + "_nor.jpg")
+		soft.uv1_triplanar = true
+		if key == "leather":
+			soft.uv1_scale = Vector3(2.2, 2.2, 2.2)
+			soft.normal_scale = 0.9
+			soft.roughness = 0.42
+			soft.clearcoat_enabled = true
+			soft.clearcoat = 0.3
+		elif key == "pad":
+			soft.albedo_color = Color(0.13, 0.9, 1.0)       # tints the red photo down to black vinyl
+			soft.uv1_scale = Vector3(2.6, 2.6, 2.6)
+			soft.normal_scale = 0.8
+			soft.roughness = 0.55
+		else:
+			soft.uv1_scale = Vector3(1.6, 1.6, 1.6)
+			soft.normal_scale = 1.2
+			soft.roughness = 0.95
+		m[key] = soft
 	var glass := StandardMaterial3D.new()
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	glass.albedo_color = Color(0.6, 0.7, 0.75, 0.18)

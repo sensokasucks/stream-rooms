@@ -14,7 +14,7 @@ What r22_car.gd relies on (change both together):
     car centred on the origin. The glTF export turns that into Godot's (x, z up -> y, forward
     -> -z), so in the game the car faces -Z like every Route 22 vehicle.
   - Material names pick the look in the game (r22_car.gd _materials): paint, wood, trim, chrome,
-    glass, leather, dark, rubber, white, lamp_front, lamp_tail, amber, plate.
+    glass, leather, pad, carpet, dark, rubber, white, lamp_front, lamp_tail, amber, plate.
   - Object "Wheel" is ONE wheel at the origin, its axle along X, its outer face towards +X;
     r22_car.gd puts a copy on each of WHEELS and spins it. Everything else is the body.
   - Empty marker nodes tell r22_car.gd where things go: Wheel_1..4 (the wheel centres),
@@ -53,6 +53,7 @@ TAIL_LIGHTS = [(x, -HALF_L - 0.08, 0.72) for x in (-0.86, 0.86)]
 COLORS = {
     "paint": (0.50, 0.03, 0.025, 0.35, 0.3), "wood": (0.36, 0.17, 0.06, 0.0, 0.4), "trim": (0.72, 0.55, 0.30, 0.0, 0.4),
     "chrome": (0.8, 0.8, 0.82, 1.0, 0.12), "glass": (0.6, 0.72, 0.78, 0.0, 0.05), "leather": (0.42, 0.03, 0.03, 0.0, 0.45),
+    "pad": (0.03, 0.028, 0.028, 0.0, 0.6), "carpet": (0.05, 0.045, 0.045, 0.0, 0.95),
     "dark": (0.02, 0.02, 0.02, 0.0, 0.8), "rubber": (0.025, 0.025, 0.025, 0.0, 0.9), "white": (0.9, 0.9, 0.88, 0.0, 0.6),
     "lamp_front": (1.0, 0.95, 0.85, 0.0, 0.2), "lamp_tail": (0.7, 0.02, 0.02, 0.0, 0.2), "amber": (1.0, 0.42, 0.04, 0.0, 0.25),
     "plate": (0.9, 0.72, 0.15, 0.0, 0.5),
@@ -228,10 +229,11 @@ def decal(name: str, poly, material: str, body, axis: str, side: float, offset: 
         return None
     polys = list(poly.geoms) if hasattr(poly, "geoms") else [poly]
     bm = bmesh.new()
-    # texture coordinates in metres, U across the grain and V along it, so the wood's grain runs
-    # along the car on the sides and the deck and across it on the tail (r22_car.gd scales them)
+    # texture coordinates in metres, U along the grain and V across it (the wood photos' grain
+    # runs along their width), so the grain runs along the car on the sides and the deck and
+    # across it on the tail (r22_car.gd scales them)
     uv = bm.loops.layers.uv.new("UVMap")
-    grain = {"X": lambda u, v: (v, u), "Y": lambda u, v: (v, u), "Z": lambda u, v: (u, v)}[axis]
+    grain = {"X": lambda u, v: (u, v), "Y": lambda u, v: (u, v), "Z": lambda u, v: (v, u)}[axis]
     for pg in polys:
         pg = pg.segmentize(spacing)
         pts = [c for ring in [pg.exterior] + list(pg.interiors) for c in ring.coords[:-1]]
@@ -387,9 +389,9 @@ def build_rear():
 
 def build_cabin():
     # the floor's carpet, the dash with its pad, two dials and the glovebox line
-    box("Carpet", (1.66, 2.5, 0.02), (0.0, -0.44, 0.435), "dark")
+    box("Carpet", (1.66, 2.5, 0.02), (0.0, -0.44, 0.435), "carpet")
     box("Dash", (1.68, 0.26, 0.20), (0.0, 0.74, 0.86), "paint", bevel=0.05)
-    box("DashPad", (1.68, 0.20, 0.05), (0.0, 0.76, 0.975), "dark", bevel=0.02)
+    box("DashPad", (1.68, 0.20, 0.05), (0.0, 0.76, 0.975), "pad", bevel=0.02)
     box("Cluster", (0.46, 0.02, 0.12), (-0.42, 0.605, 0.87), "dark", bevel=0.008)
     for dx in (-0.10, 0.10):
         torus("Dial", 0.05, 0.007, (-0.42 + dx, 0.594, 0.87), "chrome", rot=(math.pi / 2, 0.0, 0.0))
@@ -407,7 +409,7 @@ def build_cabin():
     rods("SelectorKnob", [[(-0.285, 0.50, 0.998)], [(-0.545, 0.53, 0.957)]], 0.015, "white", 10)
     box("PedalGas", (0.07, 0.02, 0.15), (-0.27, 0.77, 0.52), "dark", bevel=0.006, rot=(math.radians(-25.0), 0.0, 0.0))
     box("PedalBrake", (0.14, 0.02, 0.08), (-0.47, 0.75, 0.56), "dark", bevel=0.006, rot=(math.radians(-25.0), 0.0, 0.0))
-    box("Tunnel", (0.24, 2.3, 0.10), (0.0, -0.36, 0.45), "dark", bevel=0.045)
+    box("Tunnel", (0.24, 2.3, 0.10), (0.0, -0.36, 0.45), "carpet", bevel=0.045)
     # inside the doors and the rear quarters: armrests, a bright strip, window winders, handles
     for sx in (-1.0, 1.0):
         box("DoorStrip", (0.012, 2.2, 0.018), (sx * 0.843, -0.42, 0.815), "chrome", bevel=0.004)
@@ -446,7 +448,7 @@ def build_cabin():
         box("Pleat", (0.115, 0.46, 0.03), (x, -1.16, 0.70), "leather", bevel=0.014)
     box("Armrest", (0.16, 0.5, 0.10), (0.0, 0.16, 0.66), "leather", bevel=0.04)
     # the folded top under its boot behind the back seat
-    box("TopBoot", (1.74, 0.36, 0.13), (0.0, -1.72, 0.995), "dark", bevel=0.06)
+    box("TopBoot", (1.74, 0.36, 0.13), (0.0, -1.72, 0.995), "pad", bevel=0.06)
     rods("BootSnaps", [[(x, -1.538, 0.985)] for x in np.linspace(-0.74, 0.74, 9)] + [[(x, -1.902, 0.985)] for x in np.linspace(-0.74, 0.74, 9)], 0.011, "chrome", 8)
     # the windscreen: chrome frame, glass, the quarter windows and the mirrors
     bl, br = Vector((-0.865, 0.90, 0.975)), Vector((0.865, 0.90, 0.975))
