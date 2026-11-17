@@ -14,6 +14,10 @@ What it writes (drive_ground.gdshader lays them on by world position):
   ground_gravel.jpg    the parking ramps the cars stand on (Poly Haven "gravel_floor", a little
                        greyer than photographed; still lighter and warmer than the asphalt, so the ramps
                        stand out from the lot as they do in the Simple look)
+  detail_plaster.jpg   the snack bar's walls and roof (Poly Haven "painted_plaster_wall") and
+  detail_concrete.jpg  the screen tower (Poly Haven "concrete_wall_008"): "detail" textures as
+                       the campfire makes them (the photo divided by its own average, 0.5 = no
+                       change), which drive_detail.gdshader multiplies onto the model's own colour
 The grass, the forest floor, the planks, the cloth and the trees' pictures are the Lakeside
 Campfire's (rooms/campfire/textures/, made by make_textures.py there); the Drive-In reads
 them from that folder rather than keeping copies.
@@ -56,6 +60,21 @@ def ground(name: str, asset: str, gain=(1.0, 1.0, 1.0), grey: float = 0.0) -> No
     print("wrote", name)
 
 
+def detail(name: str, asset: str, size: int = 1024, keep_colour: float = 0.0, contrast: float = 1.0) -> None:
+    """The photo divided by its average colour, stored so that 0.5 = no change (the same as the
+    campfire's make_textures.py detail()). keep_colour: how much of the photo's own colour
+    differences stay (0 = grey grain only); contrast scales the grain."""
+    a = np.asarray(fetch(asset).convert("RGB").resize((size, size), Image.LANCZOS)).astype(np.float32) / 255.0
+    lum = a.mean(axis=2, keepdims=True)
+    a = lum + (a - lum) * keep_colour
+    rel = a / a.reshape(-1, 3).mean(axis=0)
+    rel = 1.0 + (rel - 1.0) * contrast
+    Image.fromarray(np.clip(rel * 127.5, 0, 255).astype(np.uint8)).save(os.path.join(HERE, name), quality=86, optimize=True)
+    print("wrote", name)
+
+
 if __name__ == "__main__":
     ground("ground_asphalt.jpg", "asphalt_02", (0.85, 0.85, 0.88))
     ground("ground_gravel.jpg", "gravel_floor", (1.0, 0.97, 0.92), grey=0.15)
+    detail("detail_plaster.jpg", "painted_plaster_wall", contrast=0.8)
+    detail("detail_concrete.jpg", "concrete_wall_008", contrast=0.9)
