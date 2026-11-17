@@ -176,6 +176,21 @@ func _on_setting_changed(key: String, _value: Variant) -> void:
 			_hour_drawn = -100.0
 
 
+## Plant life (r22_plants, 0..100, Room tab > Roadside): how much of the brush is drawn, by
+## drawing only the first part of each brush MultiMesh (100 = all of it, 0 = bare desert).
+## Checked every frame but only touches the MultiMeshes when the setting (or their number: the
+## Cruise builds its pieces after this node) has changed.
+func _apply_plants() -> void:
+	var list: Array[MultiMesh] = _kit.get("brush_mm", [] as Array[MultiMesh])
+	var share := clampf(float(AppState.get_setting("r22_plants")) / 100.0, 0.0, 1.0)
+	if share == _plants_drawn and list.size() == _plants_n:
+		return
+	_plants_drawn = share
+	_plants_n = list.size()
+	for mm: MultiMesh in list:
+		mm.visible_instance_count = -1 if share >= 1.0 else roundi(float(mm.instance_count) * share)
+
+
 ## The hour the clock shows now, 0..24.
 func get_hour() -> float:
 	return _hour
@@ -229,6 +244,7 @@ func tick(delta: float, travel: float, bend: float, hill: float, speed: float) -
 	if day_minutes > 0.0:
 		_hour = fposmod(_hour + delta * 24.0 / (day_minutes * 60.0), 24.0)
 	_ease_weather(delta)
+	_apply_plants()
 	_run_lightning(delta)
 	var wind := clampf(float(AppState.get_setting("r22_wind")), 0.0, 1.0)
 	_cloud_drift += Vector2(1.0, 0.35) * (2.0 + 8.0 * wind) * delta
@@ -249,6 +265,8 @@ func tick(delta: float, travel: float, bend: float, hill: float, speed: float) -
 	_fill_ambience(wind)
 
 
+var _plants_drawn: float = -1.0  # the Plant life share last applied to kit["brush_mm"] (-1 = not yet)
+var _plants_n: int = 0             # how many brush MultiMeshes there were then
 var _changing: bool = false       # the weather is still easing (redraw the sky every frame)
 
 

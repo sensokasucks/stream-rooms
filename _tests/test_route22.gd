@@ -4,7 +4,8 @@ extends Node
 ##     setting, Lot lights, two-way traffic on Route 22.
 ##   Cruise (route22_cruise): ten cameras, four seats in the woody, no screen, the road moving
 ##     (travel grows with Speed, Parked stops it), road pieces in view with no type twice,
-##     billboards with filler ads, traffic, the weather switch, a co-stream host's travel.
+##     billboards with filler ads, traffic, the weather switch, a co-stream host's travel,
+##     the Landmarks and stops, Plant life and Animals sliders.
 ##   The Scene switch loads the other scene, both ways.
 ## Every control on the Room tab has a default. Saves a screenshot per camera of each scene and
 ## a few weathers (look at them: the look is not checked here).
@@ -192,6 +193,42 @@ func _ready() -> void:
 			if trip.type_at(j) == t:
 				spaced = false
 	_check(spaced and counts.size() == Pieces.TYPES.size(), "the piece order: every type each round, never two of a type close together")
+	# Landmarks and stops: at 50 about half the places in view are plain desert, at 0 all of
+	# them, and no piece (landmark or plain) is ever in two places
+	for share: float in [50.0, 0.0]:
+		AppState.set_setting("r22_scenery", share)
+		await _secs(0.5)
+		var mix := trip.types_in_view()
+		var plain := mix.count("plain")
+		var marks := {}
+		for k in mix:
+			if k != "plain":
+				marks[k] = true
+		var on_show := 0
+		for piece in trip.get_children():
+			on_show += 1 if (piece as Node3D).visible and String(piece.name).begins_with("Piece_") else 0
+		var want_ok := (plain == mix.size()) if share == 0.0 else (plain >= mix.size() / 2 - 1 and plain <= mix.size() / 2 + 1)
+		if share == 0.0:
+			await _secs(1.0)
+			await _shot("r22_cruise_lonely_road")
+		_check(want_ok and marks.size() == mix.size() - plain and on_show == mix.size(), "Landmarks and stops %d%%: %d of %d places plain desert, none shown twice" % [int(share), plain, mix.size()])
+	AppState.set_setting("r22_scenery", 100.0)
+	await _secs(0.5)
+	_check(not trip.types_in_view().has("plain"), "Landmarks and stops back at 100%: no plain stretches")
+	# Plant life: 30% draws about 30% of each brush MultiMesh, 100% all of it
+	AppState.set_setting("r22_plants", 30.0)
+	await _secs(0.3)
+	var brush := cruise.find_children("Brush_*", "MultiMeshInstance3D", true, false)
+	var thin := brush.size() > 0
+	for b in brush:
+		var mm := (b as MultiMeshInstance3D).multimesh
+		thin = thin and mm.visible_instance_count == roundi(float(mm.instance_count) * 0.3)
+	AppState.set_setting("r22_plants", 100.0)
+	await _secs(0.3)
+	var full := brush.size() > 0
+	for b in brush:
+		full = full and (b as MultiMeshInstance3D).multimesh.visible_instance_count == -1
+	_check(thin and full, "Plant life thins the brush out and fills it back in (%d patches)" % brush.size())
 	# (the boards stand on the road pieces, under each piece's "Boards" node)
 	var shown := 0
 	for b in cruise.find_children("Picture", "MeshInstance3D", true, false):
@@ -248,6 +285,14 @@ func _ready() -> void:
 	for c in extras.find_children("Coyote", "MeshInstance3D", false, false):
 		dogs += 1 if (c as Node3D).visible else 0
 	_check(dogs == 0, "Coyotes off sends them away")
+	# Animals at 0: the time to the next jackrabbit or lizard stands still (none ever comes)
+	AppState.set_setting("r22_animals", 0.0)
+	var out_now := bool((extras.get("_critter") as Node3D).visible)
+	var wait0 := float(extras.get("_critter_wait"))
+	await _secs(1.0)
+	# (one already running across finishes its run, so only check when none is out)
+	_check(out_now or is_equal_approx(float(extras.get("_critter_wait")), wait0), "Animals 0%%: no more animals come (wait stays %.1f s)" % wait0)
+	AppState.set_setting("r22_animals", 100.0)
 
 	# ── and back ──
 	AppState.set_setting("r22_scene", "drivein")
