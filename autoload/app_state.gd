@@ -127,6 +127,16 @@ const BASE_DEFAULTS: Dictionary = {
 	"r22_neon": true,            # neon signs glow at night (gas station, motel, diner, marquee, neon-arrow boards)
 	"r22_marquee": "TONIGHT: CHAT'S PICK",  # Drive-In: the marquee's second line
 	"r22_lot_lights": true,      # Drive-In: the lot light poles (this room's house lights)
+	# Drive-In's outdoor look (rooms/drive_in/drive_in_room.gd). The first six are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_BASE): keep that list in step.
+	"drive_time": 21.0,          # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset, 21 = moonlit night)
+	"drive_day_minutes": 0.0,    # minutes one full day takes while the clock runs; 0 = the clock stands still at drive_time
+	"drive_clouds": 0.5,         # cloud: 0 = clear, 1 = fair weather, 2 = overcast
+	"drive_stars": 1.0,          # how bright the stars and the Milky Way are at night (0 = none)
+	"drive_aurora": 0.0,         # northern lights behind the screen at night: 0 = none, 1 = normal, 2 = strong
+	"drive_mist": 0.35,          # haze in the air and mist lying low over the lot, 0..1
+	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
+	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
