@@ -1566,7 +1566,8 @@ Included rooms:
     made up). Among the built rocks stand photo-scanned boulders and stones, oil drums and dead
     wood from [Poly Haven](https://polyhaven.com) scans (CC0), cut down to a few thousand
     triangles each by `rooms/route22/models/make_models.py`; the scanned rocks are drawn in
-    the room's own red sandstone so they match.
+    the room's own red sandstone so they match. The Cruise's woody is our own model, made
+    with Blender by `rooms/route22/models/make_woody.py`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
