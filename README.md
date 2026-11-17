@@ -1287,6 +1287,22 @@ Included rooms:
     house lights, so they go down for a video.
   - **Light rays** (Room tab, both Lecture Halls): how visible the sunbeams are, 0-200%
     (0% = off).
+  - **Set detail** (Room tab, both Lecture Halls, each PC's own): **Detailed** gives the desks,
+    rails, carved panels, doors and stage real oak grain, the walls and ceiling plaster, the
+    carpet its pile and the pew cushions their crinkles, with little bumps that catch the
+    light. **Simple** is the plain painted look, lighter on a slow graphics card. **Auto**
+    (the default) picks Simple when **Graphics quality** is Low, otherwise Detailed. The photos
+    are CC0 (public domain) from Poly Haven; `rooms/lecture_hall/detail/make_detail_textures.py`
+    makes the textures.
+  - **Window glass**: the tall lancets' pale diamond panes are clear glass (**Clear diamond
+    panes**, the default), so you look out at the sky, its clouds, the sun or moon and the
+    town's rooftops; **All clear panes** keeps only the coloured border; **All stained glass**
+    is the old look. The round windows and door fanlights stay stained glass.
+  - **Time of day**, **Day length** and **Clouds**: the hour outside (6 = sunrise, 12 = noon,
+    18 = sunset). The sky in the windows, the glow of the stained glass and the sunbeams follow
+    it: morning light comes in through the windows on one side, evening light (golden, low)
+    through the other side, faint blue moonbeams at night. **Day length** lets the clock run
+    (minutes for a whole day; 0 = stopped). These are each PC's own in a co-stream.
   - The screen is 14.4 m x 8.1 m and stands right on the stage floor, with a matte white face.
   - One ring chandelier hangs high in the middle of the ceiling, above every seat's view of the
     screen. It dims with the house lights. Use **House lights** in the *Room* tab to set

@@ -19,3 +19,4 @@ addons/**/~*
 # make_models.py download cache
 rooms/route22/models/_cache/
 __pycache__/
+rooms/lecture_hall/detail/_cache/
