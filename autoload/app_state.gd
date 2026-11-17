@@ -143,6 +143,66 @@ const BASE_DEFAULTS: Dictionary = {
 	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
 	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
 	"drive_spaces": 60.0,        # parking spaces at the drive-in: each chatter parks their own car there (10..106; a float for the slider; reloads the room)
+	# Screen Only set (rooms/screen_only): no 3D room, the big screen's picture fills the window with
+	# a stack of effects (screen_fx.gdshader). Room tab > Screen Only, and Core's Stream Rooms settings.
+	"so_preset": "clean",        # last look picked from the Look list; picking one sets the sliders below
+	"so_fit": "fit",             # fit (whole picture, bars) / fill (crop to fill) / stretch
+	"so_bars": "black",          # what fills the bars beside the picture: black / color / glow (blurred picture)
+	"so_bar_color": Color(0.0, 0.0, 0.0),
+	"so_idle": "static",         # between videos and while the curtain is closed: static / bars / black / standby
+	"so_curve": 0.0,             # CRT glass curvature, 0-1 (bent corners)
+	"so_corner": 0.0,            # rounded picture corners, 0-1
+	"so_scanlines": 0.0,         # scanline strength, 0-1
+	"so_scan_px": 3.0,           # one scanline every this many window pixels
+	"so_mask": 0.0,              # RGB phosphor mask strength, 0-1
+	"so_mask_type": "grille",    # grille (stripes) / shadow (dots) / slot
+	"so_glow": 0.0,              # phosphor glow, 0-1
+	"so_vignette": 0.0,          # darker edges, 0-1
+	"so_fringe": 0.0,            # colour fringing, 0-1
+	"so_flicker": 0.0,           # brightness flicker, 0-1 (cut in photosensitive-safe mode)
+	"so_roll": 0.0,              # rolling bright bar, 0-1 (cut in photosensitive-safe mode)
+	"so_bezel": 0.0,             # plastic frame round the glass, 0-1
+	"so_led": 0.0,               # LED wall dots, 0-1
+	"so_led_count": 160,         # LEDs across the window
+	"so_holo": 0.0,              # hologram look, 0-1
+	"so_bend": 0.0,              # cinema screen bend, 0-1
+	"so_vhs": 0.0,               # tape tracking band, wobble and noise, 0-1
+	"so_bleed": 0.0,             # colour bleed, 0-1
+	"so_stamp": false,           # tape PLAY and date text in the corners
+	"so_grain": 0.0,             # film grain, 0-1
+	"so_scratches": 0.0,         # film dust, scratches and gate weave, 0-1
+	"so_sepia": 0.0,             # faded brown film colour, 0-1
+	"so_pixelate": 0.0,          # chunky pixels, 0-1 (1 = 24-pixel blocks)
+	"so_palette": "none",        # none / handheld / amber / green / grey / retro4
+	"so_dither": 0.0,            # ordered dither with a palette, 0-1
+	"so_fun": "none",            # none / night / thermal / halftone / ascii / posterize / invert
+	"so_fun_amount": 1.0,        # how much of the fun look, 0-1
+	"so_saturation": 1.0,        # colour, 0-2
+	"so_brightness": 1.0,        # 0.5-1.5
+	"so_contrast": 1.0,          # 0.5-1.5
+	# Screen Only extra screens (rooms/screen_only/screen_only_room.gd): up to three smaller pictures in the window,
+	# each with a source of its own. Each PC's own (not shared in a co-stream).
+	"so_extra_layout": "free",   # free (insets over the picture) / side (column on the right) / grid (two by two)
+	"so_extra_fx": true,         # the extra screens wear the Look's effects too
+	"so_extra_frame": 0.25,      # dark outline round each extra screen, 0-1 (1 = 8 window pixels)
+	"so_extra_1_source": "off",  # off / webcam / picture / tab / ndi / spout / stream (the last four: core/extra_feeds.gd)
+	"so_extra_2_source": "off",
+	"so_extra_3_source": "off",
+	"so_extra_1_address": "",    # for ndi / spout the source's name (or part of it), for stream an address ffmpeg can open
+	"so_extra_2_address": "",
+	"so_extra_3_address": "",
+	"so_extra_1_picture": "",    # the picture file for source "picture" (png, jpg, webp)
+	"so_extra_2_picture": "",
+	"so_extra_3_picture": "",
+	"so_extra_1_size": 0.28,     # insets layout: the screen's width as a share of the window's, 0.05-1
+	"so_extra_2_size": 0.28,
+	"so_extra_3_size": 0.28,
+	"so_extra_1_x": 0.84,        # insets layout: where the screen's middle sits, 0-1 across the window
+	"so_extra_2_x": 0.16,        # (1 starts bottom right, 2 bottom left, 3 top right)
+	"so_extra_3_x": 0.84,
+	"so_extra_1_y": 0.82,        # ... and 0-1 down the window
+	"so_extra_2_y": 0.82,
+	"so_extra_3_y": 0.18,
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible

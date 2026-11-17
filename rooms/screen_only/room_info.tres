@@ -1,0 +1,23 @@
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://rooms/room_info.gd" id="1_soinfo"]
+
+[sub_resource type="Environment" id="Environment_so"]
+background_mode = 1
+background_color = Color(0, 0, 0, 1)
+ambient_light_source = 1
+tonemap_mode = 0
+
+[resource]
+script = ExtResource("1_soinfo")
+id = "screen_only"
+display_name = "Screen Only (no room)"
+scene_path = "res://rooms/screen_only/screen_only_room.tscn"
+sort_order = 1
+environment = SubResource("Environment_so")
+screen_light_multiplier = 0.0
+screen_light_range = 1.0
+flat_screen = true
+reverb_room_size = 0.0
+reverb_damping = 0.5
+reverb_wet = 0.0

@@ -369,6 +369,31 @@ the same ones). Each person sets their own:
 
 While you free-look (right mouse button held), the laser points at the middle of the view.
 
+## Screen Only (just the picture, no room)
+
+**Screen Only (no room)** in the room list is a set with no 3D room at all: no audience, no curtain, no chat windows. Whatever the big screen would show (a video, a browser tab, NDI, Spout) fills the whole window, so you can capture it in OBS and drop it into a normal stream layout. It is very light, so it suits a slower PC too.
+
+Resize the window (Esc menu > **Display**) and the picture and every effect re-fit to the new shape.
+
+Its settings are on the **Room** tab under **Screen Only**, and in Stream Core under the Stream Rooms settings:
+
+- **Look**: a ready-made look (**Old CRT TV**, **Arcade monitor**, **Computer monitor**, **Amber terminal**, **VHS tape**, **Old film**, **Curved cinema screen**, **LED wall**, **Hologram**, **Handheld game**, **Night vision**, **Thermal camera**, **Comic book**, **Text mode (ASCII)**). Picking one sets all the sliders; move any of them afterwards. **Clean picture** turns everything off.
+- **Fit**: **Whole picture (bars)**, **Fill the window (crop)** or **Stretch**. **Bars** picks what fills the space beside the picture: black, **A colour** (**Bar colour**), or **Glow from the picture**.
+- **Between videos**: what shows while nothing plays and while the curtain is closed (B): **Static snow**, **Colour bars**, **Black** or **Please stand by** (your curtain sign text, if you set one).
+- **Extra screens**: up to three smaller pictures in the same window, each with a source of its own, like the Forge Hall's small live screens. Handy for a webcam, a second camera, a game capture or a logo next to the video.
+  - **Extra screen 1** to **3**: **Off**, **Webcam** (from the sender page), **Picture file**, **Browser tab or window** (a row with that screen's name appears under Extra screens on the sender page; press its **Pick a tab or window** button), **NDI source**, **Spout sender** or **Stream address** (rtmp://, rtsp://, a video file...). For the last three, type the name or address in that screen's **address** box, or use **Pick**. Picture only, no sound.
+  - **Layout**: **Insets over the picture** (each screen has its own **size**, **left/right** and **up/down** sliders and keeps its picture's shape), **Column on the right** (the main picture moves left, the extra screens stack beside it) or **Two by two** (four quarters). Everything re-fits when you resize the window.
+  - **Extra screens get the Look too**: ticked, each extra screen wears the same effects (its own little CRT); unticked, they stay clean.
+  - **Outline**: a dark outline round each extra screen.
+  - Extra screens belong to your PC only: co-stream guests don't get them.
+- **Tube (CRT)**: **Glass curve** (bent corners like thick CRT glass), **Round corners**, **Frame**, **Scanlines** and **Scanline size**, **Phosphor mask** and **Mask type**, **Glow**, **Dark edges**, **Colour fringing**, **Flicker**, **Rolling bar**.
+- **Room looks**: **LED dots** (with **LEDs across**), **Hologram**, **Cinema bend**.
+- **Tape and film**: **Tape tracking**, **Colour bleed**, **PLAY and date text**, **Film grain**, **Dust and scratches**, **Faded film colour**.
+- **Retro and fun**: **Chunky pixels**, **Colour palette**, **Dither**, **Fun look** with **Fun look amount**.
+- **Colour**: **Colour**, **Brightness**, **Contrast**.
+
+**Flicker** and **Rolling bar** follow **Flash strength**, and photosensitive-safe mode turns them down to a quarter and slows moving static.
+
 ## Run the room from Stream Core's Live page
 
 While Stream Rooms is connected to Stream Core, Core's **Live** page shows a **Stream Rooms** card
