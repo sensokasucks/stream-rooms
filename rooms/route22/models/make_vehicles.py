@@ -7,10 +7,11 @@ they borrow. Their shapes and proportions were worked out from photos of that ti
 (1950s family sedans, 1960s farm pickups, long-nosed road tractors, old coaches): roofs and
 cabs are smooth lofted shapes (canopy) with the windows pressed onto them (glass), not blocks.
 
-    python3 rooms/route22/models/make_vehicles.py [preview folder]
+    python3 rooms/route22/models/make_vehicles.py [preview folder] [clear]
 
 Needs what make_woody.py needs (Python 3.13 with bpy, numpy, scipy, shapely). With a preview
-folder it also renders a picture of each vehicle there. Run it again only to change a vehicle;
+folder it also renders a picture of each vehicle there; add "clear" to draw the glass
+see-through in them, as the Drive-In does (to check the cabins). Run it again only to change a vehicle;
 vehicles.glb is committed.
 
 What r22_vehicles.gd relies on (change both together):
@@ -24,7 +25,12 @@ What r22_vehicles.gd relies on (change both together):
     house; fluted the coach's bright skirt; trailer ribbed sheet metal; tyre / hub / whitewall
     are the wheels.
   - Empty marker nodes under each vehicle: <kind>_LampFront_n and <kind>_LampTail_n (where the
-    lamps glare at night).
+    lamps glare at night); the classic, the convertible and the pickup also have
+    <kind>_Seat_1 (the driver's seat, front left) and <kind>_Seat_2 (beside them), on the
+    seat's cushion: the Drive-In (rooms/drive_in/drive_in_room.gd) seats a chatter there.
+  - The classic's roof and the pickup's cab are hollow with real window openings and the
+    insides modelled (seats, dash, steering wheel), so a chatter shows through glass that the
+    Drive-In draws see-through. Elsewhere the glass is still drawn dark.
   - The Drive-In seats its audience at r22_vehicles.gd's own seat points (the same on the low
     and the detailed look), so the convertible's front seats and the pickup's bed floor and
     cooler must stay where the old built-in-code vehicles have them.
@@ -43,6 +49,7 @@ import make_woody as W  # noqa: E402  (the shared tools: box, cyl, rods, decal, 
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PREVIEW = sys.argv[1] if len(sys.argv) > 1 else ""
+CLEAR = len(sys.argv) > 2 and sys.argv[2] == "clear"     # preview pictures with see-through glass
 
 # preview colours of the materials the woody does not have (the game sets its own, by name)
 W.COLORS.update({
@@ -103,7 +110,8 @@ def wheel(x: float, y: float, r: float, width: float, whitewall: bool = False, d
     return parts
 
 
-def loft(name: str, rings: list, material: str, levels: int = 2, sharp_rings: dict = {}, sharp_lines: dict = {}):
+def loft(name: str, rings: list, material: str, levels: int = 2, sharp_rings: dict = {}, sharp_lines: dict = {},
+         export: bool = True):
     """A smooth closed shape through cross-sections from front to back. rings = [(y, half
     section, bow)]: the half section is (x, z) points from the bottom middle round the right
     side to the top middle (the left side mirrors it; every ring needs the same number of
@@ -132,7 +140,7 @@ def loft(name: str, rings: list, material: str, levels: int = 2, sharp_rings: di
         for r0, r1 in zip(made, made[1:]):
             for j in {i, (n - i) % n}:
                 bm.edges.get([r0[j], r1[j]])[crease] = sharp
-    ob = W.add(name, bm, material)
+    ob = W.add(name, bm, material, export)       # (export False: a helper shape, deleted before the export)
     ob.modifiers.new("sub", "SUBSURF").levels = levels
     return ob
 
@@ -149,28 +157,70 @@ def roof_section(foot: float, top: float, z0: float, z1: float, crown: float) ->
             (top * 0.45, z1 + crown * 0.8), (0.0, z1 + crown)]
 
 
-def canopy(name: str, spans: list, material: str = "paint", levels: int = 2):
+def canopy(name: str, spans: list, material: str = "paint", levels: int = 2, export: bool = True):
     """A car's roof or a truck's cab as one smooth shape with a raked windscreen: spans =
     [(y, foot, top, z0, z1, crown, bow, sharp)] from the windscreen's foot to the back window's
     foot, each a roof_section() (the first and last are nearly flat: the feet of the glass).
     The windows are laid on afterwards with glass()."""
     rings = [(y, roof_section(foot, top, z0, z1, crown), bow) for y, foot, top, z0, z1, crown, bow, _s in spans]
     sharp = {i: s[7] for i, s in enumerate(spans) if s[7] > 0.0}
-    return loft(name, rings, material, levels, sharp, {1: 1.0, GUTTER: 0.35})
+    return loft(name, rings, material, levels, sharp, {1: 1.0, GUTTER: 0.35}, export)
+
+
+def hollow_shell(roof, spans: list, floor: float, wall: float = 0.035, material: str = "pad"):
+    """Makes a canopy() a shell `wall` thick, open underneath down to `floor` (so the cabin
+    below shows through its windows): cuts out the same shape, `wall` smaller all round, with
+    its feet reaching down to `floor`. The inside faces get `material` (the headliner)."""
+    inner = []
+    last = len(spans) - 1
+    for i, (y, foot, top, z0, z1, crown, bow, sharp) in enumerate(spans):
+        if i == 0:
+            y -= wall * 1.5                # the windscreen's foot, moved back inside
+        elif i == last:
+            y += wall * 1.5                # the back window's foot, moved forward inside
+        else:
+            z1 -= wall
+        inner.append((y, foot - wall, top - wall, floor, z1, crown, bow, sharp))
+    W.cut(roof, canopy("cut_inside", inner, material, export=False), "hollow")
+
+
+def window_hole(roof, panes, axis: str, side: float, material: str = "pad"):
+    """Cuts a window opening the shape of `panes` (shapely, as glass() makes them) through a
+    hollow_shell() canopy's wall: a block of that outline reaching from inside the cabin to well
+    outside it, along `axis` on `side`."""
+    polys = list(panes.geoms) if hasattr(panes, "geoms") else [panes]
+    near, far = {"X": (0.25, 1.8), "Y": (0.0, 3.4)}[axis]
+    for pg in polys:
+        bm = bmesh.new()
+        ring = list(pg.exterior.coords)[:-1]
+        def at(u, v, d):
+            return (side * d, u, v) if axis == "X" else (u, side * d, v)
+        lo = [bm.verts.new(at(u, v, near)) for u, v in ring]
+        hi = [bm.verts.new(at(u, v, far)) for u, v in ring]
+        bm.faces.new(lo)
+        bm.faces.new(list(reversed(hi)))
+        n = len(ring)
+        for i in range(n):
+            bm.faces.new([lo[i], lo[(i + 1) % n], hi[(i + 1) % n], hi[i]])
+        W.cut(roof, W.add("cut_window", bm, material, export=False), "window")
 
 
 def glass(name: str, on, axis: str, side: float, corners: list, round_by: float = 0.04, frame: float = 0.012, posts: tuple = (),
-          start_at: float = 0.0, spacing: float = 0.07):
+          start_at: float = 0.0, spacing: float = 0.07, hole_in=None):
     """A window pressed onto a canopy / body `on`: corners = its outline as W.decal() takes it
     ((y, z) for a side window, axis "X"; (x, z) for a windscreen or back window, axis "Y"),
     its corners rounded by round_by, a bright frame `frame` wide round it (0 = none). posts =
     where upright pillars split it (positions along its width, each 0.05 wide). The glass is
-    a dark skin a few millimetres proud of the paint (the game's glass is not see-through)."""
+    a skin a few millimetres proud of the paint (drawn dark, or see-through in the Drive-In).
+    hole_in = the real (hollow_shell()) canopy to cut the window's opening into; then `on` must be an
+    uncut copy of it (export False), so the glass still has a surface to press onto."""
     shape = Polygon(corners).buffer(-round_by).buffer(round_by)
     panes = shape
     for u in posts:
         panes = panes.difference(sbox(u - 0.025, -99.0, u + 0.025, 99.0))
     W.decal(name, panes, "glass", on, axis, side, 0.004, 0.0, spacing, start_at)
+    if hole_in is not None:
+        window_hole(hole_in, panes, axis, side)
     if frame > 0.0:
         W.decal(name + "Frame", panes.buffer(frame * 0.3).difference(panes.buffer(-frame * 0.7)), "chrome", on, axis, side, 0.004, 0.006, spacing * 0.6, start_at)
 
@@ -249,7 +299,7 @@ def finish(kind: str, shift_y: float = 0.0, keep: float = 1.0):
 # ── the long, low cars: the woody's body, as a two-tone sedan or an open convertible ──
 def car(kind: str, hardtop: bool):
     W.BODY_LEVELS = 2
-    body = W.build_body(open_cabin=not hardtop)
+    body = W.build_body(open_cabin=True)         # (the hardtop has the convertible's cabin under its roof)
     W.build_front()
     W.build_rear()
     if hardtop:
@@ -257,17 +307,24 @@ def car(kind: str, hardtop: bool):
         # time's family sedans): thin pillars, a wrapped windscreen, the roof in cream over
         # the body's colour. About 1.45 m high.
         belt = 0.925
-        roof = canopy("Roof", [
+        spans = [
             (1.02, 0.85, 0.83, 0.88, belt + 0.01, 0.0, 0.10, 1.0),
             (0.50, 0.85, 0.66, 0.88, 1.41, 0.035, 0.07, 0.6),
             (-0.30, 0.85, 0.68, 0.88, 1.43, 0.045, 0.0, 0.0),
             (-1.12, 0.85, 0.66, 0.88, 1.40, 0.035, -0.05, 0.6),
-            (-1.74, 0.85, 0.83, 0.88, belt + 0.01, 0.0, -0.10, 1.0)], "ivory")
-        glass("Windscreen", roof, "Y", 1.0, [(-0.77, belt + 0.035), (0.77, belt + 0.035), (0.58, 1.34), (-0.58, 1.34)], 0.05)
-        glass("BackWindow", roof, "Y", -1.0, [(-0.74, belt + 0.06), (0.74, belt + 0.06), (0.56, 1.32), (-0.56, 1.32)], 0.06)
+            (-1.74, 0.85, 0.83, 0.88, belt + 0.01, 0.0, -0.10, 1.0)]
+        # the roof is a shell with real window openings over the convertible's cabin (seats,
+        # dash, wheel); the glass presses onto an uncut copy of it
+        roof = canopy("Roof", spans, "ivory")
+        shape = canopy("RoofShape", spans, "ivory", export=False)
+        hollow_shell(roof, spans, 0.45)
+        glass("Windscreen", shape, "Y", 1.0, [(-0.77, belt + 0.035), (0.77, belt + 0.035), (0.58, 1.34), (-0.58, 1.34)], 0.05, hole_in=roof)
+        glass("BackWindow", shape, "Y", -1.0, [(-0.74, belt + 0.06), (0.74, belt + 0.06), (0.56, 1.32), (-0.56, 1.32)], 0.06, hole_in=roof)
+        W.build_cabin(open_top=False)
         for sx in (-1.0, 1.0):
             # the side windows: front door, back door (a pillar between them), a thick last pillar
-            glass("SideWindows", roof, "X", sx, [(0.86, belt + 0.03), (0.47, 1.315), (-1.02, 1.315), (-1.38, belt + 0.03)], 0.04, posts=(-0.34,))
+            glass("SideWindows", shape, "X", sx, [(0.86, belt + 0.03), (0.47, 1.315), (-1.02, 1.315), (-1.38, belt + 0.03)], 0.04, posts=(-0.34,),
+                  hole_in=roof)
             W.rods("MirrorStalk", [[(sx * 0.93, 0.62, 0.975), (sx * 1.02, 0.60, 1.05)]], 0.009, "chrome", 6)
             W.cyl("Mirror", 0.062, 0.055, 0.03, (sx * 1.03, 0.60, 1.07), "Y", "chrome", 16)
             # the back door's shut line and handle (the woody's body has the front door's)
@@ -279,10 +336,35 @@ def car(kind: str, hardtop: bool):
         wheel(x, y, W.WHEEL_R, 0.21, whitewall=True)
     mark(kind, "LampFront", W.FRONT_LIGHTS)
     mark(kind, "LampTail", W.TAIL_LIGHTS)
+    mark(kind, "Seat", W.SEATS[:2])             # the front seats (driver first)
     finish(kind, keep=0.4)
 
 
 # ── the pickup ──
+def pickup_cabin(belt: float):
+    """The pickup's insides, seen through its windows: a rubber floor, a vinyl bench seat (its
+    top at 0.90 m: the Seat markers), a painted dash with a padded top and two dials, a big
+    thin steering wheel on a raked column."""
+    W.box("CabFloor", (1.70, 1.30, 0.03), (0.0, 0.24, 0.62), "dark")
+    W.box("Bench", (1.66, 0.50, 0.20), (0.0, -0.12, 0.80), "leather", bevel=0.06)
+    W.box("BenchBack", (1.66, 0.14, 0.56), (0.0, -0.43, 1.12), "leather", bevel=0.06, rot=(math.radians(-10.0), 0.0, 0.0))
+    for i in range(8):                       # pleats across the bench
+        x = (i - 3.5) * 0.19
+        W.box("Pleat", (0.15, 0.03, 0.46), (x, -0.355, 1.13), "leather", bevel=0.012, rot=(math.radians(-10.0), 0.0, 0.0))
+    W.box("Dash", (1.74, 0.30, 0.24), (0.0, 0.80, belt - 0.02), "paint", bevel=0.04)
+    W.box("DashPad", (1.74, 0.22, 0.05), (0.0, 0.82, belt + 0.11), "pad", bevel=0.02)
+    for dx in (-0.10, 0.10):
+        W.cyl("Dial", 0.055, 0.055, 0.01, (-0.42 + dx, 0.645, belt + 0.01), "Y", "white", 20)
+        W.torus("DialRim", 0.056, 0.006, (-0.42 + dx, 0.64, belt + 0.01), "chrome", rot=(math.pi / 2, 0.0, 0.0))
+    hub = Vector((-0.42, 0.42, 1.22))
+    tilt = math.radians(55.0)
+    W.rods("Column", [[(-0.42, 0.70, 1.02), tuple(hub)]], 0.024, "dark")
+    W.torus("WheelRim", 0.21, 0.014, hub, "dark", rot=(tilt, 0.0, 0.0))
+    W.rods("Spokes", [[tuple(hub - Vector((0.20, 0.0, 0.0))), tuple(hub), tuple(hub + Vector((0.20, 0.0, 0.0)))]], 0.01, "chrome", 6)
+    W.rods("Shifter", [[(0.0, 0.45, 0.63), (0.04, 0.30, 1.05)]], 0.012, "chrome", 6)
+    W.rods("ShifterKnob", [[(0.04, 0.30, 1.06)]], 0.03, "dark", 10)
+
+
 def pickup():
     """A plain, square-shouldered farm truck in the fashion of the late 1960s: a high flat
     hood, an upright face, a short tall cab, a long bed. 5.5 m long, 1.8 m high."""
@@ -308,18 +390,26 @@ def pickup():
         well = W.box("WheelWell", (0.22, 1.16, 0.30), (sx * 0.76, axles[1], floor + 0.13), "bed", bevel=0.04)
         hollow = W.cyl("cut_well", r + 0.11, r + 0.11, 0.5, (sx * 0.95, axles[1], r + 0.03), "X", "dark", 40, export=False)
         W.cut(well, hollow, "wheel")
-    # the cab: an upright windscreen, a flat back wall with its window right behind the seat
-    cab = canopy("Cab", [
+    # the cab: an upright windscreen, a flat back wall with its window right behind the seat. A
+    # shell with real window openings over a cabin cut into the body (bench seat, dash, wheel);
+    # the glass presses onto an uncut copy of it.
+    spans = [
         (0.98, 0.90, 0.88, 1.04, belt + 0.01, 0.0, 0.07, 1.0),
         (0.66, 0.90, 0.76, 1.04, 1.74, 0.03, 0.05, 0.7),
         (0.10, 0.90, 0.77, 1.04, 1.755, 0.04, 0.0, 0.0),
         (-0.42, 0.90, 0.76, 1.04, 1.74, 0.03, 0.0, 0.8),
-        (-0.53, 0.90, 0.88, 1.04, belt + 0.01, 0.0, 0.0, 1.0)])
-    glass("Windscreen", cab, "Y", 1.0, [(-0.80, belt + 0.05), (0.80, belt + 0.05), (0.68, 1.66), (-0.68, 1.66)], 0.05)
-    glass("BackWindow", cab, "Y", -1.0, [(-0.62, belt + 0.16), (0.62, belt + 0.16), (0.56, 1.62), (-0.56, 1.62)], 0.06)
+        (-0.53, 0.90, 0.88, 1.04, belt + 0.01, 0.0, 0.0, 1.0)]
+    cab = canopy("Cab", spans)
+    shape = canopy("CabShape", spans, export=False)
+    hollow_shell(cab, spans, 0.6)
+    W.cut(body, W.box("cut_cab", (1.76, 1.36, 0.9), (0.0, 0.24, 1.05), "pad", bevel=0.03, export=False), "cab")
+    glass("Windscreen", shape, "Y", 1.0, [(-0.80, belt + 0.05), (0.80, belt + 0.05), (0.68, 1.66), (-0.68, 1.66)], 0.05, hole_in=cab)
+    glass("BackWindow", shape, "Y", -1.0, [(-0.62, belt + 0.16), (0.62, belt + 0.16), (0.56, 1.62), (-0.56, 1.62)], 0.06, hole_in=cab)
     for sx in (-1.0, 1.0):
         # the door glass with its little vent window at the front
-        glass("SideWindow", cab, "X", sx, [(0.86, belt + 0.04), (0.64, 1.64), (-0.34, 1.64), (-0.40, belt + 0.04)], 0.04, posts=(0.50,))
+        glass("SideWindow", shape, "X", sx, [(0.86, belt + 0.04), (0.64, 1.64), (-0.34, 1.64), (-0.40, belt + 0.04)], 0.04, posts=(0.50,),
+              hole_in=cab)
+    pickup_cabin(belt)
     # the face: a wide dark grille in a bright frame with the lamps in its ends, the bumpers
     W.box("Grille", (1.72, 0.05, 0.30), (0.0, nose - 0.005, 0.84), "dark", bevel=0.01)
     W.rods("GrilleBars", [[(-0.62, nose + 0.02, z), (0.62, nose + 0.02, z)] for z in (0.75, 0.80, 0.84, 0.88, 0.93)], 0.008, "chrome", 6)
@@ -344,6 +434,7 @@ def pickup():
             wheel(sx * 0.88, wy, r, 0.26)
     mark("pickup", "LampFront", [(-0.74, nose + 0.1, 0.84), (0.74, nose + 0.1, 0.84)])
     mark("pickup", "LampTail", [(-0.905, tail - 0.05, 0.90), (0.905, tail - 0.05, 0.90)])
+    mark("pickup", "Seat", [(-0.42, -0.12, 0.90), (0.42, -0.12, 0.90)])   # on the bench (driver first)
     finish("pickup", keep=0.7)
     # the tailgate, shut and open (the Drive-In's trucks have it down, on two chains)
     W.box("Gate", (1.69, 0.07, 0.38), (0.0, tail + 0.035, floor + 0.19), "paint", bevel=0.015)
@@ -609,7 +700,7 @@ def render(folder: str):
     """A picture of each vehicle (not part of the game)."""
     os.makedirs(folder, exist_ok=True)
     glass = W.mat("glass").node_tree.nodes["Principled BSDF"]      # dark, as the game draws it
-    glass.inputs["Alpha"].default_value = 1.0
+    glass.inputs["Alpha"].default_value = 0.3 if CLEAR else 1.0  # (or see-through, as the Drive-In does)
     glass.inputs["Base Color"].default_value = (0.03, 0.04, 0.05, 1.0)
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"

@@ -61,6 +61,10 @@ extends Node3D
 @export var presenter_forward: float = 0.0
 ## Audience seats closer than this (horizontally) to a camera marker are skipped.
 @export var audience_camera_clearance: float = 0.45
+## False: empty seats never show their dim placeholder here, even with the Audience tab's
+## Show empty seats on (AudienceView._seat_visible). The Drive-In sets it: there an empty seat
+## is an empty parking space, and a car only parks under a chatter or a filler person.
+@export var show_empty_seats: bool = true
 ## House light level while a video plays (0..1 of their original energy).
 @export_range(0.0, 1.0) var dimmed_level: float = 0.08
 ## How fast the house lights fade between levels (share of full brightness per second).

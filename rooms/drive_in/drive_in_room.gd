@@ -21,10 +21,13 @@ extends Room
 ##     the screen tower, and swaps the model's plain blocks for modelled props
 ##     (models/props.glb from models/make_props.py: the speaker posts, the lot lights, the snack
 ##     bar's lamps, the lawn chairs, the cooler and the popcorn; _build_detailed_props) and the
-##     parked cars and the pickup for Route 22's Blender models (_build_detailed_cars).
+##     pickup for Route 22's Blender model (_build_detailed_cars).
 ##     Auto follows Graphics quality (Low = Simple).
 ##     Both looks are built when the room loads; _apply_detail() only shows one, so switching is
 ##     instant.
+##   - The chat audience parks: every chatter sits in their own car on the ramps (Room tab >
+##     Parking spaces, "drive_spaces"; drive_in_cars.gd, _build_chatter_cars). The model's own
+##     parked cars are hidden in both looks.
 ## The shared settings (all drive_* but drive_detail and drive_fireflies) travel in a co-stream
 ## with the host's "room" group (NetSession.SHARED_BASE), so everyone sits under the same sky.
 
@@ -81,6 +84,8 @@ const PROP_LOOKS: Dictionary = {
 ## The parked cars' Blender models: Route 22's (rooms/route22/models/vehicles.glb, made by
 ## make_vehicles.py there), read when the room loads, so a new export shows up here by itself.
 const VEHICLES := "res://rooms/route22/models/vehicles.glb"
+## The chatters' parked cars and their parking spaces (the room's audience seats).
+const CHATTER_CARS := preload("res://rooms/drive_in/drive_in_cars.gd")
 const CAR_TEX := "res://rooms/route22/textures/"
 ## The plain blocks of each parked car's paint in drive_in.glb, and the two-tone roof colour.
 const CAR_PAINT_PREFIX := "Paint_"
@@ -91,7 +96,7 @@ const CAR_PAINT_PREFIX := "Paint_"
 ## car), "wood", "trim" and "bed" are worked out per car in _car_material.
 const CAR_LOOKS: Dictionary = {
 	"chrome": [Color(0.8, 0.8, 0.82), 1.0, 0.12], "hub": [Color(0.8, 0.8, 0.82), 1.0, 0.15],
-	"glass": [Color(0.03, 0.04, 0.05), 0.2, 0.05], "dark": [Color(0.05, 0.05, 0.055), 0.0, 0.7],
+	"glass": [Color(0.05, 0.06, 0.07, 0.3), 0.2, 0.05],   # see-through (_car_material): the chatters show inside "dark": [Color(0.05, 0.05, 0.055), 0.0, 0.7],
 	"white": [Color(0.9, 0.9, 0.86), 0.0, 0.55], "whitewall": [Color(0.9, 0.9, 0.86), 0.0, 0.7],
 	"plate": [Color(0.95, 0.8, 0.2), 0.3, 0.45], "amber": [Color(1.0, 0.55, 0.1), 0.0, 0.3],
 	"tyre": ["grain", CAR_TEX + "prop_rubber.jpg", 0.5, Color(0.07, 0.07, 0.075)],
@@ -137,7 +142,10 @@ var _detailed_props: Node3D       # the modelled props (shown in the Detailed lo
 var _prop_meshes: Dictionary = {} # prop name -> its mesh with this room's materials (_prop_mesh)
 var _prop_counts: Dictionary = {} # how many of each prop were placed (for tests)
 var _detailed_cars: Node3D        # the modelled cars and pickup (shown in the Detailed look)
-var _simple_cars: Array[Node3D] = []   # the model's own cars and pickup (hidden in the Detailed look)
+var _simple_cars: Array[Node3D] = []   # the model's own pickup (hidden in the Detailed look)
+var _old_cars: Array[Node3D] = [] # the model's own parked cars (hidden for good: the chatters park instead)
+var _ramp_pitch: float = 0.0      # how far a car parked on a ramp tilts nose-up (radians; from the old cars)
+var _chatter_cars: Node3D         # the chatters' cars (drive_in_cars.gd)
 var _car_mats: Dictionary = {}    # look key -> Material, so cars of one colour share theirs
 var _bed_drop: float = 0.0        # how far the things on the truck bed come down in the Detailed look
 var _blanket: Node3D              # the model's blanket on the truck bed (moved down with _bed_drop)
@@ -169,6 +177,7 @@ func _ready() -> void:
 	_build_detailed_plants()
 	_build_detailed_cars()
 	_build_detailed_props()
+	_build_chatter_cars()
 	_hour = fposmod(float(AppState.get_setting("drive_time")), 24.0)
 	EventBus.setting_changed.connect(_on_drive_setting_changed)
 	_apply_detail()
@@ -196,6 +205,8 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "How detailed the drive-in is drawn on this PC. Detailed: photo textures on the asphalt, the gravel and the grass, wood and cloth grain, a forest of firs, pines, oaks, maples and birches round the lot, and grass tufts and ferns along the fence. Simple: the original flat-coloured set, the lightest for a slow graphics card. Auto picks from Graphics quality: Low = Simple, otherwise Detailed. Each PC in a co-stream chooses its own."},
 		{"key": "drive_fireflies", "label": "Fireflies at night", "type": "check",
 			"tooltip": "Small drifting lights over the grass round the lot on dark nights."},
+		{"key": "drive_spaces", "label": "Parking spaces", "min": 10.0, "max": float(CHATTER_CARS.MAX_SPACES), "step": 1.0, "format": "%d",
+			"tooltip": "How many chatters can park at the drive-in: each one sits behind the wheel of their own 1950s car (the same car every time they come back), which blinks its headlights when they talk. Fewer spaces are lighter on a slow graphics card. Changing it reloads the room. In a co-stream the host's number counts."},
 		{"heading": "Time of day"},
 		{"key": "drive_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
 			"tooltip": "The hour at the drive-in, 0 to 24. 6 = sunrise, 12 = noon, 18 = sunset (to the left of the screen), 21 = a moonlit night. The lot's lamps come on as it gets dark."},
@@ -456,14 +467,14 @@ func get_plant_counts() -> Dictionary:
 
 
 # ── The modelled cars ────────────────────────────────────────
-## Builds the Detailed look's cars (hidden until _apply_detail shows them): every parked car in
-## drive_in.glb ("Car_00", "Car_01", ...) and the backed-in "Pickup_Truck" get a Route 22 Blender
-## model (VEHICLES) in their place, the same colour. Where each stands and which way it faces
-## comes from the original's own lamps (its "Head_Light" and "Tail_Light" surfaces), so it also
-## gets the same nose-up tilt on the ramps; its wheels go down to where the original's lowest
-## point is. Two-tone cars become hardtops with a roof in their second colour; the plain ones are
-## two hardtops to one convertible. The pickup gets its tailgate down, its tail where the
-## original's is, and the things on its bed come down to the model's lower bed (_bed_drop).
+## Builds the Detailed look's pickup (hidden until _apply_detail shows it): the backed-in
+## "Pickup_Truck" of drive_in.glb gets Route 22's Blender model (VEHICLES) in its place, the same
+## colour, placed by the original's own lamps (its "Head_Light" and "Tail_Light" surfaces), its
+## wheels down to where the original's lowest point is, its tailgate down, and the things on
+## its bed come down to the model's lower bed (_bed_drop).
+## The model's parked cars ("Car_00", "Car_01", ...) are hidden in both looks: the lot's cars
+## are the chatters' now (drive_in_cars.gd). Their lamps still tell how far a car parked on a
+## ramp tilts nose-up (_ramp_pitch), which the chatters' cars copy.
 func _build_detailed_cars() -> void:
 	if not ResourceLoader.exists(VEHICLES):
 		return
@@ -492,7 +503,6 @@ func _build_detailed_cars() -> void:
 	_detailed_cars.name = "DetailedCars"
 	_detailed_cars.visible = false
 	_fx.add_child(_detailed_cars)
-	var plain := 0
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
 		var car_name := String(mi.name)
@@ -520,25 +530,23 @@ func _build_detailed_cars() -> void:
 					tail = sum / maxf(verts.size(), 1)
 		if paints.is_empty() or head.is_equal_approx(tail):
 			continue
-		var kind := "pickup"
 		if not is_pickup:
-			if paints.size() > 1 or plain % 3 != 1:
-				kind = "classic"
-			else:
-				kind = "convertible"
-			if paints.size() == 1:
-				plain += 1
+			# a parked car: only its tilt is kept (from the first one), and it goes for good
+			if _old_cars.is_empty():
+				var d := head - tail
+				_ramp_pitch = atan2(d.y, Vector2(d.x, d.z).length())
+			_old_cars.append(mi)
+			mi.visible = false
+			continue
+		var kind := "pickup"
 		var model: Dictionary = models[kind]
 		# facing: the model's lamps line up with the original's (model front = -Z)
 		var turn := Basis.looking_at((head - tail).normalized())
 		var own_tilt := Basis.looking_at(((model["front"] as Vector3) - (model["tail"] as Vector3)).normalized())
 		var facing := turn * own_tilt.inverse()
 		var xf := Transform3D(facing, Vector3.ZERO)
-		if is_pickup:
-			# its tail at the original's tail (the bed's load stays on the bed)
-			xf.origin = tail - facing * (model["tail"] as Vector3)
-		else:
-			xf.origin = (head + tail) * 0.5 - facing * (((model["front"] as Vector3) + (model["tail"] as Vector3)) * 0.5)
+		# its tail at the original's tail (the bed's load stays on the bed)
+		xf.origin = tail - facing * (model["tail"] as Vector3)
 		# wheels down: the model's lowest corner to the original's lowest point
 		var low := INF
 		var box: AABB = model["box"]
@@ -548,7 +556,7 @@ func _build_detailed_cars() -> void:
 		var paint := paints[0]
 		var roof := paints[1] if paints.size() > 1 else Color(0.92, 0.88, 0.78)
 		_add_car(model["mesh"], xf, paint, roof)
-		if is_pickup and models.has("pickup_gate_down"):
+		if models.has("pickup_gate_down"):
 			_add_car((models["pickup_gate_down"] as Dictionary)["mesh"], xf, paint, roof)
 			var frames := find_child("Lawn_Chair_Frames", true, false) as MeshInstance3D
 			var old_floor := _room_aabb(frames).position.y if frames else pickup_bed_floor
@@ -556,6 +564,25 @@ func _build_detailed_cars() -> void:
 		_simple_cars.append(mi)
 		_prop_counts[kind] = int(_prop_counts.get(kind, 0)) + 1
 	_blanket = find_child("Blanket", true, false) as Node3D
+
+
+## The chat audience's parked cars: the parking spaces with their seats (drive_in_cars.gd), as
+## many as Room tab > Parking spaces ("drive_spaces"; changing it reloads the room, since the
+## seats are read when it loads). Its cars use this room's car materials (_car_material).
+## Empty spaces show nothing (show_empty_seats), whatever the Audience tab's Show empty seats.
+func _build_chatter_cars() -> void:
+	show_empty_seats = false
+	_chatter_cars = CHATTER_CARS.new()
+	_chatter_cars.name = "ChatterCars"
+	add_child(_chatter_cars)
+	_chatter_cars.car_material = _car_material
+	_chatter_cars.ramp_pitch = _ramp_pitch
+	_chatter_cars.build(clampi(int(AppState.get_setting("drive_spaces")), 1, CHATTER_CARS.MAX_SPACES))
+
+
+## Room tab > Parking spaces changes how many seats there are: RoomHost reloads the room.
+func reload_keys() -> PackedStringArray:
+	return PackedStringArray(["drive_spaces"])
 
 
 ## Adds one vehicle model at xf (room space) with this room's materials for its colours.
@@ -613,6 +640,10 @@ func _car_material(look: String, paint: Color, roof: Color) -> Material:
 		pm.albedo_color = (spec as Array)[0]
 		pm.metallic = float((spec as Array)[1])
 		pm.roughness = float((spec as Array)[2])
+		if look == "glass":
+			# the cars' cabins are modelled: their drivers (the chatters) show through the glass
+			pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			pm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		if look == "amber":
 			pm.emission_enabled = true
 			pm.emission = (spec as Array)[0]
