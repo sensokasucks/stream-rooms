@@ -16,6 +16,8 @@ const Geo := preload("res://rooms/route22/r22_geo.gd")
 ## How many tumbleweeds are about at once, and how many dust devils at most.
 const TUMBLEWEEDS: int = 3
 const DUST_DEVILS: int = 2
+## How fast a dust devil's column turns (radians a second).
+const DEVIL_SPIN: float = 3.2
 const VULTURES: int = 3
 ## Most coyotes in a pack.
 const COYOTES: int = 3
@@ -134,6 +136,7 @@ func tick(delta: float, speed: float, wind: float, day: float) -> void:
 		var d := _devils[i]
 		_devil_life[i] -= delta
 		d.position += drift + Vector3(1.5 * wind, 0.0, 0.0) * delta
+		d.rotate_y(delta * DEVIL_SPIN)
 		if _devil_life[i] < 0.0 or d.position.z > _z_near:
 			# a new one far out, alive 12 to 25 s (some rest in between)
 			_devil_life[i] = _rng.randf_range(12.0, 25.0)
@@ -244,57 +247,49 @@ func _respawn_weed(i: int, anywhere: bool) -> void:
 	_weed_vel[i] = Vector3(3.0, 0.0, 0.0)
 
 
-## A dust devil: a thin spinning column of dust specks (particles swirling round its axis).
+## A dust devil: a thin spinning column of dust (ragged wisps swirling up round its axis,
+## narrow at the foot and fraying out wide at the top).
 func _dust_devil() -> CPUParticles3D:
 	var p := CPUParticles3D.new()
 	p.name = "DustDevil"
-	p.amount = 160
-	p.lifetime = 4.0
+	p.amount = 260
+	p.lifetime = 4.5
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
 	p.emission_ring_axis = Vector3.UP
-	p.emission_ring_radius = 1.2
-	p.emission_ring_inner_radius = 0.2
+	p.emission_ring_radius = 0.8
+	p.emission_ring_inner_radius = 0.1
 	p.emission_ring_height = 0.5
 	p.direction = Vector3.UP
 	p.spread = 10.0
 	p.initial_velocity_min = 2.0
 	p.initial_velocity_max = 4.0
 	p.gravity = Vector3(0.0, 1.0, 0.0)
-	p.tangential_accel_min = 8.0
-	p.tangential_accel_max = 12.0
-	p.radial_accel_min = 0.3
-	p.radial_accel_max = 0.8
-	p.scale_amount_min = 1.0
-	p.scale_amount_max = 2.6
+	# (the whirl is the whole column turning: tick() spins this node and the particles ride
+	# with it, see local_coords below; they drift outwards a little as they climb: a funnel)
+	p.radial_accel_min = 0.15
+	p.radial_accel_max = 0.5
+	p.scale_amount_min = 0.8
+	p.scale_amount_max = 1.7
 	var grow := Curve.new()
-	grow.add_point(Vector2(0.0, 0.4))
-	grow.add_point(Vector2(1.0, 1.6))
+	grow.add_point(Vector2(0.0, 0.35))
+	grow.add_point(Vector2(1.0, 2.2))
 	p.scale_amount_curve = grow
 	var fade := Gradient.new()
-	fade.set_color(0, Color(0.8, 0.55, 0.38, 0.0))
-	fade.add_point(0.2, Color(0.78, 0.55, 0.38, 0.35))
-	fade.set_color(fade.get_point_count() - 1, Color(0.75, 0.55, 0.4, 0.0))
+	fade.set_color(0, Color(0.78, 0.62, 0.48, 0.0))
+	fade.add_point(0.15, Color(0.76, 0.61, 0.47, 0.3))
+	fade.add_point(0.6, Color(0.76, 0.62, 0.49, 0.2))
+	fade.set_color(fade.get_point_count() - 1, Color(0.76, 0.63, 0.5, 0.0))
 	p.color_ramp = fade
 	var puff := QuadMesh.new()
-	puff.size = Vector2(1.2, 1.2)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.billboard_keep_scale = true
-	var dot := GradientTexture2D.new()
-	dot.fill = GradientTexture2D.FILL_RADIAL
-	dot.fill_from = Vector2(0.5, 0.5)
-	dot.fill_to = Vector2(1.0, 0.5)
-	var g := Gradient.new()
-	g.set_color(0, Color.WHITE)
-	g.set_color(1, Color(1.0, 1.0, 1.0, 0.0))
-	dot.gradient = g
-	m.albedo_texture = dot
-	puff.material = m
+	puff.size = Vector2(2.6, 2.6)
+	# a ragged wisp, not a round blob (r22_dust.gdshader), each turned its own way and slowly turning
+	puff.material = Geo.dust_material()
+	p.angle_min = 0.0
+	p.angle_max = 360.0
+	p.angular_velocity_min = -25.0
+	p.angular_velocity_max = 25.0
 	p.mesh = puff
-	p.local_coords = false
+	p.local_coords = true
 	p.emitting = false
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(p)
