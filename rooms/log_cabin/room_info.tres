@@ -1,23 +1,23 @@
-[gd_resource type="Resource" script_class="RoomInfo" load_steps=5 format=3]
+[gd_resource type="Resource" script_class="RoomInfo" load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://rooms/room_info.gd" id="1_ri"]
+[ext_resource type="Shader" path="res://rooms/campfire/camp_sky.gdshader" id="2_sky"]
 
-[sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_cabin"]
-resource_name = "LogCabinSky"
-sky_top_color = Color(0.22, 0.26, 0.5, 1)
-sky_horizon_color = Color(0.95, 0.55, 0.36, 1)
-ground_bottom_color = Color(0.11, 0.13, 0.25, 1)
-ground_horizon_color = Color(0.76, 0.44, 0.29, 1)
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_cabin"]
+shader = ExtResource("2_sky")
 
 [sub_resource type="Sky" id="Sky_cabin"]
-sky_material = SubResource("ProceduralSkyMaterial_cabin")
+sky_material = SubResource("ShaderMaterial_cabin")
+process_mode = 1
 radiance_size = 1
 
 [sub_resource type="Environment" id="Environment_cabin"]
 background_mode = 2
 sky = SubResource("Sky_cabin")
-ambient_light_source = 3
-ambient_light_energy = 0.35
+ambient_light_source = 2
+ambient_light_color = Color(0.12, 0.13, 0.22, 1)
+ambient_light_energy = 0.16
+reflected_light_source = 1
 tonemap_mode = 2
 tonemap_white = 6.0
 ssao_enabled = true

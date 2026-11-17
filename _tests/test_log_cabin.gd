@@ -39,7 +39,11 @@ func _ready() -> void:
 	AppState.set_setting("photosensitive_safe", false)
 	AppState.set_setting("cabin_fire", 1.0)
 	AppState.set_setting("cabin_lamps", true)
-	AppState.set_setting("cabin_light", "dusk")
+	AppState.set_setting("cabin_time", 17.5)
+	AppState.set_setting("cabin_day_minutes", 0.0)
+	AppState.set_setting("cabin_clouds", 0.5)
+	AppState.set_setting("cabin_stars", 1.0)
+	AppState.set_setting("cabin_detail", "full")
 	AppState.set_setting("cabin_view", "great_room")
 	AppState.set_setting("curtain_enabled", false)
 	var main: Node = load("res://core/main.tscn").instantiate()
@@ -107,7 +111,12 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	_check(keys == ["cabin_fire", "cabin_lamps", "cabin_light", "cabin_view"], "the Room tab gets Fire, Lamps, Light outside and Gather in (%s)" % str(keys))
+	_check(keys == ["cabin_detail", "cabin_fire", "cabin_lamps", "cabin_view", "cabin_time", "cabin_day_minutes", "cabin_clouds", "cabin_stars"],
+		"the Room tab gets Set detail, Fire, Lamps, Gather in, Time of day, Day length, Clouds and Stars (%s)" % str(keys))
+	var shared_ok := true
+	for k in keys:
+		shared_ok = shared_ok and (NetSession.SHARED_CABIN.has(k) != (k == "cabin_detail"))
+	_check(shared_ok, "every cabin setting but Set detail is shared in a co-stream")
 	_check(room.reload_keys().has("cabin_view"), "Gather in reloads the room")
 	_check(room.get_mirror_screens().size() == 1, "the den's screen mirrors the big one (%d mirror)" % room.get_mirror_screens().size())
 	var energy := fire_light.light_energy
@@ -119,6 +128,24 @@ func _ready() -> void:
 	_check(not fire_light.visible and not (flames[0] as MeshInstance3D).visible, "Fire 0 puts the fire out")
 	AppState.set_setting("cabin_fire", 1.0)
 	await _secs(0.3)
+	var smoke := fx.find_children("ChimneySmoke*", "CPUParticles3D", false, false) if fx else []
+	_check(smoke.size() == 2 and (smoke[0] as CPUParticles3D).emitting and (smoke[0] as CPUParticles3D).global_position.y > 10.0, "smoke rises from both chimney tops while the fire burns (%d)" % smoke.size())
+
+	# Set detail: Detailed shows the photo textures and the leaf-card forest, Simple the cone trees
+	var plants := room.find_child("DetailedPlants", true, false) as Node3D
+	var cones := room.find_child("SimpleTrees", true, false) as Node3D
+	var mats: Array = room.get("_parts")["detail_mats"]
+	_check(plants != null and plants.visible and cones != null and not cones.visible and mats.size() > 10
+		and float((mats[0] as ShaderMaterial).get_shader_parameter("detail")) > 0.5, "Detailed: photo textures on and the leaf-card forest showing (%d textured materials)" % mats.size())
+	_check(plants != null and plants.find_children("*", "MultiMeshInstance3D", true, false).size() >= 4, "Detailed: trees, ferns and grass are planted round the clearing")
+	AppState.set_setting("cabin_detail", "low")
+	await _secs(0.5)
+	_check(plants != null and not plants.visible and cones.visible and float((mats[0] as ShaderMaterial).get_shader_parameter("detail")) < 0.5, "Simple: flat colours and the plain cone trees")
+	EventBus.camera_preset_requested.emit(0)
+	await _secs(1.2)
+	await _shot(_out.path_join("cabin_simple_look.png"))
+	AppState.set_setting("cabin_detail", "full")
+	await _secs(0.5)
 
 	# the lamps (house lights) go out with their tick box
 	var lamp := lamps.find_children("*", "OmniLight3D", true, false)[0] as OmniLight3D
@@ -136,24 +163,25 @@ func _ready() -> void:
 		await _secs(1.2)
 		await _shot(_out.path_join("cabin_%02d_%s.png" % [i + 1, room.get_camera_label(cams[i]).replace(" ", "_")]))
 
-	# the light outside
+	# the time of day (the campfire's sky)
 	var sun: DirectionalLight3D = room.call("get_sun")
 	var dusk_energy := sun.light_energy
-	AppState.set_setting("cabin_light", "night")
-	await _secs(0.5)
 	var env: Environment = room.get_world_3d().environment
-	var sky := env.sky.sky_material as ProceduralSkyMaterial if env and env.sky else null
-	_check(sun.light_energy < dusk_energy * 0.5, "Night: the moon is much weaker than the dusk sun (%.2f -> %.2f)" % [dusk_energy, sun.light_energy])
-	_check(sky != null and sky.sky_top_color.v < 0.1, "Night: the sky is dark (%s)" % (str(sky.sky_top_color) if sky else "no sky"))
+	var sky := env.sky.sky_material as ShaderMaterial if env and env.sky else null
+	_check(sky != null and sky.shader == load("res://rooms/campfire/camp_sky.gdshader"), "the sky is the campfire's time-of-day sky")
+	AppState.set_setting("cabin_time", 22.0)
+	await _secs(0.5)
+	_check(sun.light_energy < dusk_energy * 0.5 and float(room.call("get_daylight")) < 0.05, "22:00: night, the moon is much weaker than the evening sun (%.2f -> %.2f)" % [dusk_energy, sun.light_energy])
+	_check(sky != null and float(sky.get_shader_parameter("day")) < 0.05, "22:00: the sky is drawn for night")
 	EventBus.camera_preset_requested.emit(0)
-	await _secs(1.5)
+	await _secs(2.5)
 	await _shot(_out.path_join("cabin_night_loft.png"))
 	EventBus.camera_preset_requested.emit(6)
 	await _secs(1.5)
 	await _shot(_out.path_join("cabin_night_outside.png"))
-	AppState.set_setting("cabin_light", "day")
+	AppState.set_setting("cabin_time", 12.0)
 	await _secs(2.5)
-	_check(sun.light_energy > dusk_energy and sky != null and sky.sky_top_color.b > 0.6, "Day: a strong sun and a blue sky")
+	_check(sun.light_energy > dusk_energy and float(room.call("get_daylight")) > 0.9, "Noon: a strong sun and full daylight")
 	EventBus.camera_preset_requested.emit(0)
 	await _secs(1.5)
 	await _shot(_out.path_join("cabin_day_loft.png"))
@@ -163,7 +191,12 @@ func _ready() -> void:
 	EventBus.camera_preset_requested.emit(4)
 	await _secs(1.5)
 	await _shot(_out.path_join("cabin_day_deck.png"))
-	AppState.set_setting("cabin_light", "dusk")
+	AppState.set_setting("cabin_day_minutes", 1.0)
+	var h0: float = room.call("get_hour")
+	await _secs(1.0)
+	_check(float(room.call("get_hour")) > h0 + 0.1, "Day length: the clock runs (%.2f -> %.2f)" % [h0, float(room.call("get_hour"))])
+	AppState.set_setting("cabin_day_minutes", 0.0)
+	AppState.set_setting("cabin_time", 17.5)
 
 	# Gather in: Den. The room reloads; fetch the new one.
 	AppState.set_setting("cabin_view", "den")

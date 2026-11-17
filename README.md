@@ -1498,13 +1498,17 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (first pass: the layout only, in plain colours; textures, better furniture,
-  weather and the real outdoor scenes come later): a cozy log cabin with a tall great room. A
-  stone chimney stands in the middle of a two-storey glass wall, with the big screen above the
-  mantel, so every seat sees the fire, the screen and the view outside at once.
+- **Log Cabin** (weather and the real outdoor scenes come later): a cozy log cabin with a tall
+  great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
+  screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
-    a fire table. Outside is a simple grassy clearing with trees for now.
+    a fire table. Outside is a grassy clearing ringed by forest for now (the planned outdoor
+    scenes will replace it).
+  - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
+    hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
+    and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
+    bookshelves and a quilted bed in the loft.
   - A small **den** opens off the left wall: low log beams, its own stone fireplace with a
     heavy mantel and a smaller screen, a leather sofa, an armchair and a lamp.
   - Chat sits on 30 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
@@ -1512,17 +1516,26 @@ Included rooms:
   - A podium room: in the great room the four presenters sit in leather armchairs either side
     of the fireplace (see *Presenters*). No webcam frame: the webcam uses the corner overlay.
   - Room tab:
+    - **Set detail**: **Simple** (flat colours and plain trees, lightest for a slow graphics
+      card) or **Detailed** (photo textures on the logs, stone, floors, roof, leather and wool
+      with their bumps, the warm room reflected in the glass, and a forest of leaf trees, ferns
+      and grass outside). **Auto** follows **Graphics quality** (Low = Simple). Each PC in a
+      co-stream picks its own.
     - **Fire**: the fireplaces, from out (0%) through a cozy fire (100%) to roaring (200%).
+      The coals glow and fade slowly, and smoke rises from both chimneys while the fires burn.
       The fire's light flickers gently (steady in photosensitive-safe mode) and dims with the
       house lights during a video.
     - **Lamps**: the table lamps, the chandelier, the dining lamp, the den's lamps and the
-      lantern by the back door. They also follow **House lights**, and burn lower by day.
-    - **Light outside**: **Day**, **Dusk** or **Night** outside the glass (the sun or the
-      moon, the sky's colours and how much light comes in).
+      lantern by the back door. Their shades glow. They also follow **House lights**, and burn
+      lower by day.
     - **Gather in**: **Great room** or **Den**. **Den** sits the presenters on the den's sofa
       (three) and armchair (one), makes the den's screen the main one (the big screen shows
       the same picture) and puts the den's cameras first. Changing it reloads the room. Chat
       keeps its seats in the great room.
+    - **Time of day** (0 to 24 h; 17.5 = golden hour, 21 = a moonlit night) and **Day length**
+      (let the clock run: minutes per day, 0 = stopped): the Lakeside Campfire's sky, with the
+      sun and moon moving across it. The lamps come up as it gets dark.
+    - **Clouds** and **Stars**: how cloudy the sky is and how bright the stars are at night.
   - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
     at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
     glass gable, the front door, the dining table and close on the screen. With **Gather in:
@@ -1530,9 +1543,12 @@ Included rooms:
     sofa, the armchair and from the hearth looking back.
   - Reaction targets: `!tomato fireplace` (the den's fire when gathered in the den),
     `chandelier`, `deck`.
-  - In a co-stream the four Room tab settings are shared, so everyone sits by the same fire.
+  - In a co-stream the Room tab settings are shared (all but **Set detail**), so everyone sits by
+    the same fire under the same sky.
   - Built in code when the room loads (`rooms/log_cabin/cabin_builder.gd`); there is no
-    Blender model.
+    Blender model. The photo textures in `rooms/log_cabin/textures/` come from
+    [Poly Haven](https://polyhaven.com) (CC0, free for any use), made by `make_textures.py`
+    there; the rug pattern is drawn by that script.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
@@ -1754,6 +1770,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- `rooms/log_cabin/textures/` (logs, chinking, floors, ceiling, stone, roof, deck, leather, wool, fleece and bark pictures made from Poly Haven photos): CC0. The rug pattern is drawn by the project's own script.
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
 - `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.

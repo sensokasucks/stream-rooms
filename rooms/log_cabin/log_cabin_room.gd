@@ -2,43 +2,39 @@ extends Room
 ## Log Cabin: a cozy cabin with a vaulted great room. A stone chimney stands in the middle of a
 ## two-storey glass wall, with the big screen above the mantel, so every seat sees the fire, the
 ## screen and the view outside at once. A loft runs across the back; a deck lies beyond the glass.
-##   - FIRST PASS (2026-11-17): layout only, flat colours, placeholder clearing outside. The
-##     plan (weather, the four outdoor scenes as their own rooms, shaders, CC0 textures) is in
-##     Sen's "Log Cabin room plan" doc; the layout mockup is in the project files (log-cabin/).
+##   - The plan (weather, the four outdoor scenes as their own rooms) is in Sen's "Log Cabin room
+##     plan" doc; mockups and screenshots are in the project files (log-cabin/).
 ##   - The set is built in code by cabin_builder.gd when the room loads (there is no Blender
-##     model). This script keeps what it hands back and runs the fire, the lamps and the light.
+##     model). This script keeps what it hands back and runs the fire, the lamps, the clock and
+##     the sky, the chimney smoke and the Set detail switch.
 ##   - Fire ("cabin_fire", 0..2): flames in the firebox (the Forge Hall's fire.gdshader), glowing
-##     coals, and a flickering light that warms the room.
+##     coals (cabin_embers.gdshader), a flickering light that warms the room and smoke from both
+##     chimneys.
 ##   - Lamps ("cabin_lamps"): the table lamps, chandelier, dining pendant and back-door lantern
 ##     are the room's house lights (LAMP_ markers); they dim for a video like any room's, and burn
-##     low by day.
-##   - Light outside ("cabin_light": day / dusk / night): the sun or moon, the sky's colours and
-##     the ambient light. A stand-in until the plan's time of day and weather are built.
+##     low by day. Their shades glow with them (cabin_shade.gdshader).
+##   - Time of day ("cabin_time", hours; "cabin_day_minutes" lets the clock run), Clouds and Stars
+##     ("cabin_clouds", "cabin_stars"): the Lakeside Campfire's sky (camp_sky.gdshader, set in
+##     room_info.tres) with the same sun and moon paths, the sun / moon lamp and the ambient light
+##     (_apply_time, ported from the Drive-In's).
 ##   - Gather in ("cabin_view": great_room / den): where the presenters sit. "den" puts them on
 ##     the den's sofa and armchair (Sen's den picture), makes the den's screen the main one and
 ##     its cameras the first ones. The set is built for one view, so this setting reloads the
 ##     room (reload_keys); the great room's screen then mirrors the den's.
-## The four settings are shared in a co-stream (NetSession.SHARED_CABIN, with the "room" group).
+##   - Set detail ("cabin_detail", each PC's own, never shared): Simple = flat vertex colours and
+##     plain cone trees; Detailed = the CC0 photo textures (textures/, from make_textures.py) with
+##     their bumps, leaf-card trees, ferns and grass round the clearing (the campfire's), and a
+##     reflection probe so the glass and the polished wood show the warm room at night.
+## All cabin_ settings but cabin_detail are shared in a co-stream (NetSession.SHARED_CABIN, with the
+## "room" group).
 
 const Builder := preload("res://rooms/log_cabin/cabin_builder.gd")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 ## The flames of each fire: [metres sideways, metres out into the room (+) / into the firebox (-),
 ## size as a share of flame_size], in the fire marker's own axes (the den's fire faces +X).
 const FIRE_FLAMES: Array = [[0.0, 0.0, 1.0], [-0.22, 0.05, 0.75], [0.24, 0.04, 0.7], [-0.1, -0.08, 0.6], [0.12, -0.06, 0.55]]
-## The looks for "cabin_light": sun / moon direction (the way the light travels), its colour and
-## energy, the sky's top and horizon colours, the ambient light's energy, and how strong the
-## lamps burn (share of full) because of the daylight.
-const LIGHTS: Dictionary = {
-	"day": {"dir": Vector3(0.35, -0.75, 0.55), "color": Color(1.0, 0.96, 0.9), "energy": 1.25,
-		"top": Color(0.32, 0.52, 0.85), "horizon": Color(0.72, 0.8, 0.88), "ambient": 0.55, "lamps": 0.35},
-	"dusk": {"dir": Vector3(0.55, -0.16, 0.82), "color": Color(1.0, 0.58, 0.32), "energy": 0.8,
-		"top": Color(0.22, 0.26, 0.5), "horizon": Color(0.95, 0.55, 0.36), "ambient": 0.35, "lamps": 0.85},
-	"night": {"dir": Vector3(-0.3, -0.6, 0.72), "color": Color(0.55, 0.66, 1.0), "energy": 0.14,
-		"top": Color(0.015, 0.02, 0.06), "horizon": Color(0.05, 0.07, 0.13), "ambient": 0.18, "lamps": 1.0},
-}
-## Name the sky material carries in room_info.tres: the light is only ever changed on a sky with
-## this name, never on another room's (the Environment is shared by the whole app).
-const SKY_NAME: String = "LogCabinSky"
+const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
+const CAMP_TEX := "res://rooms/campfire/textures/"
 ## The den's fire next to the big one: share of the light's energy and range.
 const DEN_FIRE_SHARE: float = 0.55
 
@@ -55,6 +51,24 @@ const DEN_FIRE_SHARE: float = 0.55
 @export_range(0.0, 0.3) var fire_flicker: float = 0.12
 ## The fire's light drops to this share while the lights are dimmed for a video.
 @export_range(0.0, 1.0) var fire_dimmed: float = 0.5
+## Puffs of smoke rising from each chimney at Fire 100% (more when roaring, none when out).
+@export var smoke_puffs: int = 18
+
+@export_group("Sun and sky")
+## The sun's and the moon's light (the moon's is a cool blue).
+@export var sun_energy: float = 1.2
+@export var moon_energy: float = 0.14
+@export var moon_color: Color = Color(0.62, 0.7, 0.95)
+## The ambient light by day and by night. Kept low: the cabin is meant to be lit by the fire and
+## the lamps, with the daylight coming in through the glass.
+@export var day_ambient: Color = Color(0.62, 0.66, 0.74)
+@export var day_ambient_energy: float = 0.45
+@export var night_ambient: Color = Color(0.12, 0.13, 0.22)
+@export var night_ambient_energy: float = 0.16
+## How strong the lamps burn by full day (share of full); they come up as it gets dark.
+@export_range(0.0, 1.0) var lamps_by_day: float = 0.35
+## The sky and lights are redrawn when the clock has moved this many hours.
+@export var time_step: float = 0.02
 
 var _parts: Dictionary = {}       # what cabin_builder.gd built (see Builder.build)
 ## Holds what this script draws (the flames). Named "SunShafts" so the app doesn't count them
@@ -65,11 +79,20 @@ var _fire_mats: Array[ShaderMaterial] = []
 var _fire_meshes: Array[MeshInstance3D] = []
 var _fire_lights: Array[OmniLight3D] = []   # one per fire, in the order of _parts["fires"]
 var _fire_strength: Array[float] = []       # each light's share of fire_light_energy
-var _lamps_by_day: float = 1.0    # how strong the lamps burn because of the daylight (LIGHTS[..]["lamps"])
-var _env_drawn: int = 0           # instance id of the Environment the light was last set on
+var _smoke: Array[CPUParticles3D] = []   # one per chimney (Builder's smoke_spots)
+var _smoke_mat: StandardMaterial3D        # the puffs' material, tinted by the daylight
+## Catches the lit room once (and again when the light changes a lot) so the glass and polished
+## surfaces reflect the warm inside instead of the sky. Detailed look only.
+var _probe: ReflectionProbe
+var _probe_day: float = -1.0      # the daylight the probe last caught the room in
+var _hour: float = 17.5           # the room's clock, hours 0..24 (starts at "cabin_time")
+var _hour_drawn: float = -99.0    # the hour the sky was last drawn for
+var _day: float = 0.0             # 0 = night, 1 = full day (from _apply_time)
+var _env_drawn: int = 0           # instance id of the Environment the sky was last drawn on
 var _retired: bool = false        # another room has taken over (retire()): leave the sky alone
 var _time: float = 0.0
 var _last_level: float = -1.0     # the house light level the lamp glow was last set for
+var _last_probe_level: float = -1.0   # the house light level a frame ago (the probe waits for it to settle)
 
 
 func _ready() -> void:
@@ -85,8 +108,11 @@ func _ready() -> void:
 	_sun.directional_shadow_max_distance = 60.0
 	add_child(_sun)
 	_build_fire()
+	_build_smoke()
+	_build_probe()
+	_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
 	EventBus.setting_changed.connect(_on_cabin_setting_changed)
-	_apply_light()
+	_apply_detail()
 	_apply_fire()
 
 
@@ -103,20 +129,30 @@ func retire() -> void:
 	_exit_tree()
 
 
-## Room tab: the fire, the lamps and the light outside.
+## Room tab: the set's detail, the fire, the lamps, where everyone gathers, the hour and the sky.
 func get_controls() -> Array[Dictionary]:
 	return [
 		{"heading": "Log Cabin"},
+		{"key": "cabin_detail", "label": "Set detail", "type": "option",
+			"options": [["auto", "Auto (follows Graphics quality)"], ["low", "Simple"], ["full", "Detailed"]],
+			"tooltip": "How detailed the cabin is drawn on this PC. Detailed: photo textures on the logs, stone, floors, leather and wool with their bumps, reflections of the warm room in the glass, and a forest of leaf trees, ferns and grass outside. Simple: flat colours and plain trees, the lightest for a slow graphics card. Auto picks from Graphics quality: Low = Simple, otherwise Detailed. Each PC in a co-stream chooses its own."},
 		{"key": "cabin_fire", "label": "Fire", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "The fire in the fireplace: 0 = out, 100% = a cozy fire, 200% = roaring."},
+			"tooltip": "The fires in the fireplaces: 0 = out, 100% = a cozy fire, 200% = roaring. Smoke rises from the chimneys while they burn."},
 		{"key": "cabin_lamps", "label": "Lamps", "type": "check",
-			"tooltip": "The table lamps, chandelier, dining lamp and the lantern by the back door."},
-		{"key": "cabin_light", "label": "Light outside", "type": "option",
-			"options": [["day", "Day"], ["dusk", "Dusk"], ["night", "Night"]],
-			"tooltip": "Daylight, a sunset glow or a moonlit night outside the glass. (Weather and a running clock come later.)"},
+			"tooltip": "The table lamps, chandelier, dining lamp and the lantern by the back door. They burn lower by day."},
 		{"key": "cabin_view", "label": "Gather in", "type": "option",
 			"options": [["great_room", "Great room"], ["den", "Den"]],
 			"tooltip": "Where the presenters sit. Great room: the armchairs by the big fireplace. Den: the sofa and armchair in the small den by its own fire, with the den's screen and cameras first. Changing it reloads the room."},
+		{"heading": "Time of day"},
+		{"key": "cabin_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
+			"tooltip": "The hour outside the cabin, 0 to 24. 6 = sunrise, 12 = noon, 17.5 = golden hour, 18 = sunset, 21 = a moonlit night. The lamps come up as it gets dark."},
+		{"key": "cabin_day_minutes", "label": "Day length", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d min", "zero": "Clock stopped",
+			"tooltip": "Lets the clock run: how many minutes a full day and night takes, starting from the Time of day. 0 = the clock stands still."},
+		{"heading": "Sky"},
+		{"key": "cabin_clouds", "label": "Clouds", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much cloud drifts across the sky. 0% = a clear sky, 200% = overcast. (Rain, storms, fog and snow come with the weather.)"},
+		{"key": "cabin_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How bright the stars and the Milky Way are at night. 0% = none."},
 	]
 
 
@@ -130,22 +166,28 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 	match key:
 		"cabin_fire":
 			_apply_fire()
-		"cabin_light":
-			_apply_light()
+		"cabin_time":
+			_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
+		"cabin_clouds", "cabin_stars", "photosensitive_safe":
+			_hour_drawn = -100.0        # _run_clock redraws the sky next frame
+		"cabin_lamps":
+			_probe_day = -1.0           # the reflections catch the room again
+		"cabin_detail", "graphics_quality":
+			_apply_detail()
 
 
 func _process(delta: float) -> void:
 	super._process(delta)
 	_time += delta
 	_run_fire()
+	_run_clock(delta)
 	if not is_equal_approx(_level, _last_level):
 		_last_level = _level
-		(_parts["glow_mat"] as StandardMaterial3D).emission_energy_multiplier = 2.2 * _level
-	# the app swaps the Environment when a graphics setting changes: put the light back on the new one
-	if not _retired and is_inside_tree():
-		var env := get_world_3d().environment
-		if env and env.get_instance_id() != _env_drawn:
-			_apply_light()
+		(_parts["glow_mat"] as ShaderMaterial).set_shader_parameter("level", _level)
+	# the reflections are caught again when the light has changed a lot (dusk falling, lamps off)
+	if _probe and _probe.visible and absf(_day - _probe_day) > 0.15 and absf(_level - _last_probe_level) < 0.01:
+		_recapture()
+	_last_probe_level = _level
 
 
 # ── The lamps ────────────────────────────────────────────────
@@ -154,34 +196,146 @@ func _process(delta: float) -> void:
 func _target_level() -> float:
 	if not bool(AppState.get_setting("cabin_lamps")):
 		return 0.0
-	return super._target_level() * _lamps_by_day
+	return super._target_level() * lerpf(1.0, lamps_by_day, _day)
 
 
-# ── The light outside ────────────────────────────────────────
-## "cabin_light": points the sun / moon, colours the sky (only this room's own sky, SKY_NAME) and
-## sets the ambient light and how strong the lamps burn.
-func _apply_light() -> void:
-	var look: Dictionary = LIGHTS.get(String(AppState.get_setting("cabin_light")), LIGHTS["dusk"])
-	var dir := (look["dir"] as Vector3).normalized()
-	_sun.transform = Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(0.0, 10.0, 0.0))
-	_sun.light_color = look["color"]
-	_sun.light_energy = float(look["energy"])
-	_lamps_by_day = float(look["lamps"])
-	if _retired or not is_inside_tree():
+# ── Set detail ───────────────────────────────────────────────
+## The look the set is drawn in on this PC: "low" (Simple) or "full" (Detailed). From
+## "cabin_detail" (Room tab > Set detail, each PC's own); its "auto" follows "graphics_quality":
+## low = "low", anything else = "full". The same rule as the Drive-In's and the campfire's.
+func detail_level() -> String:
+	var choice := String(AppState.get_setting("cabin_detail"))
+	if choice in ["low", "full"]:
+		return choice
+	return "low" if String(AppState.get_setting("graphics_quality")) == "low" else "full"
+
+
+## Shows the Simple or the Detailed look: `detail` on every textured material (Builder's
+## detail_mats), the plain cone trees or the leaf-card forest, and the reflection probe. Called
+## when the room loads and whenever "cabin_detail" or "graphics_quality" changes. Both looks were
+## built when the room loaded, so nothing is built or loaded here.
+func _apply_detail() -> void:
+	var detailed := detail_level() == "full"
+	for m: ShaderMaterial in _parts["detail_mats"]:
+		m.set_shader_parameter("detail", 1.0 if detailed else 0.0)
+	(_parts["simple_trees"] as Node3D).visible = not detailed
+	(_parts["detailed_plants"] as Node3D).visible = detailed
+	if _probe:
+		_probe.visible = detailed
+		_probe_day = -1.0
+
+
+# ── Reflections ──────────────────────────────────────────────
+## A reflection probe that fills the great room (box projection, so the reflections sit where the
+## walls are). It renders once, not every frame; _recapture asks for another picture when the
+## light has changed a lot. Without it the glass would reflect the sky even at night.
+func _build_probe() -> void:
+	_probe = ReflectionProbe.new()
+	_probe.name = "CabinReflections"
+	_probe.update_mode = ReflectionProbe.UPDATE_ONCE
+	_probe.box_projection = true
+	_probe.interior = true          # inside: no sky light added to what it catches
+	_probe.size = Vector3(13.4, 9.0, 10.4)
+	_probe.origin_offset = Vector3.ZERO
+	_probe.max_distance = 40.0
+	_fx.add_child(_probe)
+	_probe.position = Vector3(0.0, 4.4, 4.2)
+
+
+## Has the probe catch the room again (setting a property makes a once-only probe render anew).
+func _recapture() -> void:
+	_probe_day = _day
+	_probe.intensity = 1.0 if _probe.intensity != 1.0 else 0.999
+
+
+# ── Time of day and the sky ──────────────────────────────────
+## Called every frame. Moves the clock on while "cabin_day_minutes" is above 0, and redraws the
+## sky and lights when the hour has moved by time_step or the app swapped the Environment (a
+## graphics setting changed).
+func _run_clock(delta: float) -> void:
+	if _retired:
 		return
-	var env := get_world_3d().environment
-	if env == null:
-		return
-	_env_drawn = env.get_instance_id()
-	var sky_mat := env.sky.sky_material as ProceduralSkyMaterial if env.sky else null
-	if sky_mat == null or sky_mat.resource_name != SKY_NAME:
-		return
-	sky_mat.sky_top_color = look["top"]
-	sky_mat.sky_horizon_color = look["horizon"]
-	sky_mat.ground_horizon_color = (look["horizon"] as Color).darkened(0.2)
-	sky_mat.ground_bottom_color = (look["top"] as Color).darkened(0.5)
-	env.ambient_light_energy = float(look["ambient"])
-	env.fog_light_color = (look["horizon"] as Color).darkened(0.1)
+	var day_minutes := float(AppState.get_setting("cabin_day_minutes"))
+	if day_minutes > 0.0:
+		_hour = fposmod(_hour + delta * 24.0 / (day_minutes * 60.0), 24.0)
+	var env := get_world_3d().environment if is_inside_tree() else null
+	var env_id := env.get_instance_id() if env else 0
+	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn:
+		_hour_drawn = _hour
+		_env_drawn = env_id
+		_apply_time(env)
+
+
+## The hour the room's clock shows now, 0..24 (for tests; "cabin_time" only says where it started).
+func get_hour() -> float:
+	return _hour
+
+
+## 0 = night, 1 = full day, at the hour last drawn (for tests).
+func get_daylight() -> float:
+	return _day
+
+
+## Where the sun is at an hour: a unit vector pointing AT it. The Lakeside Campfire's path
+## (campfire_room.gd sun_at): it rises on the right (+X), is highest at noon and sets to the left.
+## The cabin's glass faces -Z, so the low evening sun comes in from the front left.
+static func sun_at(hour: float) -> Vector3:
+	var a := (hour - 6.0) / 12.0 * PI
+	return Vector3(cos(a), sin(a), -0.5 * cos(a) - 0.25).normalized()
+
+
+## Where the moon is: it crosses the sky in front of the cabin while the sun is down.
+static func moon_at(hour: float) -> Vector3:
+	var b := (hour - 18.0) / 12.0 * PI
+	return Vector3(cos(b) * 0.8, sin(b) * 0.75 + 0.12, -0.62).normalized()
+
+
+## Everything that follows the hour (_hour): the sky shader's uniforms, the sun / moon lamp, the
+## ambient light, the haze and the smoke's colour. env = the Environment in use; it is only
+## touched when it is this room's own (its sky uses camp_sky.gdshader), never another room's.
+func _apply_time(env: Environment) -> void:
+	var sun := sun_at(_hour)
+	var moon := moon_at(_hour)
+	_day = smoothstep(-0.12, 0.22, sun.y)
+	var dusk := (1.0 - smoothstep(0.0, 0.4, absf(sun.y))) * smoothstep(-0.3, -0.05, sun.y)
+	var clouds := clampf(float(AppState.get_setting("cabin_clouds")), 0.0, 2.0)
+	var turn := global_basis.orthonormalized()                   # the shaders work in world space
+	# the horizon colour camp_sky.gdshader mixes, for the haze
+	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.5, 0.68, 0.92), _day).lerp(Color(0.92, 0.5, 0.38), dusk * 0.6)
+	var haze := hor.lerp(Color(0.6, 0.66, 0.74) * (0.06 + 0.94 * _day), 0.4)
+	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
+		var sky := env.sky.sky_material as ShaderMaterial
+		sky.set_shader_parameter("cloud_noise", load(CAMP_TEX + "sky_noise.png"))
+		sky.set_shader_parameter("sun_dir", turn * sun)
+		sky.set_shader_parameter("moon_dir", turn * moon)
+		sky.set_shader_parameter("day", _day)
+		sky.set_shader_parameter("dusk", dusk)
+		sky.set_shader_parameter("twinkle", 0.0 if bool(AppState.get_setting("photosensitive_safe")) else 1.0)
+		sky.set_shader_parameter("cloud_amount", clouds)
+		sky.set_shader_parameter("star_amount", float(AppState.get_setting("cabin_stars")))
+		sky.set_shader_parameter("aurora_amount", 0.0)
+		sky.set_shader_parameter("haze", 0.35)
+		env.ambient_light_color = night_ambient.lerp(day_ambient, _day).lerp(Color(0.66, 0.46, 0.42), dusk * 0.35)
+		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
+		env.fog_light_color = haze
+		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day)
+	# the sun by day, the moon by night; cloud dims both
+	var light_dir := sun
+	var light_col := Color(1.0, 0.55, 0.25).lerp(Color(1.0, 0.96, 0.88), smoothstep(0.05, 0.45, sun.y))
+	var energy := sun_energy * smoothstep(0.0, 0.2, sun.y)
+	if sun.y <= 0.02:
+		light_dir = moon
+		light_col = moon_color
+		energy = moon_energy * smoothstep(0.05, 0.25, moon.y)
+	energy *= lerpf(1.0, 0.45, clampf(clouds - 1.0, 0.0, 1.0))
+	_sun.light_color = light_col
+	_sun.light_energy = energy
+	_sun.visible = energy > 0.002
+	var world_dir := turn * light_dir
+	_sun.global_basis = Basis.looking_at(-world_dir, Vector3.UP if absf(world_dir.y) < 0.99 else Vector3.FORWARD)
+	if _smoke_mat:
+		# pale grey smoke by day, barely-there blue-grey by night
+		_smoke_mat.albedo_color = Color(0.2, 0.21, 0.25).lerp(Color(0.85, 0.84, 0.82), _day).lerp(Color(0.9, 0.7, 0.6), dusk * 0.4)
 
 
 # ── The fire ─────────────────────────────────────────────────
@@ -224,11 +378,79 @@ func _build_fire() -> void:
 		_fire_strength.append(share)
 
 
-## "cabin_fire" changed: show or hide the flames (their size follows in _run_fire).
+## Smoke from each chimney top (Builder's smoke_spots): a few soft puffs that rise slowly, lean
+## away on the breeze, swell and fade. CPU particles like the campfire's (they work the same on
+## every renderer); slow on purpose. _apply_fire starts and stops them, _apply_time tints them.
+func _build_smoke() -> void:
+	_smoke_mat = StandardMaterial3D.new()
+	_smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_smoke_mat.vertex_color_use_as_albedo = true
+	_smoke_mat.albedo_texture = _soft_puff()
+	_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	_smoke_mat.billboard_keep_scale = true
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.25))
+	grow.add_point(Vector2(1.0, 1.0))
+	var fade := Gradient.new()
+	fade.set_color(0, Color(1.0, 1.0, 1.0, 0.0))
+	fade.add_point(0.12, Color(1.0, 1.0, 1.0, 0.32))
+	fade.set_color(fade.get_point_count() - 1, Color(1.0, 1.0, 1.0, 0.0))
+	var spots: Array[Vector3] = _parts["smoke_spots"]
+	for n in spots.size():
+		var p := CPUParticles3D.new()
+		p.name = "ChimneySmoke"
+		p.amount = smoke_puffs
+		p.lifetime = 9.0
+		p.preprocess = 9.0                # already rising when the room appears
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		p.emission_sphere_radius = 0.15
+		p.direction = Vector3.UP
+		p.spread = 8.0
+		p.gravity = Vector3(0.12, 0.05, 0.06)   # the breeze: a slow lean to the side, a little lift
+		p.initial_velocity_min = 0.35
+		p.initial_velocity_max = 0.55
+		p.scale_amount_min = 0.7
+		p.scale_amount_max = 1.1
+		p.scale_amount_curve = grow
+		p.color_ramp = fade
+		var puff := QuadMesh.new()
+		puff.size = Vector2(1.8, 1.8) * (1.0 if n == 0 else 0.75)
+		puff.material = _smoke_mat
+		p.mesh = puff
+		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		p.visibility_aabb = AABB(Vector3(-4.0, -1.0, -4.0), Vector3(12.0, 9.0, 8.0))
+		_fx.add_child(p, true)
+		p.global_position = spots[n]
+		_smoke.append(p)
+
+
+## A soft round puff picture (white, fading out to the edge) for the smoke.
+static func _soft_puff() -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, Color(1.0, 1.0, 1.0, 1.0))
+	g.add_point(0.45, Color(1.0, 1.0, 1.0, 0.55))
+	g.set_color(g.get_point_count() - 1, Color(1.0, 1.0, 1.0, 0.0))
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.fill = GradientTexture2D.FILL_RADIAL
+	t.fill_from = Vector2(0.5, 0.5)
+	t.fill_to = Vector2(1.0, 0.5)
+	t.width = 64
+	t.height = 64
+	return t
+
+
+## "cabin_fire" changed: show or hide the flames (their size follows in _run_fire) and start or
+## stop the chimney smoke (more puffs for a bigger fire).
 func _apply_fire() -> void:
 	var lit := float(AppState.get_setting("cabin_fire")) > 0.005
 	for mi in _fire_meshes:
 		mi.visible = lit
+	var amount := clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
+	for p in _smoke:
+		p.emitting = lit
+		p.amount = maxi(4, int(round(float(smoke_puffs) * clampf(amount, 0.3, 2.0))))
 
 
 ## Called every frame: the flames, coals and lights of both fires follow the Fire setting; the light wavers a
@@ -237,7 +459,7 @@ func _run_fire() -> void:
 	var amount := clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
 	for m in _fire_mats:
 		m.set_shader_parameter("amount", amount)
-	(_parts["ember_mat"] as StandardMaterial3D).emission_energy_multiplier = 2.0 * amount
+	(_parts["ember_mat"] as ShaderMaterial).set_shader_parameter("amount", amount)
 	var lit := amount > 0.005
 	for light in _fire_lights:
 		light.visible = lit
