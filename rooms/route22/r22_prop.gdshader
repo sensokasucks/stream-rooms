@@ -9,9 +9,13 @@ render_mode cull_disabled;
 //     0 plain paint    1 wood (grain, textures from the Lakeside Campfire)    2 rock
 //     3 rusty metal    4 cloth    5 a light (neon, a lit window, a lamp: glows by `glow`)
 //     6 chrome          7 glass (dark and glossy)    8 sand (a red sand drift)
-//     9 car paint (glossy, a little metallic: the vehicle models' bodies)
-// With `detail` at 1 wood, rock, rust, cloth and sand get a photo or noise grain (laid on from
-// three sides by object position, 0.5 = no change). Lights glow with `glow` (r22_desert.gd sets
+//     9 car paint (the vehicle models' bodies: a clear coat over slightly metallic paint, road
+//       dust on the lower panels)
+//     10 tyre rubber    11 leather (seats, a rider's jacket)
+//     12 ribbed sheet metal (the semi's trailer)    13 slatted siding (the motorhome, a coach's skirt)
+// With `detail` at 1 wood, rock, rust, cloth, sand and the vehicles' rubber, leather, sheet
+// metal and siding get a photo or noise grain (laid on from three sides by object position,
+// 0.5 = no change), and the vehicles gather dust (not in the wet). Lights glow with `glow` (r22_desert.gd sets
 // it from the hour and the Neon tick box) and buzz faintly unless `flicker` is 0 (photosensitive-
 // safe mode). Everything bends with the road and darkens / shines in the wet
 // (r22_common.gdshaderinc).
@@ -24,6 +28,13 @@ uniform sampler2D tex_sand : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
 // rusty painted metal (textures/prop_rust.jpg): the rust blotches' colour on the Detailed look
 uniform sampler2D tex_rust : filter_linear_mipmap_anisotropic, repeat_enable;
+// the vehicle models' photo grains (textures/prop_*.jpg, "detail" textures: mid grey = no change)
+uniform sampler2D tex_rubber : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D tex_leather : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D tex_panel : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D tex_siding : filter_linear_mipmap_anisotropic, repeat_enable;
+// the colour of the road dust on the vehicles' lower panels
+uniform vec3 dust_color : source_color = vec3(0.50, 0.33, 0.22);
 // How strongly the lights (MAT 5) glow: 0 by day with the neon off, up to about 4 at night.
 uniform float glow = 0.0;
 // 1 = the neon buzzes (a slight, slow waver), 0 = steady (photosensitive-safe mode).
@@ -70,8 +81,17 @@ void fragment() {
 	vec3 col = COLOR.rgb;
 	float rough = 0.8;
 	float metal = 0.0;
-	vec3 emit = vec3(0.0);
+	float coat = 0.0;                                  // clear coat (car paint)
+	float spec = 0.5;
+	// Road dust for the vehicle materials: thick at the sills, gone by the windows (o_pos.y is
+	// the height above the road: the vehicles are built standing on y = 0), blotchy, washed off
+	// by rain. 0 on the Low look.
+	float dust = 0.0;
 	int m = int(mat_id + 0.5);
+	if (detail > 0.5 && (m == 7 || m >= 9)) {
+		dust = smoothstep(1.3, 0.2, o_pos.y) * (0.25 + 0.75 * noise_sides(o_pos * 0.7, n, 1.0).b) * (1.0 - wet);
+	}
+	vec3 emit = vec3(0.0);
 	if (m == 1) {
 		if (detail > 0.5) {
 			col *= three_sides(tex_wood, o_pos, n, 1.3) * 2.0;
@@ -107,12 +127,59 @@ void fragment() {
 		metal = 1.0;
 		rough = 0.18;
 		col = mix(col, vec3(0.8), 0.3);
+		if (detail > 0.5) {
+			// not factory fresh: faint pitting dulls it in patches
+			rough = 0.10 + 0.14 * noise_sides(o_pos * 3.0, n, 1.0).a;
+		}
 	} else if (m == 7) {
 		rough = 0.05;
 		col *= 0.4;
+		spec = 0.9;
+		// a film of dust dulls the lower edge of the glass
+		col = mix(col, dust_color * 0.6, dust * 0.25);
+		rough = mix(rough, 0.5, dust * 0.4);
 	} else if (m == 9) {
 		rough = 0.3;
 		metal = 0.12;
+		if (detail > 0.5) {
+			// metal flake under a clear coat; dust takes the shine off the lower panels
+			float flake = noise_sides(o_pos * 9.0, n, 1.0).a;
+			col *= 0.92 + 0.16 * flake;
+			metal = 0.25 + 0.2 * flake;
+			rough = 0.34;
+			coat = 1.0 - dust;
+			col = mix(col, dust_color, dust * 0.55);
+			rough = mix(rough, 0.85, dust * 0.7);
+			metal *= 1.0 - dust;
+		}
+	} else if (m == 10) {
+		rough = 0.85;
+		if (detail > 0.5) {
+			col *= three_sides(tex_rubber, o_pos, n, 0.35) * 2.0;
+			col = mix(col, dust_color * 0.5, dust * 0.5);
+		}
+	} else if (m == 11) {
+		rough = 0.6;
+		if (detail > 0.5) {
+			vec3 grain = three_sides(tex_leather, o_pos, n, 0.45);
+			col *= grain * 2.0;
+			rough = clamp(0.75 - grain.g * 0.5, 0.3, 0.8);   // the creases' ridges shine, the folds don't
+		}
+	} else if (m == 12 || m == 13) {
+		// sheet metal: upright ribs (12) or level slats (13) from the photo, a dull metal shine
+		rough = 0.5;
+		metal = (m == 12) ? 0.35 : 0.15;
+		if (detail > 0.5) {
+			vec3 grain = (m == 12) ? three_sides(tex_panel, o_pos, n, 2.4) : three_sides(tex_siding, o_pos, n, 1.1);
+			// (the slats at half strength: at full they turn a motorhome into a basket)
+			col *= mix(vec3(1.0), grain * 2.0, (m == 12) ? 1.0 : 0.5);
+			// rain streaks down from the roof, dust up from the road
+			float streak = noise_sides(o_pos * vec3(1.0, 0.12, 1.0), n, 1.5).g;
+			col *= 1.0 - 0.18 * smoothstep(0.45, 0.8, streak);
+			col = mix(col, dust_color, dust * 0.5);
+			rough = mix(rough, 0.85, dust * 0.6);
+			metal *= 1.0 - dust;
+		}
 	} else if (m == 8) {
 		if (detail > 0.5) {
 			col *= three_sides(tex_sand, o_pos, n, 4.0) * 2.0;
@@ -127,5 +194,8 @@ void fragment() {
 	ALBEDO = col;
 	ROUGHNESS = rough;
 	METALLIC = metal;
+	SPECULAR = spec;
+	CLEARCOAT = coat;
+	CLEARCOAT_ROUGHNESS = 0.06;
 	EMISSION = emit;
 }

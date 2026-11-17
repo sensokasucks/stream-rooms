@@ -41,6 +41,10 @@ const MAT_CHROME: float = 6.0
 const MAT_GLASS: float = 7.0
 const MAT_SAND: float = 8.0
 const MAT_CAR: float = 9.0         # glossy car paint (the vehicle models' bodies)
+const MAT_RUBBER: float = 10.0     # tyres (the vehicle models')
+const MAT_LEATHER: float = 11.0    # their seats, a rider's jacket
+const MAT_PANEL: float = 12.0      # ribbed sheet metal (the semi's trailer)
+const MAT_SIDING: float = 13.0     # slatted siding (the motorhome's house, a coach's bright skirt)
 
 ## The road: lanes are 3.6 m, so the paint's edge lines sit at ±3.6 and the paved edge at ±3.75;
 ## gravel to ±SHOULDER. Nothing standing may come closer to the middle than CLEAR (the Cruise's
@@ -290,6 +294,8 @@ static func prop_material(kit: Dictionary, sway: float) -> ShaderMaterial:
 	m.set_shader_parameter("sway", sway)
 	m.set_shader_parameter("tex_wood", load(TEX + "detail_planks_weathered.jpg"))
 	m.set_shader_parameter("tex_rust", load(TEX + "prop_rust.jpg"))
+	for part: String in ["rubber", "leather", "panel", "siding"]:
+		m.set_shader_parameter("tex_" + part, load(TEX + "prop_%s.jpg" % part))
 	m.set_shader_parameter("tex_rock", load(TEX + "detail_sandstone.jpg"))
 	m.set_shader_parameter("tex_fabric", load(CAMP_TEX + "detail_fabric.jpg"))
 	m.set_shader_parameter("tex_sand", load(TEX + "ground_sand.jpg"))

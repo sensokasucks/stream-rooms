@@ -106,11 +106,14 @@ static func build_model(kind: String, b: Geo.Buf, paint: Color, opts: Dictionary
 		"chrome": [Geo.MAT_CHROME, bright], "hub": [Geo.MAT_CHROME, bright], "glass": [Geo.MAT_GLASS, Color(0.3, 0.35, 0.4)],
 		"lamp_front": [Geo.MAT_LIGHT, Color(1.0, 0.95, 0.85)], "lamp_tail": [Geo.MAT_LIGHT, Color(0.9, 0.08, 0.05)],
 		"amber": [Geo.MAT_LIGHT, Color(1.0, 0.55, 0.1)],
-		"tyre": [Geo.MAT_PAINT, dark], "dark": [Geo.MAT_PAINT, dark], "pad": [Geo.MAT_PAINT, dark], "carpet": [Geo.MAT_PAINT, dark],
-		"seat": [Geo.MAT_PAINT, dark], "whitewall": [Geo.MAT_PAINT, pale], "white": [Geo.MAT_PAINT, pale],
-		"leather": [Geo.MAT_PAINT, Color(0.88, 0.84, 0.76)], "plate": [Geo.MAT_PAINT, Color(0.95, 0.8, 0.2)],
-		"cream": [Geo.MAT_CAR, Color(0.92, 0.88, 0.78)], "coach": [Geo.MAT_CAR, Color(0.93, 0.93, 0.92)],
-		"trailer": [Geo.MAT_PAINT, trailer], "jacket": [Geo.MAT_CLOTH, jacket], "jeans": [Geo.MAT_CLOTH, Color(0.12, 0.15, 0.25)],
+		"tyre": [Geo.MAT_RUBBER, Color(0.07, 0.07, 0.075)], "dark": [Geo.MAT_PAINT, dark], "pad": [Geo.MAT_LEATHER, dark],
+		"carpet": [Geo.MAT_CLOTH, dark], "seat": [Geo.MAT_LEATHER, Color(0.08, 0.07, 0.065)],
+		"whitewall": [Geo.MAT_RUBBER, pale], "white": [Geo.MAT_PAINT, pale],
+		"leather": [Geo.MAT_LEATHER, Color(0.88, 0.84, 0.76)], "plate": [Geo.MAT_PAINT, Color(0.95, 0.8, 0.2)],
+		# the sedan's two-tone roof and the motorhome's cab; the motorhome's slatted house; the coach's body and bright fluted skirt
+		"ivory": [Geo.MAT_CAR, Color(0.92, 0.88, 0.78)], "cream": [Geo.MAT_SIDING, Color(0.92, 0.88, 0.78)],
+		"coach": [Geo.MAT_CAR, Color(0.93, 0.93, 0.92)], "fluted": [Geo.MAT_SIDING, Color(0.85, 0.86, 0.88)],
+		"trailer": [Geo.MAT_PANEL, trailer], "jacket": [Geo.MAT_LEATHER, jacket], "jeans": [Geo.MAT_CLOTH, Color(0.12, 0.15, 0.25)],
 	}
 	_copy_model(b, model, looks)
 	if model == "pickup":
