@@ -1,7 +1,9 @@
 extends Node3D
 ## The Route 22 Cruise's car: the red woody convertible the co-stream guests ride in (our own
-## design in the style of Sen's reference sheet; built by r22_vehicles.gd "woody"). It never moves:
-## the road slides under it (r22_trip.gd). This node gives it its good looks and its life:
+## design in the style of Sen's reference sheet). The model is models/woody.glb, made by
+## models/make_woody.py with Blender; its material names pick the looks in _materials() and its
+## empty marker nodes say where the wheels, seats and lamps are (see that script's header).
+## It never moves: the road slides under it (r22_trip.gd). This node gives it its looks and life:
 ##   - its own materials: clear-coated red paint, varnished wood panels in pale trim, chrome,
 ##     red leather, whitewall tyres, a windscreen you can see through,
 ##   - wheels that turn at the road's speed,
@@ -14,7 +16,8 @@ extends Node3D
 ## The plate says ROUTE 22. route22_cruise_room.gd makes it (build) and calls tick() every frame.
 
 const Geo := preload("res://rooms/route22/r22_geo.gd")
-const Vehicles := preload("res://rooms/route22/r22_vehicles.gd")
+## The modelled car (body, one wheel, marker nodes): models/make_woody.py.
+const MODEL := preload("res://rooms/route22/models/woody.glb")
 ## Seconds between the reflection probe's new pictures (Detailed only).
 const PROBE_EVERY: float = 1.2
 
@@ -43,39 +46,48 @@ func build(kit: Dictionary) -> void:
 	_body = Node3D.new()
 	_body.name = "Body"
 	add_child(_body)
-	var parts := ["paint", "wood", "trim", "chrome", "rubber", "white", "leather", "dark", "glass", "lamp_front", "lamp_tail"]
-	var bufs: Dictionary = {}
-	for p: String in parts:
-		bufs[p] = Geo.Buf.new()
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 22
-	var info := Vehicles.build("woody", bufs, Color(0.62, 0.05, 0.04), {"no_wheels": true}, rng)
-	seats.assign(info["seats"])
+	var model := MODEL.instantiate() as Node3D
+	_body.add_child(model)
 	var mats := _materials()
-	for p: String in parts:
-		var b: Geo.Buf = bufs[p]
-		if b.is_empty():
-			continue
-		var mi := Geo.add_mesh(_body, "Car_" + p, b, mats[p], p != "glass")
+	var wheel_mesh: Mesh = null
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		# each surface's material name in the model picks our own material for it
+		for i in mi.mesh.get_surface_count():
+			var from := mi.mesh.surface_get_material(i)
+			var look := String(from.resource_name) if from else ""
+			if mats.has(look):
+				mi.set_surface_override_material(i, mats[look])
 		mi.extra_cull_margin = 2.0
+		if mi.name == "Wheel":
+			wheel_mesh = mi.mesh
+			mi.visible = false          # the pattern for the four turning wheels below
 	_lamp_mat = mats["lamp_front"]
 	_tail_mat = mats["lamp_tail"]
+	var wheel_at: Array[Vector3] = _marks(model, "Wheel_")
+	seats = _marks(model, "Seat_")
+	var front_lights := _marks(model, "LampFront_")
+	var tail_lights := _marks(model, "LampTail_")
 	# the plate's words
-	Geo.add_words(_body, "ROUTE 22", Vector3(0.0, 0.53, 2.775), 0.0, 0.09, Color(0.1, 0.1, 0.12))
-	# the wheels, each its own node so it can turn
-	var wb := {"rubber": Geo.Buf.new(), "white": Geo.Buf.new(), "chrome": Geo.Buf.new()}
-	Vehicles.wheel(wb, Vector3(0.11, 0.0, 0.0), Vehicles.WHEEL_R, 0.22, true)
-	for w: Array in info["wheels"]:
-		var c: Vector3 = w[0]
-		_wheel_r = float(w[1])
+	var plate := model.find_child("PlateWords", true, false) as Node3D
+	if plate:
+		Geo.add_words(_body, "ROUTE 22", plate.position, 0.0, 0.085, Color(0.1, 0.1, 0.12))
+	# the wheels, each its own node so it can turn (the model's wheel faces +X: turned round on the left)
+	_wheel_r = wheel_at[0].y if not wheel_at.is_empty() else 0.36
+	for c in wheel_at:
 		var holder := Node3D.new()
 		holder.name = "Wheel"
 		add_child(holder)
-		holder.position = c - Vector3(0.11 * signf(c.x), 0.0, 0.0)
+		holder.position = c
 		if c.x < 0.0:
-			holder.rotation = Vector3(0.0, PI, 0.0)       # the left wheels' faces point left
-		for p: String in wb:
-			Geo.add_mesh(holder, p, wb[p], mats[p], true)
+			holder.rotation = Vector3(0.0, PI, 0.0)
+		var wm := MeshInstance3D.new()
+		wm.mesh = wheel_mesh
+		for i in wheel_mesh.get_surface_count():
+			var from := wheel_mesh.surface_get_material(i)
+			if from and mats.has(String(from.resource_name)):
+				wm.set_surface_override_material(i, mats[String(from.resource_name)])
+		holder.add_child(wm)
 		_wheels.append(holder)
 	# headlights: two spotlights down the road ahead, glare on the four lamps; glare on the tail lights
 	for x: float in [-0.58, 0.58]:
@@ -91,10 +103,10 @@ func build(kit: Dictionary) -> void:
 		s.position = Vector3(x, 0.7, -2.9)
 		s.rotation = Vector3(deg_to_rad(-4.0), 0.0, 0.0)
 		_beams.append(s)
-	for p: Vector3 in info["front_lights"]:
+	for p: Vector3 in front_lights:
 		# (small: the main camera looks straight into them from in front of the car)
 		_glows.append(Geo.add_glow(kit, _body, p, Color(1.6, 1.5, 1.25), 0.3))
-	for p: Vector3 in info["tail_lights"]:
+	for p: Vector3 in tail_lights:
 		_glows.append(Geo.add_glow(kit, _body, p, Color(1.4, 0.12, 0.08), 0.3))
 	_build_dust()
 	_probe = ReflectionProbe.new()
@@ -116,60 +128,78 @@ func build(kit: Dictionary) -> void:
 		(mi as MeshInstance3D).layers |= REFLECT_LAYER
 
 
-## The car's materials, by part.
+## The positions of the model's marker nodes whose names start with `prefix`, in name order
+## (Wheel_1.., Seat_1.., LampFront_1.., LampTail_1..: models/make_woody.py).
+func _marks(model: Node3D, prefix: String) -> Array[Vector3]:
+	var found: Array[Node] = model.find_children(prefix + "*", "Node3D", true, false)
+	found.sort_custom(func(a: Node, b: Node) -> bool: return String(a.name) < String(b.name))
+	var out: Array[Vector3] = []
+	for n in found:
+		out.append((n as Node3D).position)
+	return out
+
+
+## The car's materials, by the material names in the model.
 func _materials() -> Dictionary:
 	var m: Dictionary = {}
 	var paint := StandardMaterial3D.new()
-	paint.vertex_color_use_as_albedo = true
+	paint.albedo_color = Color(0.62, 0.05, 0.04)
 	paint.metallic = 0.25
 	paint.roughness = 0.32
 	paint.clearcoat_enabled = true
 	paint.clearcoat = 1.0
 	paint.clearcoat_roughness = 0.08
 	m["paint"] = paint
-	var wood := StandardMaterial3D.new()
-	wood.albedo_texture = load(Geo.CAMP_TEX + "detail_planks.jpg")
-	wood.albedo_color = Color(2.0, 2.0, 2.0)          # the grain picture averages 0.5: x2 = no change
-	wood.vertex_color_use_as_albedo = true
-	wood.uv1_triplanar = true
-	wood.uv1_scale = Vector3(0.9, 0.25, 0.9)           # grain stretched along the car
-	wood.roughness = 0.4
-	wood.clearcoat_enabled = true
-	wood.clearcoat = 0.8
-	wood.clearcoat_roughness = 0.15
-	m["wood"] = wood
-	m["trim"] = wood
+	# the wood panels (honey) and their frames (pale maple): the same varnished grain, two tints
+	for key: String in ["wood", "trim"]:
+		var wood := StandardMaterial3D.new()
+		wood.albedo_texture = load(Geo.CAMP_TEX + "detail_planks.jpg")
+		var tint := Color(0.62, 0.36, 0.17) if key == "wood" else Color(0.9, 0.78, 0.55)
+		wood.albedo_color = tint * 2.0                     # the grain picture averages 0.5: x2 = the tint
+		wood.uv1_triplanar = true
+		wood.uv1_scale = Vector3(0.9, 0.25, 0.9)           # grain stretched along the car
+		wood.roughness = 0.4
+		wood.clearcoat_enabled = true
+		wood.clearcoat = 0.8
+		wood.clearcoat_roughness = 0.15
+		m[key] = wood
 	var chrome := StandardMaterial3D.new()
-	chrome.vertex_color_use_as_albedo = true
+	chrome.albedo_color = Color(0.82, 0.82, 0.84)
 	chrome.metallic = 1.0
 	chrome.roughness = 0.12
 	m["chrome"] = chrome
 	var rubber := StandardMaterial3D.new()
-	rubber.vertex_color_use_as_albedo = true
+	rubber.albedo_color = Color(0.03, 0.03, 0.035)
 	rubber.roughness = 0.9
 	m["rubber"] = rubber
-	m["dark"] = rubber
+	var dark := StandardMaterial3D.new()
+	dark.albedo_color = Color(0.05, 0.045, 0.045)
+	dark.roughness = 0.85
+	m["dark"] = dark
 	var white := StandardMaterial3D.new()
-	white.vertex_color_use_as_albedo = true
+	white.albedo_color = Color(0.92, 0.9, 0.85)
 	white.roughness = 0.6
 	m["white"] = white
+	var plate := StandardMaterial3D.new()
+	plate.albedo_color = Color(0.95, 0.8, 0.2)
+	plate.roughness = 0.5
+	m["plate"] = plate
 	var leather := StandardMaterial3D.new()
-	leather.vertex_color_use_as_albedo = true
+	leather.albedo_color = Color(0.5, 0.05, 0.045)
 	leather.roughness = 0.45
 	leather.clearcoat_enabled = true
 	leather.clearcoat = 0.3
 	m["leather"] = leather
 	var glass := StandardMaterial3D.new()
-	glass.vertex_color_use_as_albedo = true
 	glass.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	glass.albedo_color = Color(1.0, 1.0, 1.0, 0.18)
+	glass.albedo_color = Color(0.6, 0.7, 0.75, 0.18)
 	glass.metallic = 0.6
 	glass.roughness = 0.05
 	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m["glass"] = glass
 	for key: String in ["lamp_front", "lamp_tail"]:
 		var lamp := StandardMaterial3D.new()
-		lamp.vertex_color_use_as_albedo = true
+		lamp.albedo_color = Color(1.0, 0.95, 0.82) if key == "lamp_front" else Color(0.9, 0.08, 0.05)
 		lamp.emission_enabled = true
 		lamp.emission = Color(1.0, 0.92, 0.75) if key == "lamp_front" else Color(1.0, 0.08, 0.04)
 		lamp.emission_energy_multiplier = 0.0

@@ -9,7 +9,8 @@ extends RefCounted
 ## middle. build() writes into Bufs (r22_geo.gd) by part, so a caller can give each part its own
 ## material (the Cruise's woody: clear-coat paint, varnished wood, chrome) or put every part into
 ## one Buf with the prop material (traffic, the lot), where each part's MAT_ number picks the look.
-## Callers: r22_car.gd (the woody), r22_traffic.gd, r22_drivein_builder.gd.
+## Callers: r22_traffic.gd, r22_drivein_builder.gd, r22_pieces.gd (the wreck). The Cruise's own
+## woody is no longer built here: r22_car.gd loads the Blender model models/woody.glb.
 
 const Geo := preload("res://rooms/route22/r22_geo.gd")
 
