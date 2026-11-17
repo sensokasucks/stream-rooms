@@ -42,6 +42,12 @@ signal file_stop_requested
 signal file_pause_toggle_requested
 ## Source tab "Just get it ready": download / convert a file or URL into the cache without playing it.
 signal file_ready_requested(input: String)
+## ScreenFeed -> RoomsRemote (Stream Core's video requests): a file or link started playing on the
+## big screen; input is what was asked for (the link as typed, not the cache path).
+signal file_started(input: String)
+## ScreenFeed -> RoomsRemote: that video reached its end by itself (not Stop, not another source).
+## Stream Core's request queue waits for this to start the next approved video (auto-play).
+signal file_finished(input: String)
 ## Source tab "Cancel": stop the running download / convert.
 signal file_cancel_requested
 ## The video download / convert (File or URL): state "downloading" | "converting" | "ready" |
@@ -193,6 +199,11 @@ signal net_camera_moved(peer_id: int, peer_name: String, xform: Transform3D)
 ## Someone else's laser pointer changed (core/laser_pointers.gd draws it). state is the checked wire
 ## packet from NetSession.send_laser: {on: bool, from: Vector3, to: Vector3, color: Color, beam: bool}.
 signal net_laser_changed(peer_id: int, peer_name: String, state: Dictionary)
+## Someone else in the co-stream did something in the room that every PC should show (a room's
+## own game: the Lakeside Campfire's marshmallow sticks and tossed sticks, rooms/campfire/
+## campfire_games.gd). kind and data are the checked wire packet from NetSession.send_room_event:
+## a short name and up to 8 plain values (bool, int, float, String or Vector3).
+signal net_room_event(peer_id: int, peer_name: String, kind: String, data: Array)
 ## Someone left the session (their camera marker goes away).
 signal net_peer_left(peer_id: int)
 ## Someone has to say yes before a connection completes. side "host": a guest called `name` (peer

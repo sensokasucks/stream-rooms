@@ -80,6 +80,10 @@ var _ndi_size: Vector2i = Vector2i.ZERO
 var _ndi_presenters: Dictionary = {}        # presenter -> {"name", "player", "size"}
 var _live_feed: Dictionary = {"role": "off"}   # streaming together: what the sender page should do
 var _prepare_input: String = ""            # loading to stop on the first frame (streaming together)
+## What the streamer (or Stream Core) asked to play: the link or path as typed. Set on a play or
+## prepare request, kept while that video plays; sent with EventBus.file_started / file_finished.
+var _requested_input: String = ""
+var _file_input: String = ""
 var _sync_cooldown: float = 0.0             # seconds before the next sync jump is allowed
 var _progress_wait: float = 0.0             # seconds to the next file_progress report
 var _progress_playing: bool = false
@@ -237,6 +241,7 @@ func _on_file_play_requested(input: String) -> void:
 	if not AppState.net_allows("video", input):
 		return          # streaming together: the session loads it on every PC instead
 	_prepare_input = ""
+	_requested_input = input
 	stop_ndi()
 	stop_spout()
 	video_loader.max_height = AppState.get_setting("max_height")
@@ -248,6 +253,7 @@ func _on_file_prepare_requested(input: String) -> void:
 	stop_ndi()
 	stop_spout()
 	_prepare_input = input
+	_requested_input = input
 	video_loader.max_height = AppState.get_setting("max_height")
 	video_loader.request(input)
 
@@ -286,8 +292,10 @@ func _play_file(path: String) -> void:
 			_on_loader_failed("Couldn't play the converted video.")
 		return
 	_file_path = path
+	_file_input = _requested_input if _requested_input != "" else path
 	_set_source("file")
 	EventBus.screen_texture_changed.emit(video_player.get_video_texture())
+	EventBus.file_started.emit(_file_input)
 	if _prepare_input != "":
 		# streaming together: wait on the first frame until the host starts everyone at once
 		video_player.paused = true
@@ -331,7 +339,10 @@ func _on_file_finished() -> void:
 	if AppState.get_setting("loop_files") and _file_path != "":
 		video_player.play()
 	else:
+		# tell Stream Core first (its request queue may start the next video right away)
+		var was := _file_input
 		stop_file()
+		EventBus.file_finished.emit(was)
 
 
 func _on_file_pause_toggle() -> void:

@@ -945,7 +945,19 @@ func _seat_visible(i: int) -> bool:
 			return bool(s["look"])
 		"crowd":
 			return bool(s["seated"])
-	return bool(s["seated"]) or bool(s.get("filler", false)) or bool(AppState.get_setting("audience_show_empty"))
+	if bool(s["seated"]) or bool(s.get("filler", false)):
+		return true
+	# empty: a dim placeholder with Show empty seats on, unless the room hides them (the
+	# Drive-In, where an empty seat is an empty parking space)
+	var room := get_parent() as Room
+	return bool(AppState.get_setting("audience_show_empty")) and (room == null or room.show_empty_seats)
+
+
+## Whether seat `slot`'s silhouette is showing now: someone sits there, a filler person, or
+## an empty seat's placeholder (see _seat_visible). The Drive-In parks a car under each one
+## that shows (rooms/drive_in/drive_in_cars.gd).
+func is_seat_showing(slot: int) -> bool:
+	return slot >= 0 and slot < _seats.size() and visible and _seat_visible(slot)
 
 
 ## "Filler people in empty main seats": the same share of seats as the crowd fullness,

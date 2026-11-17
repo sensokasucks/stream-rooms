@@ -159,7 +159,9 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 		lights.name = "ScreenLights"
 		_room.add_child(lights)
 		lights.setup(screen, info, screen_feed.get_texture(), _room.get_projector_marker(), _room.get_mirror_screens())
-		if info.standby_card:
+		if info.flat_screen:
+			pass    # Screen Only set: it draws its own stand-by picture (see RoomInfo.flat_screen)
+		elif info.standby_card:
 			# this room hides its screen behind a "please stand by" card instead of a curtain
 			var card := StandbyCard.new()
 			card.name = "StandbyCard"
@@ -202,8 +204,9 @@ func _swap_to(packed: PackedScene, info: RoomInfo) -> void:
 		reply_marker.add_child(replies)
 		replies.position.y += raise     # taller upward: the bottom edge stays put
 
-	# tall chat windows either side of the main screen (Chat tab: what each one shows)
-	if screen:
+	# tall chat windows either side of the main screen (Chat tab: what each one shows);
+	# not in a flat Screen Only set, which covers the whole window
+	if screen and not info.flat_screen:
 		var cams := _room.get_camera_markers()
 		var side := SideChats.new()
 		side.name = "SideChats"

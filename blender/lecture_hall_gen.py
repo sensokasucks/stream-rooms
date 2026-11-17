@@ -603,6 +603,21 @@ def orch_pews(mb, fi, a, b, cut_a, cut_b, z, shelf):
             pew_piece(mb, pa, pb, n, z, False, shelf, i == 0, i == k - 1)
 
 
+def soffit(mb, front, z):
+    """The flat underside of the balcony or gallery at height z: one face per wall facet, from
+    the front line (offset_line of WALL, mitred corners) back to the wall itself. Built facet
+    by facet between the two mitred outlines, so the faces meet at every corner. (Pushing each
+    front piece straight back to the wall left an open wedge at the corners, through which you
+    could see up inside the seating tiers from below: fixed 2026-11-14.)"""
+    wall = [v2(*p) for p in WALL]
+    for a, b, wa, wb in zip(front[:-1], front[1:], wall[:-1], wall[1:]):
+        q = [Vector((a.x, a.y, z)), Vector((b.x, b.y, z)), Vector((wb.x, wb.y, z)), Vector((wa.x, wa.y, z))]
+        f = _face(mb, q, "Oak", [(p.x / 2, p.y / 2) for p in q])
+        f.normal_update()
+        if f.normal.z > 0:      # facing down, into the hall below
+            f.normal_flip()
+
+
 def build_balcony_and_gallery():
     """The balcony (rows, soffit, balustrade, posts) and the top gallery with its arcade."""
     global CROWD_TAG, CROWD_ROW
@@ -617,13 +632,7 @@ def build_balcony_and_gallery():
     CROWD_TAG = None
     # soffit, fascia, handrail, posts
     front = offset_line(WALL, BAL_FRONT_D)
-    for (a, b, n, corner, fi) in pieces(front, 3.0):
-        wall_a, wall_b = a - n * BAL_FRONT_D, b - n * BAL_FRONT_D
-        q = [Vector((a.x, a.y, BAL_SOFFIT)), Vector((b.x, b.y, BAL_SOFFIT)), Vector((wall_b.x, wall_b.y, BAL_SOFFIT)), Vector((wall_a.x, wall_a.y, BAL_SOFFIT))]
-        f = _face(mb, q, "Oak", [(p.x / 2, p.y / 2) for p in q])
-        f.normal_update()
-        if f.normal.z > 0:
-            f.normal_flip()
+    soffit(mb, front, BAL_SOFFIT)
     mb.done()
 
     rails = MB("Balustrades")
@@ -655,13 +664,7 @@ def build_balcony_and_gallery():
         seat_row(gm, offset_line(WALL, d - 0.1), z, lambda p: True, leather=True, shelf=False, aisle_gap=0.5)
     CROWD_TAG = None
     gfront = offset_line(WALL, GAL_FRONT_D)
-    for (a, b, n, corner, fi) in pieces(gfront, 3.0):
-        wa, wb = a - n * GAL_FRONT_D, b - n * GAL_FRONT_D
-        q = [Vector((a.x, a.y, GAL_SOFFIT)), Vector((b.x, b.y, GAL_SOFFIT)), Vector((wb.x, wb.y, GAL_SOFFIT)), Vector((wa.x, wa.y, GAL_SOFFIT))]
-        f = _face(gm, q, "Oak", [(p.x / 2, p.y / 2) for p in q])
-        f.normal_update()
-        if f.normal.z > 0:
-            f.normal_flip()
+    soffit(gm, gfront, GAL_SOFFIT)
     # the gallery also crosses the stage wall high up
     box(gm, (0, BACK_Y - 0.6, GAL_Z0 - 0.1), (2 * HALF_W, 1.2, 0.2), "Oak")
     gm.done()

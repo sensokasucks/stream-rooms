@@ -142,6 +142,8 @@ broken video in the cache.
 | **Ctrl+= / Ctrl+-** | Control panel bigger / smaller. |
 | **Shift+click**, or **P** then click | On a chatter, a presenter or the big screen: their menu (see *Click on people in the room*). |
 | **L** (hold) | Laser pointer: a dot where the mouse points, with a beam (see *Laser pointer*). |
+| **M** (hold) | Lakeside Campfire only: roast a marshmallow over the fire. Let go while it is golden for a s'more. |
+| **T** | Lakeside Campfire only: toss a stick on the fire, which flares up. |
 | Right-drag, WASD, Q/E, Shift | Free-look camera: hold the right mouse button and move to look; W/S forward/back, A/D left/right, **Q down / E up**, Shift = 3x speed. **Mouse wheel while right-dragging** = zoom (field of view). |
 
 Hotkeys are ignored while you're typing in a text box (Esc leaves the box).
@@ -367,6 +369,31 @@ the same ones). Each person sets their own:
 
 While you free-look (right mouse button held), the laser points at the middle of the view.
 
+## Screen Only (just the picture, no room)
+
+**Screen Only (no room)** in the room list is a set with no 3D room at all: no audience, no curtain, no chat windows. Whatever the big screen would show (a video, a browser tab, NDI, Spout) fills the whole window, so you can capture it in OBS and drop it into a normal stream layout. It is very light, so it suits a slower PC too.
+
+Resize the window (Esc menu > **Display**) and the picture and every effect re-fit to the new shape.
+
+Its settings are on the **Room** tab under **Screen Only**, and in Stream Core under the Stream Rooms settings:
+
+- **Look**: a ready-made look (**Old CRT TV**, **Arcade monitor**, **Computer monitor**, **Amber terminal**, **VHS tape**, **Old film**, **Curved cinema screen**, **LED wall**, **Hologram**, **Handheld game**, **Night vision**, **Thermal camera**, **Comic book**, **Text mode (ASCII)**). Picking one sets all the sliders; move any of them afterwards. **Clean picture** turns everything off.
+- **Fit**: **Whole picture (bars)**, **Fill the window (crop)** or **Stretch**. **Bars** picks what fills the space beside the picture: black, **A colour** (**Bar colour**), or **Glow from the picture**.
+- **Between videos**: what shows while nothing plays and while the curtain is closed (B): **Static snow**, **Colour bars**, **Black** or **Please stand by** (your curtain sign text, if you set one).
+- **Extra screens**: up to three smaller pictures in the same window, each with a source of its own, like the Forge Hall's small live screens. Handy for a webcam, a second camera, a game capture or a logo next to the video.
+  - **Extra screen 1** to **3**: **Off**, **Webcam** (from the sender page), **Picture file**, **Browser tab or window** (a row with that screen's name appears under Extra screens on the sender page; press its **Pick a tab or window** button), **NDI source**, **Spout sender** or **Stream address** (rtmp://, rtsp://, a video file...). For the last three, type the name or address in that screen's **address** box, or use **Pick**. Picture only, no sound.
+  - **Layout**: **Insets over the picture** (each screen has its own **size**, **left/right** and **up/down** sliders and keeps its picture's shape), **Column on the right** (the main picture moves left, the extra screens stack beside it) or **Two by two** (four quarters). Everything re-fits when you resize the window.
+  - **Extra screens get the Look too**: ticked, each extra screen wears the same effects (its own little CRT); unticked, they stay clean.
+  - **Outline**: a dark outline round each extra screen.
+  - Extra screens belong to your PC only: co-stream guests don't get them.
+- **Tube (CRT)**: **Glass curve** (bent corners like thick CRT glass), **Round corners**, **Frame**, **Scanlines** and **Scanline size**, **Phosphor mask** and **Mask type**, **Glow**, **Dark edges**, **Colour fringing**, **Flicker**, **Rolling bar**.
+- **Room looks**: **LED dots** (with **LEDs across**), **Hologram**, **Cinema bend**.
+- **Tape and film**: **Tape tracking**, **Colour bleed**, **PLAY and date text**, **Film grain**, **Dust and scratches**, **Faded film colour**.
+- **Retro and fun**: **Chunky pixels**, **Colour palette**, **Dither**, **Fun look** with **Fun look amount**.
+- **Colour**: **Colour**, **Brightness**, **Contrast**.
+
+**Flicker** and **Rolling bar** follow **Flash strength**, and photosensitive-safe mode turns them down to a quarter and slows moving static.
+
 ## Run the room from Stream Core's Live page
 
 While Stream Rooms is connected to Stream Core, Core's **Live** page shows a **Stream Rooms** card
@@ -394,8 +421,13 @@ of the room never shows it. **Esc** or **Resume** goes back.
 
 - **Display**: **Window** (**Windowed**, **Borderless** with no frame covering the monitor, or
   **Fullscreen**), **Monitor**, **Window size** (pick your OBS canvas size, often 1920 × 1080; used
-  for Windowed and Borderless), **Graphics quality**, **Frame rate cap** and **V-Sync**. The window
-  choice is kept for the next start. Until you pick something, the window opens as it always did.
+  for Windowed and Borderless), **Custom size**, **Graphics quality**, **Frame rate cap** and **V-Sync**.
+  The window choice is kept for the next start. Until you pick something, the window opens as it
+  always did.
+  - **Custom size**: type a width and height in pixels (for example 1440 × 1080 for a 4:3 screen,
+    or 1080 × 1920 for a portrait one) and press **Use**. **Save as preset** also keeps that size in
+    the **Window size** list (marked "saved"), so you can pick it again later. When a saved size is
+    picked, **Remove preset** takes it out of the list. A size bigger than the monitor is cut down to fit.
 - **Sound**: **Video volume**, **Room ambience** and **Curtain sounds**.
 - **Co-stream**: host or join, who's in (with **Co-host** and **Remove** for the host), **Copy
   invite address**, **Resync**, **End session** / **Leave**, the big screen remote (**Give remote**,
@@ -1168,14 +1200,53 @@ automatically.
 
 Included rooms:
 - **Home Theater**
-- **Drive-In (1950s)**: night lot with a pickup with lawn chairs, a concession stand and a
-  projector beam. The sky (`rooms/drive_in/night_sky.gdshader`) draws a textured, phase-lit
-  moon, stars with a faint Milky Way, and a few moonlit drifting clouds. The moon sits wherever
-  the room's `Moonlight` light comes from, so rotate that node to move the moon. Tune the moon
-  size, phase, tint, edge softness (`moon_edge_softness`), atmospheric haze (`moon_haze`), cloud
-  coverage and so on in `room_info.tres` > Environment > Sky > Shader Parameters. The moon surface (`moon_albedo.png`) is procedurally generated. Every marker lives in `../blender/drive_in.blend`, so move things
-  there and re-export to `rooms/drive_in/drive_in.glb`. Export the `DriveIn` and
-  `DriveIn_Markers` collections only, not `Preview_Only`.
+- **Drive-In (1950s)**: a 1950s drive-in lot with a pickup with lawn chairs, a concession
+  stand, a projector beam and rows of parked cars, now outdoors at any hour like the Lakeside
+  Campfire (it shares that room's sky, mist and trees). Its controls are on the Room tab:
+  - **Set detail** chooses how detailed the lot is drawn on this PC. **Detailed**: photo
+    textures on the asphalt, the gravel ramps and the grass (the grass turns to forest floor
+    under the trees), wood grain on the fence and the truck bed, cloth on the blanket and the
+    chair, a forest of firs, pines, oaks, maples and birches with real needles and leaves round
+    the lot, grass tufts and ferns along the fence, plaster on the snack bar and concrete on
+    the screen tower, and modelled speaker posts (two speakers on hooks with curly cords),
+    lot lights with floodlight shades, lamps under the snack bar's canopy, aluminium lawn
+    chairs with webbing, a picnic cooler and a striped popcorn bucket in place of the plain
+    blocks. The pickup becomes the modelled pickup from Route 22, with its tailgate down. **Simple**: the original flat-coloured
+    set with its simple trees, the lightest for a slow graphics card. **Auto (follows Graphics
+    quality)**, the setting it starts on, picks for you: Low = Simple, anything else =
+    Detailed. Each PC in a co-stream chooses its own.
+  - **Your chat parks at the drive-in.** Every chatter sits behind the wheel of their own
+    1950s car (a hardtop or a convertible, in a 1950s colour), parked on the gravel ramps facing
+    the screen, with their silhouette, picture, name and speech bubbles like on any room's
+    seat. You can see them through the windows: the cars have proper insides (seats, dash,
+    steering wheel). A chatter always comes back in the same car, and their car blinks its
+    headlights when they talk (gently in photosensitive-safe mode, and as bright as **Flash
+    strength** allows). Empty spaces stay empty: a car only drives in for a chatter, or for a
+    filler person when the Audience tab fills empty seats with them. **Parking spaces** sets
+    how many chatters fit (10 to 106; the front rows fill first). Fewer is lighter on a slow
+    graphics card. Changing it reloads the room, and in a co-stream the host's number counts.
+  - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18 (to the left
+    of the screen), and 21, where it starts, is a moonlit night. The sun, the moon, the sky's
+    colour and the light on the lot follow it, and the lot's lamps come on as it gets dark.
+    **Day length** lets the clock run by itself: the minutes a whole day and night takes
+    (0 = **Clock stopped**).
+  - The sky has stars with a Milky Way and the odd shooting star, an aurora behind the screen,
+    the sun and the moon, high thin cloud and big low cloud, snow-capped mountains and two
+    ridges of hills with a far tree line on the horizon. **Clouds**, **Stars**, **Aurora** and
+    **Mist** set how much of each there is; **Mist** also lays mist low over the lot, thickest
+    at dusk and at night. On a slow graphics card, **Clouds** and **Aurora** at 0% are the
+    lightest. In photosensitive-safe mode the stars hold steady.
+  - **Fireflies at night** lets small lights drift over the grass round the lot after dark.
+  - In a co-stream the hour and the sky are the host's, so everyone sees the same night.
+  - Source: every marker lives in `../blender/drive_in.blend`, so move things there and
+    re-export to `rooms/drive_in/drive_in.glb` (export the `DriveIn` and `DriveIn_Markers`
+    collections only, not `Preview_Only`). `rooms/drive_in/drive_in_room.gd` adds the outdoor
+    look; the asphalt and gravel photos (CC0, Poly Haven) come from
+    `rooms/drive_in/textures/make_textures.py`, and the modelled props from
+    `rooms/drive_in/models/make_props.py` (Blender as a Python module, `pip install bpy`; it
+    borrows the Route 22 woody's tools). Moving a speaker post, a light pole or the chairs in
+    the `.blend` moves its modelled prop too. The old night sky (`night_sky.gdshader`,
+    `moon_albedo.png`) is no longer used but kept.
 - **Neon City (night)**: a rain-soaked megacity avenue.
   - The main screen is a giant LED video billboard on a tower whose base is a lit traffic portal.
     A street gantry screen mirrors the same video.
@@ -1246,6 +1317,22 @@ Included rooms:
     house lights, so they go down for a video.
   - **Light rays** (Room tab, both Lecture Halls): how visible the sunbeams are, 0-200%
     (0% = off).
+  - **Set detail** (Room tab, both Lecture Halls, each PC's own): **Detailed** gives the desks,
+    rails, carved panels, doors and stage real oak grain, the walls and ceiling plaster, the
+    carpet its pile and the pew cushions their crinkles, with little bumps that catch the
+    light. **Simple** is the plain painted look, lighter on a slow graphics card. **Auto**
+    (the default) picks Simple when **Graphics quality** is Low, otherwise Detailed. The photos
+    are CC0 (public domain) from Poly Haven; `rooms/lecture_hall/detail/make_detail_textures.py`
+    makes the textures.
+  - **Window glass**: the tall lancets' pale diamond panes are clear glass (**Clear diamond
+    panes**, the default), so you look out at the sky, its clouds, the sun or moon and the
+    town's rooftops; **All clear panes** keeps only the coloured border; **All stained glass**
+    is the old look. The round windows and door fanlights stay stained glass.
+  - **Time of day**, **Day length** and **Clouds**: the hour outside (6 = sunrise, 12 = noon,
+    18 = sunset). The sky in the windows, the glow of the stained glass and the sunbeams follow
+    it: morning light comes in through the windows on one side, evening light (golden, low)
+    through the other side, faint blue moonbeams at night. **Day length** lets the clock run
+    (minutes for a whole day; 0 = stopped). These are each PC's own in a co-stream.
   - The screen is 14.4 m x 8.1 m and stands right on the stage floor, with a matte white face.
   - One ring chandelier hangs high in the middle of the ceiling, above every seat's view of the
     screen. It dims with the house lights. Use **House lights** in the *Room* tab to set
@@ -1446,6 +1533,167 @@ Included rooms:
   - In a co-stream the four Room tab settings are shared, so everyone sits by the same fire.
   - Built in code when the room loads (`rooms/log_cabin/cabin_builder.gd`); there is no
     Blender model.
+- **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
+  lake, with mountains behind it and a sky that changes with the hour.
+  - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
+    (Room tab) and the screen is taken down, which opens the view over the water; the posts and
+    the string lights stay, and the sound of whatever is playing carries on.
+  - A podium room without podiums: the four presenters sit on camp chairs round the far side
+    of the fire, facing the main camera (see *Presenters*). No webcam frame.
+  - Seats for 30: three curved rows of split-log benches on the near side of the fire. There is
+    no filler crowd.
+  - Around the clearing: two modern dome tents and a canvas ridge tent, with poles, guy ropes and lanterns in them, a small stream that
+    comes down out of the woods on the left in little cascades, over rocks and past an old
+    fallen trunk, and runs into the lake; a little jetty, a pile of sticks, a s'mores table
+    with a cool box, and a forest of fir and round trees. The land is lived in: mossy rock
+    outcrops, tree stumps with mushrooms, reeds and cattails at the water's edge, lily pads
+    on the lake (some in flower) and drifts of wildflowers in the grass. The cascades run
+    between ledges of rock, a dead tree leans out over the brook, old mossy logs lie about,
+    and a small rowing boat is tied to the jetty's rope posts. Snow-capped mountains stand
+    behind the lake. One of the fire ring's stones is Pebble: look for the little face and
+    the gem on its forehead.
+  - **Woods close around the camp** (off to start with) plants thick trees right round the
+    clearing, a wall of firs along the shore behind the screen, and a wall down each side from
+    the screen past the fire to the ends of the benches. The camp becomes a cul-de-sac in the
+    forest, open only towards the main camera, with the tents tucked in among the trees. The
+    lake is hidden. The stream and the jetty still peek through a little, and
+    the Lake and Sky camera stands at the water past the trees, so it keeps its view. In a
+    co-stream it is the host's, like the sky.
+  - **Set detail** chooses how detailed the camp is drawn on this PC. **Detailed everywhere**:
+    photo textures on the ground, the logs, the rocks and the tents, trees with real needles
+    and leaves (firs, pines, oaks, birches and maples mixed together), grass tufts and ferns.
+    **Detailed near the fire**: the same round the camp, but the far hillsides keep their
+    simple trees, which is lighter on a slower graphics card. **Low-poly**: the simple
+    flat-coloured set, the lightest. **Auto (follows Graphics quality)**, the setting it starts
+    on, picks for you: High = everywhere, Medium = near the fire, Low = low-poly. Each PC in a
+    co-stream chooses its own.
+  - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night.
+  - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
+    moon, the colour of the sky, the light on the ground and the reflection on the lake all
+    follow it. **Day length** lets the clock run by itself: the number of minutes a whole day
+    and night takes (0 = **Clock stopped**).
+  - The sky is built from layers: the sky colour, stars with a Milky Way and the odd shooting
+    star, an aurora, the sun and the moon, thin high cloud, big low cloud, two mountain ridges
+    with mist between them and a far tree line. **Clouds**, **Stars**, **Aurora** and **Mist**
+    set how much of each there is. On a slow graphics card, **Clouds** and **Aurora** at 0% are
+    the lightest.
+  - The stars twinkle and turn slowly around the sky over the night, and a shooting star
+    crosses now and then. In photosensitive-safe mode the stars hold steady. The clouds drift
+    and the lake carries small ripples that move with the wind.
+  - **String lights and lanterns** and **Fireflies at night** switch those on and off. The
+    string lights follow the **House lights** slider. **Butterflies by day** does the same
+    for the few butterflies that flutter over the grass while it is light.
+  - **Light rays** sets how strong the sunbeams through the trees are. They show in the
+    morning and the evening, while the sun is low. **Mist** also lays patches of mist on
+    the lake, thickest at dawn and dusk.
+  - **Autumn colours** turns the birches yellow, the maples red and orange and the oaks
+    russet (the firs and pines stay green). In a co-stream everyone gets the same season.
+  - **Fire games (M and T keys)**: hold **M** in the room window and a stick pokes out of your
+    avatar picture with a marshmallow over the fire. It browns while you hold: white, golden,
+    brown, black, and if you leave it too long it catches fire. Let go while it is golden and it
+    counts as a s'more. Press **T** to toss a stick on the fire and watch it flare up. In a
+    co-stream every guest has their own stick and everyone sees everyone's. Chat can feed the
+    fire too: any reaction thrown at the campfire (`!tomato campfire`) makes it flare.
+  - In a co-stream the fire, the screen, the time of day and the sky are the
+    host's and everyone sees the same (a co-host can change them too).
+  - Cameras: across the fire at the screen (the default), beside the fire from the right and
+    the left, back from the screen at everyone, from a tent, the lake shore, a drone view from
+    high up, close on the marshmallows, a Reaction camera, and the lake and the sky with the
+    camp behind you. Press **0** for the 10th.
+  - Reaction targets: `!tomato campfire`, `lake`, `tent`.
+  - Almost no reverb (it is outdoors). The fire crackles and crickets sing at night.
+  - Source: the whole set is built in code when the room loads (`rooms/campfire/campfire_builder.gd`),
+    so there is no Blender file. The sky is `rooms/campfire/camp_sky.gdshader`. The detailed
+    trees are built in `rooms/campfire/campfire_trees.gd`. The photo textures in
+    `rooms/campfire/textures/` come from [Poly Haven](https://polyhaven.com) (CC0, free for any
+    use); `make_textures.py` in that folder downloads them and makes the files again.
+- **Route 22**: a desert highway at sunset, with red sandstone all round. It has two scenes in
+  the same desert, and the **Scene** choice at the top of the Room tab jumps between them (the
+  room list shows them as **Route 22 Drive-In** and **Route 22 Cruise**).
+  - **Drive-in lot (with the audience)**: a desert drive-in beside Route 22. The big screen
+    stands on its tower at the far end, red rocks and an arch behind it. The chat audience sits
+    on blankets and lawn chairs at the front (seats 1 to 8), two to a car in four convertibles
+    nosed up to the screen (9 to 16), three to a bed in four pickups backed in with their
+    tailgates down (17 to 28), and at the picnic table by the snack bar (29 and 30). Up to four
+    presenters stand at podiums on the little stage under the screen. Speaker posts between the
+    cars, the snack bar with the projection booth on its roof (the beam reaches the screen), a
+    ticket booth, an old gas pump, and the neon **ROUTE 22 DRIVE-IN** sign by the road. Traffic
+    goes by both ways on Route 22.
+    - **Marquee text** is the second line on the sign (shown in capitals).
+    - **Lot lights** are the four light poles: they come on at dusk and dim while a film plays,
+      like the house lights in the other rooms (the **House lights** slider works on them too).
+    - **How busy** sets the traffic on Route 22: 100 = about one vehicle every 10 seconds,
+      0 = **Empty road**.
+    - Cameras: from behind the cars at the screen (the default), the front row, from the stage
+      at everyone, the convertibles, the pickup beds, the snack bar, the marquee from across the
+      road, a drone view, a Reaction camera and the red rocks over the screen.
+    - Reaction targets: `!tomato stage`, `snacks`, `marquee` (and the screen, as everywhere).
+  - **Cruise (just chatting, in the car)**: a backdrop for the chatting part of a stream. No
+    big screen and no chat audience: up to four co-stream guests ride in a red woody
+    convertible (two in the front seats, two on the back seat) down an endless two-lane
+    highway. The car never moves; the desert slides past it. The roadside comes from 24 road
+    pieces in a shuffled order (rock fins, an arch, a natural bridge, hoodoos, balanced rocks,
+    slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
+    an old wreck, buttes, a varnished cliff and more), never the same one twice in view, with
+    telephone poles, ravens on the wires, reflector posts and mile markers.
+    - **Speed** is how fast the woody drives (0 = **Parked**). **Curves and hills** is how
+      much the road winds and rolls away in the distance.
+    - **How busy** sets the other traffic: pickups, old sedans, semis, motorhomes, motorcycles
+      and the odd tour bus, mostly oncoming, now and then one overtaking you.
+    - **Landmarks and stops** sets how much of the road has something to look at (rock
+      formations, gas stations, motels, diners) rather than plain open desert: 100% = a
+      landmark every few seconds (a highlight reel), 50% = every other stretch, 0% = **Lonely
+      road**, nothing but poles, brush and the far buttes, like a real desert highway.
+    - **Billboards** show your own pictures, for example your friends' promo pictures. Put
+      PNG, JPG, WebP or GIF files (animated GIFs play) in a folder and type it in **Picture
+      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or pick them
+      in Stream Core's dashboard: Setup > Stream Rooms settings > Room & sound, **Billboards**
+      card, **Choose pictures** lists the pictures in Core's Stored files and uploads new ones
+      (in the game the same list is the **Stream Core pictures** box, names separated by
+      commas). Every board is built to its picture's shape (wide, square or tall), so the
+      whole picture shows, and no post, lamp or catwalk stands in front of it. **How common** sets how often a board comes by (40 = about one every 15
+      seconds at 50 km/h, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
+      night** puts lamps on them. **Filler ads when the set is empty** shows made-up roadside
+      ads until you add pictures. Six shapes, each with its own tick box: a classic two-post
+      board, a tall single pole, a weathered wooden sign, one on an old roadside stop's roof, a
+      neon arrow, and a parked trailer.
+    - Cameras: through the windshield at everyone (the default), from the back seat down the
+      road, from each side, from the hood, a chase camera behind, a drone, from the roadside as
+      you pass, a Reaction camera, and the road ahead.
+    - Reaction targets: `!tomato car`, `road`.
+  - Shared by both scenes:
+    - **Time of day** (sunset at 18 lies straight down the road ahead and behind the drive-in
+      screen; night brings the Milky Way) and **Day length** to let the clock run.
+    - **Weather**: **Clear**, **Cloud deck** (a ceiling of cloud that glows orange at sunset),
+      **Dust storm** (brown air and blowing sand), **Thunderstorm** (rain and lightning; soft
+      and slow in photosensitive-safe mode) and **After rain** (a wet, shining road with puddles
+      and a rainbow). Changes ease in. **Clouds**, **Stars**, **Heat shimmer** (the air
+      wobbles and the far road shines like water on hot afternoons) and **Wind**.
+    - **Roadside**: **Plant life** (how thick the brush grows, 0% = bare desert) and
+      **Animals** (how often the vultures, jackrabbits, lizards and coyotes come, 0% = none),
+      then tick boxes for **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
+      lizards**, **Coyotes** (a few trot across out in the desert from dusk to dawn, and at night
+      you sometimes hear them howl) and **Neon signs** (the neon glows at night).
+    - **Set detail**: **Detailed** adds photo grain and bumps to the rock, the ground and the
+      road (they catch the low sun), weathered wood and real rust on the props, haze and
+      sunbeams in the air, the woody's chrome and paint reflect the passing desert, and the
+      traffic and the Drive-In's parked cars and pickups are properly modelled vehicles in
+      place of the plain blocky ones.
+      **Low** is flat colours, the lightest. **Auto** follows Graphics quality. Each PC in a
+      co-stream chooses its own.
+  - In a co-stream the hour, the weather, the speed, the traffic, the billboard rules and the
+    roadside are the host's, and the guests' road keeps pace with the host's. The billboard
+    pictures are each PC's own (so are which vehicle comes when and which picture is on which
+    board).
+  - Source: the whole set is built in code (`rooms/route22/`, shared by both scenes, and
+    `rooms/route22_cruise/`). The rock, ground, road, wood and rust photo textures come from
+    `rooms/route22/textures/make_textures.py`; the filler ads from `make_ads.py` there (all
+    made up). Among the built rocks stand photo-scanned boulders and stones, oil drums and dead
+    wood from [Poly Haven](https://polyhaven.com) scans (CC0), cut down to a few thousand
+    triangles each by `rooms/route22/models/make_models.py`; the scanned rocks are drawn in
+    the room's own red sandstone so they match. The Cruise's woody is our own model, made
+    with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
+    convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
@@ -1506,6 +1754,9 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
+- `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
+- `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.

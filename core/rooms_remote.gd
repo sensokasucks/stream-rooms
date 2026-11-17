@@ -17,7 +17,13 @@ class_name RoomsRemote
 ##       costream {role, text, remote, has_remote, guests},
 ##       sources {ndi [names], ndi_ok, ndi_on, spout [names], spout_ok, spout_on, sender_url}
 ##         (the card's "Big screen" picker: what can go on the big screen, and the sender page's
-##         address for the "Open the sender page" link; ndi_on / spout_on = the name showing now).
+##         address for the "Open the sender page" link; ndi_on / spout_on = the name showing now),
+##       video {now, ended, ended_n} (Core's video request queue, core/video_requests.py there):
+##         now = the link playing on the big screen ("" when none), ended = the last link that
+##         played to its end by itself, ended_n = how many have ended this run, so Core can tell
+##         a new end from the same one sent again. Stop or another source is not an end.
+##         job / job_text: the download / convert running now (EventBus.video_job_changed state,
+##         e.g. "downloading", and its plain message), so Core can show "getting ready".
 ##  2. Runs the commands Core's card sends back. They arrive as the existing "stage" packet,
 ##     {action, value}; ChatFeed hands every action except "curtain" to run_command() here.
 ##
@@ -52,6 +58,11 @@ var _ndi_names: PackedStringArray = []    # NDI sources found (EventBus.ndi_sour
 var _ndi_ok: bool = false                 # false = the NDI add-on isn't loaded
 var _spout_names: PackedStringArray = []  # Spout senders running (EventBus.spout_senders_changed)
 var _spout_ok: bool = false               # false = the Spout add-on isn't loaded
+var _video_now: String = ""               # link playing now (EventBus.file_started; "" once the source changes)
+var _video_ended: String = ""             # last link that played to its end (EventBus.file_finished)
+var _video_ended_n: int = 0               # ends this run, so Core sees each one once
+var _video_job: String = ""               # last EventBus.video_job_changed state ("" = none yet)
+var _video_job_text: String = ""          # and its plain message
 
 ## Most names sent per source list (Core keeps the same cap; a busy network can list many NDI sources).
 const MAX_SOURCE_NAMES: int = 40
@@ -65,7 +76,18 @@ func _ready() -> void:
 	EventBus.focus_view_changed.connect(func(_f: bool) -> void: _mark())
 	EventBus.clean_feed_changed.connect(func(_c: bool) -> void: _mark())
 	EventBus.curtain_changed.connect(func(_c: bool, _s: String) -> void: _mark())
-	EventBus.source_changed.connect(func(_m: String) -> void: _mark())
+	EventBus.source_changed.connect(_on_source_changed)
+	EventBus.file_started.connect(func(input: String) -> void:
+		_video_now = input
+		_mark())
+	EventBus.video_job_changed.connect(func(state: String, message: String, _details: String) -> void:
+		_video_job = state
+		_video_job_text = message.left(120)
+		_mark())
+	EventBus.file_finished.connect(func(input: String) -> void:
+		_video_ended = input
+		_video_ended_n += 1
+		_mark())
 	EventBus.room_presenters_changed.connect(_on_podiums)
 	EventBus.net_state_changed.connect(func(_i: Dictionary) -> void: _mark())
 	EventBus.camera_views_changed.connect(_on_views)
@@ -123,6 +145,13 @@ func _on_podiums(count: int) -> void:
 
 func _on_views(views: Array) -> void:
 	_views = views
+	_mark()
+
+
+## The big screen changed source: a video link is no longer "now" once it isn't a file.
+func _on_source_changed(mode: String) -> void:
+	if mode != "file":
+		_video_now = ""
 	_mark()
 
 
@@ -249,6 +278,8 @@ func build_state() -> Dictionary:
 		"presenters": presenters,
 		"costream": _costream_line(),
 		"sources": _sources_line(),
+		"video": {"now": _video_now.left(2000), "ended": _video_ended.left(2000), "ended_n": _video_ended_n,
+			"job": _video_job, "job_text": _video_job_text},
 	}
 
 
@@ -376,6 +407,12 @@ func run_command(action: String, value: Variant) -> bool:
 			if v.strip_edges() == "":
 				return false
 			EventBus.file_play_requested.emit(v.strip_edges())
+		"video_prep":
+			# Stream Core's video requests: download / convert an approved link into the cache now
+			# (the Source tab's "Just get it ready"), so it starts at once when its turn comes
+			if v.strip_edges() == "":
+				return false
+			EventBus.file_ready_requested.emit(v.strip_edges())
 		"stop":
 			# whatever shows now; a browser tab is stopped on the sender page itself
 			match AppState.get_source_mode():

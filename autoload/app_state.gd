@@ -28,6 +28,11 @@ const BASE_DEFAULTS: Dictionary = {
 	"film_look": 1.0,            # old-film rooms: 0 = clean picture, 1 = the room's look, 2 = extra dirt
 	"sun_rays": 1.0,             # Lecture Hall / Forge Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
+	"lh_detail": "auto",         # Lecture Hall (both): how its woods and walls are drawn on this PC: auto (from graphics_quality) | simple | detailed (photo textures)
+	"lh_time": 16.5,             # Lecture Hall time of day outside the windows, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"lh_day_minutes": 0.0,       # Lecture Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at lh_time
+	"lh_clouds": 1.0,            # Lecture Hall sky outside the windows: 0 = clear, 1 = some clouds, 2 = overcast
+	"lh_glass": "quarries",      # Lecture Hall tall windows: stained (all coloured glass) | quarries (the pale diamond panes are clear) | clear (every pane clear)
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
 	# Log Cabin (rooms/log_cabin/log_cabin_room.gd), first layout pass. All four are shared in a
 	# co-stream with the host's "room" group (NetSession.SHARED_CABIN): keep that list in step.
@@ -80,6 +85,130 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_live_2_x": 0.0, "forge_live_2_y": 0.0, "forge_live_2_size": 1.0, "forge_live_2_tilt": 0.0, "forge_live_2_turn": 0.0,
 	"forge_live_3_x": 0.0, "forge_live_3_y": 0.0, "forge_live_3_size": 1.0, "forge_live_3_tilt": 0.0, "forge_live_3_turn": 0.0,
 	"forge_live_align": true,    # the upper right screen mirrors the upper left one's place (its own five are ignored)
+	# Lakeside Campfire (rooms/campfire/campfire_room.gd). The first ten are shared in a co-stream
+	# with the host's "room" group (NetSession.SHARED_BASE): keep that list in step with these.
+	"camp_fire": 1.0,            # the campfire (flames, light, sparks, crackle): 0 = out, 1 = normal, 2 = roaring
+	"camp_screen": true,         # the big screen hangs between its posts; false = taken down (open view of the lake)
+	"camp_time": 18.6,           # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"camp_day_minutes": 0.0,     # minutes one full day takes while the clock runs; 0 = the clock stands still at camp_time
+	"camp_clouds": 0.7,          # fair-weather cloud: 0 = clear, 1 = normal, 2 = overcast
+	"camp_stars": 1.0,           # how bright the stars and the Milky Way are at night (0 = none)
+	"camp_aurora": 0.0,          # northern lights over the lake at night: 0 = none, 1 = normal, 2 = strong
+	"camp_mist": 0.4,            # haze over the lake and between the mountain ridges, 0..1
+	"camp_close_woods": false,   # thick trees right round the clearing and behind the screen, hiding the lake
+	"camp_detail": "auto",       # how detailed the camp is drawn on this PC: auto (from graphics_quality) | low | near | full
+	"camp_string_lights": true,  # the string lights and tent lanterns (this room's house lights)
+	"camp_fireflies": true,      # fireflies round the clearing on dry nights
+	"camp_autumn": false,        # autumn colours on the birches, maples and oaks (shared in a co-stream)
+	"camp_butterflies": true,    # a few butterflies over the grass by day (each PC's own, like the fireflies)
+	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
+	# Route 22 (rooms/route22 Drive-In, rooms/route22_cruise Cruise): one desert, two scenes.
+	"r22_scene": "drivein",      # Scene switch: drivein | cruise (each room sets it to its own on load; changing it loads the other)
+	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
+	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
+	"r22_weather": "clouddeck",  # clear | clouddeck | dust | storm | afterrain (r22_desert.gd WEATHER)
+	"r22_clouds": 1.0,           # cloud on top of what the weather brings: 0 = none, 1 = normal, 2 = double
+	"r22_stars": 1.0,            # stars and the Milky Way at night (0 = none)
+	"r22_heat": 0.5,             # heat shimmer and the road mirage on hot afternoons, 0..1
+	"r22_wind": 0.35,            # wind 0..1: brush sway, tumbleweeds, cloud shadows, blowing sand at the top
+	"r22_detail": "auto",        # how detailed the desert is drawn on this PC: auto (from graphics_quality) | low | full
+	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked)
+	"r22_curves": 0.5,           # Cruise: how much the road winds and rolls in the distance, 0..1
+	"r22_traffic": 30.0,         # other vehicles: 0 = none, 100 = about one every 10 s (r22_traffic.gd)
+	"r22_bb_amount": 40.0,       # Cruise billboards: how common, 0..100 (40 = about one every 15 s at 50 km/h)
+	"r22_bb_folder": "",         # billboard picture folder on this PC; empty = user://billboards
+	"r22_bb_core": "",           # Stream Core stored-file names for the billboards, comma-separated
+	"r22_bb_order": "shuffle",   # shuffle | order
+	"r22_bb_lit": true,          # billboards lit at night
+	"r22_bb_filler": true,       # made-up roadside ads when no pictures are set
+	"r22_bb_classic": true,      # billboard shapes in use (r22_billboards.gd SHAPES)
+	"r22_bb_monopole": true,
+	"r22_bb_wooden": true,
+	"r22_bb_rooftop": true,
+	"r22_bb_neon": true,
+	"r22_bb_trailer": true,
+	"r22_scenery": 100.0,        # Cruise: Landmarks and stops, 0..100 = share of road pieces that are landmarks / roadside stops (the rest plain desert; r22_trip.gd slot_at)
+	"r22_plants": 100.0,         # Plant life, 0..100 = share of the brush drawn (r22_desert.gd _apply_plants)
+	"r22_animals": 100.0,        # Animals, 0..100 = how often the vultures, jackrabbits, lizards and coyotes come (r22_extras.gd)
+	"r22_tumbleweeds": true,     # roadside life (r22_extras.gd)
+	"r22_dust_devils": true,
+	"r22_birds": true,
+	"r22_critters": true,
+	"r22_coyotes": true,         # coyotes trotting across from dusk to dawn, howling at night (r22_extras.gd)
+	"r22_neon": true,            # neon signs glow at night (gas station, motel, diner, marquee, neon-arrow boards)
+	"r22_marquee": "TONIGHT: CHAT'S PICK",  # Drive-In: the marquee's second line
+	"r22_lot_lights": true,      # Drive-In: the lot light poles (this room's house lights)
+	# Drive-In's outdoor look (rooms/drive_in/drive_in_room.gd). The first six are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_BASE): keep that list in step.
+	"drive_time": 21.0,          # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset, 21 = moonlit night)
+	"drive_day_minutes": 0.0,    # minutes one full day takes while the clock runs; 0 = the clock stands still at drive_time
+	"drive_clouds": 0.5,         # cloud: 0 = clear, 1 = fair weather, 2 = overcast
+	"drive_stars": 1.0,          # how bright the stars and the Milky Way are at night (0 = none)
+	"drive_aurora": 0.0,         # northern lights behind the screen at night: 0 = none, 1 = normal, 2 = strong
+	"drive_mist": 0.35,          # haze in the air and mist lying low over the lot, 0..1
+	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
+	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
+	"drive_spaces": 60.0,        # parking spaces at the drive-in: each chatter parks their own car there (10..106; a float for the slider; reloads the room)
+	# Screen Only set (rooms/screen_only): no 3D room, the big screen's picture fills the window with
+	# a stack of effects (screen_fx.gdshader). Room tab > Screen Only, and Core's Stream Rooms settings.
+	"so_preset": "clean",        # last look picked from the Look list; picking one sets the sliders below
+	"so_fit": "fit",             # fit (whole picture, bars) / fill (crop to fill) / stretch
+	"so_bars": "black",          # what fills the bars beside the picture: black / color / glow (blurred picture)
+	"so_bar_color": Color(0.0, 0.0, 0.0),
+	"so_idle": "static",         # between videos and while the curtain is closed: static / bars / black / standby
+	"so_curve": 0.0,             # CRT glass curvature, 0-1 (bent corners)
+	"so_corner": 0.0,            # rounded picture corners, 0-1
+	"so_scanlines": 0.0,         # scanline strength, 0-1
+	"so_scan_px": 3.0,           # one scanline every this many window pixels
+	"so_mask": 0.0,              # RGB phosphor mask strength, 0-1
+	"so_mask_type": "grille",    # grille (stripes) / shadow (dots) / slot
+	"so_glow": 0.0,              # phosphor glow, 0-1
+	"so_vignette": 0.0,          # darker edges, 0-1
+	"so_fringe": 0.0,            # colour fringing, 0-1
+	"so_flicker": 0.0,           # brightness flicker, 0-1 (cut in photosensitive-safe mode)
+	"so_roll": 0.0,              # rolling bright bar, 0-1 (cut in photosensitive-safe mode)
+	"so_bezel": 0.0,             # plastic frame round the glass, 0-1
+	"so_led": 0.0,               # LED wall dots, 0-1
+	"so_led_count": 160,         # LEDs across the window
+	"so_holo": 0.0,              # hologram look, 0-1
+	"so_bend": 0.0,              # cinema screen bend, 0-1
+	"so_vhs": 0.0,               # tape tracking band, wobble and noise, 0-1
+	"so_bleed": 0.0,             # colour bleed, 0-1
+	"so_stamp": false,           # tape PLAY and date text in the corners
+	"so_grain": 0.0,             # film grain, 0-1
+	"so_scratches": 0.0,         # film dust, scratches and gate weave, 0-1
+	"so_sepia": 0.0,             # faded brown film colour, 0-1
+	"so_pixelate": 0.0,          # chunky pixels, 0-1 (1 = 24-pixel blocks)
+	"so_palette": "none",        # none / handheld / amber / green / grey / retro4
+	"so_dither": 0.0,            # ordered dither with a palette, 0-1
+	"so_fun": "none",            # none / night / thermal / halftone / ascii / posterize / invert
+	"so_fun_amount": 1.0,        # how much of the fun look, 0-1
+	"so_saturation": 1.0,        # colour, 0-2
+	"so_brightness": 1.0,        # 0.5-1.5
+	"so_contrast": 1.0,          # 0.5-1.5
+	# Screen Only extra screens (rooms/screen_only/screen_only_room.gd): up to three smaller pictures in the window,
+	# each with a source of its own. Each PC's own (not shared in a co-stream).
+	"so_extra_layout": "free",   # free (insets over the picture) / side (column on the right) / grid (two by two)
+	"so_extra_fx": true,         # the extra screens wear the Look's effects too
+	"so_extra_frame": 0.25,      # dark outline round each extra screen, 0-1 (1 = 8 window pixels)
+	"so_extra_1_source": "off",  # off / webcam / picture / tab / ndi / spout / stream (the last four: core/extra_feeds.gd)
+	"so_extra_2_source": "off",
+	"so_extra_3_source": "off",
+	"so_extra_1_address": "",    # for ndi / spout the source's name (or part of it), for stream an address ffmpeg can open
+	"so_extra_2_address": "",
+	"so_extra_3_address": "",
+	"so_extra_1_picture": "",    # the picture file for source "picture" (png, jpg, webp)
+	"so_extra_2_picture": "",
+	"so_extra_3_picture": "",
+	"so_extra_1_size": 0.28,     # insets layout: the screen's width as a share of the window's, 0.05-1
+	"so_extra_2_size": 0.28,
+	"so_extra_3_size": 0.28,
+	"so_extra_1_x": 0.84,        # insets layout: where the screen's middle sits, 0-1 across the window
+	"so_extra_2_x": 0.16,        # (1 starts bottom right, 2 bottom left, 3 top right)
+	"so_extra_3_x": 0.84,
+	"so_extra_1_y": 0.82,        # ... and 0-1 down the window
+	"so_extra_2_y": 0.82,
+	"so_extra_3_y": 0.18,
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible
@@ -206,6 +335,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"window_mode": "",           # "" | windowed | borderless (no frame, covers the screen) | fullscreen
 	"window_screen": -1,         # which monitor, from 0 (-1 = the one it opened on)
 	"window_size": "",           # "1920x1080" etc. for Windowed / Borderless ("" = fill the screen)
+	"window_size_presets": "",   # sizes saved from the Esc menu's Custom size box, comma separated ("1440x1080,1080x1920")
 	"panel_scale": 1.0,          # control panel size (text, buttons, sliders), 0.75-2
 	"debug_log": true,           # write a cleaned log file each run for troubleshooting (autoload/debug_log.gd; footer > Messages)
 	"messages_on_picture": false, # also show status / error messages at the bottom of the room picture (else only in the panel)
