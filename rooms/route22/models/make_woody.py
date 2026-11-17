@@ -178,13 +178,12 @@ def section(w: float, zb: float, belt: float, top: float) -> list:
 RIDGE, SHOULDER = 4, 6   # indexes into section()
 
 
-def body_shell():
-    """The car's lower body: one smooth hull from nose to tail (hood, fenders, doors, deck)."""
-    # y, half width, underside, shoulder, top middle (the hood and the deck crown slightly)
-    stations = [(HALF_L, 0.90, 0.46, 0.80, 0.83), (HALF_L - 0.03, 0.955, 0.40, 0.855, 0.885), (2.50, 0.985, 0.34, 0.895, 0.93),
-                (1.95, 0.995, 0.30, 0.915, 0.955), (1.00, 1.0, 0.29, BELT, 0.985), (0.0, 1.0, 0.29, BELT, 0.955),
-                (-1.20, 1.0, 0.29, BELT + 0.005, 0.96), (-2.10, 0.99, 0.31, 0.92, 0.945), (-2.55, 0.975, 0.35, 0.90, 0.92),
-                (HALF_L * -1 + 0.03, 0.95, 0.40, 0.87, 0.89), (-HALF_L, 0.90, 0.45, 0.82, 0.84)]
+BODY_LEVELS = 3          # how finely the hull is smoothed (make_vehicles.py lowers it for the lot's cars)
+
+
+def hull(name: str, stations: list, levels: int, material: str = "paint"):
+    """A smooth hull through cross-sections: stations = [(y, half width, underside, shoulder,
+    top middle)] from nose to tail, each made into a section()."""
     bm = bmesh.new()
     rings = []
     for y, w, zb, belt, top in stations:
@@ -204,9 +203,19 @@ def body_shell():
         for i, sharp in ((RIDGE, 0.55), (SHOULDER, 0.7)):
             for j in (i, n - i):
                 bm.edges.get([a[j], b[j]])[crease] = sharp
-    ob = add("Body", bm, "paint")
-    ob.modifiers.new("sub", "SUBSURF").levels = 3
+    ob = add(name, bm, material)
+    ob.modifiers.new("sub", "SUBSURF").levels = levels
     return ob
+
+
+def body_shell():
+    """The car's lower body: one smooth hull from nose to tail (hood, fenders, doors, deck)."""
+    # y, half width, underside, shoulder, top middle (the hood and the deck crown slightly)
+    stations = [(HALF_L, 0.90, 0.46, 0.80, 0.83), (HALF_L - 0.03, 0.955, 0.40, 0.855, 0.885), (2.50, 0.985, 0.34, 0.895, 0.93),
+                (1.95, 0.995, 0.30, 0.915, 0.955), (1.00, 1.0, 0.29, BELT, 0.985), (0.0, 1.0, 0.29, BELT, 0.955),
+                (-1.20, 1.0, 0.29, BELT + 0.005, 0.96), (-2.10, 0.99, 0.31, 0.92, 0.945), (-2.55, 0.975, 0.35, 0.90, 0.92),
+                (HALF_L * -1 + 0.03, 0.95, 0.40, 0.87, 0.89), (-HALF_L, 0.90, 0.45, 0.82, 0.84)]
+    return hull("Body", stations, BODY_LEVELS)
 
 
 def cut(body, cutter, name: str):

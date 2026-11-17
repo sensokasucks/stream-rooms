@@ -37,6 +37,8 @@ var _extras: Extras
 var _kit: Dictionary
 var _marquee: Array = []           # Label3D: the marquee's second line, both faces
 var _retired: bool = false
+var _cars: Array = []              # MeshInstance3D: the parked cars as plain shapes [0] and as models [1]
+var _cars_shown: int = -1          # which of _cars is showing (-1 = not chosen yet)
 
 
 func _ready() -> void:
@@ -44,6 +46,7 @@ func _ready() -> void:
 	_kit = Geo.new_kit()
 	var out := Builder.build(self, _kit)
 	_marquee = out["marquee_words"]
+	_cars = [out["cars_low"], out["cars_full"]]
 	super._ready()
 	_desert = Desert.new()
 	add_child(_desert)
@@ -102,6 +105,12 @@ func _process(delta: float) -> void:
 	if _retired:
 		return
 	var wind := clampf(float(AppState.get_setting("r22_wind")), 0.0, 1.0)
+	# the parked cars: the Blender models on the Detailed look, the plain shapes on Low
+	var want := 1 if Desert.detail_level() == "full" else 0
+	if want != _cars_shown:
+		_cars_shown = want
+		for i in _cars.size():
+			(_cars[i] as MeshInstance3D).visible = i == want
 	_desert.lamp_scale = _level
 	_desert.road_noise = 0.0
 	_desert.tick(delta, 0.0, 0.0, 0.0, 0.0)
@@ -148,6 +157,6 @@ func get_controls() -> Array[Dictionary]:
 	out.append_array([
 		{"heading": "Look"},
 		{"key": "r22_detail", "label": "Set detail", "type": "option", "options": [["auto", "Auto (follows Graphics quality)"], ["low", "Low (flat colours)"], ["full", "Detailed"]],
-			"tooltip": "How detailed the desert is drawn on this PC. Detailed: photo grain on the rock, ground and road, and haze and sunbeams in the air (with the graphics settings that have volumetric fog). Low: flat colours, the lightest. Auto: Low on the Low graphics setting, Detailed otherwise. Each PC in a co-stream chooses its own."},
+			"tooltip": "How detailed the desert is drawn on this PC. Detailed: photo grain on the rock, ground and road, modelled cars and trucks in place of the plain ones, and haze and sunbeams in the air (with the graphics settings that have volumetric fog). Low: flat colours, the lightest. Auto: Low on the Low graphics setting, Detailed otherwise. Each PC in a co-stream chooses its own."},
 	])
 	return out

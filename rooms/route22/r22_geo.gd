@@ -40,6 +40,7 @@ const MAT_LIGHT: float = 5.0
 const MAT_CHROME: float = 6.0
 const MAT_GLASS: float = 7.0
 const MAT_SAND: float = 8.0
+const MAT_CAR: float = 9.0         # glossy car paint (the vehicle models' bodies)
 
 ## The road: lanes are 3.6 m, so the paint's edge lines sit at ±3.6 and the paved edge at ±3.75;
 ## gravel to ±SHOULDER. Nothing standing may come closer to the middle than CLEAR (the Cruise's

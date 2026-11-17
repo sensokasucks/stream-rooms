@@ -3,6 +3,9 @@ extends Node3D
 ## tour bus (r22_vehicles.gd), with their headlights' and tail lights' glare at night.
 ## How many: the "How busy" slider (r22_traffic, 0..100; 100 = about one every 10 seconds,
 ## 0 = an empty road). Shared in a co-stream, though which vehicle comes when is each PC's own.
+## On the Detailed look (Set detail, each PC's own) a new vehicle is one of the Blender models
+## (Vehicles.build_model), on the Low look the plain built-in-code shape; ones already on the
+## road keep the look they came with.
 ##
 ## This node is laid along a road: its own Z runs along the road, X across it (lanes at ±1.8 m).
 ##   The Cruise: the road under the car. Almost everything is oncoming (the left lane, rushing
@@ -13,6 +16,7 @@ extends Node3D
 
 const Geo := preload("res://rooms/route22/r22_geo.gd")
 const Vehicles := preload("res://rooms/route22/r22_vehicles.gd")
+const Desert := preload("res://rooms/route22/r22_desert.gd")
 
 ## Most vehicles about at once.
 const MAX_ALIVE: int = 8
@@ -27,7 +31,7 @@ var _z_far: float = -420.0              # where vehicles appear ahead (own Z)
 var _z_near: float = 320.0              # where they appear behind / leave
 var _rng := RandomNumberGenerator.new()
 var _alive: Array[Dictionary] = []      # {node, vz, x, kind, length, passed, merge}
-var _spare: Dictionary = {}             # kind -> Array of hidden vehicle nodes to reuse
+var _spare: Dictionary = {}             # pool (kind + look, a node's "pool" meta) -> Array of hidden vehicle nodes to reuse
 var _next_in: float = 3.0               # seconds to the next vehicle
 
 
@@ -117,10 +121,10 @@ func _retire(i: int) -> void:
 	var v := _alive[i]
 	var n := v["node"] as Node3D
 	n.visible = false
-	var kind := String(v["kind"])
-	if not _spare.has(kind):
-		_spare[kind] = []
-	(_spare[kind] as Array).append(n)
+	var pool := String(n.get_meta("pool", v["kind"]))
+	if not _spare.has(pool):
+		_spare[pool] = []
+	(_spare[pool] as Array).append(n)
 	_alive.remove_at(i)
 
 
@@ -139,13 +143,17 @@ func _pick_kind() -> String:
 ## A vehicle node of a kind: a spare one if there is one, else a new one built now (its mesh,
 ## and glare squares on its head and tail lights).
 func _take(kind: String) -> Node3D:
-	if _spare.has(kind) and not (_spare[kind] as Array).is_empty():
-		return (_spare[kind] as Array).pop_back()
+	var full := Desert.detail_level() == "full"
+	var pool := kind + ("_model" if full else "")
+	if _spare.has(pool) and not (_spare[pool] as Array).is_empty():
+		return (_spare[pool] as Array).pop_back()
 	var root := Node3D.new()
-	root.name = "Vehicle_" + kind
+	root.name = "Vehicle_" + pool
+	root.set_meta("pool", pool)
 	add_child(root)
 	var b := Geo.Buf.new()
-	var info := Vehicles.build(kind, {"all": b}, PAINTS[_rng.randi() % PAINTS.size()], {}, _rng)
+	var paint := PAINTS[_rng.randi() % PAINTS.size()]
+	var info := Vehicles.build_model(kind, b, paint, {}, _rng) if full else Vehicles.build(kind, {"all": b}, paint, {}, _rng)
 	Geo.add_mesh(root, "Body", b, _kit["prop"], true)
 	for p: Vector3 in info.get("front_lights", []):
 		Geo.add_glow(_kit, root, p, Color(1.6, 1.5, 1.25), 1.4)

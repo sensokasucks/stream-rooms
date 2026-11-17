@@ -1553,7 +1553,9 @@ Included rooms:
       you sometimes hear them howl) and **Neon signs** (the neon glows at night).
     - **Set detail**: **Detailed** adds photo grain and bumps to the rock, the ground and the
       road (they catch the low sun), weathered wood and real rust on the props, haze and
-      sunbeams in the air, and the woody's chrome and paint reflect the passing desert.
+      sunbeams in the air, the woody's chrome and paint reflect the passing desert, and the
+      traffic and the Drive-In's parked cars and pickups are properly modelled vehicles in
+      place of the plain blocky ones.
       **Low** is flat colours, the lightest. **Auto** follows Graphics quality. Each PC in a
       co-stream chooses its own.
   - In a co-stream the hour, the weather, the speed, the traffic, the billboard rules and the
@@ -1567,7 +1569,8 @@ Included rooms:
     wood from [Poly Haven](https://polyhaven.com) scans (CC0), cut down to a few thousand
     triangles each by `rooms/route22/models/make_models.py`; the scanned rocks are drawn in
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
-    with Blender by `rooms/route22/models/make_woody.py`.
+    with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
+    convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
