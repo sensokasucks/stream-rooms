@@ -100,9 +100,10 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	"r22_speed", "r22_curves", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
 	"r22_bb_classic", "r22_bb_monopole", "r22_bb_wooden", "r22_bb_rooftop", "r22_bb_neon", "r22_bb_trailer",
 	"r22_scenery", "r22_plants", "r22_animals", "r22_tumbleweeds", "r22_dust_devils", "r22_birds", "r22_critters", "r22_coyotes", "r22_neon", "r22_marquee", "r22_lot_lights",
-	# the Drive-In's hour and sky (rooms/drive_in/drive_in_room.gd); its Set detail and fireflies
-	# stay each PC's own
-	"drive_time", "drive_day_minutes", "drive_clouds", "drive_stars", "drive_aurora", "drive_mist"]
+	# the Drive-In's hour, sky and parking spaces (rooms/drive_in/drive_in_room.gd; the spaces
+	# are its seats, so everyone needs the same number); its Set detail and fireflies stay each
+	# PC's own
+	"drive_time", "drive_day_minutes", "drive_clouds", "drive_stars", "drive_aurora", "drive_mist", "drive_spaces"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)

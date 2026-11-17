@@ -137,6 +137,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"drive_mist": 0.35,          # haze in the air and mist lying low over the lot, 0..1
 	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
 	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
+	"drive_spaces": 60.0,        # parking spaces at the drive-in: each chatter parks their own car there (10..106; a float for the slider; reloads the room)
 	"led_look": 1.0,             # LED-dot screens (Neon City, Forge Hall): 0 = smooth picture, 1 = the room's dots
 	"holo_amount": 0.0,          # hologram screens: scan-line colour strength (0 = off)
 	"holo_transparency": 0.0,    # hologram screens: 0 = solid, 1 = invisible

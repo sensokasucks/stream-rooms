@@ -1181,12 +1181,20 @@ Included rooms:
     the screen tower, and modelled speaker posts (two speakers on hooks with curly cords),
     lot lights with floodlight shades, lamps under the snack bar's canopy, aluminium lawn
     chairs with webbing, a picnic cooler and a striped popcorn bucket in place of the plain
-    blocks. The parked cars and the pickup become the modelled 1950s cars from Route 22, in the
-    same colours (two-tone cars get their second colour on the roof, and some are
-    convertibles); the pickup has its tailgate down. **Simple**: the original flat-coloured
+    blocks. The pickup becomes the modelled pickup from Route 22, with its tailgate down. **Simple**: the original flat-coloured
     set with its simple trees, the lightest for a slow graphics card. **Auto (follows Graphics
     quality)**, the setting it starts on, picks for you: Low = Simple, anything else =
     Detailed. Each PC in a co-stream chooses its own.
+  - **Your chat parks at the drive-in.** Every chatter sits behind the wheel of their own
+    1950s car (a hardtop or a convertible, in a 1950s colour), parked on the gravel ramps facing
+    the screen, with their silhouette, picture, name and speech bubbles like on any room's
+    seat. You can see them through the windows: the cars have proper insides (seats, dash,
+    steering wheel). A chatter always comes back in the same car, and their car blinks its
+    headlights when they talk (gently in photosensitive-safe mode, and as bright as **Flash
+    strength** allows). Empty spaces stay empty: a car only drives in for a chatter, or for a
+    filler person when the Audience tab fills empty seats with them. **Parking spaces** sets
+    how many chatters fit (10 to 106; the front rows fill first). Fewer is lighter on a slow
+    graphics card. Changing it reloads the room, and in a co-stream the host's number counts.
   - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18 (to the left
     of the screen), and 21, where it starts, is a moonlit night. The sun, the moon, the sky's
     colour and the light on the lot follow it, and the lot's lamps come on as it gets dark.

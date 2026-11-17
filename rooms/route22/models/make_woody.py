@@ -403,7 +403,11 @@ def build_rear():
     cyl("TailPipeHole", 0.024, 0.024, 0.01, (0.56, y - 0.131, 0.275), "Y", "dark", 16)
 
 
-def build_cabin():
+def build_cabin(open_top: bool = True):
+    """The cabin's insides: carpet, dash, steering wheel, seats. open_top False is for
+    make_vehicles.py's hardtop sedan (the same insides under its roof): it leaves out the
+    convertible's own parts (the folded top, the windscreen frame and glass, the mirrors, the
+    visors, the wipers) and puts a parcel shelf behind the back seat instead."""
     # the floor's carpet, the dash with its pad, two dials and the glovebox line
     box("Carpet", (1.66, 2.5, 0.02), (0.0, -0.44, 0.435), "carpet")
     box("Dash", (1.68, 0.26, 0.20), (0.0, 0.74, 0.86), "paint", bevel=0.05)
@@ -463,6 +467,9 @@ def build_cabin():
         box("Pleat", (0.115, 0.03, 0.48), (x, -1.444, 0.91), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
         box("Pleat", (0.115, 0.46, 0.03), (x, -1.16, 0.70), "leather", bevel=0.014)
     box("Armrest", (0.16, 0.5, 0.10), (0.0, 0.16, 0.66), "leather", bevel=0.04)
+    if not open_top:
+        box("Shelf", (1.62, 0.36, 0.04), (0.0, -1.72, 0.93), "pad", bevel=0.012)
+        return
     # the folded top under its boot behind the back seat
     box("TopBoot", (1.74, 0.36, 0.13), (0.0, -1.72, 0.995), "pad", bevel=0.06)
     rods("BootSnaps", [[(x, -1.538, 0.985)] for x in np.linspace(-0.74, 0.74, 9)] + [[(x, -1.902, 0.985)] for x in np.linspace(-0.74, 0.74, 9)], 0.011, "chrome", 8)

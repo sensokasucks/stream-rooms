@@ -114,8 +114,8 @@ func _ready() -> void:
 			"Detailed: modelled speaker posts, lot lights, lamps, chairs, cooler and popcorn (%s)" % str(props))
 	var cars := room.find_child("DetailedCars", true, false) as Node3D
 	var old_car := room.find_child("Car_00", true, false) as Node3D
-	_check(int(props.get("classic", 0)) + int(props.get("convertible", 0)) == 16 and int(props.get("pickup", 0)) == 1 and cars != null and cars.visible
-			and old_car != null and not old_car.visible, "Detailed: the 16 parked cars and the pickup are Route 22's modelled ones")
+	_check(int(props.get("pickup", 0)) == 1 and cars != null and cars.visible and old_car != null and not old_car.visible,
+			"Detailed: the pickup is Route 22's modelled one; the model's parked cars are gone (the chatters park instead, test_drive_in_cars)")
 	_check(modelled != null and modelled.visible and blocks != null and not blocks.visible, "Detailed: the model's plain blocks are hidden under the modelled props")
 	AppState.set_setting("drive_detail", "auto")
 	AppState.set_setting("graphics_quality", "low")
