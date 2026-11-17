@@ -28,6 +28,11 @@ const BASE_DEFAULTS: Dictionary = {
 	"film_look": 1.0,            # old-film rooms: 0 = clean picture, 1 = the room's look, 2 = extra dirt
 	"sun_rays": 1.0,             # Lecture Hall / Forge Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
+	"lh_detail": "auto",         # Lecture Hall (both): how its woods and walls are drawn on this PC: auto (from graphics_quality) | simple | detailed (photo textures)
+	"lh_time": 16.5,             # Lecture Hall time of day outside the windows, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"lh_day_minutes": 0.0,       # Lecture Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at lh_time
+	"lh_clouds": 1.0,            # Lecture Hall sky outside the windows: 0 = clear, 1 = some clouds, 2 = overcast
+	"lh_glass": "quarries",      # Lecture Hall tall windows: stained (all coloured glass) | quarries (the pale diamond panes are clear) | clear (every pane clear)
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
@@ -74,6 +79,70 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_live_2_x": 0.0, "forge_live_2_y": 0.0, "forge_live_2_size": 1.0, "forge_live_2_tilt": 0.0, "forge_live_2_turn": 0.0,
 	"forge_live_3_x": 0.0, "forge_live_3_y": 0.0, "forge_live_3_size": 1.0, "forge_live_3_tilt": 0.0, "forge_live_3_turn": 0.0,
 	"forge_live_align": true,    # the upper right screen mirrors the upper left one's place (its own five are ignored)
+	# Lakeside Campfire (rooms/campfire/campfire_room.gd). The first ten are shared in a co-stream
+	# with the host's "room" group (NetSession.SHARED_BASE): keep that list in step with these.
+	"camp_fire": 1.0,            # the campfire (flames, light, sparks, crackle): 0 = out, 1 = normal, 2 = roaring
+	"camp_screen": true,         # the big screen hangs between its posts; false = taken down (open view of the lake)
+	"camp_time": 18.6,           # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset)
+	"camp_day_minutes": 0.0,     # minutes one full day takes while the clock runs; 0 = the clock stands still at camp_time
+	"camp_clouds": 0.7,          # fair-weather cloud: 0 = clear, 1 = normal, 2 = overcast
+	"camp_stars": 1.0,           # how bright the stars and the Milky Way are at night (0 = none)
+	"camp_aurora": 0.0,          # northern lights over the lake at night: 0 = none, 1 = normal, 2 = strong
+	"camp_mist": 0.4,            # haze over the lake and between the mountain ridges, 0..1
+	"camp_close_woods": false,   # thick trees right round the clearing and behind the screen, hiding the lake
+	"camp_detail": "auto",       # how detailed the camp is drawn on this PC: auto (from graphics_quality) | low | near | full
+	"camp_string_lights": true,  # the string lights and tent lanterns (this room's house lights)
+	"camp_fireflies": true,      # fireflies round the clearing on dry nights
+	"camp_autumn": false,        # autumn colours on the birches, maples and oaks (shared in a co-stream)
+	"camp_butterflies": true,    # a few butterflies over the grass by day (each PC's own, like the fireflies)
+	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
+	# Route 22 (rooms/route22 Drive-In, rooms/route22_cruise Cruise): one desert, two scenes.
+	"r22_scene": "drivein",      # Scene switch: drivein | cruise (each room sets it to its own on load; changing it loads the other)
+	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
+	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
+	"r22_weather": "clouddeck",  # clear | clouddeck | dust | storm | afterrain (r22_desert.gd WEATHER)
+	"r22_clouds": 1.0,           # cloud on top of what the weather brings: 0 = none, 1 = normal, 2 = double
+	"r22_stars": 1.0,            # stars and the Milky Way at night (0 = none)
+	"r22_heat": 0.5,             # heat shimmer and the road mirage on hot afternoons, 0..1
+	"r22_wind": 0.35,            # wind 0..1: brush sway, tumbleweeds, cloud shadows, blowing sand at the top
+	"r22_detail": "auto",        # how detailed the desert is drawn on this PC: auto (from graphics_quality) | low | full
+	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked)
+	"r22_curves": 0.5,           # Cruise: how much the road winds and rolls in the distance, 0..1
+	"r22_traffic": 30.0,         # other vehicles: 0 = none, 100 = about one every 10 s (r22_traffic.gd)
+	"r22_bb_amount": 40.0,       # Cruise billboards: how common, 0..100 (40 = about one every 15 s at 50 km/h)
+	"r22_bb_folder": "",         # billboard picture folder on this PC; empty = user://billboards
+	"r22_bb_core": "",           # Stream Core stored-file names for the billboards, comma-separated
+	"r22_bb_order": "shuffle",   # shuffle | order
+	"r22_bb_lit": true,          # billboards lit at night
+	"r22_bb_filler": true,       # made-up roadside ads when no pictures are set
+	"r22_bb_classic": true,      # billboard shapes in use (r22_billboards.gd SHAPES)
+	"r22_bb_monopole": true,
+	"r22_bb_wooden": true,
+	"r22_bb_rooftop": true,
+	"r22_bb_neon": true,
+	"r22_bb_trailer": true,
+	"r22_scenery": 100.0,        # Cruise: Landmarks and stops, 0..100 = share of road pieces that are landmarks / roadside stops (the rest plain desert; r22_trip.gd slot_at)
+	"r22_plants": 100.0,         # Plant life, 0..100 = share of the brush drawn (r22_desert.gd _apply_plants)
+	"r22_animals": 100.0,        # Animals, 0..100 = how often the vultures, jackrabbits, lizards and coyotes come (r22_extras.gd)
+	"r22_tumbleweeds": true,     # roadside life (r22_extras.gd)
+	"r22_dust_devils": true,
+	"r22_birds": true,
+	"r22_critters": true,
+	"r22_coyotes": true,         # coyotes trotting across from dusk to dawn, howling at night (r22_extras.gd)
+	"r22_neon": true,            # neon signs glow at night (gas station, motel, diner, marquee, neon-arrow boards)
+	"r22_marquee": "TONIGHT: CHAT'S PICK",  # Drive-In: the marquee's second line
+	"r22_lot_lights": true,      # Drive-In: the lot light poles (this room's house lights)
+	# Drive-In's outdoor look (rooms/drive_in/drive_in_room.gd). The first six are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_BASE): keep that list in step.
+	"drive_time": 21.0,          # time of day, hours 0..24 (6 = sunrise, 12 = noon, 18 = sunset, 21 = moonlit night)
+	"drive_day_minutes": 0.0,    # minutes one full day takes while the clock runs; 0 = the clock stands still at drive_time
+	"drive_clouds": 0.5,         # cloud: 0 = clear, 1 = fair weather, 2 = overcast
+	"drive_stars": 1.0,          # how bright the stars and the Milky Way are at night (0 = none)
+	"drive_aurora": 0.0,         # northern lights behind the screen at night: 0 = none, 1 = normal, 2 = strong
+	"drive_mist": 0.35,          # haze in the air and mist lying low over the lot, 0..1
+	"drive_detail": "auto",      # how detailed the drive-in is drawn on this PC: auto (from graphics_quality) | low (Simple) | full (Detailed)
+	"drive_fireflies": true,     # fireflies over the grass round the lot on dark nights (each PC's own)
+	"drive_spaces": 60.0,        # parking spaces at the drive-in: each chatter parks their own car there (10..106; a float for the slider; reloads the room)
 	# Screen Only set (rooms/screen_only): no 3D room, the big screen's picture fills the window with
 	# a stack of effects (screen_fx.gdshader). Room tab > Screen Only, and Core's Stream Rooms settings.
 	"so_preset": "clean",        # last look picked from the Look list; picking one sets the sliders below
