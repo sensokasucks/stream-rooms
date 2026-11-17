@@ -1597,7 +1597,7 @@ Included rooms:
     - Reaction targets: `!tomato stage`, `snacks`, `marquee` (and the screen, as everywhere).
   - **Cruise (just chatting, in the car)**: a backdrop for the chatting part of a stream. No
     big screen and no chat audience: up to four co-stream guests ride in a red woody
-    convertible (two on the front bench, two up on the rear deck) down an endless two-lane
+    convertible (two in the front seats, two on the back seat) down an endless two-lane
     highway. The car never moves; the desert slides past it. The roadside comes from 24 road
     pieces in a shuffled order (rock fins, an arch, a natural bridge, hoodoos, balanced rocks,
     slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
