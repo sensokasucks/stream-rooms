@@ -1181,7 +1181,9 @@ Included rooms:
     the screen tower, and modelled speaker posts (two speakers on hooks with curly cords),
     lot lights with floodlight shades, lamps under the snack bar's canopy, aluminium lawn
     chairs with webbing, a picnic cooler and a striped popcorn bucket in place of the plain
-    blocks. **Simple**: the original flat-coloured
+    blocks. The parked cars and the pickup become the modelled 1950s cars from Route 22, in the
+    same colours (two-tone cars get their second colour on the roof, and some are
+    convertibles); the pickup has its tailgate down. **Simple**: the original flat-coloured
     set with its simple trees, the lightest for a slow graphics card. **Auto (follows Graphics
     quality)**, the setting it starts on, picks for you: Low = Simple, anything else =
     Detailed. Each PC in a co-stream chooses its own.

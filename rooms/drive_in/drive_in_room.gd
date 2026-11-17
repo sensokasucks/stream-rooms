@@ -20,7 +20,8 @@ extends Room
 ##     grass tufts and ferns along the fence, plaster and concrete grain on the snack bar and
 ##     the screen tower, and swaps the model's plain blocks for modelled props
 ##     (models/props.glb from models/make_props.py: the speaker posts, the lot lights, the snack
-##     bar's lamps, the lawn chairs, the cooler and the popcorn; _build_detailed_props).
+##     bar's lamps, the lawn chairs, the cooler and the popcorn; _build_detailed_props) and the
+##     parked cars and the pickup for Route 22's Blender models (_build_detailed_cars).
 ##     Auto follows Graphics quality (Low = Simple).
 ##     Both looks are built when the room loads; _apply_detail() only shows one, so switching is
 ##     instant.
@@ -77,6 +78,32 @@ const PROP_LOOKS: Dictionary = {
 	"lamp_glow": "Lamp_Glow", "cooler": "Cooler_Blue", "stripe_red": "Stripe_Red", "stripe_white": "Stripe_White",
 	"popcorn": "Popcorn",
 }
+## The parked cars' Blender models: Route 22's (rooms/route22/models/vehicles.glb, made by
+## make_vehicles.py there), read when the room loads, so a new export shows up here by itself.
+const VEHICLES := "res://rooms/route22/models/vehicles.glb"
+const CAR_TEX := "res://rooms/route22/textures/"
+## The plain blocks of each parked car's paint in drive_in.glb, and the two-tone roof colour.
+const CAR_PAINT_PREFIX := "Paint_"
+## How each vehicle surface looks: material name in vehicles.glb -> [colour, metallic,
+## roughness] (a plain material), ["grain", detail picture, metres per copy, colour] (the
+## Route 22 photo grain through drive_detail.gdshader), or the drive_in.glb material it borrows
+## (the lamps, so they glow as in the Simple look). "paint", "ivory" (the roof of a two-tone
+## car), "wood", "trim" and "bed" are worked out per car in _car_material.
+const CAR_LOOKS: Dictionary = {
+	"chrome": [Color(0.8, 0.8, 0.82), 1.0, 0.12], "hub": [Color(0.8, 0.8, 0.82), 1.0, 0.15],
+	"glass": [Color(0.03, 0.04, 0.05), 0.2, 0.05], "dark": [Color(0.05, 0.05, 0.055), 0.0, 0.7],
+	"white": [Color(0.9, 0.9, 0.86), 0.0, 0.55], "whitewall": [Color(0.9, 0.9, 0.86), 0.0, 0.7],
+	"plate": [Color(0.95, 0.8, 0.2), 0.3, 0.45], "amber": [Color(1.0, 0.55, 0.1), 0.0, 0.3],
+	"tyre": ["grain", CAR_TEX + "prop_rubber.jpg", 0.5, Color(0.07, 0.07, 0.075)],
+	"pad": ["grain", CAR_TEX + "prop_leather.jpg", 0.5, Color(0.05, 0.05, 0.055)],
+	"seat": ["grain", CAR_TEX + "prop_leather.jpg", 0.5, Color(0.08, 0.07, 0.065)],
+	"leather": ["grain", CAR_TEX + "prop_leather.jpg", 0.5, Color(0.88, 0.84, 0.76)],
+	"carpet": ["grain", CAMP_TEX + "detail_fabric.jpg", 0.3, Color(0.05, 0.05, 0.055)],
+	"lamp_front": "Head_Light", "lamp_tail": "Tail_Light",
+}
+## How high the floor of the pickup model's bed is (metres; vehicles.glb "pickup", "bed"
+## surface). The things on the bed (chairs, cooler, popcorn, blanket) come down to it.
+@export var pickup_bed_floor: float = 0.7
 ## The middle of the screen on the ground: the speaker posts' rows curve round it, and each
 ## post's front faces it (its speakers hang left and right, towards the cars either side).
 const SCREEN_MIDDLE := Vector2(0.0, -60.0)
@@ -109,6 +136,11 @@ var _detailed: Node3D             # the detailed trees and undergrowth (shown in
 var _detailed_props: Node3D       # the modelled props (shown in the Detailed look)
 var _prop_meshes: Dictionary = {} # prop name -> its mesh with this room's materials (_prop_mesh)
 var _prop_counts: Dictionary = {} # how many of each prop were placed (for tests)
+var _detailed_cars: Node3D        # the modelled cars and pickup (shown in the Detailed look)
+var _simple_cars: Array[Node3D] = []   # the model's own cars and pickup (hidden in the Detailed look)
+var _car_mats: Dictionary = {}    # look key -> Material, so cars of one colour share theirs
+var _bed_drop: float = 0.0        # how far the things on the truck bed come down in the Detailed look
+var _blanket: Node3D              # the model's blanket on the truck bed (moved down with _bed_drop)
 var _fireflies: Array[CPUParticles3D] = []
 var _mist_mat: ShaderMaterial
 var _ground_swaps: Array[Dictionary] = []   # {mesh, surface, simple, detailed}: see _swap_materials
@@ -135,6 +167,7 @@ func _ready() -> void:
 	_build_fireflies()
 	_swap_materials()
 	_build_detailed_plants()
+	_build_detailed_cars()
 	_build_detailed_props()
 	_hour = fposmod(float(AppState.get_setting("drive_time")), 24.0)
 	EventBus.setting_changed.connect(_on_drive_setting_changed)
@@ -220,6 +253,12 @@ func _apply_detail() -> void:
 		_detailed.visible = detailed
 	if _detailed_props:
 		_detailed_props.visible = detailed
+	if _detailed_cars:
+		_detailed_cars.visible = detailed
+		for car in _simple_cars:
+			car.visible = not detailed
+		if _blanket:
+			_blanket.position.y = -_bed_drop if detailed else 0.0
 
 
 ## Makes the Detailed look's materials for the ground (GROUND_LOOKS) and the wood and cloth
@@ -416,6 +455,186 @@ func get_plant_counts() -> Dictionary:
 	return _plant_counts
 
 
+# ── The modelled cars ────────────────────────────────────────
+## Builds the Detailed look's cars (hidden until _apply_detail shows them): every parked car in
+## drive_in.glb ("Car_00", "Car_01", ...) and the backed-in "Pickup_Truck" get a Route 22 Blender
+## model (VEHICLES) in their place, the same colour. Where each stands and which way it faces
+## comes from the original's own lamps (its "Head_Light" and "Tail_Light" surfaces), so it also
+## gets the same nose-up tilt on the ramps; its wheels go down to where the original's lowest
+## point is. Two-tone cars become hardtops with a roof in their second colour; the plain ones are
+## two hardtops to one convertible. The pickup gets its tailgate down, its tail where the
+## original's is, and the things on its bed come down to the model's lower bed (_bed_drop).
+func _build_detailed_cars() -> void:
+	if not ResourceLoader.exists(VEHICLES):
+		return
+	var root := (load(VEHICLES) as PackedScene).instantiate()
+	var models: Dictionary = {}       # kind -> {"mesh", "lamp_mid": the middle of its lamps, "low": its box}
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var fronts := Vector3.ZERO
+		var tails := Vector3.ZERO
+		var nf := 0
+		var nt := 0
+		for c in mi.get_children():
+			if String(c.name).contains("_LampFront_"):
+				fronts += (c as Node3D).position
+				nf += 1
+			elif String(c.name).contains("_LampTail_"):
+				tails += (c as Node3D).position
+				nt += 1
+		var front := fronts / maxf(nf, 1)
+		var tail := tails / maxf(nt, 1)
+		models[String(mi.name)] = {"mesh": mi.mesh, "front": front, "tail": tail, "box": mi.get_aabb()}
+	root.free()
+	if not models.has("classic") or not models.has("pickup"):
+		return
+	_detailed_cars = Node3D.new()
+	_detailed_cars.name = "DetailedCars"
+	_detailed_cars.visible = false
+	_fx.add_child(_detailed_cars)
+	var plain := 0
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var car_name := String(mi.name)
+		var is_pickup := car_name == "Pickup_Truck"
+		if mi.mesh == null or _fx.is_ancestor_of(mi) or not (car_name.begins_with("Car_") or is_pickup):
+			continue
+		# its paint colours (first = the body, a second = the roof) and its lamps
+		var paints: Array[Color] = []
+		var head := Vector3.ZERO
+		var tail := Vector3.ZERO
+		var to_room := global_transform.affine_inverse() * mi.global_transform
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s)
+			var look := m.resource_name if m else ""
+			if m is BaseMaterial3D and (look.begins_with(CAR_PAINT_PREFIX) or look == "Truck_Red"):
+				paints.append((m as BaseMaterial3D).albedo_color)
+			elif look == "Head_Light" or look == "Tail_Light":
+				var sum := Vector3.ZERO
+				var verts: PackedVector3Array = mi.mesh.surface_get_arrays(s)[Mesh.ARRAY_VERTEX]
+				for v in verts:
+					sum += to_room * v
+				if look == "Head_Light":
+					head = sum / maxf(verts.size(), 1)
+				else:
+					tail = sum / maxf(verts.size(), 1)
+		if paints.is_empty() or head.is_equal_approx(tail):
+			continue
+		var kind := "pickup"
+		if not is_pickup:
+			if paints.size() > 1 or plain % 3 != 1:
+				kind = "classic"
+			else:
+				kind = "convertible"
+			if paints.size() == 1:
+				plain += 1
+		var model: Dictionary = models[kind]
+		# facing: the model's lamps line up with the original's (model front = -Z)
+		var turn := Basis.looking_at((head - tail).normalized())
+		var own_tilt := Basis.looking_at(((model["front"] as Vector3) - (model["tail"] as Vector3)).normalized())
+		var facing := turn * own_tilt.inverse()
+		var xf := Transform3D(facing, Vector3.ZERO)
+		if is_pickup:
+			# its tail at the original's tail (the bed's load stays on the bed)
+			xf.origin = tail - facing * (model["tail"] as Vector3)
+		else:
+			xf.origin = (head + tail) * 0.5 - facing * (((model["front"] as Vector3) + (model["tail"] as Vector3)) * 0.5)
+		# wheels down: the model's lowest corner to the original's lowest point
+		var low := INF
+		var box: AABB = model["box"]
+		for k in 8:
+			low = minf(low, (xf * box.get_endpoint(k)).y)
+		xf.origin.y += _room_aabb(mi).position.y - low
+		var paint := paints[0]
+		var roof := paints[1] if paints.size() > 1 else Color(0.92, 0.88, 0.78)
+		_add_car(model["mesh"], xf, paint, roof)
+		if is_pickup and models.has("pickup_gate_down"):
+			_add_car((models["pickup_gate_down"] as Dictionary)["mesh"], xf, paint, roof)
+			var frames := find_child("Lawn_Chair_Frames", true, false) as MeshInstance3D
+			var old_floor := _room_aabb(frames).position.y if frames else pickup_bed_floor
+			_bed_drop = maxf(0.0, old_floor - (xf.origin.y + pickup_bed_floor))
+		_simple_cars.append(mi)
+		_prop_counts[kind] = int(_prop_counts.get(kind, 0)) + 1
+	_blanket = find_child("Blanket", true, false) as Node3D
+
+
+## Adds one vehicle model at xf (room space) with this room's materials for its colours.
+func _add_car(mesh: Mesh, xf: Transform3D, paint: Color, roof: Color) -> void:
+	var mi := MeshInstance3D.new()
+	mi.name = "Car%d" % _detailed_cars.get_child_count()
+	mi.mesh = mesh
+	_detailed_cars.add_child(mi)
+	mi.transform = xf
+	for s in mesh.get_surface_count():
+		var from := mesh.surface_get_material(s)
+		var m := _car_material(from.resource_name if from else "", paint, roof)
+		if m:
+			mi.set_surface_override_material(s, m)
+
+
+## The material for a vehicle surface (CAR_LOOKS by its material name; the paint ones from the
+## car's own colours), made once and shared by every car that needs the same one.
+func _car_material(look: String, paint: Color, roof: Color) -> Material:
+	var key := look
+	var spec: Variant = CAR_LOOKS.get(look, null)
+	match look:
+		"paint", "wood", "trim":            # (wood and trim are the woody's: plain paint here)
+			key = "paint_" + paint.to_html()
+			spec = ["paint", paint]
+		"ivory":
+			key = "paint_" + roof.to_html()
+			spec = ["paint", roof]
+		"bed":
+			spec = ["grain", CAMP_TEX + "detail_planks.jpg", 1.1, Color(0.35, 0.22, 0.12)]
+	if _car_mats.has(key):
+		return _car_mats[key]
+	var made: Material = null
+	if spec is String:
+		made = _imported_material(String(spec))
+	elif spec is Array and str((spec as Array)[0]) == "paint":
+		# glossy car paint: a clear coat over a slightly metallic colour
+		var sm := StandardMaterial3D.new()
+		sm.albedo_color = (spec as Array)[1]
+		sm.metallic = 0.3
+		sm.roughness = 0.32
+		sm.clearcoat_enabled = true
+		sm.clearcoat = 0.7
+		sm.clearcoat_roughness = 0.12
+		made = sm
+	elif spec is Array and str((spec as Array)[0]) == "grain":
+		var gm := ShaderMaterial.new()
+		gm.shader = DETAIL_SHADER
+		gm.set_shader_parameter("grain_tex", load(String((spec as Array)[1])))
+		gm.set_shader_parameter("tile", float((spec as Array)[2]))
+		gm.set_shader_parameter("base", (spec as Array)[3])
+		made = gm
+	elif spec is Array:
+		var pm := StandardMaterial3D.new()
+		pm.albedo_color = (spec as Array)[0]
+		pm.metallic = float((spec as Array)[1])
+		pm.roughness = float((spec as Array)[2])
+		if look == "amber":
+			pm.emission_enabled = true
+			pm.emission = (spec as Array)[0]
+			pm.emission_energy_multiplier = 0.4
+		made = pm
+	_car_mats[key] = made
+	return made
+
+
+## A material of drive_in.glb by its name (the first mesh surface that uses it), or null.
+func _imported_material(mat_name: String) -> Material:
+	for n in find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or _fx.is_ancestor_of(mi):
+			continue
+		for s in mi.mesh.get_surface_count():
+			var m := mi.mesh.surface_get_material(s)
+			if m and m.resource_name == mat_name:
+				return m
+	return null
+
+
 # ── The modelled props ───────────────────────────────────────
 ## Builds the Detailed look's props (hidden until _apply_detail shows them) where the model's
 ## plain blocks stand, finding them from the blocks' own shapes (so moving a block in Blender
@@ -426,7 +645,8 @@ func get_plant_counts() -> Dictionary:
 ##     the model has next to it ("Lamp_Heads"); the two low lamp heads under the snack bar's
 ##     canopy get the small wall lamp;
 ##   - lawn chairs where "Lawn_Chair_Canvas" has one, the cooler and the popcorn bucket on the
-##     truck bed where the blocks are.
+##     truck bed where the blocks are (lowered by _bed_drop onto the pickup model's bed, which
+##     is lower than the model's own: _build_detailed_cars runs first and sets it).
 ## The lamps' light still comes from the room's LAMP_ markers (Room), which stay where they are.
 func _build_detailed_props() -> void:
 	if not ResourceLoader.exists(PROPS):
@@ -485,12 +705,12 @@ func _build_detailed_props() -> void:
 		floor_y = _room_aabb(frames).position.y
 	for p: Vector3 in _feet("Lawn_Chair_Canvas", 99.0, 0.15):
 		if meshes.has("lawn_chair"):
-			_place_prop(meshes, "lawn_chair", Transform3D(Basis.IDENTITY, Vector3(p.x, floor_y, p.z)))
+			_place_prop(meshes, "lawn_chair", Transform3D(Basis.IDENTITY, Vector3(p.x, floor_y - _bed_drop, p.z)))
 	for pair: Array in [["Cooler", "cooler"], ["Popcorn_Bucket", "popcorn"]]:
 		var block := find_child(String(pair[0]), true, false) as MeshInstance3D
 		if block and meshes.has(pair[1]):
 			var box := _room_aabb(block)
-			_place_prop(meshes, String(pair[1]), Transform3D(Basis.IDENTITY, Vector3(box.get_center().x, box.position.y, box.get_center().z)))
+			_place_prop(meshes, String(pair[1]), Transform3D(Basis.IDENTITY, Vector3(box.get_center().x, box.position.y - _bed_drop, box.get_center().z)))
 
 
 ## Adds one prop (a MeshInstance3D with this room's materials) at xf, room space.

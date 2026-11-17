@@ -2,7 +2,7 @@ extends Node
 ## Drive-In's outdoor look (rooms/drive_in/drive_in_room.gd): the room loads with its five
 ## cameras and its screen, the Room tab lists its controls, Set detail swaps the Simple and the
 ## Detailed look (photo ground, the belt of detailed trees, grass tufts and ferns, the model's
-## simple trees hidden, modelled props in place of the plain blocks), Time of day moves the sun and the moon and turns the lot's lamps down
+## simple trees hidden, modelled props and cars in place of the plain blocks), Time of day moves the sun and the moon and turns the lot's lamps down
 ## by day, the fireflies come out at night only, and the sky is the Lakeside Campfire's.
 ## Saves screenshots of the looks into the output folder (look at them: the look is not checked
 ## here). Pass "quick" after the folder to skip the slow Detailed screenshots.
@@ -112,6 +112,10 @@ func _ready() -> void:
 	_check(int(props.get("speaker_post", 0)) >= 100 and int(props.get("light_pole", 0)) == 8 and int(props.get("wall_lamp", 0)) == 2
 			and int(props.get("lawn_chair", 0)) >= 1 and int(props.get("cooler", 0)) == 1 and int(props.get("popcorn", 0)) == 1,
 			"Detailed: modelled speaker posts, lot lights, lamps, chairs, cooler and popcorn (%s)" % str(props))
+	var cars := room.find_child("DetailedCars", true, false) as Node3D
+	var old_car := room.find_child("Car_00", true, false) as Node3D
+	_check(int(props.get("classic", 0)) + int(props.get("convertible", 0)) == 16 and int(props.get("pickup", 0)) == 1 and cars != null and cars.visible
+			and old_car != null and not old_car.visible, "Detailed: the 16 parked cars and the pickup are Route 22's modelled ones")
 	_check(modelled != null and modelled.visible and blocks != null and not blocks.visible, "Detailed: the model's plain blocks are hidden under the modelled props")
 	AppState.set_setting("drive_detail", "auto")
 	AppState.set_setting("graphics_quality", "low")
