@@ -13,6 +13,8 @@ render_mode cull_disabled;
 
 uniform sampler2D tex_asphalt : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
+// the asphalt's normal map (textures/road_asphalt_nor.jpg): its grit catches the light (Detailed)
+uniform sampler2D tex_asphalt_nor : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 // The colour of the sky at the horizon right now (what the mirage shows).
 uniform vec3 sky_horizon = vec3(0.8, 0.7, 0.6);
 // Heat shimmer, 0..1 (the Heat slider times daylight): how strong the mirage is.
@@ -73,6 +75,13 @@ void fragment() {
 	float graze = 1.0 - abs(dot(normalize(w_pos - CAMERA_POSITION_WORLD), vec3(0.0, 1.0, 0.0)));
 	float mirage = heat * smoothstep(45.0, 140.0, dist) * smoothstep(0.985, 0.998, graze);
 	mirage *= 0.6 + 0.4 * texture(rock_noise, vec2(x / 6.0, along / 40.0 + TIME * 0.05)).b;
+	if (detail > 0.5) {
+		// picture x = the road's own x, picture "up" = its own +z; smooth paint and puddles
+		vec3 nt = texture(tex_asphalt_nor, q / 4.0).rgb * 2.0 - 1.0;
+		vec3 on = normalize(vec3(nt.x, nt.z, -nt.y));
+		on = normalize(mix(on, vec3(0.0, 1.0, 0.0), clamp(puddle + yellow + white + wet * 0.5, 0.0, 1.0)));
+		NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(on, 0.0)).xyz);
+	}
 	ALBEDO = col * (1.0 - mirage);
 	EMISSION = glow + sky_horizon * mirage * 0.9;
 	ROUGHNESS = rough;

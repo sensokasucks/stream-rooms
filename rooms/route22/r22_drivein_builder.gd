@@ -12,7 +12,8 @@ extends RefCounted
 ##     (BEAM_Projector), lot light poles (the house lights: LIGHTS_House / LAMP_*), the ticket
 ##     booth, an old gas pump, a fence, the neon "ROUTE 22 DRIVE-IN" marquee by the road,
 ##   - Route 22 itself running past the entrance (traffic: r22_traffic.gd, laid along it),
-##   - red sandstone behind the screen and round the lot (r22_geo.gd), brush, ten cameras.
+##   - red sandstone behind the screen and round the lot (r22_geo.gd), photo-scanned boulders,
+##     stones, oil drums and dead wood among it (_scans, models/), brush, ten cameras.
 ## Room space: the screen at the north (-Z) end facing the lot, the road along X at z = ROAD_Z.
 
 const Geo := preload("res://rooms/route22/r22_geo.gd")
@@ -81,6 +82,7 @@ static func build(room: Node3D, kit: Dictionary) -> Dictionary:
 	_lot_things(props, labels, room, rng)
 	_marquee(props, neon, labels, kit, out)
 	_rocks(rock, far, rng)
+	_scans(rock, set_root, kit)
 	Geo.add_mesh(set_root, "Rocks", rock, kit["rock"], true)
 	Geo.add_mesh(set_root, "Props", props, kit["prop"], true)
 	Geo.add_mesh(set_root, "Neon", neon, kit["neon"], false)
@@ -399,6 +401,45 @@ static func _rocks(rock: Geo.Buf, far: Geo.Buf, rng: RandomNumberGenerator) -> v
 		var a := TAU * float(i) / 10.0 + rng.randf() * 0.4
 		var d := rng.randf_range(220.0, 330.0)
 		Geo.butte(far, Vector3(sin(a) * d, 0.0, -cos(a) * d), Vector3(rng.randf_range(50.0, 120.0), rng.randf_range(25.0, 60.0), rng.randf_range(40.0, 80.0)), float(i) * 13.0, 26, rng.randf() * TAU)
+
+
+## The photo-scanned models (models/, CC0 Poly Haven scans; Geo.scan_rock / scan_prop): boulders
+## among the sandstone behind the screen and outside the fence, stone litter along the fence,
+## oil drums by the snack bar and the gas pump, and dead wood out in the brush. Their own random
+## numbers, so the rest of the set (and the brush) is laid out as before.
+static func _scans(rock: Geo.Buf, parent: Node3D, kit: Dictionary) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 2222
+	# boulders behind the screen, among the procedural ones (scale 1 = about 2.5 m across)
+	for i in 36:
+		var at := Vector3(rng.randf_range(-70.0, 70.0), 0.0, rng.randf_range(-70.0, -24.0))
+		var s := rng.randf_range(0.4, 1.8)
+		Geo.scan_rock(rock, Geo.SCAN_ROCKS[i % 5], at, Vector3(s, s * rng.randf_range(0.8, 1.3), s), rng.randf() * TAU)
+	# smaller ones outside the side fences (the lot is x -23..23, the fence at +-23.5)
+	for i in 18:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var at := Vector3(side * rng.randf_range(26.0, 45.0), 0.0, rng.randf_range(-20.0, 24.0))
+		var s := rng.randf_range(0.3, 1.0)
+		Geo.scan_rock(rock, Geo.SCAN_ROCKS[i % 5], at, Vector3(s, s, s), rng.randf() * TAU)
+	# stone litter along the outside of the fences
+	for i in 10:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var at := Vector3(side * rng.randf_range(24.5, 27.0), 0.0, rng.randf_range(-19.0, 25.0))
+		var s := rng.randf_range(2.5, 4.0)
+		Geo.scan_rock(rock, "stones" if i % 3 else "pile", at, Vector3(s, s, s), rng.randf() * TAU, 0.1, 0.05)
+	# oil drums: behind the snack bar's east corner (seen from the Snack Bar camera) and by the
+	# old gas pump at the entrance
+	var sb := SNACK_BAR
+	Geo.scan_prop(parent, kit, "barrel", sb + Vector3(5.2, 0.0, 1.6), 1.0, 0.4)
+	Geo.scan_prop(parent, kit, "barrel_rusty", sb + Vector3(5.4, 0.0, 2.5), 1.0, 2.1)
+	Geo.scan_prop(parent, kit, "barrel", sb + Vector3(-5.3, 0.0, 2.2), 1.0, 1.2)
+	Geo.scan_prop(parent, kit, "barrel_rusty", Vector3(-21.0, 0.0, 25.3), 1.0, 0.9)
+	# dead wood out in the brush beyond the fences
+	Geo.scan_prop(parent, kit, "dead_trunk", Vector3(-28.0, 0.0, 6.0), 1.6, 0.5)
+	Geo.scan_prop(parent, kit, "dead_trunk", Vector3(31.0, 0.0, -14.0), 1.3, 2.4)
+	Geo.scan_prop(parent, kit, "dry_branches", Vector3(-26.5, 0.0, -6.0), 1.4, 1.0)
+	Geo.scan_prop(parent, kit, "dry_branches", Vector3(27.5, 0.0, 17.0), 1.2, 3.6)
+	Geo.scan_prop(parent, kit, "dry_branches", Vector3(-31.0, 0.0, 19.0), 1.6, 5.1)
 
 
 static func _cameras(markers: Node3D) -> void:

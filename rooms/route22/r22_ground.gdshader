@@ -13,6 +13,10 @@ render_mode cull_disabled;
 uniform sampler2D tex_desert : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_sand : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
+// their normal maps (textures/*_nor.jpg): the cracks and the sand ripples catch the low sun
+// (Detailed look only)
+uniform sampler2D tex_desert_nor : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D tex_sand_nor : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 // The Drive-In's lot: x0, z0, x1, z1 in metres (world). Zero size = no lot (the Cruise).
 uniform vec4 lot_rect = vec4(0.0);
 // Half the road's width including the gravel shoulder, metres (the shoulder is drawn here).
@@ -63,6 +67,15 @@ void fragment() {
 	float puddle = smoothstep(0.62, 0.7, texture(rock_noise, q / 48.0).b) * wet * (1.0 - drifts * 0.7);
 	col *= 1.0 - 0.4 * wet;
 	col = mix(col, col * 0.4, puddle);
+	if (detail > 0.5) {
+		// the photos' bumps: picture x = world x, picture "up" = world +z; flat in puddles
+		vec3 nc = texture(tex_desert_nor, q / 8.0).rgb * 2.0 - 1.0;
+		vec3 ns = texture(tex_sand_nor, q / 4.0).rgb * 2.0 - 1.0;
+		vec3 nt = normalize(mix(nc, ns, drifts));
+		vec3 wn = normalize(vec3(nt.x, nt.z, nt.y) * vec3(1.0, 1.0, -1.0));
+		wn = normalize(mix(wn, vec3(0.0, 1.0, 0.0), puddle + gravel * 0.5));
+		NORMAL = normalize((VIEW_MATRIX * vec4(wn, 0.0)).xyz);
+	}
 	ALBEDO = col;
 	ROUGHNESS = mix(0.95, 0.04, puddle);
 	SPECULAR = 0.3 + 0.4 * puddle;

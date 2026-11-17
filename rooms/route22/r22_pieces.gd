@@ -9,8 +9,9 @@ extends RefCounted
 ## a jerky stand, a ranch with a water tower and a windmill, a rusted wreck, signs, guardrails,
 ## culverts).
 ## Every piece also gets the things that run the whole way: telephone poles on the right every
-## 40 m with their wires (ravens perch on some), reflector posts, brush, small rocks, and far
-## off, now and then, a butte.
+## 40 m with their wires (ravens perch on some), reflector posts, brush, small rocks (some of
+## them photo-scanned, see Geo.scan_rock), now and then dead wood, and far off, now and then, a
+## butte. The gas station, diner and jerky stand have scanned oil drums (Geo.scan_prop).
 ##
 ## A piece's space: X across the road (0 = the middle line, +X = the car's right), Z along it
 ## from 0 to -LENGTH (a piece reaches ahead of its origin, the way the car drives).
@@ -39,7 +40,8 @@ const POLE_H: float = 8.0
 ##   "spinners" nodes r22_trip.gd turns about their Z (windmill blades),
 ##   "mile"     the mile marker's Label3D (r22_trip.gd writes the mile on it), or null.
 ## The meshes inside: Rocks (sandstone), Props, Neon, Far (the distant butte), Brush_* (the
-## plants), Labels (sign words, Label3D, which r22_trip.gd bends on the CPU).
+## plants), Scan_* (photo-scanned props, _scan), Labels (sign words, Label3D, which r22_trip.gd
+## bends on the CPU).
 static func build(type: int, kit: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	var kind := TYPES[type]
@@ -177,6 +179,27 @@ static func _common(p: Dictionary) -> void:
 		var at := Vector2(rng.randf_range(8.0, 60.0) * (-1.0 if rng.randf() < 0.5 else 1.0), rng.randf_range(-LENGTH, 0.0))
 		if _free(p, at, 1.0):
 			Geo.boulder(rock, Vector3(at.x, 0.0, at.y), rng.randf_range(0.4, 1.4), rng.randf() * 50.0, rng.randf() * TAU)
+	# photo-scanned rocks (models/, CC0 Poly Haven scans) among them, a litter of scanned stones
+	# near the shoulders and, now and then, a dead quiver-tree trunk or a heap of dry branches.
+	# Their own random numbers, so the rest of the piece (billboard spots, brush) stays as it was.
+	var srng := RandomNumberGenerator.new()
+	srng.seed = rng.seed + 5
+	for i in 4:
+		var at := Vector2(srng.randf_range(7.5, 45.0) * (-1.0 if srng.randf() < 0.5 else 1.0), srng.randf_range(-LENGTH, 0.0))
+		if _free(p, at, 1.0):
+			var s := srng.randf_range(0.5, 1.6)
+			Geo.scan_rock(rock, Geo.SCAN_ROCKS[srng.randi() % 5], Vector3(at.x, 0.0, at.y), Vector3(s, s * srng.randf_range(0.8, 1.25), s), srng.randf() * TAU)
+	for i in 2:
+		var at := Vector2(srng.randf_range(6.6, 14.0) * (-1.0 if srng.randf() < 0.5 else 1.0), srng.randf_range(-LENGTH, 0.0))
+		if _free(p, at, 0.3):
+			var s := srng.randf_range(2.5, 4.0)
+			Geo.scan_rock(rock, "stones" if srng.randf() < 0.6 else "pile", Vector3(at.x, 0.0, at.y), Vector3(s, s, s), srng.randf() * TAU, 0.1, 0.05)
+	if srng.randf() < 0.35:
+		var at := Vector2(srng.randf_range(9.0, 30.0) * (-1.0 if srng.randf() < 0.5 else 1.0), srng.randf_range(-LENGTH, 0.0))
+		if _free(p, at, 1.0):
+			var trunk := srng.randf() < 0.5
+			_scan(p, "dead_trunk" if trunk else "dry_branches", Vector3(at.x, 0.0, at.y), srng.randf_range(1.2, 1.8) if trunk else srng.randf_range(1.0, 1.6), srng.randf() * TAU)
+			_claim(p, at, Vector2(2.0, 2.0))
 	# a far butte or mesa on one side, now and then
 	if rng.randf() < 0.55:
 		var side := -1.0 if rng.randf() < 0.5 else 1.0
@@ -186,6 +209,14 @@ static func _common(p: Dictionary) -> void:
 	# billboard spots: one each side, where the piece left room
 	_slot(p, rng.randf_range(16.0, 24.0), rng.randf_range(-70.0, -15.0))
 	_slot(p, -rng.randf_range(16.0, 24.0), rng.randf_range(-70.0, -15.0))
+
+
+## A photo-scanned prop (Geo.scan_prop: barrel, barrel_rusty, dead_trunk, dry_branches) in the
+## piece, fading out with the rest at the far ends of the road. at = its foot, in the piece's space.
+static func _scan(p: Dictionary, name: String, at: Vector3, scale: float, turn: float) -> void:
+	var mi := Geo.scan_prop(p["root"], p["kit"], name, at, scale, turn)
+	if mi:
+		_finish(mi, 220.0)
 
 
 ## Where the brush grows: thick near the road, thinning out to 140 m, none on claimed ground.
@@ -346,7 +377,11 @@ static func _boulders(p: Dictionary, count: int) -> void:
 		var at := Vector2(rng.randf_range(9.0, 60.0) * (-1.0 if rng.randf() < 0.5 else 1.0), rng.randf_range(-LENGTH, 0.0))
 		if _free(p, at, 1.0):
 			var s := rng.randf_range(0.8, 3.2)
-			Geo.boulder(p["rock"], Vector3(at.x, 0.0, at.y), s, rng.randf() * 50.0, rng.randf() * TAU)
+			if i % 2 == 0:
+				Geo.boulder(p["rock"], Vector3(at.x, 0.0, at.y), s, rng.randf() * 50.0, rng.randf() * TAU)
+			else:
+				# every other one a photo-scanned boulder (the scans are about 2.5 m across at 1)
+				Geo.scan_rock(p["rock"], Geo.SCAN_ROCKS[i % 5], Vector3(at.x, 0.0, at.y), Vector3.ONE * s * 0.8, rng.randf() * TAU)
 			_claim(p, at, Vector2(s * 2.0, s * 2.0))
 
 
@@ -392,6 +427,10 @@ static func _gas_station(p: Dictionary) -> void:
 	_words(p, "EAT · COLD POP", Vector3(8.27, 8.25, z + 8.0), -PI * 0.5, 0.3, Color(3.0, 3.0, 3.0), true)
 	(p["glows"] as Array).append([Vector3(8.0, 8.8, z + 8.0), Color(2.0, 0.6, 0.25), 4.0, true])
 	(p["glows"] as Array).append([Vector3(x, 4.0, z), Color(1.6, 1.5, 1.3), 3.0, false])
+	# oil drums by the shop's corner (photo-scanned)
+	_scan(p, "barrel", Vector3(x + 5.0, 0.0, z - 5.2), 1.0, 0.3)
+	_scan(p, "barrel_rusty", Vector3(x + 5.7, 0.0, z - 5.9), 1.0, 1.9)
+	_scan(p, "barrel_rusty", Vector3(x + 5.1, 0.0, z - 6.3), 1.0, 4.0)
 	_claim(p, Vector2(x + 3.0, z), Vector2(26.0, 24.0))
 
 
@@ -438,6 +477,8 @@ static func _diner(p: Dictionary) -> void:
 	neon.block(Vector3(8.84, 6.4, z + 10.0), Vector3(0.02, 1.4, 2.8), Color(1.0, 0.25, 0.2))
 	_words(p, "EAT", Vector3(8.83, 6.45, z + 10.0), -PI * 0.5, 1.0, Color(4.0, 0.9, 0.7), true)
 	(p["glows"] as Array).append([Vector3(8.6, 6.4, z + 10.0), Color(2.0, 0.4, 0.3), 3.5, true])
+	# a rusty drum out back for the trash (photo-scanned)
+	_scan(p, "barrel_rusty", Vector3(x + 3.2, 0.0, z - 7.0), 1.0, 0.8)
 	_claim(p, Vector2(x, z + 2.0), Vector2(16.0, 30.0))
 
 
@@ -460,6 +501,8 @@ static func _jerky(p: Dictionary) -> void:
 		props.rod(Vector3(-8.0, 0.0, fz), Vector3(-8.0, 3.2, fz), 0.03, 4, Color(0.6, 0.6, 0.6))
 		props.quad(Vector3(-8.0, 3.1, fz), Vector3(-8.0, 3.1, fz - 1.1), Vector3(-8.0, 2.4, fz - 1.0), Vector3(-8.0, 2.4, fz), Color(0.95, 0.75, 0.1) if i == 0 else Color(0.1, 0.4, 0.75))
 	props.mat = Geo.MAT_PAINT
+	# a rusty water drum beside the shack (photo-scanned)
+	_scan(p, "barrel_rusty", Vector3(x + 0.6, 0.0, z + 3.3), 1.0, 2.2)
 	_claim(p, Vector2(x - 1.0, z), Vector2(10.0, 30.0))
 
 

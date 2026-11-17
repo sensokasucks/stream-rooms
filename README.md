@@ -1545,8 +1545,9 @@ Included rooms:
     - **Roadside**: **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
       lizards**, **Coyotes** (a few trot across out in the desert from dusk to dawn, and at night
       you sometimes hear them howl) and **Neon signs** (the neon glows at night).
-    - **Set detail**: **Detailed** adds photo grain to the rock, the ground and the road, haze
-      and sunbeams in the air, and the woody's chrome and paint reflect the passing desert.
+    - **Set detail**: **Detailed** adds photo grain and bumps to the rock, the ground and the
+      road (they catch the low sun), weathered wood and real rust on the props, haze and
+      sunbeams in the air, and the woody's chrome and paint reflect the passing desert.
       **Low** is flat colours, the lightest. **Auto** follows Graphics quality. Each PC in a
       co-stream chooses its own.
   - In a co-stream the hour, the weather, the speed, the traffic, the billboard rules and the
@@ -1554,9 +1555,12 @@ Included rooms:
     pictures are each PC's own (so are which vehicle comes when and which picture is on which
     board).
   - Source: the whole set is built in code (`rooms/route22/`, shared by both scenes, and
-    `rooms/route22_cruise/`). The rock, ground and road photo grain comes from
+    `rooms/route22_cruise/`). The rock, ground, road, wood and rust photo textures come from
     `rooms/route22/textures/make_textures.py`; the filler ads from `make_ads.py` there (all
-    made up).
+    made up). Among the built rocks stand photo-scanned boulders and stones, oil drums and dead
+    wood from [Poly Haven](https://polyhaven.com) scans (CC0), cut down to a few thousand
+    triangles each by `rooms/route22/models/make_models.py`; the scanned rocks are drawn in
+    the room's own red sandstone so they match.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)
@@ -1618,6 +1622,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
+- `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.

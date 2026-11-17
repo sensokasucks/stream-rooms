@@ -21,6 +21,8 @@ uniform sampler2D tex_rock : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_fabric : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D tex_sand : filter_linear_mipmap_anisotropic, repeat_enable;
 uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
+// rusty painted metal (textures/prop_rust.jpg): the rust blotches' colour on the Detailed look
+uniform sampler2D tex_rust : filter_linear_mipmap_anisotropic, repeat_enable;
 // How strongly the lights (MAT 5) glow: 0 by day with the neon off, up to about 4 at night.
 uniform float glow = 0.0;
 // 1 = the neon buzzes (a slight, slow waver), 0 = steady (photosensitive-safe mode).
@@ -82,7 +84,14 @@ void fragment() {
 	} else if (m == 3) {
 		// rust: orange-brown blotches over the paint, rough
 		float r = noise_sides(o_pos * 0.6, n, 1.0).b;
-		col = mix(col, vec3(0.42, 0.2, 0.09) * (0.7 + 0.6 * noise_sides(o_pos, n, 0.5).a), smoothstep(0.4, 0.6, r));
+		vec3 rust = vec3(0.42, 0.2, 0.09) * (0.7 + 0.6 * noise_sides(o_pos, n, 0.5).a);
+		if (detail > 0.5) {
+			// the photo: real flaking rust, and a little of its grime over the paint too
+			vec3 photo = three_sides(tex_rust, o_pos, n, 1.5);
+			rust = photo * vec3(0.95, 0.85, 0.8);
+			col *= 0.75 + 0.25 * photo / max(dot(photo, vec3(0.333)), 0.05) * 0.5;
+		}
+		col = mix(col, rust, smoothstep(0.4, 0.6, r));
 		rough = 0.92;
 	} else if (m == 4) {
 		if (detail > 0.5) {

@@ -15,6 +15,13 @@ What it writes (all seamless, so they tile):
         r22_ground.gdshader, mixed with the sand below by the ground's vertex colour.
   ground_sand.jpg       loose sand and pebbles (Poly Haven aerial_sand).
   road_asphalt.jpg      worn, dry asphalt (Poly Haven asphalt_04) for r22_road.gdshader.
+  *_nor.jpg             the matching normal maps (OpenGL style, green = up the picture) of
+        detail_sandstone, ground_desert, ground_sand and road_asphalt, softened a little; the
+        rock, ground and road shaders bend their lighting with them on the Detailed look.
+  detail_planks_weathered.jpg  weathered wood planks (Poly Haven weathered_planks) as a "detail"
+        texture like the sandstone: r22_prop.gdshader's wood (fences, signs, sheds, the stage).
+  prop_rust.jpg         rusty painted metal (Poly Haven rusty_metal_02): r22_prop.gdshader's rust
+        blotches take this photo's colour on the Detailed look.
   rock_noise.png        made here from noise, no photo: r = honeycomb cells (the rows of little
         holes wind carves in sandstone, "tafoni"), g = long vertical streaks (desert varnish
         running down cliffs), b = soft lumpy noise (warps the rock bands so they aren't ruler-straight),
@@ -70,6 +77,15 @@ def detail(name: str, asset: str, size: int = 1024, contrast: float = 1.2) -> No
     save_jpg(Image.fromarray(np.clip(rel * 127.5, 0, 255).astype(np.uint8)), name)
 
 
+def normal(name: str, asset: str, size: int = 1024, strength: float = 0.8) -> None:
+    """A Poly Haven normal map (nor_gl), its bumps scaled by `strength` (1 = as photographed)."""
+    img = fetch(asset, "nor_gl").convert("RGB").resize((size, size), Image.LANCZOS)
+    n = np.asarray(img).astype(np.float32) / 127.5 - 1.0
+    n[..., 0:2] *= strength
+    n /= np.linalg.norm(n, axis=2, keepdims=True)
+    save_jpg(Image.fromarray(np.clip((n + 1.0) * 127.5, 0, 255).astype(np.uint8)), name, quality=92)
+
+
 def tile_noise(size: int, slope: float, seed: int, stretch=(1.0, 1.0)) -> np.ndarray:
     """Seamless noise from random frequencies (1/f^slope), 0..1. stretch squashes it along x / y."""
     rng = np.random.default_rng(seed)
@@ -118,4 +134,10 @@ if __name__ == "__main__":
     photo("ground_desert.jpg", "cracked_red_ground")
     photo("ground_sand.jpg", "aerial_sand", gain=(1.05, 0.92, 0.82))
     photo("road_asphalt.jpg", "asphalt_04", gain=(0.95, 0.95, 0.97))
+    normal("detail_sandstone_nor.jpg", "cliff_side")
+    normal("ground_desert_nor.jpg", "cracked_red_ground")
+    normal("ground_sand_nor.jpg", "aerial_sand", strength=0.6)
+    normal("road_asphalt_nor.jpg", "asphalt_04", strength=0.6)
+    detail("detail_planks_weathered.jpg", "weathered_planks", size=512)
+    photo("prop_rust.jpg", "rusty_metal_02", size=512)
     rock_noise()

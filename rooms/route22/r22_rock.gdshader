@@ -16,6 +16,9 @@ render_mode cull_disabled;
 #include "res://rooms/route22/r22_common.gdshaderinc"
 
 uniform sampler2D tex_detail : filter_linear_mipmap_anisotropic, repeat_enable;
+// the same photo's normal map (textures/detail_sandstone_nor.jpg): its grain and chips catch the
+// low sun (Detailed look only)
+uniform sampler2D tex_detail_nor : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
 // textures/rock_noise.png: r = honeycomb pits, g = vertical varnish streaks, b = soft warp, a = speckle.
 uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
 // Metres one layer band is thick, on average.
@@ -44,6 +47,20 @@ vec3 layer_colour(float h) {
 	// fine lines inside each band (the bedding planes)
 	float fine = texture(rock_noise, vec2(h / (band_size * 1.3), 0.71)).b;
 	return c * (0.88 + 0.24 * fine);
+}
+
+// tex_detail_nor seen from three sides, as an object-space normal bent round the surface normal n
+// (the "UDN" blend: each side's bumps are added to n in that side's plane).
+vec3 bumps_three_sides(vec3 p, vec3 n, float tile) {
+	vec3 w = pow(abs(n), vec3(4.0));
+	w /= (w.x + w.y + w.z);
+	vec2 tx = texture(tex_detail_nor, p.zy / tile).rg * 2.0 - 1.0;
+	vec2 ty = texture(tex_detail_nor, p.xz / tile).rg * 2.0 - 1.0;
+	vec2 tz = texture(tex_detail_nor, p.xy / tile).rg * 2.0 - 1.0;
+	vec3 nx = vec3(n.x, tx.y + n.y, tx.x + n.z);
+	vec3 ny = vec3(ty.x + n.x, n.y, ty.y + n.z);
+	vec3 nz = vec3(tz.x + n.x, tz.y + n.y, n.z);
+	return normalize(nx * w.x + ny * w.y + nz * w.z);
 }
 
 vec3 three_sides(sampler2D tex, vec3 p, vec3 n, float tile) {
@@ -92,6 +109,7 @@ void fragment() {
 	col *= 0.92 + 0.16 * texture(rock_noise, o_pos.xy / 3.0 + o_pos.zz / 5.0).a;
 	if (detail > 0.5) {
 		col *= three_sides(tex_detail, o_pos, n, 4.0) * 2.0;
+		NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(bumps_three_sides(o_pos, n, 4.0), 0.0)).xyz);
 	}
 	col *= r22_cloud_shade(w_pos);
 	// wet: darker, and shiny on the slopes the rain runs down

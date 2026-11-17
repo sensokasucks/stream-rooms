@@ -5,13 +5,16 @@ extends RefCounted
 ## Used by r22_drivein_builder.gd (the Drive-In lot), r22_pieces.gd (the Cruise's road pieces),
 ## r22_vehicles.gd and r22_billboards.gd. Nothing here keeps state: each function adds triangles
 ## to a Buf or returns a material. There is no Blender model; everything is built when a room
-## loads, from fixed random seeds, so every PC builds the same desert.
+## loads, from fixed random seeds, so every PC builds the same desert. The one exception is the
+## photo-scanned rocks and props in models/ (CC0 Poly Haven scans, see models/make_models.py),
+## placed by scan_rock() and scan_prop().
 ##
 ## The materials (see the shaders for what each mesh attribute means):
 ##   rock   r22_rock.gdshader   the sandstone (layers from height, honeycomb, varnish)
 ##   prop   r22_prop.gdshader   everything else (vertex colour + MAT_ number in UV.x)
 ##   ground / road              r22_ground / r22_road.gdshader (the floor and the highway)
 ##   glow                       r22_glow.gdshader (glare round lights), one material per colour
+##   scan                       r22_scan.gdshader (the scanned props' own photo maps)
 ## Every one of them goes into kit["mats"], the list r22_desert.gd writes the shared uniforms to
 ## each frame (bend, travel, wet, cloud shadows, detail). Make materials through these functions
 ## so they land in that list.
@@ -272,6 +275,7 @@ static func rock_material(kit: Dictionary) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = ROCK_SHADER
 	m.set_shader_parameter("tex_detail", load(TEX + "detail_sandstone.jpg"))
+	m.set_shader_parameter("tex_detail_nor", load(TEX + "detail_sandstone_nor.jpg"))
 	return _note(kit, m)
 
 
@@ -280,7 +284,8 @@ static func prop_material(kit: Dictionary, sway: float) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = PROP_SHADER
 	m.set_shader_parameter("sway", sway)
-	m.set_shader_parameter("tex_wood", load(CAMP_TEX + "detail_planks.jpg"))
+	m.set_shader_parameter("tex_wood", load(TEX + "detail_planks_weathered.jpg"))
+	m.set_shader_parameter("tex_rust", load(TEX + "prop_rust.jpg"))
 	m.set_shader_parameter("tex_rock", load(TEX + "detail_sandstone.jpg"))
 	m.set_shader_parameter("tex_fabric", load(CAMP_TEX + "detail_fabric.jpg"))
 	m.set_shader_parameter("tex_sand", load(TEX + "ground_sand.jpg"))
@@ -292,6 +297,8 @@ static func ground_material(kit: Dictionary) -> ShaderMaterial:
 	m.shader = GROUND_SHADER
 	m.set_shader_parameter("tex_desert", load(TEX + "ground_desert.jpg"))
 	m.set_shader_parameter("tex_sand", load(TEX + "ground_sand.jpg"))
+	m.set_shader_parameter("tex_desert_nor", load(TEX + "ground_desert_nor.jpg"))
+	m.set_shader_parameter("tex_sand_nor", load(TEX + "ground_sand_nor.jpg"))
 	return _note(kit, m)
 
 
@@ -299,6 +306,7 @@ static func road_material(kit: Dictionary) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = ROAD_SHADER
 	m.set_shader_parameter("tex_asphalt", load(TEX + "road_asphalt.jpg"))
+	m.set_shader_parameter("tex_asphalt_nor", load(TEX + "road_asphalt_nor.jpg"))
 	(kit["roads"] as Array[ShaderMaterial]).append(m)
 	return _note(kit, m)
 
@@ -452,6 +460,83 @@ static func dome(b: Buf, base: Vector3, radius: float, height: float, salt: floa
 static func boulder(b: Buf, base: Vector3, size: float, salt: float, turn: float) -> void:
 	var prof: Array = [[-size * 0.3, size * 0.8], [0.0, size * 0.95], [size * 0.35, size * 0.9], [size * 0.7, size * 0.6], [size * 0.85, size * 0.25]]
 	column(b, base, prof, Vector2(1.0, 0.75), 9, 0.25, salt, TINT, turn)
+
+
+# ── Photo-scanned models (models/, made by make_models.py from CC0 Poly Haven scans) ──
+const MODELS := "res://rooms/route22/models/"
+const SCAN_SHADER := preload("res://rooms/route22/r22_scan.gdshader")
+## The scanned rocks (rock_<name>.obj), for scan_rock(); sizes in models/models.json.
+const SCAN_ROCKS: Array[String] = ["boulder_a", "boulder_b", "boulder_c", "boulder_d", "boulder_e", "pile", "stones"]
+## The loaded model meshes by file name, so each .obj is read once however many times it is
+## placed (both rooms, every road piece).
+static var _scan_cache: Dictionary = {}
+
+
+static func _scan_mesh(file: String) -> Mesh:
+	if not _scan_cache.has(file):
+		_scan_cache[file] = load(MODELS + file + ".obj") as Mesh
+	return _scan_cache[file] as Mesh
+
+
+## Copies a scanned rock (rock_<name>.obj, one of SCAN_ROCKS) into a rock Buf, so it is drawn by
+## the same sandstone shader as the formations round it and costs no extra draw call. at = where
+## it stands (its foot, sunk `sink` x its height into the sand), scale = metres per model metre
+## (per axis: a flatter or longer rock from the same scan), turn = radians about Y. The Buf's
+## current mat / uv_y (layer tilt, honeycomb) apply, and `varnish` goes into COLOR.a.
+static func scan_rock(b: Buf, name: String, at: Vector3, scale: Vector3, turn: float, varnish: float = 0.3, sink: float = 0.12, col: Color = TINT) -> void:
+	var mesh := _scan_mesh("rock_" + name)
+	if mesh == null or mesh.get_surface_count() == 0:
+		return
+	var arrays := mesh.surface_get_arrays(0)
+	var src_v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var src_n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array()
+	var basis := Basis(Vector3.UP, turn) * Basis.from_scale(scale)
+	var nbasis := basis.inverse().transposed()
+	var height := 0.0
+	for v: Vector3 in src_v:
+		height = maxf(height, v.y)
+	var xf := Transform3D(basis, at - Vector3(0.0, height * scale.y * sink, 0.0))
+	var c := Color(col.r, col.g, col.b, varnish)
+	var uv := Vector2(b.mat, b.uv_y)
+	var count := idx.size() if not idx.is_empty() else src_v.size()
+	for i in count:
+		var k := idx[i] if not idx.is_empty() else i
+		b.verts.append(xf * src_v[k])
+		b.normals.append((nbasis * src_n[k]).normalized())
+		b.colors.append(c)
+		b.uvs.append(uv)
+
+
+## A scanned prop with its photo textures (prop_<name>.obj + _diff/_nor/_arm.jpg): barrel,
+## barrel_rusty, dead_trunk or dry_branches. Its own MeshInstance3D under `parent`, drawn by
+## r22_scan.gdshader; one material per model, shared by every copy (kit["scan_mats"]) and listed
+## in kit["mats"] so it bends and gets wet with the rest. at = its foot, scale = uniform size,
+## turn = radians about Y, tint multiplies the photo.
+static func scan_prop(parent: Node3D, kit: Dictionary, name: String, at: Vector3, scale: float, turn: float, tint: Color = Color.WHITE) -> MeshInstance3D:
+	var mesh := _scan_mesh("prop_" + name)
+	if mesh == null:
+		return null
+	if not kit.has("scan_mats"):
+		kit["scan_mats"] = {}
+	var mats: Dictionary = kit["scan_mats"]
+	var key := name + str(tint)
+	if not mats.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = SCAN_SHADER
+		m.set_shader_parameter("tex_albedo", load(MODELS + "prop_" + name + "_diff.jpg"))
+		m.set_shader_parameter("tex_normal", load(MODELS + "prop_" + name + "_nor.jpg"))
+		m.set_shader_parameter("tex_arm", load(MODELS + "prop_" + name + "_arm.jpg"))
+		m.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
+		mats[key] = _note(kit, m)
+	var mi := MeshInstance3D.new()
+	mi.name = "Scan_" + name
+	mi.mesh = mesh
+	mi.material_override = mats[key]
+	mi.extra_cull_margin = 40.0
+	parent.add_child(mi)
+	mi.transform = Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * scale), at)
+	return mi
 
 
 ## A loop of rock: a thick, lumpy tube swept along an arc from one foot to the other (an arch,
