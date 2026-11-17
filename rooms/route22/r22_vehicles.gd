@@ -11,6 +11,11 @@ extends RefCounted
 ## one Buf with the prop material (traffic, the lot), where each part's MAT_ number picks the look.
 ## Callers: r22_traffic.gd, r22_drivein_builder.gd, r22_pieces.gd (the wreck). The Cruise's own
 ## woody is no longer built here: r22_car.gd loads the Blender model models/woody.glb.
+##
+## On the Detailed look (Set detail) the traffic and the Drive-In's parked cars are Blender
+## models instead (models/vehicles.glb, made by models/make_vehicles.py): build_model() copies
+## one into a Buf, so it is still drawn by the prop material with everything else. The shapes
+## built here stay the Low look, and the wreck.
 
 const Geo := preload("res://rooms/route22/r22_geo.gd")
 
@@ -24,6 +29,113 @@ const WHEEL_R: float = 0.36
 
 ## The kinds of traffic and how often each turns up (shares, any scale).
 const TRAFFIC_KINDS: Dictionary = {"pickup": 5.0, "classic": 4.0, "semi": 3.0, "rv": 2.0, "motorcycle": 2.0, "bus": 1.0}
+
+
+## The Blender models: one mesh per kind, its surfaces named by material (see make_vehicles.py).
+const MODELS := "res://rooms/route22/models/vehicles.glb"
+## kind -> {"surfaces": [{"look": material name, "verts", "normals": one entry per triangle
+## corner}], "front_lights", "tail_lights": [Vector3], "length": metres}; filled once by _load_models().
+static var _models: Dictionary = {}
+
+
+## Reads models/vehicles.glb into _models (once): every mesh's triangles by material name, and
+## its lamp markers (child nodes named <kind>_LampFront_n / <kind>_LampTail_n).
+static func _load_models() -> void:
+	if not _models.is_empty():
+		return
+	var scene := load(MODELS) as PackedScene
+	if scene == null:
+		return
+	var root := scene.instantiate()
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		var surfaces: Array = []
+		for i in mi.mesh.get_surface_count():
+			var arrays := mi.mesh.surface_get_arrays(i)
+			var src_v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var src_n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			var verts := src_v
+			var normals := src_n
+			if arrays[Mesh.ARRAY_INDEX] != null:
+				# a Buf has no index list: one entry per triangle corner
+				var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+				verts = PackedVector3Array()
+				normals = PackedVector3Array()
+				verts.resize(idx.size())
+				normals.resize(idx.size())
+				for k in idx.size():
+					verts[k] = src_v[idx[k]]
+					normals[k] = src_n[idx[k]]
+			var from := mi.mesh.surface_get_material(i)
+			surfaces.append({"look": String(from.resource_name) if from else "", "verts": verts, "normals": normals})
+		var fronts: Array[Vector3] = []
+		var tails: Array[Vector3] = []
+		for c in mi.get_children():
+			if c is Node3D and String(c.name).contains("_LampFront_"):
+				fronts.append((c as Node3D).position)
+			elif c is Node3D and String(c.name).contains("_LampTail_"):
+				tails.append((c as Node3D).position)
+		_models[String(mi.name)] = {"surfaces": surfaces, "front_lights": fronts, "tail_lights": tails, "length": mi.get_aabb().size.z}
+	root.free()
+
+
+## The Detailed look's vehicle: copies a Blender model into `b` (a prop Buf). kind and opts as
+## for build() ("woody" = the convertible with wood sides; "classic" + "open" = the plain
+## convertible; "rusty" is not for models). paint = its own colour. rng picks the semi's
+## trailer and the rider's jacket. Returns {"length", "front_lights", "tail_lights"} like
+## build(); the seats are build()'s, the same on both looks. Falls back to build() if the model
+## file is missing.
+static func build_model(kind: String, b: Geo.Buf, paint: Color, opts: Dictionary, rng: RandomNumberGenerator) -> Dictionary:
+	_load_models()
+	var woody := kind == "woody"
+	var model := kind
+	if woody or kind == "classic":
+		model = "convertible" if woody or bool(opts.get("open", false)) else "classic"
+	if not _models.has(model):
+		return build(kind, {"all": b}, paint, opts, rng)
+	# what each material name in the models is here: [MAT_ number, colour]
+	var dark := Color(0.05, 0.05, 0.055)
+	var bright := Color(0.8, 0.8, 0.82)
+	var pale := Color(0.92, 0.9, 0.85)
+	var trailer := Color(0.9, 0.9, 0.88) if rng.randf() < 0.6 else paint.lightened(0.4)
+	var jacket := Color(0.15, 0.12, 0.1) if rng.randf() < 0.6 else Color(0.35, 0.25, 0.15)
+	var looks: Dictionary = {
+		"paint": [Geo.MAT_CAR, paint], "bed": [Geo.MAT_CAR, paint.darkened(0.3)], "helmet": [Geo.MAT_CAR, paint.lightened(0.2)],
+		"wood": [Geo.MAT_WOOD, Color(0.62, 0.4, 0.22)] if woody else [Geo.MAT_CAR, paint],
+		"trim": [Geo.MAT_PAINT, Color(0.88, 0.76, 0.52)] if woody else [Geo.MAT_CAR, paint],
+		"chrome": [Geo.MAT_CHROME, bright], "hub": [Geo.MAT_CHROME, bright], "glass": [Geo.MAT_GLASS, Color(0.3, 0.35, 0.4)],
+		"lamp_front": [Geo.MAT_LIGHT, Color(1.0, 0.95, 0.85)], "lamp_tail": [Geo.MAT_LIGHT, Color(0.9, 0.08, 0.05)],
+		"amber": [Geo.MAT_LIGHT, Color(1.0, 0.55, 0.1)],
+		"tyre": [Geo.MAT_PAINT, dark], "dark": [Geo.MAT_PAINT, dark], "pad": [Geo.MAT_PAINT, dark], "carpet": [Geo.MAT_PAINT, dark],
+		"seat": [Geo.MAT_PAINT, dark], "whitewall": [Geo.MAT_PAINT, pale], "white": [Geo.MAT_PAINT, pale],
+		"leather": [Geo.MAT_PAINT, Color(0.88, 0.84, 0.76)], "plate": [Geo.MAT_PAINT, Color(0.95, 0.8, 0.2)],
+		"cream": [Geo.MAT_CAR, Color(0.92, 0.88, 0.78)], "coach": [Geo.MAT_CAR, Color(0.93, 0.93, 0.92)],
+		"trailer": [Geo.MAT_PAINT, trailer], "jacket": [Geo.MAT_CLOTH, jacket], "jeans": [Geo.MAT_CLOTH, Color(0.12, 0.15, 0.25)],
+	}
+	_copy_model(b, model, looks)
+	if model == "pickup":
+		_copy_model(b, "pickup_gate_down" if bool(opts.get("tailgate_down", false)) else "pickup_gate_up", looks)
+	var e: Dictionary = _models[model]
+	return {"length": float(e["length"]), "front_lights": e["front_lights"], "tail_lights": e["tail_lights"]}
+
+
+## Appends one of _models' meshes to a Buf, each surface in its look's colour and MAT_ number.
+static func _copy_model(b: Geo.Buf, model: String, looks: Dictionary) -> void:
+	if not _models.has(model):
+		return
+	for s: Dictionary in (_models[model] as Dictionary)["surfaces"]:
+		var look: Array = looks.get(String(s["look"]), [Geo.MAT_PAINT, Color(0.5, 0.5, 0.5)])
+		var verts: PackedVector3Array = s["verts"]
+		var cols := PackedColorArray()
+		cols.resize(verts.size())
+		cols.fill(look[1] as Color)
+		var uvs := PackedVector2Array()
+		uvs.resize(verts.size())
+		uvs.fill(Vector2(float(look[0]), 0.0))
+		b.verts.append_array(verts)
+		b.normals.append_array(s["normals"] as PackedVector3Array)
+		b.colors.append_array(cols)
+		b.uvs.append_array(uvs)
 
 
 ## The Buf a part goes into, with its MAT_ number set: bufs[part] if the caller split that part

@@ -56,7 +56,9 @@ const CAMERAS: Array = [
 
 ## Builds everything under `room`. Returns what route22_room.gd goes on using:
 ##   screen (MeshInstance3D "TVScreen"), marquee_words (Array[Label3D]: line 2 of both faces),
-##   traffic_frame (Node3D laid along Route 22 for r22_traffic.gd).
+##   traffic_frame (Node3D laid along Route 22 for r22_traffic.gd),
+##   cars_low, cars_full (MeshInstance3D: the parked cars and trucks as plain shapes and as the
+##   Blender models; the room shows one, by Set detail).
 static func build(room: Node3D, kit: Dictionary) -> Dictionary:
 	var out: Dictionary = {}
 	var rng := RandomNumberGenerator.new()
@@ -69,6 +71,10 @@ static func build(room: Node3D, kit: Dictionary) -> Dictionary:
 	room.add_child(markers)
 	var rock := Geo.Buf.new()
 	var props := Geo.Buf.new()
+	# the parked cars and trucks twice over: plain shapes for the Low look, the Blender models
+	# for the Detailed one (route22_room.gd shows one of the two)
+	var cars_low := Geo.Buf.new()
+	var cars_full := Geo.Buf.new()
 	var neon := Geo.Buf.new()
 	var far := Geo.Buf.new()
 	var labels := Node3D.new()
@@ -77,7 +83,7 @@ static func build(room: Node3D, kit: Dictionary) -> Dictionary:
 	_ground(set_root, kit)
 	_screen(set_root, props, out)
 	_stage(set_root, markers, kit)
-	_seats(props, markers, rng)
+	_seats(props, cars_low, cars_full, markers, rng)
 	_snack_bar(props, neon, labels, markers, kit)
 	_lot_things(props, labels, room, rng)
 	_marquee(props, neon, labels, kit, out)
@@ -85,6 +91,8 @@ static func build(room: Node3D, kit: Dictionary) -> Dictionary:
 	_scans(rock, set_root, kit)
 	Geo.add_mesh(set_root, "Rocks", rock, kit["rock"], true)
 	Geo.add_mesh(set_root, "Props", props, kit["prop"], true)
+	out["cars_low"] = Geo.add_mesh(set_root, "CarsLow", cars_low, kit["prop"], true)
+	out["cars_full"] = Geo.add_mesh(set_root, "CarsFull", cars_full, kit["prop"], true)
 	Geo.add_mesh(set_root, "Neon", neon, kit["neon"], false)
 	Geo.add_mesh(set_root, "Far", far, kit["rock"], false)
 	# brush round the lot (not on it, the road or the rocks' feet)
@@ -185,7 +193,11 @@ static func _stage(parent: Node3D, markers: Node3D, kit: Dictionary) -> void:
 
 
 ## The 30 chat seats: blankets and lawn chairs, convertibles, pickup beds, the picnic table.
-static func _seats(props: Geo.Buf, markers: Node3D, rng: RandomNumberGenerator) -> void:
+## The vehicles go into cars_low (plain shapes) and again into cars_full (the Blender models);
+## the seats are the plain shapes' on both, so the audience sits the same whichever shows.
+static func _seats(props: Geo.Buf, cars_low: Geo.Buf, cars_full: Geo.Buf, markers: Node3D, rng: RandomNumberGenerator) -> void:
+	var model_rng := RandomNumberGenerator.new()      # (its own: `rng` must go on as before)
+	model_rng.seed = 2207
 	var look := Vector3(0.0, 0.0, SCREEN_Z)
 	var n := 0
 	# 1-4: blankets on the front row; 5-8: lawn chairs behind them
@@ -208,7 +220,10 @@ static func _seats(props: Geo.Buf, markers: Node3D, rng: RandomNumberGenerator) 
 		var at := Vector3(float(c[0]), 0.0, CAR_ROW_Z)
 		var car := Geo.Buf.new()
 		var info := Vehicles.build("woody" if bool(c[2]) else "classic", {"all": car}, c[1], {"open": true}, rng)
-		_append(props, car, Transform3D(Basis.IDENTITY, at))
+		_append(cars_low, car, Transform3D(Basis.IDENTITY, at))
+		var model := Geo.Buf.new()
+		Vehicles.build_model("woody" if bool(c[2]) else "classic", model, c[1], {"open": true}, model_rng)
+		_append(cars_full, model, Transform3D(Basis.IDENTITY, at))
 		for s: Vector3 in [info["seats"][0], info["seats"][1]]:
 			n += 1
 			_facing(markers, "AUDIENCE_%02d" % n, at + s, look + Vector3(at.x * 0.6, 0.0, 0.0))
@@ -226,7 +241,10 @@ static func _seats(props: Geo.Buf, markers: Node3D, rng: RandomNumberGenerator) 
 		var truck := Geo.Buf.new()
 		var info := Vehicles.build("pickup", {"all": truck}, t[1], {"tailgate_down": true}, rng)
 		var xf := Transform3D(Basis(Vector3.UP, PI), at)
-		_append(props, truck, xf)
+		_append(cars_low, truck, xf)
+		var model := Geo.Buf.new()
+		Vehicles.build_model("pickup", model, t[1], {"tailgate_down": true}, model_rng)
+		_append(cars_full, model, xf)
 		# the cooler the third one sits on (r22_vehicles.gd pickup seats)
 		props.mat = Geo.MAT_PAINT
 		props.box(Transform3D(xf.basis, xf * Vector3(0.0, 0.84, 1.0)), Vector3(0.7, 0.22, 0.45), Color(0.15, 0.4, 0.75))

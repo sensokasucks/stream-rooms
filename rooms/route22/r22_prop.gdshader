@@ -9,6 +9,7 @@ render_mode cull_disabled;
 //     0 plain paint    1 wood (grain, textures from the Lakeside Campfire)    2 rock
 //     3 rusty metal    4 cloth    5 a light (neon, a lit window, a lamp: glows by `glow`)
 //     6 chrome          7 glass (dark and glossy)    8 sand (a red sand drift)
+//     9 car paint (glossy, a little metallic: the vehicle models' bodies)
 // With `detail` at 1 wood, rock, rust, cloth and sand get a photo or noise grain (laid on from
 // three sides by object position, 0.5 = no change). Lights glow with `glow` (r22_desert.gd sets
 // it from the hour and the Neon tick box) and buzz faintly unless `flicker` is 0 (photosensitive-
@@ -109,6 +110,9 @@ void fragment() {
 	} else if (m == 7) {
 		rough = 0.05;
 		col *= 0.4;
+	} else if (m == 9) {
+		rough = 0.3;
+		metal = 0.12;
 	} else if (m == 8) {
 		if (detail > 0.5) {
 			col *= three_sides(tex_sand, o_pos, n, 4.0) * 2.0;

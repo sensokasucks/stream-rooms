@@ -237,7 +237,7 @@ func get_controls() -> Array[Dictionary]:
 	out.append_array([
 		{"heading": "Look"},
 		{"key": "r22_detail", "label": "Set detail", "type": "option", "options": [["auto", "Auto (follows Graphics quality)"], ["low", "Low (flat colours)"], ["full", "Detailed"]],
-			"tooltip": "How detailed the desert is drawn on this PC. Detailed: photo grain on the rock, ground and road, haze and sunbeams in the air (with the graphics settings that have volumetric fog), and the car's chrome and paint reflecting the desert going by. Low: flat colours, the lightest. Auto: Low on the Low graphics setting, Detailed otherwise. Each PC in a co-stream chooses its own."},
+			"tooltip": "How detailed the desert is drawn on this PC. Detailed: photo grain on the rock, ground and road, modelled cars and trucks in place of the plain ones, haze and sunbeams in the air (with the graphics settings that have volumetric fog), and the car's chrome and paint reflecting the desert going by. Low: flat colours, the lightest. Auto: Low on the Low graphics setting, Detailed otherwise. Each PC in a co-stream chooses its own."},
 	])
 	return out
 
