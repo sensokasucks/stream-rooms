@@ -29,6 +29,7 @@ const ROAD_SHADER := preload("res://rooms/route22/r22_road.gdshader")
 const GLOW_SHADER := preload("res://rooms/route22/r22_glow.gdshader")
 const SKY_NOISE := preload("res://rooms/campfire/textures/sky_noise.png")
 const ROCK_NOISE := preload("res://rooms/route22/textures/rock_noise.png")
+const DUST_SHADER := preload("res://rooms/route22/r22_dust.gdshader")
 
 ## What a prop is made of (UV.x in r22_prop.gdshader).
 const MAT_PAINT: float = 0.0
@@ -270,6 +271,19 @@ static func new_kit() -> Dictionary:
 	kit["neon"] = prop_material(kit, 0.0)
 	kit["brush"] = prop_material(kit, 0.16)
 	return kit
+
+
+## The material of a dust particle (r22_dust.gdshader: a ragged, soft-edged wisp instead of a
+## square or a ball), for the mesh of a CPUParticles3D. grain: (1, 1) = round puffs, a small x
+## stretches the wisps along the particle's width (streaks of blowing sand). ragged 0..1: how
+## torn the edges are. The particles' colour ramp gives the colour and thickness.
+static func dust_material(grain: Vector2 = Vector2.ONE, ragged: float = 0.8) -> ShaderMaterial:
+	var m := ShaderMaterial.new()
+	m.shader = DUST_SHADER
+	m.set_shader_parameter("rock_noise", ROCK_NOISE)
+	m.set_shader_parameter("grain", grain)
+	m.set_shader_parameter("ragged", ragged)
+	return m
 
 
 static func _note(kit: Dictionary, m: ShaderMaterial) -> ShaderMaterial:

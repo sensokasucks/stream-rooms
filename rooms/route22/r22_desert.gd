@@ -486,42 +486,46 @@ func _build_rain(centre: Vector3) -> void:
 	_rain.position = centre + Vector3(0.0, 14.0, 0.0)
 
 
-## Blowing sand: fast, low specks streaming across in the wind (a dust storm, or a gale).
+## Blowing sand: long, low, ragged streaks of dust streaming across in the wind (a dust storm,
+## or a gale), with thinner veils higher up. Each particle is a wide strip wearing
+## r22_dust.gdshader with its noise stretched along the wind, so it reads as a torn sheet of
+## sand, not a speck. tick() turns it on and sets its drift from the wind and the car's speed.
 func _build_sand(centre: Vector3) -> void:
 	_sand = CPUParticles3D.new()
 	_sand.name = "BlowingSand"
-	_sand.amount = 420
-	_sand.lifetime = 2.0
+	_sand.amount = 220
+	_sand.lifetime = 3.2
 	_sand.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	_sand.emission_box_extents = Vector3(4.0, 1.2, 30.0)
-	_sand.direction = Vector3(1.0, 0.05, 0.0)
-	_sand.spread = 8.0
-	_sand.initial_velocity_min = 8.0
-	_sand.initial_velocity_max = 16.0
+	_sand.emission_box_extents = Vector3(6.0, 0.9, 34.0)
+	_sand.direction = Vector3(1.0, 0.03, 0.0)
+	_sand.spread = 6.0
+	_sand.initial_velocity_min = 7.0
+	_sand.initial_velocity_max = 13.0
 	_sand.gravity = Vector3(10.0, 0.0, 0.0)
-	_sand.scale_amount_min = 0.5
-	_sand.scale_amount_max = 1.6
+	_sand.scale_amount_min = 0.6
+	_sand.scale_amount_max = 1.8
+	# each streak swells as it travels
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.6))
+	grow.add_point(Vector2(1.0, 1.5))
+	_sand.scale_amount_curve = grow
 	var fade := Gradient.new()
-	fade.set_color(0, Color(0.85, 0.6, 0.4, 0.0))
-	fade.add_point(0.2, Color(0.8, 0.55, 0.35, 0.5))
-	fade.set_color(fade.get_point_count() - 1, Color(0.75, 0.5, 0.3, 0.0))
+	fade.set_color(0, Color(0.82, 0.66, 0.5, 0.0))
+	fade.add_point(0.25, Color(0.8, 0.64, 0.48, 0.26))
+	fade.add_point(0.7, Color(0.8, 0.64, 0.48, 0.18))
+	fade.set_color(fade.get_point_count() - 1, Color(0.8, 0.64, 0.48, 0.0))
 	_sand.color_ramp = fade
-	var speck := QuadMesh.new()
-	speck.size = Vector2(0.25, 0.06)
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.vertex_color_use_as_albedo = true
-	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	m.billboard_keep_scale = true
-	speck.material = m
-	_sand.mesh = speck
+	# a strip 10 m long and 1.6 m high (the wind blows along x, across the view)
+	var streak := QuadMesh.new()
+	streak.size = Vector2(10.0, 1.6)
+	streak.material = Geo.dust_material(Vector2(0.3, 2.2), 1.0)
+	_sand.mesh = streak
 	_sand.local_coords = false
 	_sand.emitting = false
 	_sand.visible = false
 	_sand.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_sand)
-	_sand.position = centre + Vector3(-22.0, 0.8, 0.0)
+	_sand.position = centre + Vector3(-26.0, 0.9, 0.0)
 
 
 # ── Sound ────────────────────────────────────────────────────
