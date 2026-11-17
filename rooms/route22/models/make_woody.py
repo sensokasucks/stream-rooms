@@ -443,24 +443,34 @@ def build_cabin():
     rim_x = Vector((1.0, 0.0, 0.0))
     rods("Spokes", [[tuple(hub - rim_x * 0.18), tuple(hub), tuple(hub + rim_x * 0.18)]], 0.009, "chrome", 6)
     cyl("HubCap", 0.035, 0.03, 0.03, hub, "Y", "paint", 16).rotation_euler = (tilt - math.pi / 2, 0.0, 0.0)
-    # seats: two front seats and a rear bench in red vinyl, soft-edged, each with a pleated look
-    lean = math.radians(-14.0)
+    # seats: two front seats and a rear bench in red vinyl, soft-edged, each with a pleated look.
+    # The backrests recline: their tops lean towards the tail (a turn about X by a positive
+    # angle; a negative one tips them forward over the cushion).
+    lean = math.radians(14.0)
+    recline = Matrix.Rotation(lean, 3, "X")
+
+    def on_back(centre, offset):
+        """A point given in a backrest's own frame (x across, y to the front, z up its length)."""
+        return tuple(Vector(centre) + recline @ Vector(offset))
+
     for sx in (-1.0, 1.0):
+        back = (sx * 0.405, -0.17, 0.88)
         box("SeatFront", (0.74, 0.60, 0.20), (sx * 0.405, 0.20, 0.555), "leather", bevel=0.07)
-        box("BackFront", (0.74, 0.15, 0.58), (sx * 0.405, -0.13, 0.88), "leather", bevel=0.065, rot=(lean, 0.0, 0.0))
+        box("BackFront", (0.74, 0.15, 0.58), back, "leather", bevel=0.065, rot=(lean, 0.0, 0.0))
         # the back of the seat: a stitched panel under a bright strip
-        box("SeatBackPanel", (0.60, 0.02, 0.40), (sx * 0.405, -0.209, 0.885), "leather", bevel=0.009, rot=(lean, 0.0, 0.0))
-        box("SeatBackStrip", (0.62, 0.014, 0.016), (sx * 0.405, -0.268, 1.10), "chrome", bevel=0.005, rot=(lean, 0.0, 0.0))
+        box("SeatBackPanel", (0.60, 0.02, 0.40), on_back(back, (0.0, -0.079, 0.0)), "leather", bevel=0.009, rot=(lean, 0.0, 0.0))
+        box("SeatBackStrip", (0.62, 0.014, 0.016), on_back(back, (0.0, -0.083, 0.225)), "chrome", bevel=0.005, rot=(lean, 0.0, 0.0))
         for i in range(5):                          # pleats: slim raised ribs down the back and across the cushion
-            x = sx * 0.405 + (i - 2) * 0.125
-            box("Pleat", (0.10, 0.03, 0.46), (x, -0.048, 0.89), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
-            box("Pleat", (0.10, 0.44, 0.03), (x, 0.22, 0.668), "leather", bevel=0.014)
+            dx = (i - 2) * 0.125
+            box("Pleat", (0.10, 0.03, 0.46), on_back(back, (dx, 0.082, 0.01)), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
+            box("Pleat", (0.10, 0.44, 0.03), (sx * 0.405 + dx, 0.22, 0.668), "leather", bevel=0.014)
     # (the back seat fits between the wheel humps, see build_body)
+    back = (0.0, -1.55, 0.90)
     box("SeatRear", (1.15, 0.62, 0.22), (0.0, -1.18, 0.575), "leather", bevel=0.075)
-    box("BackRear", (1.15, 0.16, 0.60), (0.0, -1.53, 0.90), "leather", bevel=0.07, rot=(lean, 0.0, 0.0))
+    box("BackRear", (1.15, 0.16, 0.60), back, "leather", bevel=0.07, rot=(lean, 0.0, 0.0))
     for i in range(7):
         x = (i - 3) * 0.14
-        box("Pleat", (0.115, 0.03, 0.48), (x, -1.444, 0.91), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
+        box("Pleat", (0.115, 0.03, 0.48), on_back(back, (x, 0.087, 0.01)), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
         box("Pleat", (0.115, 0.46, 0.03), (x, -1.16, 0.70), "leather", bevel=0.014)
     box("Armrest", (0.16, 0.5, 0.10), (0.0, 0.16, 0.66), "leather", bevel=0.04)
     # the folded top under its boot behind the back seat

@@ -278,7 +278,7 @@ func _ready() -> void:
 	_check(dogs >= 1, "a pack of coyotes trots across at night (%d)" % dogs)
 	desert.call("howl", 0.6)
 	await _secs(0.5)
-	_check(float(desert.get("_howl_t")) >= 0.0, "a howl starts in the desert sound")
+	_check(bool(desert.call("is_howling")), "a coyote howl plays in the desert")
 	AppState.set_setting("r22_coyotes", false)
 	await _secs(0.5)
 	dogs = 0
