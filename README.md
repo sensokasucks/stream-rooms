@@ -1411,6 +1411,41 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
+- **Log Cabin** (first pass: the layout only, in plain colours; textures, better furniture,
+  weather and the real outdoor scenes come later): a cozy log cabin with a tall great room. A
+  stone chimney stands in the middle of a two-storey glass wall, with the big screen above the
+  mantel, so every seat sees the fire, the screen and the view outside at once.
+  - A loft runs across the back over the kitchen, the dining table and the back door, with
+    stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
+    a fire table. Outside is a simple grassy clearing with trees for now.
+  - A small **den** opens off the left wall: low log beams, its own stone fireplace with a
+    heavy mantel and a smaller screen, a leather sofa, an armchair and a lamp.
+  - Chat sits on 30 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
+    the dining bench), 5 at the loft railing and 7 on the deck.
+  - A podium room: in the great room the four presenters sit in leather armchairs either side
+    of the fireplace (see *Presenters*). No webcam frame: the webcam uses the corner overlay.
+  - Room tab:
+    - **Fire**: the fireplaces, from out (0%) through a cozy fire (100%) to roaring (200%).
+      The fire's light flickers gently (steady in photosensitive-safe mode) and dims with the
+      house lights during a video.
+    - **Lamps**: the table lamps, the chandelier, the dining lamp, the den's lamps and the
+      lantern by the back door. They also follow **House lights**, and burn lower by day.
+    - **Light outside**: **Day**, **Dusk** or **Night** outside the glass (the sun or the
+      moon, the sky's colours and how much light comes in).
+    - **Gather in**: **Great room** or **Den**. **Den** sits the presenters on the den's sofa
+      (three) and armchair (one), makes the den's screen the main one (the big screen shows
+      the same picture) and puts the den's cameras first. Changing it reloads the room. Chat
+      keeps its seats in the great room.
+  - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
+    at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
+    glass gable, the front door, the dining table and close on the screen. With **Gather in:
+    Den** the den's four come first: by the doorway towards the fire, a Reaction camera on the
+    sofa, the armchair and from the hearth looking back.
+  - Reaction targets: `!tomato fireplace` (the den's fire when gathered in the den),
+    `chandelier`, `deck`.
+  - In a co-stream the four Room tab settings are shared, so everyone sits by the same fire.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_builder.gd`); there is no
+    Blender model.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

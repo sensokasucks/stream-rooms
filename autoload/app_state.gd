@@ -29,6 +29,12 @@ const BASE_DEFAULTS: Dictionary = {
 	"sun_rays": 1.0,             # Lecture Hall / Forge Hall light rays from the windows: 0 = off, 1 = normal, 2 = strong
 	"rain_amount": 1.0,          # rainy rooms: 0 = no rain, 1 = normal, 2 = downpour
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
+	# Log Cabin (rooms/log_cabin/log_cabin_room.gd), first layout pass. All four are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_CABIN): keep that list in step.
+	"cabin_fire": 1.0,           # the fireplace (flames, coals, the fire's light): 0 = out, 1 = cozy, 2 = roaring
+	"cabin_lamps": true,         # table lamps, chandelier, dining lamp, back-door lantern (this room's house lights)
+	"cabin_light": "dusk",       # the light outside the glass: day | dusk | night (weather and a clock come later)
+	"cabin_view": "great_room",  # "Gather in": great_room | den. Where the presenters sit and which screen is the main one (reloads the room)
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
 	"forge_neon": 1.0,           # Forge Hall light inlays (cyan / orange / purple lines, glowing pipes): 0 = off, 1 = normal, 3 = very bright
