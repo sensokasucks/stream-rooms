@@ -7,6 +7,9 @@ extends Node3D
 ## metres behind the car to AHEAD metres ahead (about ten at a time). Which of the 24 piece
 ## types number k is comes from a shuffled bag (type_at): every type once per round of 24,
 ## never the same one twice in view.
+## The Landmarks and stops slider (r22_scenery, 0..100) mixes plain stretches in between: at 100
+## every place is a landmark piece (the bag above), at 50 every other one, at 0 none (slot_at).
+## The plain stretches are Pieces.PLAIN extra pieces (build_plain), one per place in view.
 ## Because everything depends only on travel, two PCs in a co-stream that agree on travel see
 ## the same road: the host sends its travel every few seconds (room event "r22_travel") and
 ## guests ease onto it. Billboards are placed by the same dice, though their pictures are each
@@ -14,7 +17,9 @@ extends Node3D
 ## Also here: the road's slow curves and hills (bend / hill, for r22_common.gdshaderinc, also
 ## from travel), bending the signs' words (Label3D is not drawn by our shaders, so the bend is
 ## applied to them here), turning the windmills, and the mile markers.
-## Settings: r22_speed (km/h; 0 = parked), r22_curves (how much the road winds and rolls).
+## Settings: r22_speed (km/h; 0 = parked), r22_curves (how much the road winds and rolls),
+## r22_scenery (how many places are landmarks rather than plain desert; shared in a co-stream,
+## so every PC's road matches).
 ## route22_cruise_room.gd makes it (setup) and calls tick() every frame.
 
 const Pieces := preload("res://rooms/route22/r22_pieces.gd")
@@ -43,20 +48,22 @@ var hill: float = 0.0
 
 var _kit: Dictionary
 var _boards: Billboards
-var _pieces: Array[Node3D] = []         # one of each type, built once (index = type)
-var _placed: Dictionary = {}            # k -> type, the pieces in place now
+var _pieces: Array[Node3D] = []         # built once: the 24 types (index = type), then the plain ones
+var _placed: Dictionary = {}            # k -> slot (index into _pieces), the pieces in place now
 var _cycles: Dictionary = {}            # round number -> PackedInt32Array of types (type_at)
 var _sync_in: float = SYNC_EVERY
-var _labels: Dictionary = {}            # type -> Array[Label3D] (their straight positions in meta "base")
+var _labels: Dictionary = {}            # slot -> Array[Label3D] (their straight positions in meta "base")
 
 
-## Builds the 24 pieces (hidden until their turn) and the billboards. kit: r22_geo.gd new_kit().
+## Builds the 24 pieces and the plain stretches (all hidden until their turn) and the billboards.
+## kit: r22_geo.gd new_kit().
 func setup(kit: Dictionary, boards: Billboards) -> void:
 	_kit = kit
 	_boards = boards
 	name = "Trip"
-	for t in Pieces.TYPES.size():
-		var piece := Pieces.build(t, kit)
+	for t in Pieces.TYPES.size() + Pieces.PLAIN:
+		var n := Pieces.TYPES.size()
+		var piece := Pieces.build(t, kit) if t < n else Pieces.build_plain(t - n, kit)
 		piece.visible = false
 		add_child(piece)
 		_pieces.append(piece)
@@ -79,6 +86,25 @@ func _exit_tree() -> void:
 ## r22_speed in metres a second (the setting is km/h, 0..120).
 static func _target_speed() -> float:
 	return clampf(float(AppState.get_setting("r22_speed")), 0.0, 120.0) / 3.6
+
+
+## The Landmarks and stops slider as a share of places, 0..1, in hundredths (so every PC rounds
+## it the same way).
+static func scenery() -> float:
+	return clampf(roundf(float(AppState.get_setting("r22_scenery"))), 0.0, 100.0) / 100.0
+
+
+## Which piece (an index into _pieces) stands at place k. With a share s of landmarks, place k is
+## a landmark when floor((k + 1) * s) steps up from floor(k * s) (evenly spread, like drawing a
+## slanted line on a grid), and then it is landmark number floor(k * s) of the bag (type_at), so
+## the landmarks still come in the bag's order with no type twice in view. Every other place
+## gets plain stretch k % PLAIN, which is never twice in view either. At s = 1 this is type_at(k).
+func slot_at(k: int) -> int:
+	var s := scenery()
+	var here := floori(float(k) * s)
+	if floori(float(k + 1) * s) > here:
+		return type_at(here)
+	return Pieces.TYPES.size() + posmod(k, Pieces.PLAIN)
 
 
 ## Which piece type comes at place k: round k / 24 of the bag, shuffled with that round's own
@@ -151,22 +177,24 @@ func in_view() -> Vector2i:
 func types_in_view() -> Array[String]:
 	var out: Array[String] = []
 	for k: int in _placed:
-		out.append(Pieces.TYPES[_placed[k]])
+		var t: int = _placed[k]
+		out.append(Pieces.TYPES[t] if t < Pieces.TYPES.size() else "plain")
 	return out
 
 
-## Puts every piece in view in its place, takes the ones that have left away, and gives a piece
-## that has just come into view its billboards and its mile number.
+## Puts every piece in view in its place, takes the ones that have left away (or no longer
+## belong at their place: the Landmarks and stops slider moved), and gives a piece that has just
+## come into view its billboards and its mile number.
 func _place() -> void:
 	var span := in_view()
 	for k: int in _placed.keys():
-		if k < span.x or k > span.y:
+		if k < span.x or k > span.y or _placed[k] != slot_at(k):
 			var gone: Node3D = _pieces[_placed[k]]
 			gone.visible = false
 			_boards.clear(gone.get_node("Boards"))
 			_placed.erase(k)
 	for k in range(span.x, span.y + 1):
-		var t := type_at(k)
+		var t := slot_at(k)
 		var piece := _pieces[t]
 		if not _placed.has(k):
 			if piece.visible:

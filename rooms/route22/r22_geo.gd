@@ -249,14 +249,17 @@ class Buf:
 ##   kit["brush"]       the desert plants (they sway),
 ##   kit["roads"]       the road materials (mirage, reflectors),
 ##   kit["glows"] / kit["neon_glows"]   the glare squares (see glow_material),
-##   kit["pictures"]    the billboard pictures (r22_billboards.gd adds them; lit at night).
+##   kit["pictures"]    the billboard pictures (r22_billboards.gd adds them; lit at night),
+##   kit["brush_mm"]    every brush MultiMesh (scatter_brush adds them; r22_desert.gd thins them
+##                      out by the Plant life slider).
 static func new_kit() -> Dictionary:
 	var mats: Array[ShaderMaterial] = []
 	var glows: Array[ShaderMaterial] = []
 	var neon_glows: Array[ShaderMaterial] = []
 	var roads: Array[ShaderMaterial] = []
 	var pictures: Array[ShaderMaterial] = []
-	var kit: Dictionary = {"mats": mats, "glows": glows, "neon_glows": neon_glows, "roads": roads, "pictures": pictures, "glow_by_color": {}}
+	var brush_mm: Array[MultiMesh] = []
+	var kit: Dictionary = {"mats": mats, "glows": glows, "neon_glows": neon_glows, "roads": roads, "pictures": pictures, "glow_by_color": {}, "brush_mm": brush_mm}
 	kit["rock"] = rock_material(kit)
 	kit["prop"] = prop_material(kit, 0.0)
 	kit["neon"] = prop_material(kit, 0.0)
@@ -705,6 +708,9 @@ static func scatter_brush(parent: Node3D, kit: Dictionary, spots: PackedVector3A
 		mm.use_colors = true
 		mm.mesh = brush_mesh(k)
 		mm.instance_count = list.size()
+		# listed for the Plant life slider (r22_desert.gd _apply_plants draws only the first part;
+		# the spots come in random order, so any first part is an even thinning)
+		(kit["brush_mm"] as Array[MultiMesh]).append(mm)
 		for i in list.size():
 			mm.set_instance_transform(i, list[i])
 			var shade := rng.randf_range(0.85, 1.1)

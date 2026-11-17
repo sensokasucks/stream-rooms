@@ -29,6 +29,9 @@ const TYPES: PackedStringArray = ["flats", "road_cut", "fins", "arch", "natural_
 	"ranch", "wreck", "services", "guardrails", "culverts", "buttes", "varnish_cliff"]
 ## The brush mix (shares) for ordinary desert.
 const BRUSH: Dictionary = {"creosote": 5.0, "sage": 3.0, "brittlebush": 2.0, "grass": 4.0, "cholla": 1.0, "yucca": 1.0}
+## How many plain stretches (build_plain) there are: one more than can be in view at once, so
+## r22_trip.gd can give every plain place in view its own (place k gets number k % PLAIN).
+const PLAIN: int = 12
 ## Where the telephone poles stand (X) and how far apart (metres; must divide LENGTH).
 const POLE_X: float = 11.0
 const POLE_GAP: float = 40.0
@@ -43,11 +46,23 @@ const POLE_H: float = 8.0
 ## plants), Scan_* (photo-scanned props, _scan), Labels (sign words, Label3D, which r22_trip.gd
 ## bends on the CPU).
 static func build(type: int, kit: Dictionary) -> Node3D:
+	return _build(TYPES[type], 9100 + type * 37, kit)
+
+
+## A plain stretch of desert, number i (0..PLAIN-1): nothing but what every piece has (poles,
+## posts, brush, small rocks, now and then a far butte, billboard spots). r22_trip.gd puts these
+## between the landmark pieces when the Landmarks and stops slider is below 100. Kind "plain".
+static func build_plain(i: int, kit: Dictionary) -> Node3D:
+	var root := _build("plain", 5300 + i * 41, kit)
+	root.name = "Piece_plain_%d" % i
+	return root
+
+
+static func _build(kind: String, salt: int, kit: Dictionary) -> Node3D:
 	var root := Node3D.new()
-	var kind := TYPES[type]
 	root.name = "Piece_" + kind
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 9100 + type * 37
+	rng.seed = salt
 	var rock := Geo.Buf.new()
 	var props := Geo.Buf.new()
 	var neon := Geo.Buf.new()
@@ -87,6 +102,7 @@ static func build(type: int, kit: Dictionary) -> Node3D:
 		"culverts": _culverts(p)
 		"buttes": _buttes(p)
 		"varnish_cliff": _varnish_cliff(p)
+		"plain": p["brush"] = 1.1
 	_common(p)
 	if not rock.is_empty():
 		_finish(Geo.add_mesh(root, "Rocks", rock, kit["rock"], true), 300.0)

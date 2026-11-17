@@ -193,6 +193,9 @@ const BASE_DEFAULTS: Dictionary = {
 	"r22_bb_rooftop": true,
 	"r22_bb_neon": true,
 	"r22_bb_trailer": true,
+	"r22_scenery": 100.0,        # Cruise: Landmarks and stops, 0..100 = share of road pieces that are landmarks / roadside stops (the rest plain desert; r22_trip.gd slot_at)
+	"r22_plants": 100.0,         # Plant life, 0..100 = share of the brush drawn (r22_desert.gd _apply_plants)
+	"r22_animals": 100.0,        # Animals, 0..100 = how often the vultures, jackrabbits, lizards and coyotes come (r22_extras.gd)
 	"r22_tumbleweeds": true,     # roadside life (r22_extras.gd)
 	"r22_dust_devils": true,
 	"r22_birds": true,

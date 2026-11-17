@@ -1598,6 +1598,10 @@ Included rooms:
       much the road winds and rolls away in the distance.
     - **How busy** sets the other traffic: pickups, old sedans, semis, motorhomes, motorcycles
       and the odd tour bus, mostly oncoming, now and then one overtaking you.
+    - **Landmarks and stops** sets how much of the road has something to look at (rock
+      formations, gas stations, motels, diners) rather than plain open desert: 100% = a
+      landmark every few seconds (a highlight reel), 50% = every other stretch, 0% = **Lonely
+      road**, nothing but poles, brush and the far buttes, like a real desert highway.
     - **Billboards** show your own pictures, for example your friends' promo pictures. Put
       PNG, JPG, WebP or GIF files (animated GIFs play) in a folder and type it in **Picture
       folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or type the
@@ -1620,7 +1624,9 @@ Included rooms:
       and slow in photosensitive-safe mode) and **After rain** (a wet, shining road with puddles
       and a rainbow). Changes ease in. **Clouds**, **Stars**, **Heat shimmer** (the air
       wobbles and the far road shines like water on hot afternoons) and **Wind**.
-    - **Roadside**: **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
+    - **Roadside**: **Plant life** (how thick the brush grows, 0% = bare desert) and
+      **Animals** (how often the vultures, jackrabbits, lizards and coyotes come, 0% = none),
+      then tick boxes for **Tumbleweeds**, **Dust devils**, **Vultures overhead**, **Jackrabbits and
       lizards**, **Coyotes** (a few trot across out in the desert from dusk to dawn, and at night
       you sometimes hear them howl) and **Neon signs** (the neon glows at night).
     - **Set detail**: **Detailed** adds photo grain and bumps to the rock, the ground and the

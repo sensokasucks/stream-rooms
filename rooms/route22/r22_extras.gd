@@ -5,6 +5,8 @@ extends Node3D
 ## trotting across further out, howling at night (the howl is r22_desert.gd howl()). Each has its
 ## own tick box on the Room tab (r22_tumbleweeds, r22_dust_devils, r22_birds, r22_critters,
 ## r22_coyotes; shared in a co-stream, though where each one turns up is every PC's own luck).
+## The Animals slider (r22_animals, 0..100) thins out the living ones: at 100 they come as
+## often as described here, at 50 half as often (and fewer vultures), at 0 not at all.
 ## The room makes one, calls setup() once and tick() every frame with the scenery's speed: in
 ## the Cruise everything here also slides back past the car at that speed (+Z), in the Drive-In
 ## the speed is 0. Their meshes use the prop material, so they bend with the road too.
@@ -101,8 +103,14 @@ func setup(kit: Dictionary, area: Vector3, sound: Node = null) -> void:
 
 
 ## Called every frame by the room. speed = metres a second the scenery slides back (+Z), wind 0..1.
+## The Animals slider as a share, 0..1 (see the file's comment).
+static func _life() -> float:
+	return clampf(float(AppState.get_setting("r22_animals")) / 100.0, 0.0, 1.0)
+
+
 func tick(delta: float, speed: float, wind: float, day: float) -> void:
 	var drift := Vector3(0.0, 0.0, speed * delta)
+	var life := _life()
 	var weeds_on := bool(AppState.get_setting("r22_tumbleweeds"))
 	for i in _weeds.size():
 		var w := _weeds[i]
@@ -137,8 +145,10 @@ func tick(delta: float, speed: float, wind: float, day: float) -> void:
 	var birds_on := bool(AppState.get_setting("r22_birds")) and day > 0.25
 	for i in _birds.size():
 		var b := _birds[i]
-		b.visible = birds_on
-		if not birds_on:
+		# fewer vultures with less Animals (all three at 100, one from about 17)
+		var shown := birds_on and float(i) < ceilf(float(VULTURES) * life - 0.5)
+		b.visible = shown
+		if not shown:
 			continue
 		# slow wide circles high over the road ahead, each at its own height, wings tilting
 		_bird_angle[i] += delta * (0.12 + 0.03 * float(i))
@@ -163,7 +173,8 @@ func _run_critter(delta: float, drift: Vector3) -> void:
 			_critter.visible = false
 			_critter_wait = _rng.randf_range(18.0, 40.0)
 		return
-	_critter_wait -= delta
+	# time runs slower towards the next one with less Animals (none at 0)
+	_critter_wait -= delta * _life()
 	if _critter_wait > 0.0 or not on:
 		return
 	_critter_kind = "rabbit" if _rng.randf() < 0.6 else "lizard"
@@ -182,10 +193,11 @@ func _run_critter(delta: float, drift: Vector3) -> void:
 ## distance, one behind another. At night they sometimes howl as they come, and now and then a
 ## far-off howl is heard with none in sight.
 func _run_coyotes(delta: float, drift: Vector3, day: float) -> void:
-	var on := bool(AppState.get_setting("r22_coyotes"))
+	var life := _life()
+	var on := bool(AppState.get_setting("r22_coyotes")) and life > 0.0
 	var night := 1.0 - day
 	if on and night > 0.5 and _sound and _sound.has_method("howl"):
-		_howl_in -= delta
+		_howl_in -= delta * life
 		if _howl_in <= 0.0:
 			_howl_in = _rng.randf_range(70.0, 180.0)
 			_sound.call("howl", _rng.randf_range(0.25, 0.5))
@@ -208,7 +220,7 @@ func _run_coyotes(delta: float, drift: Vector3, day: float) -> void:
 				c.visible = false
 			_pack_wait = _rng.randf_range(40.0, 90.0) if night > 0.3 else _rng.randf_range(120.0, 240.0)
 		return
-	_pack_wait -= delta
+	_pack_wait -= delta * life
 	if _pack_wait > 0.0 or not on:
 		return
 	_pack_out = true
