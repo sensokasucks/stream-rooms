@@ -30,6 +30,12 @@ What it writes (all seamless, so they tile):
         leather_red_02 recoloured to the car's red, and its normal map.
   car_carpet.jpg, car_carpet_nor.jpg  the woody's dark floor carpet (dirty_carpet, recoloured
         charcoal).
+  prop_rubber.jpg, prop_leather.jpg, prop_panel.jpg, prop_siding.jpg  "detail" textures (mid
+        grey = no change) for the vehicle models on the Detailed look, r22_prop.gdshader: tyre
+        rubber (Poly Haven rubberized_track), seat and jacket leather (fabric_leather_02), the
+        semi trailer's ribbed sheet metal (box_profile_metal_sheet; its ribs run up the
+        picture, so they stand upright on the trailer) and the motorhome's slatted siding
+        (painted_metal_shutter; its slats run across the picture, so they lie level).
   rock_noise.png        made here from noise, no photo: r = honeycomb cells (the rows of little
         holes wind carves in sandstone, "tafoni"), g = long vertical streaks (desert varnish
         running down cliffs), b = soft lumpy noise (warps the rock bands so they aren't ruler-straight),
@@ -172,4 +178,9 @@ if __name__ == "__main__":
     normal("car_leather_nor.jpg", "leather_red_02", size=512, strength=1.0)
     recolour("car_carpet.jpg", "dirty_carpet", (0.085, 0.08, 0.08), contrast=1.0)
     normal("car_carpet_nor.jpg", "dirty_carpet", size=512, strength=1.0)
+    # the traffic and the Drive-In's parked cars (r22_prop.gdshader MAT 10 to 13)
+    detail("prop_rubber.jpg", "rubberized_track", size=512, contrast=2.5)
+    detail("prop_leather.jpg", "fabric_leather_02", size=512, contrast=1.0)
+    detail("prop_panel.jpg", "box_profile_metal_sheet", size=512, contrast=3.0)
+    detail("prop_siding.jpg", "painted_metal_shutter", size=512, contrast=2.5)
     rock_noise()

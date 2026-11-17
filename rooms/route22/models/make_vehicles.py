@@ -18,8 +18,11 @@ What r22_vehicles.gd relies on (change both together):
     motorcycle; plus pickup_gate_up / pickup_gate_down (the pickup's tailgate, shut or open).
   - Blender space as in make_woody.py (X right, Y forward, Z up, ground at z = 0, the vehicle
     centred on the origin); in the game they face -Z.
-  - Material names pick each surface's colour and look there (r22_vehicles.gd LOOKS): paint is
-    the vehicle's own colour; tyre / hub / whitewall are the wheels (left off the wreck).
+  - Material names pick each surface's colour and look there (r22_vehicles.gd build_model's
+    `looks` table: a new name needs a line there): paint is the vehicle's own colour; ivory a
+    cream car paint (the sedan's roof, the motorhome's cab); cream the motorhome's slatted
+    house; fluted the coach's bright skirt; trailer ribbed sheet metal; tyre / hub / whitewall
+    are the wheels.
   - Empty marker nodes under each vehicle: <kind>_LampFront_n and <kind>_LampTail_n (where the
     lamps glare at night).
   - The Drive-In seats its audience at r22_vehicles.gd's own seat points (the same on the low
@@ -47,6 +50,7 @@ W.COLORS.update({
     "bed": (0.25, 0.02, 0.015, 0.3, 0.5), "cream": (0.82, 0.76, 0.6, 0.0, 0.5), "coach": (0.85, 0.85, 0.84, 0.1, 0.4),
     "trailer": (0.82, 0.82, 0.8, 0.2, 0.5), "jacket": (0.03, 0.025, 0.02, 0.0, 0.7), "jeans": (0.03, 0.04, 0.09, 0.0, 0.8),
     "helmet": (0.6, 0.1, 0.08, 0.2, 0.3), "seat": (0.03, 0.025, 0.02, 0.0, 0.6),
+    "ivory": (0.82, 0.76, 0.6, 0.0, 0.5), "fluted": (0.7, 0.7, 0.72, 0.8, 0.3),
 })
 
 DONE: list = []          # the finished vehicles (objects) and their markers
@@ -258,7 +262,7 @@ def car(kind: str, hardtop: bool):
             (0.50, 0.85, 0.66, 0.88, 1.41, 0.035, 0.07, 0.6),
             (-0.30, 0.85, 0.68, 0.88, 1.43, 0.045, 0.0, 0.0),
             (-1.12, 0.85, 0.66, 0.88, 1.40, 0.035, -0.05, 0.6),
-            (-1.74, 0.85, 0.83, 0.88, belt + 0.01, 0.0, -0.10, 1.0)], "cream")
+            (-1.74, 0.85, 0.83, 0.88, belt + 0.01, 0.0, -0.10, 1.0)], "ivory")
         glass("Windscreen", roof, "Y", 1.0, [(-0.77, belt + 0.035), (0.77, belt + 0.035), (0.58, 1.34), (-0.58, 1.34)], 0.05)
         glass("BackWindow", roof, "Y", -1.0, [(-0.74, belt + 0.06), (0.74, belt + 0.06), (0.56, 1.32), (-0.56, 1.32)], 0.06)
         for sx in (-1.0, 1.0):
@@ -438,14 +442,14 @@ def rv():
     W.box("Bunk", (2.45, 1.6, 1.0), (0.0, 2.75, 2.85), "cream", bevel=0.16)
     # the van it is built on: a short sloping nose, the windscreen raked up to the bunk
     van = W.hull("Van", [(4.52, 0.90, 0.66, 1.16, 1.18), (4.49, 0.95, 0.58, 1.20, 1.22), (4.0, 1.0, 0.52, 1.27, 1.30),
-                         (3.3, 1.02, 0.50, 1.30, 1.33), (1.8, 1.02, 0.50, 1.30, 1.33)], 2, "cream")   # (its back end is inside the house)
+                         (3.3, 1.02, 0.50, 1.30, 1.33), (1.8, 1.02, 0.50, 1.30, 1.33)], 2, "ivory")   # (its back end is inside the house)
     for sx in (-1.0, 1.0):
         W.cut(van, W.cyl("cut_arch", r + 0.10, r + 0.10, 0.5, (sx * 1.0, 3.3, r + 0.02), "X", "dark", 32, export=False), "arch")
     cab = canopy("Cab", [
         (4.02, 0.96, 0.94, 1.22, 1.32, 0.0, 0.08, 1.0),
         (3.50, 0.96, 0.88, 1.22, 2.40, 0.0, 0.05, 0.7),
         (1.95, 0.96, 0.88, 1.22, 2.40, 0.0, 0.0, 0.0),
-        (1.85, 0.96, 0.94, 1.22, 1.32, 0.0, 0.0, 1.0)], "cream")
+        (1.85, 0.96, 0.94, 1.22, 1.32, 0.0, 0.0, 1.0)], "ivory")
     glass("Windscreen", cab, "Y", 1.0, [(-0.84, 1.42), (0.84, 1.42), (0.72, 2.24), (-0.72, 2.24)], 0.06, start_at=5.0)
     for sx in (-1.0, 1.0):
         glass("CabWindow", cab, "X", sx, [(3.80, 1.40), (3.46, 2.20), (2.42, 2.20), (2.42, 1.40)], 0.05, posts=(3.30,))
@@ -520,7 +524,7 @@ def bus():
         skirt = sbox(-5.6, 0.62, 5.6, 1.26)            # the bright fluted skirt, open round the wheel arches
         for wy, _dual in axles:
             skirt = skirt.difference(W.circle(wy, r, r + 0.14))
-        W.decal("Flutes", skirt, "chrome", body, "X", sx, 0.003, 0.0, 0.15)
+        W.decal("Flutes", skirt, "fluted", body, "X", sx, 0.003, 0.0, 0.15)
         for i, y in enumerate((2.6, 0.2, -1.6)):
             W.decal("LockerSeam", sbox(y, 0.66, y + 1.5, 1.22).exterior.buffer(0.006), "dark", body, "X", sx, 0.006, 0.0, 0.08)
     W.decal("Door", sbox(4.50, 0.55, 5.30, 1.98).exterior.buffer(0.007), "dark", body, "X", 1.0, 0.006, 0.0, 0.06)
