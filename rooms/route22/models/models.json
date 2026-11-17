@@ -1,0 +1,90 @@
+{
+ "rock_boulder_a": {
+  "size": [
+   2.504,
+   0.865,
+   1.229
+  ],
+  "source": "namaqualand_boulder_02"
+ },
+ "rock_boulder_b": {
+  "size": [
+   2.396,
+   1.474,
+   3.068
+  ],
+  "source": "namaqualand_boulder_03"
+ },
+ "rock_boulder_c": {
+  "size": [
+   2.519,
+   1.892,
+   2.486
+  ],
+  "source": "namaqualand_boulder_04"
+ },
+ "rock_boulder_d": {
+  "size": [
+   1.362,
+   0.53,
+   0.741
+  ],
+  "source": "namaqualand_boulder_05"
+ },
+ "rock_boulder_e": {
+  "size": [
+   0.668,
+   0.649,
+   1.208
+  ],
+  "source": "namaqualand_boulder_06"
+ },
+ "rock_pile": {
+  "size": [
+   1.446,
+   0.15,
+   0.215
+  ],
+  "source": "namaqualand_rocks_01"
+ },
+ "rock_stones": {
+  "size": [
+   1.02,
+   0.083,
+   0.112
+  ],
+  "source": "namaqualand_stones_01"
+ },
+ "prop_barrel": {
+  "size": [
+   0.563,
+   0.88,
+   0.563
+  ],
+  "source": "Barrel_01"
+ },
+ "prop_barrel_rusty": {
+  "size": [
+   0.634,
+   0.93,
+   0.639
+  ],
+  "source": "barrel_03"
+ },
+ "prop_dead_trunk": {
+  "size": [
+   0.306,
+   1.992,
+   0.268
+  ],
+  "source": "dead_quiver_trunk"
+ },
+ "prop_dry_branches": {
+  "size": [
+   1.059,
+   0.338,
+   1.299
+  ],
+  "source": "dry_branches_medium_01"
+ }
+}

@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://rooms/route22_cruise/route22_cruise_room.gd" id="1_r22c"]
+
+[node name="Route22CruiseRoom" type="Node3D"]
+script = ExtResource("1_r22c")
+presenter_size = Vector2(0.9, 0.9)
