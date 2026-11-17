@@ -1613,9 +1613,12 @@ Included rooms:
       road**, nothing but poles, brush and the far buttes, like a real desert highway.
     - **Billboards** show your own pictures, for example your friends' promo pictures. Put
       PNG, JPG, WebP or GIF files (animated GIFs play) in a folder and type it in **Picture
-      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or type the
-      names of pictures from Stream Core's Stored files in **Stream Core pictures**, separated
-      by commas. **How common** sets how often a board comes by (40 = about one every 15
+      folder** (empty = the `billboards` folder in Stream Rooms' data folder), and/or pick them
+      in Stream Core's dashboard: Setup > Stream Rooms settings > Room & sound, **Billboards**
+      card, **Choose pictures** lists the pictures in Core's Stored files and uploads new ones
+      (in the game the same list is the **Stream Core pictures** box, names separated by
+      commas). Every board is built to its picture's shape (wide, square or tall), so the
+      whole picture shows, and no post, lamp or catwalk stands in front of it. **How common** sets how often a board comes by (40 = about one every 15
       seconds at 50 km/h, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
       night** puts lamps on them. **Filler ads when the set is empty** shows made-up roadside
       ads until you add pictures. Six shapes, each with its own tick box: a classic two-post
