@@ -1711,6 +1711,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
+- `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
 - Forge Hall rock photos (`rooms/forge_hall/textures/stone_*.jpg`, from Poly Haven's Rock Surface, Dark Rock 02 and Marble Rock 01): CC0, https://polyhaven.com
 
