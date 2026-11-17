@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://rooms/campfire/campfire_room.gd" id="1_cf"]
+
+[node name="CampfireRoom" type="Node3D"]
+script = ExtResource("1_cf")
+dimmed_level = 0.3
+fade_speed = 0.5
+lamp_color = Color(1, 0.74, 0.45, 1)
+lamp_energy = 1.6
+lamp_range = 11.0

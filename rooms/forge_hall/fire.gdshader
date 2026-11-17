@@ -1,5 +1,5 @@
 shader_type spatial;
-render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled;
+render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabled, fog_disabled;
 // The Forge Hall's flames. ForgeHallRoom (_add_flame) stands several upright rectangles in each
 // fire, and this shader paints one flame on each. Every rectangle turns to face the camera
 // round its upright axis, so a flame never shows as a flat card from the side.
@@ -8,6 +8,8 @@ render_mode unshaded, blend_add, cull_disabled, depth_draw_never, shadows_disabl
 // rise. Its heat (1 in the core, 0 at the edge) picks the colour: deep red at the tips,
 // orange, yellow, and near white at the base. Colours go above 1.0 on purpose, so the room's
 // bloom makes the fire glow. Added onto the picture: the black parts are see-through.
+// (fog_disabled: the Lakeside Campfire uses this shader too, outdoors in fog, and fog on a
+// picture that is added on would show the whole rectangle as a pale square.)
 
 uniform float amount = 1.0;               // the Room tab's Fire slider (0 = out, 1 = normal, 2 = roaring)
 uniform float seed = 0.0;                 // a different number per rectangle, so they don't move alike

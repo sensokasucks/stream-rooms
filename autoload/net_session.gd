@@ -26,7 +26,7 @@ extends Node
 ## Map of this file (each part starts with a "# ── Name ──" line): Public API (what the Together
 ## tab calls), Connection (password step, joining, leaving), Shared state (gate, snapshot, settings,
 ## room, curtain), Podium pictures, Synced video, Shared audience, Audience looks, Each streamer's own looks, Live feed
-## (VDO.Ninja), Reactions (with their pictures), Cameras, Letting a guest in (both sides confirm), Staying in sync
+## (VDO.Ninja), Reactions (with their pictures), Cameras, Laser pointers, Room events, Letting a guest in (both sides confirm), Staying in sync
 ## (first sync, audience checks, resync, reconnecting), Connection helpers (tunnel), Helpers.
 ## RPC names start with _net_. "Host:" / "Guest:" at the start of a comment says which side runs it.
 
@@ -87,7 +87,11 @@ const HELD_CHAT_MAX: int = 100
 
 ## Settings everyone in the session shares (the presenter ones are added in _ready()).
 const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lights", "curtain_enabled", "curtain_sign", "curtain_color",
-	"curtain_speed", "curtain_show_lights"]
+	"curtain_speed", "curtain_show_lights",
+	# the Lakeside Campfire's fire, screen, hour and sky (rooms/campfire/campfire_room.gd):
+	# with the "room" group shared everyone sits under the same sky (see _group_of)
+	"camp_fire", "camp_screen", "camp_time", "camp_day_minutes", "camp_clouds", "camp_stars", "camp_aurora", "camp_mist",
+	"camp_close_woods", "camp_autumn"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)
@@ -381,7 +385,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room" or what == "screen_peer" or what == "screen_tab_peer":
+	if what == "room" or what == "screen_peer" or what == "screen_tab_peer" or (what.begins_with("camp_") and _shared.has(what)):
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"
@@ -2548,6 +2552,85 @@ func _net_guest_laser_off() -> void:
 	for other: int in _peers:
 		if other != 1 and other != id:
 			_net_laser_off.rpc_id(other, id)
+
+
+# ── Room events ──────────────────────────────────────────────
+## Things a room's own game does that every PC should show (the Lakeside Campfire's marshmallow
+## sticks and tossed sticks, rooms/campfire/campfire_games.gd). They travel like the lasers: a
+## guest sends its own to the host, the host shows it and passes it on to the other guests, and
+## sends its own to all. The packet is a short name and a few plain values; what they mean is
+## the room's business, so this file only checks their shape (room_event_ok) and that one PC
+## doesn't send more than ROOM_EVENT_MAX a second. Channel 2, reliable (they are small and rare).
+
+## Most room events the host accepts from one guest in a second (the rest are dropped).
+const ROOM_EVENT_MAX: int = 30
+## Host: guest's peer id -> [the second it was last counted in (unix time), events in it].
+var _room_event_counts: Dictionary = {}
+
+
+## Called by a room's game when this PC does something the others should see. Does nothing
+## outside a session.
+func send_room_event(kind: String, data: Array) -> void:
+	if _role == "off" or not _connected() or not room_event_ok(kind, data):
+		return
+	if _role == "host":
+		for id: int in _peers:
+			if id != 1:
+				_net_room_event.rpc_id(id, 1, kind, data)
+	elif _admitted:
+		_net_guest_room_event.rpc_id(1, kind, data)
+
+
+## True for a packet a room event may be: a name of 1 to 24 letters, digits or "_", and at most 8
+## values that are each a bool, an int, a finite float, a text of at most 64 characters or a
+## Vector3 within 500 m. Both sides check what they receive.
+static func room_event_ok(kind: Variant, data: Variant) -> bool:
+	if not kind is String or not data is Array:
+		return false
+	var k := kind as String
+	if k.length() < 1 or k.length() > 24 or not k.is_valid_ascii_identifier():
+		return false
+	if (data as Array).size() > 8:
+		return false
+	for v: Variant in (data as Array):
+		if v is bool or v is int:
+			continue
+		if v is float and is_finite(v):
+			continue
+		if v is String and (v as String).length() <= 64:
+			continue
+		if v is Vector3 and (v as Vector3).is_finite() and (v as Vector3).length() <= 500.0:
+			continue
+		return false
+	return true
+
+
+## Guest: someone's room event (the host's own, or another guest's passed on by the host).
+@rpc("authority", "call_remote", "reliable", 2)
+func _net_room_event(peer_id: int, kind: String, data: Array) -> void:
+	if not _from_host() or peer_id == multiplayer.get_unique_id() or not room_event_ok(kind, data):
+		return
+	EventBus.net_room_event.emit(peer_id, _peer_name(peer_id), kind, data)
+
+
+## Host: a guest's room event; shown here and passed on to the other guests.
+@rpc("any_peer", "call_remote", "reliable", 2)
+func _net_guest_room_event(kind: String, data: Array) -> void:
+	var id := multiplayer.get_remote_sender_id()
+	if _role != "host" or not _peers.has(id) or not room_event_ok(kind, data):
+		return
+	var now := int(Time.get_unix_time_from_system())
+	var count: Array = _room_event_counts.get(id, [now, 0])
+	if int(count[0]) != now:
+		count = [now, 0]
+	count[1] = int(count[1]) + 1
+	_room_event_counts[id] = count
+	if int(count[1]) > ROOM_EVENT_MAX:
+		return
+	EventBus.net_room_event.emit(id, _peer_name(id), kind, data)
+	for other: int in _peers:
+		if other != 1 and other != id:
+			_net_room_event.rpc_id(other, id, kind, data)
 
 
 # ── Letting a guest in (both sides confirm) ──────────────────
