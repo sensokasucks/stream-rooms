@@ -91,7 +91,15 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	# the Lakeside Campfire's fire, screen, hour and sky (rooms/campfire/campfire_room.gd):
 	# with the "room" group shared everyone sits under the same sky (see _group_of)
 	"camp_fire", "camp_screen", "camp_time", "camp_day_minutes", "camp_clouds", "camp_stars", "camp_aurora", "camp_mist",
-	"camp_close_woods", "camp_autumn"]
+	"camp_close_woods", "camp_autumn",
+	# Route 22 (rooms/route22, rooms/route22_cruise): the hour, weather, drive, traffic, billboard
+	# rules, roadside life and marquee. Not shared: r22_detail (each PC's own look), r22_scene (each
+	# PC loads rooms itself), r22_bb_folder / r22_bb_core (pictures are each PC's own files).
+	# The Cruise's distance driven travels separately (room event "r22_travel", r22_trip.gd).
+	"r22_time", "r22_day_minutes", "r22_weather", "r22_clouds", "r22_stars", "r22_heat", "r22_wind",
+	"r22_speed", "r22_curves", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
+	"r22_bb_classic", "r22_bb_monopole", "r22_bb_wooden", "r22_bb_rooftop", "r22_bb_neon", "r22_bb_trailer",
+	"r22_scenery", "r22_plants", "r22_animals", "r22_tumbleweeds", "r22_dust_devils", "r22_birds", "r22_critters", "r22_coyotes", "r22_neon", "r22_marquee", "r22_lot_lights"]
 ## Presenter fields that are shared. camera / ndi pick devices on one PC, and the chat link ties a
 ## podium to one streamer's own audience, so those stay local.
 ## ("picture" is a file on the host's PC: its bytes travel separately, see _send_picture.)
@@ -385,7 +393,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room" or what == "screen_peer" or what == "screen_tab_peer" or (what.begins_with("camp_") and _shared.has(what)):
+	if what == "room" or what == "screen_peer" or what == "screen_tab_peer" or ((what.begins_with("camp_") or what.begins_with("r22_")) and _shared.has(what)):
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"

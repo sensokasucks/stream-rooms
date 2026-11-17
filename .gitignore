@@ -15,3 +15,7 @@ _backup/
 
 # Temporary copies the editor makes of GDExtension DLLs
 addons/**/~*
+
+# make_models.py download cache
+rooms/route22/models/_cache/
+__pycache__/
