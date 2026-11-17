@@ -14,7 +14,7 @@ What r22_car.gd relies on (change both together):
     car centred on the origin. The glTF export turns that into Godot's (x, z up -> y, forward
     -> -z), so in the game the car faces -Z like every Route 22 vehicle.
   - Material names pick the look in the game (r22_car.gd _materials): paint, wood, trim, chrome,
-    glass, leather, dark, rubber, white, lamp_front, lamp_tail, plate.
+    glass, leather, dark, rubber, white, lamp_front, lamp_tail, amber, plate.
   - Object "Wheel" is ONE wheel at the origin, its axle along X, its outer face towards +X;
     r22_car.gd puts a copy on each of WHEELS and spins it. Everything else is the body.
   - Empty marker nodes tell r22_car.gd where things go: Wheel_1..4 (the wheel centres),
@@ -54,7 +54,8 @@ COLORS = {
     "paint": (0.50, 0.03, 0.025, 0.35, 0.3), "wood": (0.36, 0.17, 0.06, 0.0, 0.4), "trim": (0.72, 0.55, 0.30, 0.0, 0.4),
     "chrome": (0.8, 0.8, 0.82, 1.0, 0.12), "glass": (0.6, 0.72, 0.78, 0.0, 0.05), "leather": (0.42, 0.03, 0.03, 0.0, 0.45),
     "dark": (0.02, 0.02, 0.02, 0.0, 0.8), "rubber": (0.025, 0.025, 0.025, 0.0, 0.9), "white": (0.9, 0.9, 0.88, 0.0, 0.6),
-    "lamp_front": (1.0, 0.95, 0.85, 0.0, 0.2), "lamp_tail": (0.7, 0.02, 0.02, 0.0, 0.2), "plate": (0.9, 0.72, 0.15, 0.0, 0.5),
+    "lamp_front": (1.0, 0.95, 0.85, 0.0, 0.2), "lamp_tail": (0.7, 0.02, 0.02, 0.0, 0.2), "amber": (1.0, 0.42, 0.04, 0.0, 0.25),
+    "plate": (0.9, 0.72, 0.15, 0.0, 0.5),
 }
 MATS: dict = {}
 
@@ -165,9 +166,15 @@ def torus(name: str, major: float, minor: float, at, material: str, rot=(0.0, 0.
 # ── the body shell ──
 def section(w: float, zb: float, belt: float, top: float) -> list:
     """Half a body cross-section (x, z) from the bottom middle round the right side to the top
-    middle: w = half width, zb = underside, belt = shoulder line, top = the middle of the top."""
-    return [(0.0, zb), (w * 0.80, zb), (w * 0.985, zb + 0.07), (w * 1.0, zb + 0.30), (w * 0.992, belt - 0.07),
-            (w * 0.955, belt - 0.005), (w * 0.86, belt + 0.012), (w * 0.45, top), (0.0, top)]
+    middle: w = half width, zb = underside, belt = shoulder line, top = the middle of the top.
+    Point RIDGE is the crease along the flank, point SHOULDER the edge where the side meets the
+    top (body_shell keeps both crisp)."""
+    h = belt - zb
+    return [(0.0, zb), (w * 0.80, zb), (w * 0.972, zb + 0.11 * h), (w * 0.988, zb + 0.42 * h), (w * 1.0, zb + 0.60 * h),
+            (w * 0.984, zb + 0.87 * h), (w * 0.957, belt - 0.004), (w * 0.86, belt + 0.012), (w * 0.45, top), (0.0, top)]
+
+
+RIDGE, SHOULDER = 4, 6   # indexes into section()
 
 
 def body_shell():
@@ -189,6 +196,13 @@ def body_shell():
             bm.faces.new([a[i], a[(i + 1) % n], b[(i + 1) % n], b[i]])
     bm.faces.new(rings[0])
     bm.faces.new(list(reversed(rings[-1])))
+    # the flank's ridge and the shoulder stay crisp lines through the smoothing (both sides:
+    # point i on the right is point n - i on the left)
+    crease = bm.edges.layers.float.get("crease_edge") or bm.edges.layers.float.new("crease_edge")
+    for a, b in zip(rings, rings[1:]):
+        for i, sharp in ((RIDGE, 0.55), (SHOULDER, 0.7)):
+            for j in (i, n - i):
+                bm.edges.get([a[j], b[j]])[crease] = sharp
     ob = add("Body", bm, "paint")
     ob.modifiers.new("sub", "SUBSURF").levels = 3
     return ob
@@ -206,13 +220,18 @@ def cut(body, cutter, name: str):
 # ── flat pieces laid onto the body (wood panels, trim, seams, arch lips) ──
 def decal(name: str, poly, material: str, body, axis: str, side: float, offset: float, thick: float = 0.0, spacing: float = 0.05):
     """A flat shape pressed onto the body's surface. poly = its outline (shapely, may have
-    holes) in (y, z) for a side panel (axis 'X') or (x, z) for one on the tail / nose (axis 'Y').
+    holes) in (y, z) for a side panel (axis 'X'), (x, z) for one on the tail / nose (axis 'Y') or
+    (x, y) for one on the hood / deck (axis 'Z', side +1 = pressed down from above).
     side = +1 / -1: which side of the car it lies on. offset = how far it stands off the paint,
     thick = its own thickness (0 = a skin)."""
     if poly.is_empty:
         return None
     polys = list(poly.geoms) if hasattr(poly, "geoms") else [poly]
     bm = bmesh.new()
+    # texture coordinates in metres, U across the grain and V along it, so the wood's grain runs
+    # along the car on the sides and the deck and across it on the tail (r22_car.gd scales them)
+    uv = bm.loops.layers.uv.new("UVMap")
+    grain = {"X": lambda u, v: (v, u), "Y": lambda u, v: (v, u), "Z": lambda u, v: (u, v)}[axis]
     for pg in polys:
         pg = pg.segmentize(spacing)
         pts = [c for ring in [pg.exterior] + list(pg.interiors) for c in ring.coords[:-1]]
@@ -226,17 +245,20 @@ def decal(name: str, poly, material: str, body, axis: str, side: float, offset: 
         if len(pts) < 3:
             continue
         tri = Delaunay(pts)
-        verts = [bm.verts.new((side * 1.4, u, v) if axis == "X" else (u, side * 3.2, v)) for u, v in pts]
+        start = {"X": lambda u, v: (side * 1.4, u, v), "Y": lambda u, v: (u, side * 3.2, v), "Z": lambda u, v: (u, v, side * 2.0)}[axis]
+        verts = [bm.verts.new(start(u, v)) for u, v in pts]
         for a, b, c in tri.simplices:
             if pg.contains(Point(*(pts[[a, b, c]].mean(axis=0)))):
-                bm.faces.new([verts[a], verts[b], verts[c]])
+                face = bm.faces.new([verts[a], verts[b], verts[c]])
+                for loop, i in zip(face.loops, (a, b, c)):
+                    loop[uv].uv = grain(*pts[i])
     ob = add(name, bm, material)
     sw = ob.modifiers.new("wrap", "SHRINKWRAP")
     sw.target = body
     sw.wrap_method = "PROJECT"
     sw.use_project_x = axis == "X"
     sw.use_project_y = axis == "Y"
-    sw.use_project_z = False
+    sw.use_project_z = axis == "Z"
     sw.use_negative_direction = side > 0
     sw.use_positive_direction = side < 0
     sw.offset = offset
@@ -257,6 +279,13 @@ def build_body():
     for sx, sy, _z in [(w[0], w[1], 0) for w in WHEELS]:
         c = cyl("cut_arch", ARCH_R, ARCH_R, 0.9, (math.copysign(0.95, sx), sy, WHEEL_R + 0.02), "X", "dark", 48, export=False)
         cut(body, c, "arch")
+    # The rear wheels reach in under the back seat, so each gets a housing: a vinyl-covered hump
+    # that shows in the cabin as the block either side of the back seat, hollowed out round the
+    # wheel (dark inside, seen through the arch).
+    for sx in (-1.0, 1.0):
+        hump = box("WheelHump", (0.285, 0.98, 0.47), (sx * 0.7175, -WHEEL_Y, 0.645), "leather", bevel=0.05)
+        hollow = cyl("cut_hump", ARCH_R, ARCH_R, 0.6, (sx * 0.90, -WHEEL_Y, WHEEL_R + 0.02), "X", "dark", 48, export=False)
+        cut(hump, hollow, "wheel")
     tub = box("cut_cabin", (1.70, 2.56, 1.2), (0.0, -0.44, 1.02), "leather", bevel=0.09, export=False)
     cut(body, tub, "cabin")
     grille = box("cut_grille", (1.78, 0.16, 0.24), (0.0, HALF_L, 0.70), "dark", bevel=0.02, export=False)
@@ -277,10 +306,26 @@ def build_body():
             decal("ArchLip_" + tag, lip, "chrome", body, "X", sx, 0.002, 0.012, 0.025)
         decal("Sill_" + tag, sbox(-WHEEL_Y + ARCH_R + 0.06, 0.34, WHEEL_Y - ARCH_R - 0.06, 0.375), "chrome", body, "X", sx, 0.002, 0.012, 0.04)
         decal("Handle_" + tag, sbox(-0.26, 0.845, -0.08, 0.872).buffer(0.008), "chrome", body, "X", sx, 0.012, 0.016, 0.02)
-    # the tailgate panel
-    tail = sbox(-0.70, 0.56, 0.70, 0.865)
+        # the bright moulding along the top of the door and rear quarter, the door's lock
+        decal("BeltBead_" + tag, sbox(sx * 0.874 - 0.012, -1.52, sx * 0.874 + 0.012, 0.86), "chrome", body, "Z", 1.0, 0.001, 0.011, 0.04)
+        decal("Lock_" + tag, circle(-0.03, 0.858, 0.013), "chrome", body, "X", sx, 0.012, 0.006, 0.01)
+    # the tailgate panel, a plain lozenge emblem in its middle (our own, no make's badge)
+    tail = sbox(-0.76, 0.55, 0.76, 0.865)
     decal("Wood_Tail", tail.buffer(-0.02), "wood", body, "Y", -1.0, 0.003)
     decal("Trim_Tail", tail.difference(tail.buffer(-0.045)), "trim", body, "Y", -1.0, 0.004, 0.007, 0.03)
+    decal("Emblem", Polygon([(-0.085, 0.715), (0.0, 0.745), (0.085, 0.715), (0.0, 0.685)]), "chrome", body, "Y", -1.0, 0.006, 0.008, 0.02)
+    # from above: the hood's shut line and the cowl's vent slots; the deck lid's wood (two panels
+    # with a rail between them, as on the sheet's top view) and its shut line
+    def outline(x0, y0, x1, y1, wide=0.009):
+        shape = sbox(x0, y0, x1, y1).buffer(-0.06).buffer(0.06)
+        return shape.difference(shape.buffer(-wide))
+    decal("Seam_Hood", outline(-0.80, 1.06, 0.80, 2.60), "dark", body, "Z", 1.0, 0.002, 0.0, 0.03)
+    for y in (0.972, 0.990, 1.008, 1.026):
+        decal("CowlVent", sbox(-0.62, y, 0.62, y + 0.008), "dark", body, "Z", 1.0, 0.002, 0.0, 0.03)
+    deck = sbox(-0.74, -2.56, 0.74, -1.99)
+    decal("Wood_Deck", deck.buffer(-0.02), "wood", body, "Z", 1.0, 0.003)
+    decal("Trim_Deck", deck.difference(deck.buffer(-0.045)).union(sbox(-0.022, -2.56, 0.022, -1.99)), "trim", body, "Z", 1.0, 0.004, 0.007, 0.03)
+    decal("Seam_Deck", outline(-0.81, -2.615, 0.81, -1.945), "dark", body, "Z", 1.0, 0.002, 0.0, 0.03)
     return body
 
 
@@ -288,10 +333,11 @@ def build_front():
     y = HALF_L
     # the grille: thin bright bars in the dark opening, a brighter frame round it
     bars = []
-    for i in range(7):
-        z = 0.60 + 0.20 * i / 6.0
+    for i in range(10):
+        z = 0.60 + 0.20 * i / 9.0
         bars.append([(-0.50, y - 0.035, z), (0.50, y - 0.035, z)])
-    rods("GrilleBars", bars, 0.007, "chrome", 6)
+    rods("GrilleBars", bars, 0.005, "chrome", 6)
+    box("GrilleCentre", (0.035, 0.03, 0.225), (0.0, y - 0.02, 0.70), "chrome", bevel=0.01)
     rods("GrilleUprights", [[(x, y - 0.03, 0.595), (x, y - 0.03, 0.805)] for x in np.linspace(-0.5, 0.5, 21)], 0.004, "chrome", 5)
     rods("GrilleFrame", [[(-0.885, y + 0.004, 0.585), (0.885, y + 0.004, 0.585), (0.885, y + 0.004, 0.815), (-0.885, y + 0.004, 0.815), (-0.885, y + 0.004, 0.585)]], 0.014, "chrome", 8)
     # four round headlights in chrome rims
@@ -304,6 +350,15 @@ def build_front():
     bumper(y + 0.10, 1.0)
     # the hood's centre crease and a small ornament, the cowl's wiper grille
     rods("HoodSpear", [[(0.0, 2.55, 0.936), (0.0, 1.9, 0.962), (0.0, 1.15, 0.99)]], 0.006, "chrome", 6)
+    box("HoodOrnament", (0.014, 0.17, 0.034), (0.0, 2.50, 0.956), "chrome", bevel=0.006, rot=(math.radians(-3.0), 0.0, 0.0))
+    for sx in (-1.0, 1.0):
+        # amber turn lamps under the headlights, little bright fins on the fender tops
+        box("SignalRim", (0.21, 0.02, 0.07), (sx * 0.66, y + 0.0, 0.525), "chrome", bevel=0.008)
+        box("Signal", (0.18, 0.03, 0.045), (sx * 0.66, y + 0.008, 0.525), "amber", bevel=0.01)
+        box("FenderFin", (0.012, 0.13, 0.026), (sx * 0.86, 2.32, 0.915), "chrome", bevel=0.005)
+    # the radio aerial on the right front fender
+    cyl("AerialBase", 0.016, 0.01, 0.03, (0.82, 1.30, 0.945), "Z", "chrome", 12)
+    rods("Aerial", [[(0.82, 1.30, 0.95), (0.82, 1.27, 1.78)]], 0.0035, "chrome", 5)
 
 
 def bumper(y: float, facing: float):
@@ -322,6 +377,12 @@ def build_rear():
     bumper(y - 0.10, -1.0)
     box("Plate", (0.34, 0.012, 0.17), (0.0, y - 0.165, 0.40), "plate", bevel=0.004)
     box("PlateFrame", (0.37, 0.012, 0.20), (0.0, y - 0.158, 0.40), "chrome", bevel=0.004)
+    # white reversing lamps let into the bumper, the tail pipe under its right end
+    for sx in (-1.0, 1.0):
+        cyl("ReverseRim", 0.046, 0.046, 0.012, (sx * 0.66, y - 0.156, 0.40), "Y", "chrome", 20)
+        cyl("ReverseLens", 0.036, 0.03, 0.02, (sx * 0.66, y - 0.162, 0.40), "Y", "white", 20)
+    cyl("TailPipe", 0.032, 0.032, 0.34, (0.56, y + 0.04, 0.275), "Y", "chrome", 16, bevel=0.004)
+    cyl("TailPipeHole", 0.024, 0.024, 0.01, (0.56, y - 0.131, 0.275), "Y", "dark", 16)
 
 
 def build_cabin():
@@ -334,6 +395,27 @@ def build_cabin():
         torus("Dial", 0.05, 0.007, (-0.42 + dx, 0.594, 0.87), "chrome", rot=(math.pi / 2, 0.0, 0.0))
         cyl("DialFace", 0.046, 0.046, 0.004, (-0.42 + dx, 0.596, 0.87), "Y", "white", 20)
     box("Radio", (0.22, 0.02, 0.07), (0.05, 0.605, 0.86), "chrome", bevel=0.006)
+    box("RadioDial", (0.13, 0.02, 0.035), (0.05, 0.601, 0.862), "dark", bevel=0.004)
+    for x in (-0.085, 0.185, 0.0, 0.05, 0.10, -0.62):       # radio knobs, heater knobs, the light switch
+        z = 0.86 if x in (-0.085, 0.185) else 0.805
+        cyl("Knob", 0.015, 0.012, 0.03, (x, 0.598, z), "Y", "chrome", 12)
+    box("DashStrip", (1.64, 0.012, 0.016), (0.0, 0.607, 0.775), "chrome", bevel=0.004)
+    rods("Glovebox", [[(0.36, 0.607, 0.815), (0.74, 0.607, 0.815), (0.74, 0.607, 0.925), (0.36, 0.607, 0.925), (0.36, 0.607, 0.815)]], 0.004, "chrome", 5)
+    cyl("GloveboxKnob", 0.012, 0.01, 0.02, (0.55, 0.600, 0.905), "Y", "chrome", 10)
+    # the gear selector and the turn stalk on the column, the pedals, the tunnel down the floor
+    rods("Selector", [[(-0.42, 0.52, 0.945), (-0.29, 0.50, 0.995)], [(-0.42, 0.54, 0.935), (-0.54, 0.53, 0.955)]], 0.006, "chrome", 6)
+    rods("SelectorKnob", [[(-0.285, 0.50, 0.998)], [(-0.545, 0.53, 0.957)]], 0.015, "white", 10)
+    box("PedalGas", (0.07, 0.02, 0.15), (-0.27, 0.77, 0.52), "dark", bevel=0.006, rot=(math.radians(-25.0), 0.0, 0.0))
+    box("PedalBrake", (0.14, 0.02, 0.08), (-0.47, 0.75, 0.56), "dark", bevel=0.006, rot=(math.radians(-25.0), 0.0, 0.0))
+    box("Tunnel", (0.24, 2.3, 0.10), (0.0, -0.36, 0.45), "dark", bevel=0.045)
+    # inside the doors and the rear quarters: armrests, a bright strip, window winders, handles
+    for sx in (-1.0, 1.0):
+        box("DoorStrip", (0.012, 2.2, 0.018), (sx * 0.843, -0.42, 0.815), "chrome", bevel=0.004)
+        box("DoorArmrest", (0.085, 0.44, 0.06), (sx * 0.805, 0.16, 0.715), "leather", bevel=0.024)
+        box("DoorPull", (0.02, 0.11, 0.024), (sx * 0.838, 0.42, 0.765), "chrome", bevel=0.008)
+        cyl("WinderBoss", 0.022, 0.018, 0.02, (sx * 0.838, 0.55, 0.66), "X", "chrome", 14)
+        rods("Winder", [[(sx * 0.826, 0.55, 0.66), (sx * 0.818, 0.60, 0.615)]], 0.006, "chrome", 6)
+        rods("WinderKnob", [[(sx * 0.812, 0.60, 0.615)]], 0.013, "white", 8)
     # the steering wheel: a thin ivory rim on a raked column, two spokes and a chrome horn ring
     hub = Vector((-0.42, 0.44, 0.985))
     tilt = math.radians(62.0)                    # the rim's plane leans this far back from flat
@@ -348,24 +430,29 @@ def build_cabin():
     for sx in (-1.0, 1.0):
         box("SeatFront", (0.74, 0.60, 0.20), (sx * 0.405, 0.20, 0.555), "leather", bevel=0.07)
         box("BackFront", (0.74, 0.15, 0.58), (sx * 0.405, -0.13, 0.88), "leather", bevel=0.065, rot=(lean, 0.0, 0.0))
+        # the back of the seat: a stitched panel under a bright strip
+        box("SeatBackPanel", (0.60, 0.02, 0.40), (sx * 0.405, -0.209, 0.885), "leather", bevel=0.009, rot=(lean, 0.0, 0.0))
+        box("SeatBackStrip", (0.62, 0.014, 0.016), (sx * 0.405, -0.268, 1.10), "chrome", bevel=0.005, rot=(lean, 0.0, 0.0))
         for i in range(5):                          # pleats: slim raised ribs down the back and across the cushion
             x = sx * 0.405 + (i - 2) * 0.125
             box("Pleat", (0.10, 0.03, 0.46), (x, -0.048, 0.89), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
             box("Pleat", (0.10, 0.44, 0.03), (x, 0.22, 0.668), "leather", bevel=0.014)
-    box("SeatRear", (1.62, 0.62, 0.22), (0.0, -1.18, 0.575), "leather", bevel=0.075)
-    box("BackRear", (1.62, 0.16, 0.60), (0.0, -1.53, 0.90), "leather", bevel=0.07, rot=(lean, 0.0, 0.0))
-    for i in range(11):
-        x = (i - 5) * 0.14
+    # (the back seat fits between the wheel humps, see build_body)
+    box("SeatRear", (1.15, 0.62, 0.22), (0.0, -1.18, 0.575), "leather", bevel=0.075)
+    box("BackRear", (1.15, 0.16, 0.60), (0.0, -1.53, 0.90), "leather", bevel=0.07, rot=(lean, 0.0, 0.0))
+    for i in range(7):
+        x = (i - 3) * 0.14
         box("Pleat", (0.115, 0.03, 0.48), (x, -1.444, 0.91), "leather", bevel=0.014, rot=(lean, 0.0, 0.0))
         box("Pleat", (0.115, 0.46, 0.03), (x, -1.16, 0.70), "leather", bevel=0.014)
     box("Armrest", (0.16, 0.5, 0.10), (0.0, 0.16, 0.66), "leather", bevel=0.04)
     # the folded top under its boot behind the back seat
     box("TopBoot", (1.74, 0.36, 0.13), (0.0, -1.72, 0.995), "dark", bevel=0.06)
+    rods("BootSnaps", [[(x, -1.538, 0.985)] for x in np.linspace(-0.74, 0.74, 9)] + [[(x, -1.902, 0.985)] for x in np.linspace(-0.74, 0.74, 9)], 0.011, "chrome", 8)
     # the windscreen: chrome frame, glass, the quarter windows and the mirrors
     bl, br = Vector((-0.865, 0.90, 0.975)), Vector((0.865, 0.90, 0.975))
     tl, tr = Vector((-0.80, 0.50, 1.43)), Vector((0.80, 0.50, 1.43))
     top_mid = Vector((0.0, 0.53, 1.445))
-    rods("ScreenFrame", [[tuple(bl), tuple(tl), tuple(top_mid), tuple(tr), tuple(br)]], 0.02, "chrome")
+    rods("ScreenFrame", [[tuple(bl), tuple(tl), tuple(top_mid), tuple(tr), tuple(br)]], 0.024, "chrome")
     rods("ScreenBase", [[tuple(bl), (0.0, 0.94, 0.992), tuple(br)]], 0.014, "chrome")
     bm = bmesh.new()
     vs = [bm.verts.new(p) for p in (bl, (0.0, 0.94, 0.992), br, tr, top_mid, tl)]
@@ -383,6 +470,11 @@ def build_cabin():
         # door mirrors on short stalks
         rods("MirrorStalk", [[(sx * 0.93, 0.62, 0.975), (sx * 1.02, 0.60, 1.05)]], 0.009, "chrome", 6)
         cyl("Mirror", 0.062, 0.055, 0.03, (sx * 1.03, 0.60, 1.07), "Y", "chrome", 20, bevel=0.008)
+    # the sun visors folded up along the top of the glass, the wipers parked along its foot
+    for sx in (-1.0, 1.0):
+        box("Visor", (0.40, 0.018, 0.11), (sx * 0.42, 0.522, 1.368), "leather", bevel=0.007, rot=(math.radians(41.0), 0.0, 0.0))
+    rods("Wipers", [[(-0.50, 0.928, 0.996), (-0.12, 0.812, 1.128)], [(0.15, 0.944, 1.004), (0.53, 0.812, 1.128)]], 0.005, "dark", 5)
+    rods("WiperPivots", [[(-0.50, 0.930, 0.994)], [(0.15, 0.946, 1.002)]], 0.012, "chrome", 8)
     rods("InsideMirrorArm", [[(0.0, 0.535, 1.43), (0.0, 0.50, 1.385)]], 0.006, "chrome", 6)
     box("InsideMirror", (0.22, 0.015, 0.06), (0.0, 0.495, 1.37), "chrome", bevel=0.006)
 
@@ -391,8 +483,10 @@ def build_wheel():
     """One wheel at the origin: axle along X, the outside face towards +X."""
     r, half = WHEEL_R, 0.105
     # the tyre's cross-section, spun round the axle: (distance along the axle, radius)
-    prof = [(-half, r - 0.135), (-half, r - 0.05), (-half + 0.02, r - 0.012), (-half + 0.05, r), (half - 0.05, r), (half - 0.02, r - 0.012),
-            (half, r - 0.05), (half, r - 0.135)]
+    prof = [(-half, r - 0.135), (-half, r - 0.05), (-half + 0.02, r - 0.012), (-half + 0.05, r)]
+    for gx in (-0.03, 0.0, 0.03):                 # three grooves round the tread
+        prof += [(gx - 0.005, r), (gx - 0.003, r - 0.009), (gx + 0.003, r - 0.009), (gx + 0.005, r)]
+    prof += [(half - 0.05, r), (half - 0.02, r - 0.012), (half, r - 0.05), (half, r - 0.135)]
     def spin(name, profile, material, segs=48):
         bm = bmesh.new()
         rings = []
@@ -409,7 +503,10 @@ def build_wheel():
     parts.append(spin("Whitewall", [(half + 0.003, r - 0.125), (half + 0.004, r - 0.075)], "white"))
     parts.append(spin("Steel", [(-half, r - 0.135), (-half + 0.03, 0.0)], "dark"))
     parts.append(spin("Rim", [(half + 0.001, r - 0.135), (half - 0.03, r - 0.14), (half - 0.035, r - 0.18)], "chrome"))
-    parts.append(spin("Cap", [(half - 0.035, r - 0.18), (half + 0.012, r - 0.20), (half + 0.03, r - 0.27), (half + 0.045, 0.05), (half + 0.05, 0.0)], "chrome"))
+    # the hubcap: a bright outer dish, a ring painted the body's red let into it, a domed centre
+    parts.append(spin("Cap", [(half - 0.035, r - 0.18), (half + 0.010, 0.165), (half + 0.016, 0.135), (half + 0.004, 0.128)], "chrome"))
+    parts.append(spin("CapRing", [(half + 0.004, 0.128), (half + 0.004, 0.092)], "paint"))
+    parts.append(spin("CapDome", [(half + 0.004, 0.092), (half + 0.022, 0.086), (half + 0.040, 0.05), (half + 0.046, 0.0)], "chrome"))
     for ob in parts:
         EXPORT.remove(ob)
     return parts

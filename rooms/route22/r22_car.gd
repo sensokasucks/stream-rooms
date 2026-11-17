@@ -156,8 +156,9 @@ func _materials() -> Dictionary:
 		wood.albedo_texture = load(Geo.CAMP_TEX + "detail_planks.jpg")
 		var tint := Color(0.62, 0.36, 0.17) if key == "wood" else Color(0.9, 0.78, 0.55)
 		wood.albedo_color = tint * 2.0                     # the grain picture averages 0.5: x2 = the tint
-		wood.uv1_triplanar = true
-		wood.uv1_scale = Vector3(0.9, 0.25, 0.9)           # grain stretched along the car
+		# the model's own UVs are in metres, U across the grain and V along it (make_woody.py
+		# decal): planks about 0.6 m wide, the grain drawn out along the car
+		wood.uv1_scale = Vector3(1.6, 0.3, 1.0)
 		wood.roughness = 0.4
 		wood.clearcoat_enabled = true
 		wood.clearcoat = 0.8
@@ -197,6 +198,11 @@ func _materials() -> Dictionary:
 	glass.roughness = 0.05
 	glass.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m["glass"] = glass
+	# the amber turn lamps under the headlights (not lit: they only catch the daylight)
+	var amber := StandardMaterial3D.new()
+	amber.albedo_color = Color(1.0, 0.45, 0.06)
+	amber.roughness = 0.25
+	m["amber"] = amber
 	for key: String in ["lamp_front", "lamp_tail"]:
 		var lamp := StandardMaterial3D.new()
 		lamp.albedo_color = Color(1.0, 0.95, 0.82) if key == "lamp_front" else Color(0.9, 0.08, 0.05)
