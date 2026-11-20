@@ -34,6 +34,16 @@ const BASE_DEFAULTS: Dictionary = {
 	"lh_clouds": 1.0,            # Lecture Hall sky outside the windows: 0 = clear, 1 = some clouds, 2 = overcast
 	"lh_glass": "quarries",      # Lecture Hall tall windows: stained (all coloured glass) | quarries (the pale diamond panes are clear) | clear (every pane clear)
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
+	# Log Cabin (rooms/log_cabin/log_cabin_room.gd). All but cabin_detail are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_CABIN): keep that list in step.
+	"cabin_fire": 1.0,           # the fireplaces (flames, coals, the fire's light, chimney smoke): 0 = out, 1 = cozy, 2 = roaring
+	"cabin_lamps": true,         # table lamps, chandelier, dining lamp, back-door lantern (this room's house lights)
+	"cabin_time": 17.5,          # time of day outside, hours 0..24 (6 = sunrise, 12 = noon, 17.5 = golden hour, 18 = sunset, 21 = night)
+	"cabin_day_minutes": 0.0,    # minutes one full day takes while the clock runs; 0 = the clock stands still at cabin_time
+	"cabin_clouds": 0.5,         # cloud: 0 = clear, 1 = fair weather, 2 = overcast
+	"cabin_stars": 1.0,          # how bright the stars and the Milky Way are at night (0 = none)
+	"cabin_detail": "auto",      # how detailed the cabin is drawn on this PC (never shared): auto (from graphics_quality) | low (Simple) | full (Detailed: photo textures, leaf trees)
+	"cabin_view": "great_room",  # "Gather in": great_room | den. Where the presenters sit and which screen is the main one (reloads the room)
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
 	"forge_neon": 1.0,           # Forge Hall light inlays (cyan / orange / purple lines, glowing pipes): 0 = off, 1 = normal, 3 = very bright

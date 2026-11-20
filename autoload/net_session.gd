@@ -244,6 +244,14 @@ var _host_ended: bool = false           # guest: the host said it's stopping (_n
 var _applying_pause: bool = false       # guest: applying the host's pause-to-react (see _net_react_pause)
 
 
+## The Log Cabin's settings everyone in a co-stream shares (rooms/log_cabin/log_cabin_room.gd), in
+## the host's "room" group (_group_of), so everyone sits by the same fire under the same sky (and in the same
+## room of the cabin: cabin_view reloads the room on every PC).
+## Keep in step with the "cabin_" settings in AppState.BASE_DEFAULTS (all but cabin_detail, which
+## is each PC's own Set detail).
+const SHARED_CABIN: Array[String] = ["cabin_fire", "cabin_lamps", "cabin_view", "cabin_time", "cabin_day_minutes", "cabin_clouds", "cabin_stars"]
+
+
 ## Builds the shared-key whitelist and hooks up SceneMultiplayer's signals (password step,
 ## peers joining and leaving) and the EventBus signals the session follows.
 func _ready() -> void:
@@ -252,6 +260,8 @@ func _ready() -> void:
 	for n in range(1, AppState.PRESENTER_COUNT + 1):
 		for f in SHARED_PRESENTER_FIELDS:
 			_shared[AppState.presenter_key(n, f)] = true
+	for k in SHARED_CABIN:
+		_shared[k] = true
 	var sm := _sm()
 	sm.auth_callback = _on_auth
 	sm.auth_timeout = AUTH_TIMEOUT
@@ -403,6 +413,9 @@ func _group_of(what: String) -> String:
 		return "curtain"
 	if what.begins_with("presenter_") and _shared.has(what):
 		return "presenters"
+	# the Log Cabin's fire, lamps, hour and sky go with the room (SHARED_CABIN)
+	if what.begins_with("cabin_") and _shared.has(what):
+		return "room"
 	return ""
 
 
