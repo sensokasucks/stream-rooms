@@ -27,7 +27,9 @@ class_name RoomsRemote
 ##  2. Runs the commands Core's card sends back. They arrive as the existing "stage" packet,
 ##     {action, value}; ChatFeed hands every action except "curtain" to run_command() here.
 ##
-##  3. Setup > Stream Rooms pages in Core (work list item 16): on (re)connect it sends
+##  3. Setup > Stream Rooms pages in Core (work list item 16): on (re)connect, and again each time
+##     a room brings its own controls (EventBus.room_controls_changed: the Route 22 billboards,
+##     the campfire's weather...), it sends
 ##     {"type": "rooms_settings", "data": {schema, values, defaults}} (schema from the control panel's
 ##     settings_schema(): every setting the panel has a control for), then {"type": "rooms_values",
 ##     "data": {key: value}} for the ones that change. Core's changes arrive as {"type": "rooms_set",
@@ -53,7 +55,7 @@ var _last_sent: String = ""       # JSON of the last packet: an unchanged state 
 var _podiums: int = 0             # podiums in the room on now (room_presenters_changed)
 var _schema_keys: Dictionary = {} # setting keys Core may change (from the last schema sent)
 var _changed: Dictionary = {}     # schema keys changed since the last rooms_values packet
-var _send_schema: bool = false    # a full rooms_settings packet is due (after a (re)connect)
+var _send_schema: bool = false    # a full rooms_settings packet is due (after a (re)connect or a room change)
 var _ndi_names: PackedStringArray = []    # NDI sources found (EventBus.ndi_sources_changed)
 var _ndi_ok: bool = false                 # false = the NDI add-on isn't loaded
 var _spout_names: PackedStringArray = []  # Spout senders running (EventBus.spout_senders_changed)
@@ -72,6 +74,12 @@ func _ready() -> void:
 	# Anything that changes the summary marks it dirty; _process sends it after SEND_GAP.
 	EventBus.chat_status_changed.connect(_on_chat_status)
 	EventBus.room_changed.connect(func(_r: String) -> void: _mark())
+	# A room's own settings (Room tab) are part of the list Core shows, so the list goes again
+	# when the room changes. The control panel rebuilds its controls on the same signal;
+	# SEND_GAP later they are there to describe, whichever of us heard it first.
+	EventBus.room_controls_changed.connect(func(_c: Array) -> void:
+		_wait = SEND_GAP
+		_send_schema = true)
 	EventBus.react_pause_changed.connect(func(_p: bool) -> void: _mark())
 	EventBus.focus_view_changed.connect(func(_f: bool) -> void: _mark())
 	EventBus.clean_feed_changed.connect(func(_c: bool) -> void: _mark())
