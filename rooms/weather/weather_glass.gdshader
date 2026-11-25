@@ -27,8 +27,8 @@ uniform float frost = 0.0;
 // sideways lean of the runners, from the wind (0 = straight down)
 uniform float wind = 0.0;
 uniform float refract = 1.0;
-// metres one copy of the bead picture covers
-uniform float bead_size = 0.32;
+// metres one copy of the bead picture covers (make_weather_textures.py draws the beads for 0.8)
+uniform float bead_size = 0.8;
 uniform vec3 frost_color : source_color = vec3(0.86, 0.92, 0.98);
 
 varying vec3 w_pos;
@@ -48,11 +48,17 @@ void fragment() {
 	vec2 p = along_z ? w_pos.xy : w_pos.zy;
 	vec3 eu = along_z ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 0.0, 1.0);
 
+	// How sharp the drops can be drawn here: 1 while one bead-picture pixel covers about one
+	// screen pixel or more, falling to 0 when many squeeze into one (a pane far from the camera).
+	// Far away the beads and their bends turn into an even soft wetness instead of grey speckle.
+	float texels = length(fwidth(p)) / bead_size * 512.0;
+	float sharp = 1.0 - smoothstep(1.2, 4.0, texels);
+
 	// beads: each one has its own number (alpha); the wetter the glass, the more of them show
 	vec4 d = texture(drops, p / bead_size);
 	float bead = smoothstep(0.02, 0.12, d.b) * step(d.a, wet * 1.02 - 0.02);
-	vec2 bend = (d.rg - 0.5) * bead;
-	float water = d.b * bead;
+	vec2 bend = (d.rg - 0.5) * bead * sharp;
+	float water = d.b * bead * sharp;
 
 	// runners: two layers sliding down at different speeds, leaning with the wind
 	float run_cover = 0.0;
@@ -68,12 +74,13 @@ void fragment() {
 			float m = smoothstep(0.03, 0.15, r.b) * (1.0 - r.a * 0.75) * smoothstep(0.0, 0.6, rain);
 			if (m > run_cover) {
 				run_cover = m;
-				bend = mix(bend, r.rg - 0.5, m);
+				bend = mix(bend, (r.rg - 0.5) * sharp, m);
 				water = max(water, r.b * m);
 			}
 		}
 	}
-	float drop_cover = max(bead * smoothstep(0.02, 0.2, d.b), run_cover);
+	run_cover *= mix(0.5, 1.0, sharp);
+	float drop_cover = max(bead * smoothstep(0.02, 0.2, d.b) * sharp + wet * 0.25 * (1.0 - sharp), run_cover);
 
 	// frost: thick near the bottom of the glass, thin higher up
 	float fr = texture(frost_tex, p / 0.9).r;
@@ -84,10 +91,11 @@ void fragment() {
 	}
 
 	// the view through the glass: bent by the drops, soft through the wet film
-	float film = wet * 0.5;
+	// the thin film of water between the drops: only a light veil, so the view stays readable
+	float film = wet * 0.22;
 	float cover = clamp(max(film, drop_cover * 0.95), 0.0, 1.0);
 	vec2 suv = SCREEN_UV + bend * 0.06 * refract;
-	float lod = refract * (wet * 2.5 + drop_cover * 1.5);
+	float lod = refract * (wet * 1.6 + drop_cover * 1.2);
 	vec3 behind = textureLod(screen, suv, lod).rgb * (1.0 - 0.18 * wet);
 
 	ALBEDO = mix(tint.rgb * (1.0 - cover), frost_color, frost_cover);

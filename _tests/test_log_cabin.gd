@@ -282,7 +282,9 @@ func _ready() -> void:
 		AppState.set_setting("cabin_fog", "off")
 		AppState.set_setting("cabin_weather", "clear")
 		await _secs(0.5)
-		_check(env.fog_mode == Environment.FOG_MODE_EXPONENTIAL, "Clear: the fog is back to the room's own")
+		# (fog_density too: switching fog_mode resets it to 1.0, which once drowned clear days in fog)
+		_check(env.fog_mode == Environment.FOG_MODE_EXPONENTIAL and env.fog_density < 0.01,
+			"Clear: the fog is back to the room's own thin haze (density %.4f)" % env.fog_density)
 
 	# Gather in: Den. The room reloads; fetch the new one.
 	AppState.set_setting("cabin_view", "den")

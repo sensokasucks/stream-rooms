@@ -308,7 +308,12 @@ func apply_env(env: Environment, sky: ShaderMaterial, haze: Color) -> void:
 	elif see > 0.0:
 		_depth_fog(env, 14.0, see, 0.6, 0.35, grey)
 	else:
+		# the room's own thin haze (it set fog_density just before this call). Setting fog_mode
+		# puts fog_density back to 1.0 in this engine, so the density is set again after it,
+		# or the whole view drowns in fog.
+		var density := env.fog_density
 		env.fog_mode = Environment.FOG_MODE_EXPONENTIAL
+		env.fog_density = density
 		env.fog_sky_affect = 0.0
 	# a dull day: the ambient light greys over
 	var dull := 1.0 - float(look["sun"])

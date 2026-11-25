@@ -295,7 +295,11 @@ func _build_weather() -> void:
 func _lean_smoke() -> void:
 	var w := _weather.wind()
 	for p in _smoke:
-		p.gravity = Vector3(0.12 + 0.6 * w, 0.05 - 0.02 * w, 0.06 + 0.2 * w)
+		p.gravity = Vector3(0.12 + 0.25 * w, 0.05 - 0.02 * w, 0.06 + 0.08 * w)
+	# a strong wind tears the smoke up: the puffs thin out, so they don't sail off across the
+	# sky as separate white balls (wind() is 0..2; 1.4 = a storm)
+	if _smoke_mat:
+		_smoke_mat.albedo_color.a = 1.0 - 0.6 * clampf(w / 1.4, 0.0, 1.0)
 
 
 # ── Time of day and the sky ──────────────────────────────────
@@ -387,7 +391,12 @@ func _apply_time(env: Environment) -> void:
 	_sun.global_basis = Basis.looking_at(-world_dir, Vector3.UP if absf(world_dir.y) < 0.99 else Vector3.FORWARD)
 	if _smoke_mat:
 		# pale grey smoke by day, barely-there blue-grey by night
-		_smoke_mat.albedo_color = Color(0.2, 0.21, 0.25).lerp(Color(0.85, 0.84, 0.82), _day).lerp(Color(0.9, 0.7, 0.6), dusk * 0.4)
+		# (greyer under rain clouds: sun_share() is 1 on a clear day, 0.18 in a storm). Its alpha
+		# is _lean_smoke()'s, every frame.
+		var a := _smoke_mat.albedo_color.a
+		_smoke_mat.albedo_color = Color(0.2, 0.21, 0.25).lerp(Color(0.85, 0.84, 0.82), _day).lerp(Color(0.9, 0.7, 0.6), dusk * 0.4) \
+			* lerpf(0.6, 1.0, _weather.sun_share() if _weather else 1.0)
+		_smoke_mat.albedo_color.a = a
 
 
 # ── The fire ─────────────────────────────────────────────────
