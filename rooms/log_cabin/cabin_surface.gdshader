@@ -20,6 +20,7 @@ render_mode cull_disabled;
 // With `photo` at 1 the texture is a plain colour photo (the campfire's grass and dirt, laid on
 // the ground outside): Detailed shows the photo itself (times `photo_tint`) instead of tinting
 // the mesh's colour.
+// `wet` and `snow` (the weather, see below) work on both looks.
 
 uniform float detail = 0.0;
 uniform sampler2D tex_grain : filter_linear_mipmap_anisotropic, repeat_enable;
@@ -39,6 +40,19 @@ uniform float photo = 0.0;
 uniform vec3 photo_tint : source_color = vec3(1.0);
 // how strongly the grain shows: 1 = as in the photo, 0 = flat (cabin_builder.gd GRAIN_STRENGTH)
 uniform float grain_strength = 1.0;
+// Weather (rooms/weather/room_weather.gd, set by the room script on every surface material):
+//   wet   0..1, rain: outdoor surfaces go darker and glossy
+//   snow  0..1, snow on the ground: outdoor surfaces that face up turn white (patchy at first)
+// "Outdoor" = not under one of the two roofs below (shelter_*), so the floors, the loft and the
+// furniture inside stay dry. Each shelter is a box (x from, x to, z from, z to) with a gable roof
+// (eave height, ridge height, 0 = the ridge runs along Z so the height follows x / 1 = it runs
+// along X so the height follows z, the ridge's x or z). cabin_builder.gd SHELTERS fills them in.
+uniform float wet = 0.0;
+uniform float snow = 0.0;
+uniform vec4 shelter_a_box = vec4(0.0);
+uniform vec4 shelter_a_roof = vec4(0.0, 0.0, 0.0, 0.0);
+uniform vec4 shelter_b_box = vec4(0.0);
+uniform vec4 shelter_b_roof = vec4(0.0, 0.0, 0.0, 0.0);
 
 varying vec3 w_pos;
 varying vec3 w_normal;
@@ -66,6 +80,18 @@ void plane_uv(int axis, vec3 p, out vec2 uv, out vec3 eu, out vec3 ev) {
 		ev = keep;
 	}
 	uv /= tile;
+}
+
+// True when p is inside a shelter box under its roof (with a few centimetres to spare, so the
+// roof's own top faces still count as outside).
+bool under_roof(vec3 p, vec4 box, vec4 roof) {
+	if (p.x < box.x || p.x > box.y || p.z < box.z || p.z > box.w) {
+		return false;
+	}
+	float c = roof.z < 0.5 ? p.x : p.z;
+	float half_span = roof.z < 0.5 ? (box.y - box.x) * 0.5 : (box.w - box.z) * 0.5;
+	float h = roof.x + (roof.y - roof.x) * clamp(1.0 - abs(c - roof.w) / max(half_span, 0.01), 0.0, 1.0);
+	return p.y < h - 0.15;
 }
 
 void vertex() {
@@ -119,7 +145,20 @@ void fragment() {
 		grain = mix(vec3(0.5), grain, grain_strength);
 	}
 	ALBEDO = (detail > 0.5 && photo > 0.5) ? grain * photo_tint : COLOR.rgb * grain * 2.0;
-	ROUGHNESS = clamp(roughness + (0.5 - (grain.r + grain.g + grain.b) / 3.0) * rough_vary * 2.0, 0.04, 1.0);
+	float rough = clamp(roughness + (0.5 - (grain.r + grain.g + grain.b) / 3.0) * rough_vary * 2.0, 0.04, 1.0);
+	if (wet + snow > 0.001 && !under_roof(w_pos, shelter_a_box, shelter_a_roof) && !under_roof(w_pos, shelter_b_box, shelter_b_roof)) {
+		// snow settles on what faces up, patchy at first (the photo's light and dark decide where)
+		float up = smoothstep(0.3, 0.85, n.y);
+		float speck = (grain.r + grain.g + grain.b) / 3.0;
+		float lying = up * smoothstep(1.05 - snow * 1.05, 1.2 - snow * 1.05, up * 0.4 + speck * 0.6);
+		lying *= step(0.001, snow);
+		// rain: darker and glossy, most on what faces up
+		float soak = wet * (0.55 + 0.45 * max(n.y, 0.0)) * (1.0 - lying);
+		ALBEDO = mix(ALBEDO * (1.0 - 0.38 * soak), vec3(0.9, 0.93, 0.97), lying);
+		rough = mix(mix(rough, 0.14, soak * 0.85), 0.8, lying);
+		bent = normalize(mix(bent, n, lying));
+	}
+	ROUGHNESS = rough;
 	SPECULAR = specular;
 	METALLIC = metallic;
 	NORMAL = normalize((VIEW_MATRIX * vec4(bent, 0.0)).xyz);

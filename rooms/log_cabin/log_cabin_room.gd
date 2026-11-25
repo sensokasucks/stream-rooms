@@ -17,6 +17,12 @@ extends Room
 ##     ("cabin_clouds", "cabin_stars"): the Lakeside Campfire's sky (camp_sky.gdshader, set in
 ##     room_info.tres) with the same sun and moon paths, the sun / moon lamp and the ambient light
 ##     (_apply_time, ported from the Drive-In's).
+##   - Weather ("cabin_weather" clear / cloudy / rain / storm / snow, "cabin_fog", "cabin_wind",
+##     "cabin_snow" for snow on the ground, and "cabin_weather_fx", each PC's own amount of rain
+##     and snow drawn): the shared weather module, rooms/weather/room_weather.gd. It makes the
+##     rain, snow, lightning, wet and frosty glass, wet and snowy surfaces outside, fog, the wind in
+##     the trees and the sound (rain on the roof, wind, thunder, the fire's crackle); this script
+##     makes it (_build_weather), runs it every frame and lets it adjust the sky in _apply_time.
 ##   - Gather in ("cabin_view": great_room / den): where the presenters sit. "den" puts them on
 ##     the den's sofa and armchair (Sen's den picture), makes the den's screen the main one and
 ##     its cameras the first ones. The set is built for one view, so this setting reloads the
@@ -34,6 +40,7 @@ const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 ## size as a share of flame_size], in the fire marker's own axes (the den's fire faces +X).
 const FIRE_FLAMES: Array = [[0.0, 0.0, 1.0], [-0.22, 0.05, 0.75], [0.24, 0.04, 0.7], [-0.1, -0.08, 0.6], [0.12, -0.06, 0.55]]
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
+const Weather := preload("res://rooms/weather/room_weather.gd")
 const CAMP_TEX := "res://rooms/campfire/textures/"
 ## The den's fire next to the big one: share of the light's energy and range.
 const DEN_FIRE_SHARE: float = 0.55
@@ -89,6 +96,7 @@ var _hour: float = 17.5           # the room's clock, hours 0..24 (starts at "ca
 var _hour_drawn: float = -99.0    # the hour the sky was last drawn for
 var _day: float = 0.0             # 0 = night, 1 = full day (from _apply_time)
 var _env_drawn: int = 0           # instance id of the Environment the sky was last drawn on
+var _weather: Weather             # the shared weather (rooms/weather/room_weather.gd)
 var _retired: bool = false        # another room has taken over (retire()): leave the sky alone
 var _time: float = 0.0
 var _last_level: float = -1.0     # the house light level the lamp glow was last set for
@@ -114,6 +122,7 @@ func _ready() -> void:
 	_build_fire()
 	_build_smoke()
 	_build_probe()
+	_build_weather()
 	_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
 	EventBus.setting_changed.connect(_on_cabin_setting_changed)
 	_apply_detail()
@@ -157,6 +166,19 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "How much cloud drifts across the sky. 0% = a clear sky, 200% = overcast. (Rain, storms, fog and snow come with the weather.)"},
 		{"key": "cabin_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How bright the stars and the Milky Way are at night. 0% = none."},
+		{"heading": "Weather"},
+		{"key": "cabin_weather", "label": "Weather", "type": "option",
+			"options": [["clear", "Clear"], ["cloudy", "Cloudy"], ["rain", "Rain"], ["storm", "Storm"], ["snow", "Snow"]],
+			"tooltip": "The weather outside. Rain and storms run down the windows and wet everything outside, with rain drumming on the roof; a storm adds strong wind, lightning (soft and slow in photosensitive-safe mode) and thunder, and the lamps dip now and then; snow drifts down, frosts the glass and slowly piles up on the ground and roofs. The glass dries and the snow melts slowly after."},
+		{"key": "cabin_fog", "label": "Fog", "type": "option",
+			"options": [["off", "Off"], ["light", "Light"], ["heavy", "Heavy"]],
+			"tooltip": "Fog outside, on top of any weather. Heavy fog swallows the trees within about 30 metres, so the fire and lamps are all you see. The inside of the cabin stays clear."},
+		{"key": "cabin_wind", "label": "Wind", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How hard the wind blows: the trees sway, the rain slants, the snow drifts sideways, the chimney smoke leans and you hear it. 0% = still, 200% = a gale. A storm always blows hard."},
+		{"key": "cabin_snow", "label": "Snow on the ground", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "Snow lying on the ground, the roofs, the deck and the railings (and frost on the trees). More piles up on top while it snows, and melts away slowly after."},
+		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
 
 
@@ -172,7 +194,7 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 			_apply_fire()
 		"cabin_time":
 			_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
-		"cabin_clouds", "cabin_stars", "photosensitive_safe":
+		"cabin_clouds", "cabin_stars", "photosensitive_safe", "cabin_weather", "cabin_fog", "cabin_wind":
 			_hour_drawn = -100.0        # _run_clock redraws the sky next frame
 		"cabin_lamps":
 			_probe_day = -1.0           # the reflections catch the room again
@@ -184,6 +206,9 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	_time += delta
 	_run_fire()
+	_weather.fire = clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
+	_weather.run(delta)
+	_lean_smoke()
 	_run_clock(delta)
 	if not is_equal_approx(_level, _last_level):
 		_last_level = _level
@@ -200,7 +225,8 @@ func _process(delta: float) -> void:
 func _target_level() -> float:
 	if not bool(AppState.get_setting("cabin_lamps")):
 		return 0.0
-	return super._target_level() * lerpf(1.0, lamps_by_day, _day)
+	var level := super._target_level() * lerpf(1.0, lamps_by_day, _day)
+	return level * _weather.lamp_factor() if _weather else level
 
 
 # ── Set detail ───────────────────────────────────────────────
@@ -250,6 +276,26 @@ func _build_probe() -> void:
 func _recapture() -> void:
 	_probe_day = _day
 	_probe.intensity = 1.0 if _probe.intensity != 1.0 else 0.999
+
+
+# ── Weather ──────────────────────────────────────────────────
+## Makes the shared weather (rooms/weather/room_weather.gd) with what the builder made for it:
+## the indoors (shelters), the dripping roof edges, the surface materials (wet, snow), the glass
+## and the detailed trees.
+func _build_weather() -> void:
+	_weather = Weather.new()
+	_weather.name = "Weather"
+	_fx.add_child(_weather)
+	var mats: Array = (_parts["surface_mats"] as Dictionary).values()
+	_weather.setup(self, "cabin_", SKY_SHADER, _parts["shelters"], _parts["eaves"], mats,
+		_parts["glass_mat"], _parts["tree_mats"])
+
+
+## The chimney smoke leans away with the wind (every frame; two particle systems).
+func _lean_smoke() -> void:
+	var w := _weather.wind()
+	for p in _smoke:
+		p.gravity = Vector3(0.12 + 0.6 * w, 0.05 - 0.02 * w, 0.06 + 0.2 * w)
 
 
 # ── Time of day and the sky ──────────────────────────────────
@@ -323,6 +369,8 @@ func _apply_time(env: Environment) -> void:
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
 		env.fog_light_color = haze
 		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day)
+		# the weather has the last word on the clouds, the fog and how dull the light is
+		_weather.apply_env(env, sky, haze)
 	# the sun by day, the moon by night; cloud dims both
 	var light_dir := sun
 	var light_col := Color(1.0, 0.55, 0.25).lerp(Color(1.0, 0.96, 0.88), smoothstep(0.05, 0.45, sun.y))
@@ -331,7 +379,7 @@ func _apply_time(env: Environment) -> void:
 		light_dir = moon
 		light_col = moon_color
 		energy = moon_energy * smoothstep(0.05, 0.25, moon.y)
-	energy *= lerpf(1.0, 0.45, clampf(clouds - 1.0, 0.0, 1.0))
+	energy *= lerpf(1.0, 0.45, clampf(clouds - 1.0, 0.0, 1.0)) * _weather.sun_share()
 	_sun.light_color = light_col
 	_sun.light_energy = energy
 	_sun.visible = energy > 0.002

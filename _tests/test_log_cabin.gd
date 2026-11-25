@@ -44,6 +44,12 @@ func _ready() -> void:
 	AppState.set_setting("cabin_clouds", 0.5)
 	AppState.set_setting("cabin_stars", 1.0)
 	AppState.set_setting("cabin_detail", "full")
+	AppState.set_setting("cabin_weather", "clear")
+	AppState.set_setting("cabin_fog", "off")
+	AppState.set_setting("cabin_wind", 0.4)
+	AppState.set_setting("cabin_snow", 0.0)
+	AppState.set_setting("cabin_weather_fx", 1.0)
+	AppState.set_setting("flash_strength", 1.0)
 	AppState.set_setting("cabin_view", "great_room")
 	AppState.set_setting("curtain_enabled", false)
 	var main: Node = load("res://core/main.tscn").instantiate()
@@ -111,12 +117,13 @@ func _ready() -> void:
 	for c in room.get_controls():
 		if c.has("key"):
 			keys.append(String(c["key"]))
-	_check(keys == ["cabin_detail", "cabin_fire", "cabin_lamps", "cabin_view", "cabin_time", "cabin_day_minutes", "cabin_clouds", "cabin_stars"],
-		"the Room tab gets Set detail, Fire, Lamps, Gather in, Time of day, Day length, Clouds and Stars (%s)" % str(keys))
+	_check(keys == ["cabin_detail", "cabin_fire", "cabin_lamps", "cabin_view", "cabin_time", "cabin_day_minutes", "cabin_clouds", "cabin_stars",
+		"cabin_weather", "cabin_fog", "cabin_wind", "cabin_snow", "cabin_weather_fx"],
+		"the Room tab gets Set detail, Fire, Lamps, Gather in, the time, the sky and the weather (%s)" % str(keys))
 	var shared_ok := true
 	for k in keys:
-		shared_ok = shared_ok and (NetSession.SHARED_CABIN.has(k) != (k == "cabin_detail"))
-	_check(shared_ok, "every cabin setting but Set detail is shared in a co-stream")
+		shared_ok = shared_ok and (NetSession.SHARED_CABIN.has(k) != (k in ["cabin_detail", "cabin_weather_fx"]))
+	_check(shared_ok, "every cabin setting but Set detail and Rain and snow amount is shared in a co-stream")
 	_check(room.reload_keys().has("cabin_view"), "Gather in reloads the room")
 	_check(room.get_mirror_screens().size() == 1, "the den's screen mirrors the big one (%d mirror)" % room.get_mirror_screens().size())
 	var energy := fire_light.light_energy
@@ -197,6 +204,85 @@ func _ready() -> void:
 	_check(float(room.call("get_hour")) > h0 + 0.1, "Day length: the clock runs (%.2f -> %.2f)" % [h0, float(room.call("get_hour"))])
 	AppState.set_setting("cabin_day_minutes", 0.0)
 	AppState.set_setting("cabin_time", 17.5)
+
+	# the weather (rooms/weather/room_weather.gd)
+	var weather: Node = fx.find_child("Weather", false, false) if fx else null
+	_check(weather != null, "the weather module is in the room")
+	if weather != null:
+		var glass := room.get("_parts")["glass_mat"] as ShaderMaterial
+		var surf0 := mats[0] as ShaderMaterial
+		AppState.set_setting("cabin_weather", "rain")
+		await _secs(0.3)
+		weather.call("settle")
+		await _secs(1.0)
+		var rain_p := weather.call("get_rain") as GPUParticles3D
+		_check(rain_p.emitting and float(glass.get_shader_parameter("wet")) > 0.4 and float(surf0.get_shader_parameter("wet")) > 0.4,
+			"Rain: it rains, the glass and the outside get wet (%.2f / %.2f)" % [float(glass.get_shader_parameter("wet")), float(surf0.get_shader_parameter("wet"))])
+		_check(float(sky.get_shader_parameter("cloud_amount")) >= 1.69, "Rain: the sky clouds over (%.2f)" % float(sky.get_shader_parameter("cloud_amount")))
+		EventBus.camera_preset_requested.emit(2)
+		await _secs(2.0)
+		await _shot(_out.path_join("weather_rain_sofa.png"))
+		EventBus.camera_preset_requested.emit(6)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_rain_outside.png"))
+		# a stormy night: lightning, strong wind; soft and capped in photosensitive-safe mode
+		AppState.set_setting("cabin_time", 21.5)
+		AppState.set_setting("cabin_weather", "storm")
+		await _secs(0.5)
+		_check(float(weather.call("wind")) >= 1.4, "Storm: the wind blows at least 140%% (%.2f)" % float(weather.call("wind")))
+		weather.call("strike")
+		await _secs(0.1)
+		var full_flash := float(weather.call("flash"))
+		_check(full_flash > 0.5, "Storm: lightning flashes (%.2f)" % full_flash)
+		AppState.set_setting("photosensitive_safe", true)
+		await _secs(1.5)
+		weather.call("strike")
+		await _secs(0.1)
+		_check(float(weather.call("flash")) <= 0.31, "Photosensitive-safe: the lightning stays soft (%.2f)" % float(weather.call("flash")))
+		AppState.set_setting("photosensitive_safe", false)
+		EventBus.camera_preset_requested.emit(1)
+		await _secs(2.0)
+		await _shot(_out.path_join("weather_storm_night_hearth.png"))
+		EventBus.camera_preset_requested.emit(2)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_storm_night_sofa.png"))
+		# snow by day, with snow lying
+		AppState.set_setting("cabin_time", 11.0)
+		AppState.set_setting("cabin_weather", "snow")
+		AppState.set_setting("cabin_snow", 0.8)
+		await _secs(0.3)
+		weather.call("settle")
+		await _secs(1.5)
+		var snow_p := weather.call("get_snow") as GPUParticles3D
+		_check(snow_p.emitting and not rain_p.emitting, "Snow: flakes fall, the rain has stopped")
+		_check(float(surf0.get_shader_parameter("snow")) >= 0.79 and float(glass.get_shader_parameter("frost")) > 0.9,
+			"Snow: snow lies outside and the glass frosts (%.2f / %.2f)" % [float(surf0.get_shader_parameter("snow")), float(glass.get_shader_parameter("frost"))])
+		EventBus.camera_preset_requested.emit(6)
+		await _secs(2.0)
+		await _shot(_out.path_join("weather_snow_outside.png"))
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_snow_loft.png"))
+		EventBus.camera_preset_requested.emit(4)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_snow_deck.png"))
+		# heavy fog at dusk
+		AppState.set_setting("cabin_weather", "cloudy")
+		AppState.set_setting("cabin_snow", 0.0)
+		AppState.set_setting("cabin_fog", "heavy")
+		AppState.set_setting("cabin_time", 17.5)
+		await _secs(1.0)
+		_check(env.fog_mode == Environment.FOG_MODE_DEPTH and env.fog_depth_end < 40.0, "Heavy fog: fog by distance, the inside stays clear (ends at %.0f m)" % env.fog_depth_end)
+		EventBus.camera_preset_requested.emit(6)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_fog_outside.png"))
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(1.5)
+		await _shot(_out.path_join("weather_fog_loft.png"))
+		AppState.set_setting("cabin_fog", "off")
+		AppState.set_setting("cabin_weather", "clear")
+		await _secs(0.5)
+		_check(env.fog_mode == Environment.FOG_MODE_EXPONENTIAL, "Clear: the fog is back to the room's own")
 
 	# Gather in: Den. The room reloads; fetch the new one.
 	AppState.set_setting("cabin_view", "den")

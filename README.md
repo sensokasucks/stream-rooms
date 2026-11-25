@@ -1546,6 +1546,24 @@ Included rooms:
       (let the clock run: minutes per day, 0 = stopped): the Lakeside Campfire's sky, with the
       sun and moon moving across it. The lamps come up as it gets dark.
     - **Clouds** and **Stars**: how cloudy the sky is and how bright the stars are at night.
+    - **Weather**: **Clear**, **Cloudy**, **Rain**, **Storm** or **Snow**.
+      - **Rain**: drops bead on the windows and run down them, the view through the wet glass
+        goes soft, everything outside turns dark and glossy, water drips off the eaves and you
+        hear the rain on the roof.
+      - **Storm**: the same, plus strong wind, lightning with thunder a moment later, and the
+        lamps dipping now and then. In photosensitive-safe mode the lightning is a soft, slow glow
+        and the lamps don't dip; **Flash strength** turns it down too.
+      - **Snow**: flakes drift down, frost grows up the windows, and snow slowly piles up on the
+        ground, the roofs, the deck and the railings, with frost on the trees.
+      - When the weather clears, the glass dries and the snow melts slowly instead of all at once.
+    - **Fog**: **Off**, **Light** or **Heavy**, on top of any weather. Heavy fog swallows the
+      trees within about 30 metres; the inside of the cabin stays clear.
+    - **Wind**: how hard the wind blows (the trees, the rain's slant, the snow, the chimney
+      smoke and the sound). A storm always blows hard.
+    - **Snow on the ground**: snow lying outside even when it isn't snowing.
+    - **Rain and snow amount**: how many drops and flakes this PC draws (lower it on a slow
+      graphics card). Each PC picks its own.
+    - The fire crackles while it burns.
   - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
     at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
     glass gable, the front door, the dining table and close on the screen. With **Gather in:
@@ -1553,12 +1571,14 @@ Included rooms:
     sofa, the armchair and from the hearth looking back.
   - Reaction targets: `!tomato fireplace` (the den's fire when gathered in the den),
     `chandelier`, `deck`.
-  - In a co-stream the Room tab settings are shared (all but **Set detail**), so everyone sits by
-    the same fire under the same sky.
+  - In a co-stream the Room tab settings are shared (all but **Set detail** and **Rain and snow
+    amount**), so everyone sits by the same fire under the same sky and the same weather.
   - Built in code when the room loads (`rooms/log_cabin/cabin_builder.gd`); there is no
     Blender model. The photo textures in `rooms/log_cabin/textures/` come from
     [Poly Haven](https://polyhaven.com) (CC0, free for any use), made by `make_textures.py`
-    there; the rug pattern is drawn by that script.
+    there; the rug pattern is drawn by that script. The weather (`rooms/weather/`) is a shared
+    piece other rooms can use; its rain-drop, runner and frost pictures are drawn by
+    `rooms/weather/textures/make_weather_textures.py`.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**

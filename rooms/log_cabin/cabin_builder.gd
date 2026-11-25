@@ -258,6 +258,16 @@ const TEX := "res://rooms/log_cabin/textures/"
 const SURFACE_SHADER := preload("res://rooms/log_cabin/cabin_surface.gdshader")
 const EMBER_SHADER := preload("res://rooms/log_cabin/cabin_embers.gdshader")
 const SHADE_SHADER := preload("res://rooms/log_cabin/cabin_shade.gdshader")
+const Weather := preload("res://rooms/weather/room_weather.gd")
+## The indoors, for the weather (rooms/weather/room_weather.gd): the two roofed parts, each a box
+## [x from, x to, z from, z to] with a gable roof [eave height, ridge height, 0 = the ridge runs
+## along Z (height follows x) / 1 = along X (height follows z), the ridge's x or z]. Surfaces
+## under these stay dry and free of snow (cabin_surface.gdshader shelter_*). Keep in step with
+## the walls and roofs (HALF_W, BACK_Z, EAVE_Y, RIDGE_Y and the DEN_ sizes).
+const SHELTER_GREAT_BOX := Vector4(-HALF_W - 0.05, HALF_W + 0.05, -0.05, BACK_Z + 0.05)
+const SHELTER_GREAT_ROOF := Vector4(EAVE_Y, RIDGE_Y, 0.0, 0.0)
+const SHELTER_DEN_BOX := Vector4(DEN_FAR_X - 0.05, -HALF_W, DEN_Z.x - 0.05, DEN_Z.y + 0.05)
+const SHELTER_DEN_ROOF := Vector4(DEN_EAVE_Y, DEN_RIDGE_Y, 1.0, DEN_MID_Z)
 ## Where the smoke leaves each chimney (just above its cap): the great room's stack (see
 ## _build_chimney: centred on x = 0, between CHIM_OUT_Z + 0.25 and CHIM_IN_Z - 0.35) and the den's
 ## (_build_den_chimney). Keep in step with those two if a chimney moves.
@@ -284,6 +294,10 @@ static func _surface_materials(out: Dictionary) -> Dictionary:
 			if float(s[4]) > 0.0:
 				m.set_shader_parameter("tex_nor", load(TEX + tex + "_nor.jpg"))
 		m.set_shader_parameter("grain_strength", float(GRAIN_STRENGTH.get(id, 1.0)))
+		m.set_shader_parameter("shelter_a_box", SHELTER_GREAT_BOX)
+		m.set_shader_parameter("shelter_a_roof", SHELTER_GREAT_ROOF)
+		m.set_shader_parameter("shelter_b_box", SHELTER_DEN_BOX)
+		m.set_shader_parameter("shelter_b_roof", SHELTER_DEN_ROOF)
 		m.set_shader_parameter("tile", float(s[1]))
 		m.set_shader_parameter("vertical_axis", int(s[2]))
 		m.set_shader_parameter("mapping", int(s[3]))
@@ -597,12 +611,41 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##   glow_mat (ShaderMaterial, cabin_shade.gdshader): lampshades, the chandelier's candles and
 ##     the lantern, which glow with the house lights (the room script sets its `level`),
 ##   smoke_spots (Array[Vector3]): the tops of the two chimneys, where the room script lets the
-##     smoke rise (the great room's first).
+##     smoke rise (the great room's first),
+##   glass_mat (ShaderMaterial, rooms/weather/weather_glass.gdshader): every window pane,
+##   shelters, eaves: the indoors and the dripping roof edges, for the weather (see shelters()),
+##   tree_mats (Array): the detailed trees' materials (the weather sets their wind and frost).
 static func build(room: Node3D, view: String = "great_room") -> Dictionary:
 	var out := build_cabin(room, view)
 	out["smoke_spots"] = SMOKE_SPOTS
+	out["shelters"] = shelters()
+	out["eaves"] = eaves()
 	_build_clearing(room.get_node("Set") as Node3D, out)
 	return out
+
+
+## The indoors as boxes (world space when the room sits at the origin, as it does): rain and snow
+## vanish inside them (room_weather.gd). They take in the roofs' overhangs, so nothing falls on
+## the cabin's own roof eaves from inside the shot.
+static func shelters() -> Array:
+	return [
+		AABB(Vector3(-HALF_W - ROOF_SIDE, -1.0, -ROOF_FRONT), Vector3(2.0 * (HALF_W + ROOF_SIDE), RIDGE_Y + 1.5, BACK_Z + ROOF_FRONT + ROOF_BACK)),
+		AABB(Vector3(DEN_FAR_X - 0.6, -1.0, DEN_Z.x - 0.6), Vector3(-HALF_W - DEN_FAR_X + 0.6, DEN_RIDGE_Y + 1.0, DEN_Z.y - DEN_Z.x + 1.2)),
+	]
+
+
+## The roof edges water drips off in the rain (room_weather.gd), as [from, to]: the great room's
+## right eave (over the deck's side) and back eave line, and the den's two long eaves. The great
+## room's left eave sits over the den's roof, so it has none.
+static func eaves() -> Array:
+	var ye := EAVE_Y - ROOF_SIDE * (RIDGE_Y - EAVE_Y) / HALF_W
+	var x := HALF_W + ROOF_SIDE
+	var dye := DEN_EAVE_Y - 0.5 * (DEN_RIDGE_Y - DEN_EAVE_Y) / (DEN_MID_Z - DEN_Z.x)
+	return [
+		[Vector3(x, ye - 0.05, -ROOF_FRONT), Vector3(x, ye - 0.05, BACK_Z + ROOF_BACK)],
+		[Vector3(DEN_FAR_X - 0.5, dye - 0.05, DEN_Z.x - 0.5), Vector3(-HALF_W - 0.1, dye - 0.05, DEN_Z.x - 0.5)],
+		[Vector3(DEN_FAR_X - 0.5, dye - 0.05, DEN_Z.y + 0.5), Vector3(-HALF_W - 0.1, dye - 0.05, DEN_Z.y + 0.5)],
+	]
 
 
 ## Just the cabin (with the den), its deck and stoop, its furniture and its markers (no outside).
@@ -638,7 +681,7 @@ static func build_cabin(room: Node3D, view: String = "great_room") -> Dictionary
 	var den := Buf.new()              # the den: walls, ceiling, roof, chimney, sofa, armchair
 	_build_den(den, markers, out)
 	_add_mesh(set_root, "Den", den.to_mesh(surf), null)
-	_build_glass(set_root)
+	_build_glass(set_root, out)
 	_build_screens(set_root, out, view)
 	if view == "den":
 		_den_presenters(markers)
@@ -1453,9 +1496,10 @@ static func _build_outside_bits(b: Buf) -> void:
 
 
 ## The see-through glass: the two big gable windows either side of the chimney (following the roof
-## line), the corner glass doors, and the side and back windows. One mesh with its own
-## see-through material, which casts no shadow (so sunlight comes in).
-static func _build_glass(parent: Node3D) -> void:
+## line), the corner glass doors, and the side and back windows. One mesh with the weather's
+## glass material (rooms/weather/weather_glass.gdshader: rain drops, wet blur, frost; out
+## "glass_mat"), which casts no shadow (so sunlight comes in).
+static func _build_glass(parent: Node3D, out: Dictionary) -> void:
 	var g := Buf.new()
 	var tint := Color(0.78, 0.86, 0.9, 0.12)
 	for sx: float in [-1.0, 1.0]:
@@ -1476,12 +1520,8 @@ static func _build_glass(parent: Node3D) -> void:
 	for w: Array in DEN_WINDOWS:
 		var z := float(w[0])
 		g.quad(Vector3(float(w[1]), float(w[3]), z), Vector3(float(w[2]), float(w[3]), z), Vector3(float(w[2]), float(w[4]), z), Vector3(float(w[1]), float(w[4]), z), tint)
-	var m := StandardMaterial3D.new()
-	m.vertex_color_use_as_albedo = true
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.roughness = 0.05
-	m.metallic_specular = 0.8
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var m := Weather.glass_material(Color(0.78, 0.86, 0.9, 0.12))
+	out["glass_mat"] = m
 	_add_mesh(parent, "Glass", g.to_mesh(), m, false)
 
 
@@ -1660,6 +1700,7 @@ static func _build_clearing(parent: Node3D, out: Dictionary) -> void:
 		t.cyl(Transform3D(Basis.IDENTITY, foot + Vector3(0.0, h * 0.5, 0.0)), h * 0.16, 0.0, h * 0.5, 8, green.lightened(0.05))
 	out["simple_trees"] = _add_mesh(parent, "SimpleTrees", t.to_mesh(surf), null, true)
 	out["detailed_plants"] = _build_detailed_plants(parent, trees, rng)
+	out["tree_mats"] = ((out["detailed_plants"] as Node3D).get_meta("mats") as Dictionary).values()
 
 
 ## The kind of tree for a spot: mostly firs and pines, with oaks, maples and birches between
@@ -1685,6 +1726,7 @@ static func _build_detailed_plants(parent: Node3D, trees: Array, rng: RandomNumb
 	holder.visible = false
 	parent.add_child(holder)
 	var mats := Trees.materials(0.05)
+	holder.set_meta("mats", mats)    # _build_clearing hands them on (out["tree_mats"]) for the weather
 	var spots: Dictionary = {}      # kind -> Array[Transform3D]
 	for one: Array in trees:
 		var foot: Vector3 = one[0]
