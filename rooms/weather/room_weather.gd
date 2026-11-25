@@ -69,7 +69,7 @@ var _frost: float = 0.0
 var snow_floor: float = 0.0
 ## How much of the lying snow heaps up on the detailed trees' boughs (camp_foliage.gdshader
 ## `snow_load` = snow on the ground times this), 0..1. 0 = none, only the frost tint (set before
-## setup(); Cabin: Frozen North sets 1).
+## setup(); Cabin: Frozen North sets 0.7).
 var tree_snow: float = 0.0
 var _built_snow: float = 0.0      # snow that has piled up while it snowed, on top of the setting
 var _pushed: Vector4 = Vector4(-1, -1, -1, -1)   # wet, snow, frost, wind last given to the materials

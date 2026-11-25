@@ -405,7 +405,7 @@ func _build_weather() -> void:
 	_weather.name = "Weather"
 	if scene == "north":
 		_weather.snow_floor = North.SNOW_FLOOR        # (the north is always under snow)
-		_weather.tree_snow = 1.0                       # (snow heaped on the spruces' boughs)
+		_weather.tree_snow = 0.7                       # (snow heaped on the spruces' boughs, some green left showing)
 	_fx.add_child(_weather)
 	var mats: Array = (_parts["surface_mats"] as Dictionary).values()
 	_weather.setup(self, "cabin_", SKY_SHADER, _parts["shelters"], _parts["eaves"], mats,
