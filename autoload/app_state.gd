@@ -34,6 +34,22 @@ const BASE_DEFAULTS: Dictionary = {
 	"lh_clouds": 1.0,            # Lecture Hall sky outside the windows: 0 = clear, 1 = some clouds, 2 = overcast
 	"lh_glass": "quarries",      # Lecture Hall tall windows: stained (all coloured glass) | quarries (the pale diamond panes are clear) | clear (every pane clear)
 	"throne_beam": 1.0,          # Throne Hall shaft of light on the throne: 0 = off, 1 = normal, 2 = strong
+	# Log Cabin (rooms/log_cabin/log_cabin_room.gd). All but cabin_detail and cabin_weather_fx are shared in a
+	# co-stream with the host's "room" group (NetSession.SHARED_CABIN): keep that list in step.
+	"cabin_fire": 1.0,           # the fireplaces (flames, coals, the fire's light, chimney smoke): 0 = out, 1 = cozy, 2 = roaring
+	"cabin_lamps": true,         # table lamps, chandelier, dining lamp, back-door lantern (this room's house lights)
+	"cabin_time": 17.5,          # time of day outside, hours 0..24 (6 = sunrise, 12 = noon, 17.5 = golden hour, 18 = sunset, 21 = night)
+	"cabin_day_minutes": 0.0,    # minutes one full day takes while the clock runs; 0 = the clock stands still at cabin_time
+	"cabin_clouds": 0.5,         # cloud: 0 = clear, 1 = fair weather, 2 = overcast
+	"cabin_stars": 1.0,          # how bright the stars and the Milky Way are at night (0 = none)
+	"cabin_weather": "clear",    # the weather outside (rooms/weather/room_weather.gd): clear | cloudy | rain | storm | snow
+	"cabin_fog": "off",          # fog outside, on top of any weather: off | light | heavy
+	"cabin_wind": 0.4,           # wind: 0 = still, 1 = a breeze, 2 = a gale (a storm blows at least 1.4)
+	"cabin_snow": 0.0,           # snow lying on the ground and roofs, 0..1 (more piles up while it snows)
+	"cabin_weather_fx": 1.0,     # how many raindrops and snowflakes this PC draws, 0..1 (never shared)
+	"cabin_season": "summer",    # Cabin: Appalachian Forest: "summer" / "autumn" (leaves, forest floor, fireflies)
+	"cabin_detail": "auto",      # how detailed the cabin is drawn on this PC (never shared): auto (from graphics_quality) | low (Simple) | full (Detailed: photo textures, leaf trees)
+	"cabin_view": "great_room",  # "Gather in": great_room | den. Where the presenters sit and which screen is the main one (reloads the room)
 	"throne_benches": false,     # Throne Hall: benches along the carpet (chat sits) or none (chat stands)
 	"forge_fire": 1.0,           # Forge Hall fire (flames, their light, the crackle): 0 = out, 1 = normal, 2 = roaring
 	"forge_neon": 1.0,           # Forge Hall light inlays (cyan / orange / purple lines, glowing pipes): 0 = off, 1 = normal, 3 = very bright
@@ -61,6 +77,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_clouds": 1.0,         # Forge Hall sky: how much cloud (0 = clear sky, 1 = the room's look, 2 = heavy)
 	"forge_nebula": 1.0,         # Forge Hall night sky: how strong the purple and blue nebula is (0 = stars only)
 	"forge_stars": 1.0,          # Forge Hall night sky: how bright the stars are (0 = none)
+	"forge_mountains": 1.0,      # Forge Hall sky: how tall the snow-capped mountains outside stand (0 = none, 2 = towering)
+	"forge_detail": "auto",      # Forge Hall look on this PC (not shared): auto (from graphics_quality) / detailed (rock photos, heat haze) / simple
 	"forge_day_minutes": 0.0,    # Forge Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at forge_time
 	"forge_lift_up": false,      # Forge Hall: the small live screen in the floor is raised
 	"forge_live_1_source": "webcam",   # Forge Hall small live screens: what each shows: off / webcam / podium1..podium4

@@ -62,6 +62,10 @@ func _ready() -> void:
 	AppState.set_setting("forge_clouds", 1.0)
 	AppState.set_setting("forge_nebula", 1.0)
 	AppState.set_setting("forge_stars", 1.0)
+	AppState.set_setting("forge_mountains", 1.0)
+	# Simple except in the Look checks: the rock photos and haze are slow on the software
+	# renderer GitHub and the cloud use, and slow frames upset the timed small-screen checks
+	AppState.set_setting("forge_detail", "simple")
 	AppState.set_setting("forge_lift_up", false)
 	AppState.set_setting("forge_live_1_source", "webcam")
 	AppState.set_setting("forge_live_2_source", "off")
@@ -202,6 +206,19 @@ func _ready() -> void:
 	AppState.set_setting("sun_rays", 1.0)
 	await _secs(0.3)
 	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and (flames[0] as MeshInstance3D).visible and beams.visible, "back at 100% everything is on again")
+	# the inlays light themselves: dimming the house lights leaves them as they are (the
+	# lantern glass still dims)
+	var lantern_full := _glow_of(room, "Lantern_Glass")
+	AppState.set_setting("house_lights", 0.0)
+	await _secs(3.0)
+	_check(is_equal_approx(_glow_of(room, "Neon_Cyan"), neon_full) and _glow_of(room, "Lantern_Glass") < lantern_full * 0.5,
+		"house lights down: the inlays keep their glow (%.2f), the lanterns dim (%.2f -> %.2f)" % [_glow_of(room, "Neon_Cyan"), lantern_full, _glow_of(room, "Lantern_Glass")])
+	AppState.set_setting("forge_neon", 0.0)
+	await _secs(0.2)
+	_check(is_zero_approx(_glow_of(room, "Neon_Cyan")), "and Inlay brightness still turns them off with the house lights down")
+	AppState.set_setting("forge_neon", 1.0)
+	AppState.set_setting("house_lights", 1.0)
+	await _secs(3.0)
 
 	# Inlay glow off: the bloom starts higher and the inlays stay under it, however high the slider
 	AppState.set_setting("forge_neon_bloom", false)
@@ -245,6 +262,11 @@ func _ready() -> void:
 	await _secs(0.3)
 	_check(sky != null and is_zero_approx(float(sky.get_shader_parameter("cloud_amount"))) and is_equal_approx(float(sky.get_shader_parameter("nebula_amount")), 1.6)
 		and is_equal_approx(float(sky.get_shader_parameter("star_amount")), 0.5), "Clouds, Nebula and Stars set the sky")
+	AppState.set_setting("forge_mountains", 1.7)
+	await _secs(0.3)
+	_check(sky != null and is_equal_approx(float(sky.get_shader_parameter("mountain_amount")), 1.7) and sky.get_shader_parameter("cloud_noise") != null,
+		"Mountains sets the sky, and the sky has its cloud noise picture")
+	AppState.set_setting("forge_mountains", 1.0)
 	AppState.set_setting("forge_clouds", 1.0)
 	AppState.set_setting("forge_nebula", 1.0)
 	AppState.set_setting("forge_stars", 1.0)
@@ -254,6 +276,45 @@ func _ready() -> void:
 		EventBus.camera_preset_requested.emit(int(shot[0]))
 		await _secs(1.0)
 		await _shot(_out + "/%s.png" % String(shot[1]))
+	# Look: Detailed puts the rock-photo stone and the heat haze in; Simple takes them out
+	AppState.set_setting("forge_detail", "detailed")
+	await _secs(0.2)
+	var hazes := room.find_children("HeatHaze*", "MeshInstance3D", true, false)
+	var stone_detailed := 0
+	for n in room.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		for k in mi.get_surface_override_material_count():
+			var om := mi.get_surface_override_material(k) as ShaderMaterial
+			if om and om.shader == FH.STONE_SHADER:
+				stone_detailed += 1
+	_check(stone_detailed > 10 and hazes.size() == FH.HAZE_SHEETS.size() and (hazes[0] as MeshInstance3D).visible,
+		"Look Detailed: rock photos on the stone (%d surfaces) and heat haze over the forge (%d sheets)" % [stone_detailed, hazes.size()])
+	AppState.set_setting("forge_time", 9.5)
+	await _secs(0.5)
+	EventBus.camera_preset_requested.emit(3)          # Fireside (CAM_04, 0-based 3): the forge up close
+	await _secs(1.0)
+	await _shot(_out + "/forge_detailed_fireside.png")
+	AppState.set_setting("forge_detail", "simple")
+	await _secs(0.3)
+	var left := 0
+	for n in room.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		for k in mi.get_surface_override_material_count():
+			var om := mi.get_surface_override_material(k) as ShaderMaterial
+			if om and om.shader == FH.STONE_SHADER:
+				left += 1
+	_check(left == 0 and not (hazes[0] as MeshInstance3D).visible, "Look Simple: the plain stone is back and the haze is hidden (%d left)" % left)
+	await _shot(_out + "/forge_simple_fireside.png")
+	AppState.set_setting("forge_detail", "auto")
+	AppState.set_setting("graphics_quality", "low")
+	await _secs(0.2)
+	_check(room.detail_level() == "simple", "Look Auto follows Graphics quality: Low = Simple")
+	AppState.set_setting("graphics_quality", "high")
+	await _secs(0.2)
+	_check(room.detail_level() == "detailed" and (hazes[0] as MeshInstance3D).visible, "and High = Detailed")
+	AppState.set_setting("forge_detail", "simple")
+	AppState.set_setting("forge_time", 22.0)
+	await _secs(0.3)
 	AppState.set_setting("forge_day_minutes", 1.0)        # a whole day in a minute: 0.4 hours a second
 	await _secs(1.5)
 	var ran: float = fposmod(room.get_hour() - 22.0, 24.0)
@@ -380,6 +441,12 @@ func _ready() -> void:
 		wishes = feeds.tab_wishes()
 		_check(String((wishes[1] as Dictionary).get("name")) == "Upper left screen" and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
 			"a second screen gets the next row without disturbing the first")
+		# (a fresh picture first, as a sharing tab sends them all the time: on a slow software
+		# renderer the seconds since the last one can pass ExtraFeeds.TAB_QUIET_S during the
+		# wait, and the screen would go dark for that reason instead)
+		sf.call("_on_presenter_frame", CaptureServer.EXTRA_SLOT0, frame)
+		await _secs(0.1)
+		ttex = (pic3.material_override as StandardMaterial3D).albedo_texture
 		EventBus.room_changed.emit("forge_hall")
 		await _secs(ExtraFeeds.STALE_S + 0.6)
 		_check((feeds.get("_slots") as Dictionary).has("forge_live_3") and (pic3.material_override as StandardMaterial3D).albedo_texture == ttex,
