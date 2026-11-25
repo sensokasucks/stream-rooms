@@ -116,6 +116,13 @@ func _ready() -> void:
 			f.store_string(JSON.stringify(data))
 			f.close()
 	_check(schema.size() >= 150, "the panel describes its settings for Core (%d)" % schema.size())
+	# a room's own controls join the list, and the list is sent again when they change (Core's
+	# pages would otherwise never show a room loaded after the game connected)
+	EventBus.room_controls_changed.emit([{"key": "r22_bb_core", "label": "Stream Core pictures", "type": "text", "tooltip": "test"}])
+	_check(bool(remote.get("_send_schema")), "a room bringing its own controls asks for the settings list to go to Core again")
+	var with_room: Array = remote.refresh_schema().get("schema", [])
+	var found: Array = with_room.filter(func(e: Dictionary) -> bool: return String(e["key"]) == "r22_bb_core")
+	_check(found.size() == 1 and String(found[0]["tab"]) == "Room", "and the room's control is in it (%s)" % str(found))
 	var tabs := {}
 	var no_tip: Array = []
 	var by_key := {}

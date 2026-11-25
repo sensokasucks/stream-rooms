@@ -71,6 +71,8 @@ const BASE_DEFAULTS: Dictionary = {
 	"forge_clouds": 1.0,         # Forge Hall sky: how much cloud (0 = clear sky, 1 = the room's look, 2 = heavy)
 	"forge_nebula": 1.0,         # Forge Hall night sky: how strong the purple and blue nebula is (0 = stars only)
 	"forge_stars": 1.0,          # Forge Hall night sky: how bright the stars are (0 = none)
+	"forge_mountains": 1.0,      # Forge Hall sky: how tall the snow-capped mountains outside stand (0 = none, 2 = towering)
+	"forge_detail": "auto",      # Forge Hall look on this PC (not shared): auto (from graphics_quality) / detailed (rock photos, heat haze) / simple
 	"forge_day_minutes": 0.0,    # Forge Hall: minutes one full day takes while the clock runs; 0 = the clock stands still at forge_time
 	"forge_lift_up": false,      # Forge Hall: the small live screen in the floor is raised
 	"forge_live_1_source": "webcam",   # Forge Hall small live screens: what each shows: off / webcam / podium1..podium4

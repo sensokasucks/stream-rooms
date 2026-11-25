@@ -76,6 +76,10 @@ extends Node3D
 
 ## Materials (by imported name) whose glow follows the house lights, e.g. chandelier bulbs.
 @export var glow_materials: PackedStringArray = []
+## Glow materials (also listed in glow_materials) that light themselves and keep their full glow
+## when the house lights dim, like the Forge Hall's light inlays. The room's script can still
+## scale their "energy" (a brightness slider); only the house light level leaves them alone.
+@export var self_lit_materials: PackedStringArray = []
 
 @export_group("LAMP_ markers")
 @export var lamp_prefix: String = "LAMP_"
@@ -89,7 +93,7 @@ var _house_lights: Array[Light3D] = []
 var _base_energy: Dictionary = {}
 ## Current house light level 0..1 (AudienceView reads it to dim the filler crowd).
 var _level: float = 1.0
-var _glow: Array[Dictionary] = []    # {mat: BaseMaterial3D, energy: float}
+var _glow: Array[Dictionary] = []    # {mat: BaseMaterial3D, energy: float, self_lit: bool}
 
 
 ## Subclasses that override _ready() must call super._ready() so these steps still run.
@@ -120,7 +124,13 @@ func _process(delta: float) -> void:
 		l.light_energy = _base_energy[l] * _level
 		l.visible = _level > 0.01
 	for g in _glow:
-		(g["mat"] as BaseMaterial3D).emission_energy_multiplier = float(g["energy"]) * _level
+		(g["mat"] as BaseMaterial3D).emission_energy_multiplier = float(g["energy"]) * glow_level(g)
+
+
+## The house light share a glow material's glow is multiplied by: _level, or 1 for the
+## self_lit_materials. g = one of the _glow entries.
+func glow_level(g: Dictionary) -> float:
+	return 1.0 if bool(g.get("self_lit", false)) else _level
 
 
 # ── Queries used by the core app ─────────────────────────────
@@ -376,7 +386,7 @@ func _collect_glow_materials() -> void:
 			if not done.has(m):
 				var d := m.duplicate() as BaseMaterial3D
 				done[m] = d
-				_glow.append({"mat": d, "energy": d.emission_energy_multiplier})
+				_glow.append({"mat": d, "energy": d.emission_energy_multiplier, "self_lit": self_lit_materials.has(m.resource_name)})
 			mi.set_surface_override_material(s, done[m])
 
 
