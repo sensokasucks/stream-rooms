@@ -1508,6 +1508,118 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** and **Cabin: Lakeside** below put it in the woods and by a lake): a cozy log cabin with a tall
+  great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
+  screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
+  - A loft runs across the back over the kitchen, the dining table and the back door, with
+    stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
+    a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
+    **Cabin: Appalachian Forest** and **Cabin: Lakeside**) are the same cabin somewhere else.
+  - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
+    hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
+    and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
+    bookshelves and a quilted bed in the loft.
+  - A small **den** opens off the left wall: low log beams, its own stone fireplace with a
+    heavy mantel and a smaller screen, a leather sofa, an armchair and a lamp.
+  - Chat sits on 30 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
+    the dining bench), 5 at the loft railing and 7 on the deck.
+  - A podium room: in the great room the four presenters sit in leather armchairs either side
+    of the fireplace (see *Presenters*). No webcam frame: the webcam uses the corner overlay.
+  - Room tab:
+    - **Set detail**: **Simple** (flat colours and plain trees, lightest for a slow graphics
+      card) or **Detailed** (photo textures on the logs, stone, floors, roof, leather and wool
+      with their bumps, the warm room reflected in the glass, and a forest of leaf trees, ferns
+      and grass outside). **Auto** follows **Graphics quality** (Low = Simple). Each PC in a
+      co-stream picks its own.
+    - **Fire**: the fireplaces, from out (0%) through a cozy fire (100%) to roaring (200%).
+      The coals glow and fade slowly, and smoke rises from both chimneys while the fires burn.
+      The fire's light flickers gently (steady in photosensitive-safe mode) and dims with the
+      house lights during a video.
+    - **Lamps**: the table lamps, the chandelier, the dining lamp, the den's lamps and the
+      lantern by the back door. Their shades glow. They also follow **House lights**, and burn
+      lower by day.
+    - **Gather in**: **Great room** or **Den**. **Den** sits the presenters on the den's sofa
+      (three) and armchair (one), makes the den's screen the main one (the big screen shows
+      the same picture) and puts the den's cameras first. Changing it reloads the room. Chat
+      keeps its seats in the great room.
+    - **Time of day** (0 to 24 h; 17.5 = golden hour, 21 = a moonlit night) and **Day length**
+      (let the clock run: minutes per day, 0 = stopped): the Lakeside Campfire's sky, with the
+      sun and moon moving across it. The lamps come up as it gets dark.
+    - **Clouds** and **Stars**: how cloudy the sky is and how bright the stars are at night.
+    - **Weather**: **Clear**, **Cloudy**, **Rain**, **Storm** or **Snow**.
+      - **Rain**: drops bead on the windows and run down them, the view through the wet glass
+        goes soft, everything outside turns dark and glossy, water drips off the eaves and you
+        hear the rain on the roof.
+      - **Storm**: the same, plus strong wind, lightning with thunder a moment later, and the
+        lamps dipping now and then. In photosensitive-safe mode the lightning is a soft, slow glow
+        and the lamps don't dip; **Flash strength** turns it down too.
+      - **Snow**: flakes drift down, frost grows up the windows, and snow slowly piles up on the
+        ground, the roofs, the deck and the railings, with frost on the trees.
+      - When the weather clears, the glass dries and the snow melts slowly instead of all at once.
+    - **Fog**: **Off**, **Light** or **Heavy**, on top of any weather. Heavy fog swallows the
+      trees within about 30 metres; the inside of the cabin stays clear.
+    - **Wind**: how hard the wind blows (the trees, the rain's slant, the snow, the chimney
+      smoke and the sound). A storm always blows hard.
+    - **Snow on the ground**: snow lying outside even when it isn't snowing.
+    - **Rain and snow amount**: how many drops and flakes this PC draws (lower it on a slow
+      graphics card). Each PC picks its own.
+    - The fire crackles while it burns.
+  - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
+    at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
+    glass gable, the front door, the dining table and close on the screen. With **Gather in:
+    Den** the den's four come first: by the doorway towards the fire, a Reaction camera on the
+    sofa, the armchair and from the hearth looking back.
+  - Reaction targets: `!tomato fireplace` (the den's fire when gathered in the den),
+    `chandelier`, `deck`.
+  - In a co-stream the Room tab settings are shared (all but **Set detail** and **Rain and snow
+    amount**), so everyone sits by the same fire under the same sky and the same weather.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_builder.gd`); there is no
+    Blender model. The photo textures in `rooms/log_cabin/textures/` come from
+    [Poly Haven](https://polyhaven.com) (CC0, free for any use), made by `make_textures.py`
+    there; the rug pattern is drawn by that script. The weather (`rooms/weather/`) is a shared
+    piece other rooms can use; its rain-drop, runner and frost pictures are drawn by
+    `rooms/weather/textures/make_weather_textures.py`.
+- **Cabin: Appalachian Forest**: the Log Cabin (everything above: seats, cameras, presenters,
+  fire, lamps, Gather in, time of day, weather) in the Appalachian woods.
+  - The deck looks out over a valley: the ground falls away in front of the cabin, so you see
+    over the treetops to layers of hazy blue ridges, each paler than the one before. Behind the
+    cabin the wooded slope climbs.
+  - A creek runs past the right side of the cabin and down into the valley, with rocks in it and
+    stepping stones where the path from the deck steps meets it.
+  - Oaks, maples, tall tulip poplars and birches mixed with dark hemlocks (more of them along
+    the creek), rhododendron thickets, ferns, mossy boulders and a split-rail fence. The far
+    slopes are covered in forest out to the ridges.
+  - Room tab, on top of the Log Cabin's settings: **Season**: **Summer** (green, and fireflies
+    on clear summer nights) or **Autumn** (the oaks, maples, poplars and birches turn orange,
+    red and gold, the forest floor goes brown and the far slopes copper; the hemlocks stay
+    green). Shared in a co-stream.
+  - The settings are the Log Cabin's own (the same `cabin_` settings), so both cabin rooms keep
+    the same fire, lamps, hour and weather.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_forest.gd`, room files in
+    `rooms/cabin_forest/`). The trees, ferns, grass, forest floor and creek water are the
+    Lakeside Campfire's.
+- **Cabin: Lakeside**: the Log Cabin (everything above: seats, cameras, presenters, fire, lamps,
+  Gather in, time of day, weather) on the shore of a calm lake.
+  - A lawn runs down from the deck to a sandy beach. The shore curves away on both sides as two
+    wooded arms, and between them the lake opens out to the far shore and the mountains, which
+    the water mirrors. A small wooded island sits out on the lake.
+  - A wooden dock runs out from the beach, with two chairs at its end and a ladder into the
+    water; a red canoe is pulled up on the beach beside it. Reeds and cattails grow along the
+    shore, lily pads (some in flower) float in the shallows, and granite boulders sit on the
+    beach and in the woods.
+  - Tall white pines, firs and birches (more birches by the water), with a forest of pines and
+    firs over the far shores.
+  - The water glitters under the sun and the moon, turns grey under rain clouds, catches the
+    warm glow of the cabin's windows at night, and gets choppier as the **Wind** rises.
+  - Loons call across the water now and then: mostly at dawn, dusk and at night, rarely by day,
+    and never in rain, a storm or snow. They play on the room ambience, so **Room ambience**
+    on the **Sound** tab sets how loud they are. The recordings are public domain, from
+    Yellowstone National Park's sound library (see `rooms/log_cabin/sounds/README.md`).
+  - Room tab, on top of the Log Cabin's settings: **Season**: **Summer** (green, and fireflies
+    on clear summer nights) or **Autumn** (the birches turn gold and the pine needles go
+    brown; the pines and firs stay green). Shared in a co-stream.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_lake.gd`, room files in
+    `rooms/cabin_lake/`). The trees, grass, sand and lake water are the Lakeside Campfire's.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
@@ -1729,6 +1841,7 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `addons/godot-spout/` (Spout2): MIT and BSD, see `addons/godot-spout/LICENSE` and `licenses/`
 - `addons/godot-ndi/`: MPL-2.0, see `addons/godot-ndi/LICENSE` and `NOTICE.md`
 - `web/vdoninja-sdk.min.js` (VDO.Ninja SDK): MPL-2.0, see `web/vdoninja-sdk-LICENSE.txt`
+- `rooms/log_cabin/textures/` (logs, chinking, floors, ceiling, stone, roof, deck, leather, wool, fleece and bark pictures made from Poly Haven photos): CC0. The rug pattern is drawn by the project's own script.
 - `rooms/campfire/textures/` (ground, bark, rock, plank, cloth, fir, pine, grass and fern pictures made from Poly Haven photos): CC0. The oak, maple and birch leaves, the water ripples and the cloud shapes in that folder are drawn by the project's own script.
 - `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
 - `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.
