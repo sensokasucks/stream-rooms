@@ -224,6 +224,7 @@ const S_TIMBER := 14     # sawn timber: frames, furniture, shelves, mantels
 const S_IRON := 15
 const S_GRASS := 16      # the ground outside (a colour photo, the campfire's)
 const S_DIRT := 17       # the trodden paths (a colour photo, the campfire's)
+const S_LITTER := 18     # the forest floor (a colour photo, the campfire's; Cabin: Appalachian Forest)
 ## Per kind: [texture in textures/ ("" = none; a path starting "res://" is a colour photo used
 ## as it is, see cabin_surface.gdshader `photo`), metres per copy, the world axis the
 ## picture's up follows (-1 = none, 0 = x, 1 = y, 2 = z), mapping (see cabin_surface.gdshader),
@@ -247,6 +248,7 @@ const SURFACES: Dictionary = {
 	S_IRON: ["", 1.0, -1, 0, 0.0, 0.45, 0.5, 0.6],
 	S_GRASS: ["res://rooms/campfire/textures/ground_grass.jpg", 4.0, -1, 0, 0.0, 0.95, 0.3, 0.0],
 	S_DIRT: ["res://rooms/campfire/textures/ground_dirt.jpg", 3.0, -1, 0, 0.0, 0.95, 0.3, 0.0],
+	S_LITTER: ["res://rooms/campfire/textures/ground_forest.jpg", 3.5, -1, 0, 0.0, 0.95, 0.3, 0.0],
 }
 ## Colour photos (the ground) are tinted by this (cabin_surface.gdshader `photo_tint`): the
 ## campfire's grass photo is a dry summer meadow, greened here to suit the forest.

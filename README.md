@@ -1508,13 +1508,13 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (weather and the real outdoor scenes come later): a cozy log cabin with a tall
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** below puts it in the woods): a cozy log cabin with a tall
   great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
   screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
-    a fire table. Outside is a grassy clearing ringed by forest for now (the planned outdoor
-    scenes will replace it).
+    a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
+    **Cabin: Appalachian Forest**) are the same cabin somewhere else.
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
     and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
@@ -1579,6 +1579,25 @@ Included rooms:
     there; the rug pattern is drawn by that script. The weather (`rooms/weather/`) is a shared
     piece other rooms can use; its rain-drop, runner and frost pictures are drawn by
     `rooms/weather/textures/make_weather_textures.py`.
+- **Cabin: Appalachian Forest**: the Log Cabin (everything above: seats, cameras, presenters,
+  fire, lamps, Gather in, time of day, weather) in the Appalachian woods.
+  - The deck looks out over a valley: the ground falls away in front of the cabin, so you see
+    over the treetops to layers of hazy blue ridges, each paler than the one before. Behind the
+    cabin the wooded slope climbs.
+  - A creek runs past the right side of the cabin and down into the valley, with rocks in it and
+    stepping stones where the path from the deck steps meets it.
+  - Oaks, maples, tall tulip poplars and birches mixed with dark hemlocks (more of them along
+    the creek), rhododendron thickets, ferns, mossy boulders and a split-rail fence. The far
+    slopes are covered in forest out to the ridges.
+  - Room tab, on top of the Log Cabin's settings: **Season**: **Summer** (green, and fireflies
+    on clear summer nights) or **Autumn** (the oaks, maples, poplars and birches turn orange,
+    red and gold, the forest floor goes brown and the far slopes copper; the hemlocks stay
+    green). Shared in a co-stream.
+  - The settings are the Log Cabin's own (the same `cabin_` settings), so both cabin rooms keep
+    the same fire, lamps, hour and weather.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_forest.gd`, room files in
+    `rooms/cabin_forest/`). The trees, ferns, grass, forest floor and creek water are the
+    Lakeside Campfire's.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**

@@ -31,10 +31,17 @@ extends Room
 ##     plain cone trees; Detailed = the CC0 photo textures (textures/, from make_textures.py) with
 ##     their bumps, leaf-card trees, ferns and grass round the clearing (the campfire's), and a
 ##     reflection probe so the glass and the polished wood show the warm room at night.
+##   - Scene (`scene`, set in each room's .tscn): what is built round the cabin. "clearing" = the
+##     plain clearing of the Log Cabin room (cabin_builder.gd _build_clearing); "forest" = Cabin:
+##     Appalachian Forest (rooms/cabin_forest/, cabin_forest.gd: the valley, the creek, the
+##     hardwoods and hemlocks; the sky draws layered blue ridges). The forest adds Season
+##     ("cabin_season" summer / autumn: the leaves, the forest floor and the far treetops turn)
+##     and fireflies on clear summer nights.
 ## All cabin_ settings but cabin_detail are shared in a co-stream (NetSession.SHARED_CABIN, with the
 ## "room" group).
 
 const Builder := preload("res://rooms/log_cabin/cabin_builder.gd")
+const Forest := preload("res://rooms/log_cabin/cabin_forest.gd")
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 ## The flames of each fire: [metres sideways, metres out into the room (+) / into the firebox (-),
 ## size as a share of flame_size], in the fire marker's own axes (the den's fire faces +X).
@@ -44,6 +51,10 @@ const Weather := preload("res://rooms/weather/room_weather.gd")
 const CAMP_TEX := "res://rooms/campfire/textures/"
 ## The den's fire next to the big one: share of the light's energy and range.
 const DEN_FIRE_SHARE: float = 0.55
+
+## What is built round the cabin: "clearing" (the Log Cabin) or "forest" (Cabin: Appalachian
+## Forest). Each scene room's .tscn sets it.
+@export_enum("clearing", "forest") var scene: String = "clearing"
 
 @export_group("Fire")
 ## The tallest flame: width and height in metres at Fire 100%.
@@ -88,6 +99,7 @@ var _fire_lights: Array[OmniLight3D] = []   # one per fire, in the order of _par
 var _fire_strength: Array[float] = []       # each light's share of fire_light_energy
 var _smoke: Array[CPUParticles3D] = []   # one per chimney (Builder's smoke_spots)
 var _smoke_mat: StandardMaterial3D        # the puffs' material, tinted by the daylight
+var _fireflies: CPUParticles3D            # the forest's fireflies on clear summer nights (null elsewhere)
 ## Catches the lit room once (and again when the light changes a lot) so the glass and polished
 ## surfaces reflect the warm inside instead of the sky. Detailed look only.
 var _probe: ReflectionProbe
@@ -105,7 +117,11 @@ var _last_probe_level: float = -1.0   # the house light level a frame ago (the p
 
 func _ready() -> void:
 	# first of all: Room._ready() and RoomHost read the set's markers straight away
-	_parts = Builder.build(self, String(AppState.get_setting("cabin_view")))
+	var view := String(AppState.get_setting("cabin_view"))
+	if scene == "forest":
+		_parts = Forest.build(self, view)
+	else:
+		_parts = Builder.build(self, view)
 	super._ready()
 	_fx = Node3D.new()
 	_fx.name = "SunShafts"
@@ -123,6 +139,9 @@ func _ready() -> void:
 	_build_smoke()
 	_build_probe()
 	_build_weather()
+	if scene == "forest":
+		_build_fireflies()
+		_apply_season()
 	_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
 	EventBus.setting_changed.connect(_on_cabin_setting_changed)
 	_apply_detail()
@@ -144,7 +163,7 @@ func retire() -> void:
 
 ## Room tab: the set's detail, the fire, the lamps, where everyone gathers, the hour and the sky.
 func get_controls() -> Array[Dictionary]:
-	return [
+	var list: Array[Dictionary] = [
 		{"heading": "Log Cabin"},
 		{"key": "cabin_detail", "label": "Set detail", "type": "option",
 			"options": [["auto", "Auto (follows Graphics quality)"], ["low", "Simple"], ["full", "Detailed"]],
@@ -180,6 +199,17 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
+	if scene == "forest":
+		# the forest's own setting, right after Gather in
+		var at := list.size()
+		for i in list.size():
+			if String(list[i].get("heading", "")) == "Time of day":
+				at = i
+				break
+		list.insert(at, {"key": "cabin_season", "label": "Season", "type": "option",
+			"options": [["summer", "Summer"], ["autumn", "Autumn"]],
+			"tooltip": "The forest's season. Summer: green leaves, and fireflies on clear nights. Autumn: the oaks, maples, poplars and birches turn orange, red and gold, the forest floor turns brown and the far slopes go copper. The hemlocks stay green."})
+	return list
 
 
 ## "Gather in" decides where the presenters' markers and the main screen are built, which the app
@@ -198,6 +228,9 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 			_hour_drawn = -100.0        # _run_clock redraws the sky next frame
 		"cabin_lamps":
 			_probe_day = -1.0           # the reflections catch the room again
+		"cabin_season":
+			_apply_season()
+			_hour_drawn = -100.0        # (the fireflies follow the season)
 		"cabin_detail", "graphics_quality":
 			_apply_detail()
 
@@ -302,6 +335,97 @@ func _lean_smoke() -> void:
 		_smoke_mat.albedo_color.a = 1.0 - 0.6 * clampf(w / 1.4, 0.0, 1.0)
 
 
+# ── The forest: season and fireflies ─────────────────────────
+## Season ("cabin_season", Cabin: Appalachian Forest only): in autumn the leaf cards turn
+## (campfire_trees.gd's foliage shader `autumn`, with the campfire's colour ranges), the forest
+## floor photo goes browner, the far treetops coloured into the land go copper and the far
+## low-poly round trees turn orange, gold and red. The hemlocks stay green.
+func _apply_season() -> void:
+	var autumn := String(AppState.get_setting("cabin_season")) == "autumn"
+	var leaf_mats: Dictionary = _parts.get("leaf_mats", {})
+	# [leaf material, the two ends of its autumn colour range]
+	for row: Array in [["leaves", Color(0.62, 0.36, 0.1), Color(0.5, 0.2, 0.07)], ["leaves_birch", Color(0.95, 0.74, 0.1), Color(0.9, 0.58, 0.08)],
+			["leaves_maple", Color(0.9, 0.42, 0.06), Color(0.72, 0.1, 0.05)]]:
+		var m := leaf_mats.get(row[0]) as ShaderMaterial
+		if m:
+			m.set_shader_parameter("autumn", 1.0 if autumn else 0.0)
+			m.set_shader_parameter("fall_a", row[1])
+			m.set_shader_parameter("fall_b", row[2])
+	var litter := _parts.get("litter_mat") as ShaderMaterial
+	if litter:
+		litter.set_shader_parameter("photo_tint", Color(1.08, 0.86, 0.66) if autumn else Color(0.74, 0.88, 0.58))
+		litter.set_shader_parameter("far_tint", Vector3(2.1, 1.05, 0.5) if autumn else Vector3.ONE)
+	# the far round trees: each one's summer colour (kept the first time) times orange, gold or red
+	var turns: Array[Color] = [Color(3.2, 1.35, 0.2), Color(3.0, 1.9, 0.25), Color(3.3, 0.95, 0.15)]  # copper, gold, rust (less red-pink than plain red)
+	for n: Node3D in _parts.get("far_trees", []):
+		var mmi := n as MultiMeshInstance3D
+		if mmi == null or not String(mmi.name).contains("Round"):
+			continue
+		var mm := mmi.multimesh
+		if not mmi.has_meta("summer"):
+			var first := PackedColorArray()
+			for i in mm.instance_count:
+				first.append(mm.get_instance_color(i))
+			mmi.set_meta("summer", first)
+		var summer: PackedColorArray = mmi.get_meta("summer")
+		for i in mm.instance_count:
+			mm.set_instance_color(i, summer[i] * turns[i % 3] if autumn else summer[i])
+
+
+## Fireflies (the Lakeside Campfire's): slow drifting specks round the yard's edge and over the
+## creek; _apply_time lets them out on dry summer nights.
+func _build_fireflies() -> void:
+	_fireflies = CPUParticles3D.new()
+	_fireflies.name = "Fireflies"
+	_fireflies.amount = 60
+	_fireflies.lifetime = 7.0
+	_fireflies.randomness = 1.0
+	_fireflies.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	_fireflies.emission_ring_axis = Vector3.UP
+	_fireflies.emission_ring_radius = 22.0
+	_fireflies.emission_ring_inner_radius = 10.0
+	_fireflies.emission_ring_height = 2.4
+	_fireflies.direction = Vector3(1.0, 0.2, 0.0)
+	_fireflies.spread = 180.0
+	_fireflies.gravity = Vector3.ZERO
+	_fireflies.initial_velocity_min = 0.08
+	_fireflies.initial_velocity_max = 0.3
+	var glow := Gradient.new()                        # each one fades in, glows, fades out
+	glow.set_color(0, Color(0.0, 0.0, 0.0, 1.0))
+	glow.add_point(0.25, Color(0.75, 1.0, 0.3, 1.0))
+	glow.add_point(0.6, Color(0.6, 0.9, 0.2, 1.0))
+	glow.set_color(glow.get_point_count() - 1, Color(0.0, 0.0, 0.0, 1.0))
+	_fireflies.color_ramp = glow
+	var speck := QuadMesh.new()
+	speck.size = Vector2(0.09, 0.09)
+	var sm := StandardMaterial3D.new()
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.vertex_color_use_as_albedo = true
+	sm.albedo_color = Color(2.5, 2.5, 2.5)
+	var dot := GradientTexture2D.new()
+	dot.width = 32
+	dot.height = 32
+	dot.fill = GradientTexture2D.FILL_RADIAL
+	dot.fill_from = Vector2(0.5, 0.5)
+	dot.fill_to = Vector2(1.0, 0.5)
+	var dg := Gradient.new()
+	dg.set_color(0, Color.WHITE)
+	dg.set_color(1, Color.BLACK)
+	dot.gradient = dg
+	sm.albedo_texture = dot
+	sm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	sm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	sm.billboard_keep_scale = true
+	sm.disable_fog = true           # (fog on a glow that is added to the picture shows as a pale square)
+	speck.material = sm
+	_fireflies.mesh = speck
+	_fireflies.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_fireflies.emitting = false
+	_fireflies.visible = false
+	_fx.add_child(_fireflies, true)
+	_fireflies.position = Vector3(Forest.YARD.x, 0.6, Forest.YARD.y)
+
+
 # ── Time of day and the sky ──────────────────────────────────
 ## Called every frame. Moves the clock on while "cabin_day_minutes" is above 0, and redraws the
 ## sky and lights when the hour has moved by time_step or the app swapped the Environment (a
@@ -369,10 +493,12 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("star_amount", float(AppState.get_setting("cabin_stars")))
 		sky.set_shader_parameter("aurora_amount", 0.0)
 		sky.set_shader_parameter("haze", 0.35)
+		sky.set_shader_parameter("blue_ridges", 1.0 if scene == "forest" else 0.0)
 		env.ambient_light_color = night_ambient.lerp(day_ambient, _day).lerp(Color(0.66, 0.46, 0.42), dusk * 0.35)
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
 		env.fog_light_color = haze
-		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day)
+		# (thinner in the forest room: there the sky's blue ridges carry the distance haze)
+		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 1.0)
 		# the weather has the last word on the clouds, the fog and how dull the light is
 		_weather.apply_env(env, sky, haze)
 	# the sun by day, the moon by night; cloud dims both
@@ -389,6 +515,21 @@ func _apply_time(env: Environment) -> void:
 	_sun.visible = energy > 0.002
 	var world_dir := turn * light_dir
 	_sun.global_basis = Basis.looking_at(-world_dir, Vector3.UP if absf(world_dir.y) < 0.99 else Vector3.FORWARD)
+	if _parts.has("stream_mat"):
+		# the creek (camp_stream.gdshader, unshaded): the sky to mirror and the light to glint
+		var water := _parts["stream_mat"] as ShaderMaterial
+		var glitter := light_col * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0)
+		water.set_shader_parameter("daylight", 0.08 + 0.92 * _day * lerpf(0.6, 1.0, _weather.sun_share()))
+		water.set_shader_parameter("sky_top", Color(0.01, 0.015, 0.04).lerp(Color(0.12, 0.3, 0.7), _day))
+		water.set_shader_parameter("sky_horizon", hor)
+		water.set_shader_parameter("light_dir", world_dir)
+		water.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
+	if _fireflies:
+		# out on summer nights while it is dry (they wait out rain and snow)
+		var tonight := String(AppState.get_setting("cabin_season")) == "summer" and _day < 0.35 \
+			and _weather.kind() in ["clear", "cloudy"]
+		_fireflies.emitting = tonight
+		_fireflies.visible = tonight or _fireflies.visible and _day < 0.5
 	if _smoke_mat:
 		# pale grey smoke by day, barely-there blue-grey by night
 		# (greyer under rain clouds: sun_share() is 1 on a clear day, 0.18 in a storm). Its alpha
