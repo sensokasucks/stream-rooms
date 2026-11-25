@@ -39,13 +39,27 @@ extends Room
 ##     and fireflies on clear summer nights. "lake" = Cabin: Lakeside (rooms/cabin_lake/,
 ##     cabin_lake.gd: a lawn down to a beach and a lake, pines, firs and birches, a dock, a canoe,
 ##     reeds and lily pads; the sky keeps its own mountains, which the lake mirrors). The lake
-##     has Season and fireflies too, and loons calling now and then (_run_loons).
+##     has Season and fireflies too, and loons calling now and then (_run_loons). "ocean" =
+##     Cabin: Ocean (rooms/cabin_ocean/, cabin_ocean.gd: a grassy bluff over a beach and the open
+##     sea, rolling surf, wind-bent pines, driftwood, a lighthouse on an islet; the sky draws a
+##     flat sea horizon, `open_sea`). It adds the surf's sound, gulls (seen and heard by day), the
+##     lighthouse's turning beams at dusk, at night and in fog, and a foghorn in heavy fog
+##     (_apply_ocean, _run_ocean). No Season or fireflies on the windy coast.
 ## All cabin_ settings but cabin_detail are shared in a co-stream (NetSession.SHARED_CABIN, with the
 ## "room" group).
 
 const Builder := preload("res://rooms/log_cabin/cabin_builder.gd")
 const Forest := preload("res://rooms/log_cabin/cabin_forest.gd")
 const Lake := preload("res://rooms/log_cabin/cabin_lake.gd")
+const Ocean := preload("res://rooms/log_cabin/cabin_ocean.gd")
+## The gulls' call (public domain, the US National Park Service's Sound Gallery; sounds/README.md).
+const GULL := preload("res://rooms/log_cabin/sounds/gull_1.ogg")
+## The surf's generated sound: its mix rate, and seconds between one breaking wave and the next
+## (the same as cabin_surf.gdshader's `period`).
+const SURF_RATE: float = 22050.0
+const SURF_PERIOD: float = 8.0
+## How long one turn of the lighthouse's beams takes (seconds).
+const BEAM_TURN: float = 16.0
 ## The loons' calls (public domain, Yellowstone National Park's sound library; sounds/README.md).
 const LOONS: Array[AudioStream] = [preload("res://rooms/log_cabin/sounds/loon_1.ogg"),
 	preload("res://rooms/log_cabin/sounds/loon_2.ogg"), preload("res://rooms/log_cabin/sounds/loon_3.ogg")]
@@ -65,8 +79,8 @@ const CAMP_TEX := "res://rooms/campfire/textures/"
 const DEN_FIRE_SHARE: float = 0.55
 
 ## What is built round the cabin: "clearing" (the Log Cabin), "forest" (Cabin: Appalachian
-## Forest) or "lake" (Cabin: Lakeside). Each scene room's .tscn sets it.
-@export_enum("clearing", "forest", "lake") var scene: String = "clearing"
+## Forest), "lake" (Cabin: Lakeside) or "ocean" (Cabin: Ocean). Each scene room's .tscn sets it.
+@export_enum("clearing", "forest", "lake", "ocean") var scene: String = "clearing"
 
 @export_group("Fire")
 ## The tallest flame: width and height in metres at Fire 100%.
@@ -114,6 +128,18 @@ var _smoke_mat: StandardMaterial3D        # the puffs' material, tinted by the d
 var _fireflies: CPUParticles3D            # the scene's fireflies on clear summer nights (null in the clearing)
 var _loon_player: AudioStreamPlayer       # the lake's loons (null in the other scenes)
 var _loon_wait: float = 8.0               # seconds until the loons may call again
+# the coast (Cabin: Ocean only)
+var _surf_pb: AudioStreamGeneratorPlayback   # the surf's generated sound
+var _surf_t: float = 0.0                  # the surf sound's own clock (seconds)
+var _surf_lp: float = 0.0                 # its noise, low-passed (the roar) ...
+var _surf_lp2: float = 0.0                # ... and less so (the hiss of the wash)
+var _surf_rng := RandomNumberGenerator.new()
+var _gull_player: AudioStreamPlayer
+var _gull_wait: float = 6.0               # seconds until the gulls may call again
+var _horn_player: AudioStreamPlayer       # the foghorn (a generated tone)
+var _horn_wait: float = 4.0               # seconds until the next blast while the fog is heavy
+var horn_blasts: int = 0                  # how many times the foghorn has sounded (for tests)
+var _gull_paths: Array[Vector4] = []      # per gull: centre x, centre z, radius, speed (radians a second)
 ## Catches the lit room once (and again when the light changes a lot) so the glass and polished
 ## surfaces reflect the warm inside instead of the sky. Detailed look only.
 var _probe: ReflectionProbe
@@ -136,6 +162,8 @@ func _ready() -> void:
 		_parts = Forest.build(self, view)
 	elif scene == "lake":
 		_parts = Lake.build(self, view)
+	elif scene == "ocean":
+		_parts = Ocean.build(self, view)
 	else:
 		_parts = Builder.build(self, view)
 	super._ready()
@@ -155,9 +183,11 @@ func _ready() -> void:
 	_build_smoke()
 	_build_probe()
 	_build_weather()
-	if scene != "clearing":
+	if scene in ["forest", "lake"]:
 		_build_fireflies()
 		_apply_season()
+	if scene == "ocean":
+		_build_coast_sounds()
 	if scene == "lake":
 		_loon_player = AudioStreamPlayer.new()
 		_loon_player.name = "Loons"
@@ -220,7 +250,7 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
-	if scene != "clearing":
+	if SEASON_TIPS.has(scene):
 		# the scene's own setting, right after Gather in
 		var at := list.size()
 		for i in list.size():
@@ -263,6 +293,8 @@ func _process(delta: float) -> void:
 	_time += delta
 	if _loon_player:
 		_run_loons(delta)
+	if scene == "ocean":
+		_run_ocean(delta)
 	_run_fire()
 	_weather.fire = clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
 	_weather.run(delta)
@@ -519,12 +551,13 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("aurora_amount", 0.0)
 		sky.set_shader_parameter("haze", 0.35)
 		sky.set_shader_parameter("blue_ridges", 1.0 if scene == "forest" else 0.0)
+		sky.set_shader_parameter("open_sea", 1.0 if scene == "ocean" else 0.0)
 		env.ambient_light_color = night_ambient.lerp(day_ambient, _day).lerp(Color(0.66, 0.46, 0.42), dusk * 0.35)
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
 		env.fog_light_color = haze
 		# (thinner in the scene rooms: the forest sky's blue ridges carry the haze, and over the lake
 		# thick haze turned the island pale)
-		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 0.3 if scene == "lake" else 1.0)
+		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 0.3 if scene == "lake" else 0.4 if scene == "ocean" else 1.0)
 		# the weather has the last word on the clouds, the fog and how dull the light is
 		_weather.apply_env(env, sky, haze)
 	# the sun by day, the moon by night; cloud dims both
@@ -552,6 +585,8 @@ func _apply_time(env: Environment) -> void:
 		water.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
 	if _parts.has("lake_mat"):
 		_apply_lake(hor, light_col * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0), world_dir)
+	if _parts.has("sea_mat"):
+		_apply_ocean(hor, light_col, light_col * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0), world_dir, dusk)
 	if _fireflies:
 		# out on summer nights while it is dry (they wait out rain and snow)
 		var tonight := String(AppState.get_setting("cabin_season")) == "summer" and _day < 0.35 \
@@ -765,3 +800,156 @@ func call_loon(amount: float) -> void:
 	_loon_player.stream = LOONS[randi() % LOONS.size()]
 	_loon_player.volume_db = linear_to_db(lerpf(0.25, 0.9, clampf(amount, 0.0, 1.0)))
 	_loon_player.play()
+
+
+# ── The coast (Cabin: Ocean) ─────────────────────────────────
+## The sea, the surf, the lighthouse's light, for the hour and the weather (called by
+## _apply_time whenever the sky is redrawn). The sea is the lake's water shader with nothing
+## mirrored on the horizon and bigger waves (the coast is breezier than its Wind slider says);
+## the surf gets the daylight and grows with the wind; the lighthouse's beams show from dusk on
+## and in fog, strongest in fog at night.
+func _apply_ocean(hor: Color, light_col: Color, glitter: Color, light_dir: Vector3, dusk: float) -> void:
+	var sea := _parts["sea_mat"] as ShaderMaterial
+	var dull := _weather.sun_share() if _weather else 1.0
+	var w := _weather.wind() if _weather else 0.4
+	var top := Color(0.01, 0.015, 0.04).lerp(Color(0.12, 0.3, 0.7), _day).lerp(hor, 1.0 - dull)
+	sea.set_shader_parameter("sky_top", top)
+	sea.set_shader_parameter("sky_horizon", hor)
+	sea.set_shader_parameter("deep_color", Color(0.01, 0.06, 0.08) * (0.08 + 0.92 * _day))
+	sea.set_shader_parameter("light_dir", light_dir)
+	sea.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b) * dull)
+	sea.set_shader_parameter("fire_color", Vector3.ZERO)
+	sea.set_shader_parameter("wave", 1.1 + 1.1 * w)
+	sea.set_shader_parameter("flow", Vector2(0.02, 0.06) * (1.0 + 1.5 * w))
+	var surf := _parts["surf_mat"] as ShaderMaterial
+	surf.set_shader_parameter("daylight", (0.06 + 0.94 * _day) * lerpf(0.7, 1.0, dull))
+	surf.set_shader_parameter("light_color", Color(1.0, 1.0, 1.0).lerp(light_col, 0.5 * dusk))
+	surf.set_shader_parameter("size", 0.9 + 0.6 * w)
+	surf.set_shader_parameter("period", SURF_PERIOD)
+	var fog := String(AppState.get_setting("cabin_fog"))
+	var murk := 1.0 if fog == "heavy" else 0.5 if fog == "light" else 0.0
+	var dark := 1.0 - smoothstep(0.15, 0.7, _day)
+	(_parts["beam_mat"] as ShaderMaterial).set_shader_parameter("strength", clampf(dark * (0.6 + 0.6 * murk) + murk * 0.5, 0.0, 1.2))
+	var lamp := _parts["lamp"] as MeshInstance3D
+	lamp.visible = dark > 0.05 or murk > 0.0
+	(_parts["lamp_mat"] as StandardMaterial3D).albedo_color = Color.WHITE * clampf(dark + murk * 0.6, 0.0, 1.0)
+
+
+## The coast's sounds: the surf (generated, on the Ambience bus like the weather's sound), the
+## gulls' recording and the foghorn (a low two-tone blast generated once here: no file needed).
+func _build_coast_sounds() -> void:
+	_surf_rng.seed = 7
+	_surf_pb = _start_generated_ambience(SURF_RATE, 0.3)
+	_gull_player = AudioStreamPlayer.new()
+	_gull_player.name = "Gulls"
+	_gull_player.bus = AudioManager.AMBIENCE_BUS
+	_gull_player.stream = GULL
+	add_child(_gull_player)
+	_horn_player = AudioStreamPlayer.new()
+	_horn_player.name = "Foghorn"
+	_horn_player.bus = AudioManager.AMBIENCE_BUS
+	_horn_player.stream = _make_foghorn()
+	add_child(_horn_player)
+	# each gull's circle: over the beach and the water in front, some near, some further out
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 31
+	for i in (_parts["gulls"] as Array).size():
+		var cx := rng.randf_range(-60.0, 60.0)
+		var cz := Ocean.edge_z(cx) - rng.randf_range(15.0, 70.0)
+		_gull_paths.append(Vector4(cx, cz, rng.randf_range(14.0, 35.0), rng.randf_range(0.12, 0.25) * (1.0 if rng.randf() < 0.5 else -1.0)))
+
+
+## A foghorn: 2.8 s of a low tone (two notes a little apart, rich in overtones) that swells in
+## and fades out, as a sound the player can play again and again.
+func _make_foghorn() -> AudioStreamWAV:
+	var rate := 22050
+	var count := int(rate * 2.8)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	for i in count:
+		var t := float(i) / float(rate)
+		var env := smoothstep(0.0, 0.35, t) * smoothstep(2.8, 2.0, t)
+		var s := 0.0
+		for h in 6:                                  # the overtones of a reedy horn
+			var k := float(h + 1)
+			s += sin(TAU * 110.0 * k * t) / (k * 1.3) + 0.6 * sin(TAU * 131.0 * k * t) / (k * 1.5)
+		data.encode_s16(i * 2, int(clampf(s * env * 0.28, -1.0, 1.0) * 32000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.stereo = false
+	wav.data = data
+	return wav
+
+
+## Every frame on the coast: the beams turn (the lamp brightens as one sweeps past the viewer,
+## unless photosensitive-safe is on), the gulls fly their circles by day, the surf's sound is fed,
+## and now and then a gull calls or (in heavy fog) the foghorn sounds.
+func _run_ocean(delta: float) -> void:
+	var beam := _parts["beam"] as Node3D
+	beam.rotate_y(delta * TAU / BEAM_TURN)
+	var lamp := _parts["lamp"] as MeshInstance3D
+	var cam := get_viewport().get_camera_3d()
+	if cam and lamp.visible:
+		# how straight a beam points at the camera (both beams: the cone lies along the pivot's X)
+		var to_cam := (cam.global_position - beam.global_position)
+		to_cam.y = 0.0
+		var facing := absf(beam.global_basis.x.normalized().dot(to_cam.normalized()))
+		var swell := 0.0 if bool(AppState.get_setting("photosensitive_safe")) else pow(facing, 40.0) * 1.2
+		lamp.scale = Vector3.ONE * (1.0 + swell)
+	# the gulls: out by day in fair weather, gliding round their circles, banking into the turn
+	var kind := _weather.kind() if _weather else "clear"
+	var flying := _day > 0.3 and kind in ["clear", "cloudy"]
+	var gulls: Array = _parts["gulls"]
+	for i in gulls.size():
+		var g := gulls[i] as Node3D
+		g.visible = flying
+		if not flying:
+			continue
+		var path := _gull_paths[i]
+		var a := _time * path.w + float(i) * 1.7
+		var pos := Vector3(path.x + cos(a) * path.z, Ocean.SEA_Y + 16.0 + 5.0 * sin(_time * 0.3 + float(i)) + float(i) * 1.5, path.y + sin(a) * path.z)
+		var ahead := Vector3(-sin(a), 0.0, cos(a)) * signf(path.w)
+		g.global_transform = Transform3D(Basis.looking_at(ahead, Vector3.UP) * Basis(Vector3.BACK, -0.35 * signf(path.w)), pos).scaled_local(Vector3.ONE * 1.3)
+	_fill_surf()
+	_gull_wait -= delta
+	if _gull_wait <= 0.0:
+		_gull_wait = randf_range(25.0, 70.0)
+		if flying and not _gull_player.playing:
+			_gull_player.pitch_scale = randf_range(0.9, 1.1)
+			_gull_player.volume_db = linear_to_db(randf_range(0.25, 0.7))
+			_gull_player.play()
+	_horn_wait -= delta
+	if _horn_wait <= 0.0:
+		_horn_wait = 30.0
+		if String(AppState.get_setting("cabin_fog")) == "heavy":
+			_horn_player.volume_db = linear_to_db(0.35)
+			_horn_player.play()
+			horn_blasts += 1
+
+
+## The surf's sound: a deep roar that swells as each wave breaks (every SURF_PERIOD seconds,
+## like the painted surf), with the hiss of the wash running up the sand after it. Louder in a
+## wind. Generated sample by sample into the ambience stream (only what it has room for).
+func _fill_surf() -> void:
+	if _surf_pb == null:
+		return
+	var n := _surf_pb.get_frames_available()
+	if n <= 0:
+		return
+	var w := _weather.wind() if _weather else 0.4
+	var loud := 0.05 + 0.05 * w
+	var buf := PackedVector2Array()
+	buf.resize(n)
+	for i in n:
+		_surf_t += 1.0 / SURF_RATE
+		var phase := fmod(_surf_t / SURF_PERIOD, 1.0)
+		# the crash: a quick rise, a slow fall; the wash: a hiss that follows it
+		var crash := smoothstep(0.0, 0.06, phase) * exp(-phase * 5.0)
+		var wash := smoothstep(0.08, 0.25, phase) * exp(-(phase - 0.08) * 3.0)
+		var r := _surf_rng.randf() * 2.0 - 1.0
+		_surf_lp += (r - _surf_lp) * 0.03
+		_surf_lp2 += (r - _surf_lp2) * 0.3
+		var sample := (_surf_lp * (0.35 + 1.6 * crash) * 2.2 + _surf_lp2 * wash * 0.25) * loud
+		buf[i] = Vector2(sample, sample * 0.97)
+	_surf_pb.push_buffer(buf)

@@ -1508,13 +1508,14 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** and **Cabin: Lakeside** below put it in the woods and by a lake): a cozy log cabin with a tall
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest**, **Cabin: Lakeside** and **Cabin: Ocean** below put it in the woods, by a lake and on the coast): a cozy log cabin with a tall
   great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
   screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
     a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
-    **Cabin: Appalachian Forest** and **Cabin: Lakeside**) are the same cabin somewhere else.
+    **Cabin: Appalachian Forest**, **Cabin: Lakeside** and **Cabin: Ocean**) are the same cabin
+    somewhere else.
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
     and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
@@ -1620,6 +1621,29 @@ Included rooms:
     brown; the pines and firs stay green). Shared in a co-stream.
   - Built in code when the room loads (`rooms/log_cabin/cabin_lake.gd`, room files in
     `rooms/cabin_lake/`). The trees, grass, sand and lake water are the Lakeside Campfire's.
+- **Cabin: Ocean**: the Log Cabin (everything above: seats, cameras, presenters, fire, lamps,
+  Gather in, time of day, weather) on a grassy bluff over the sea.
+  - In front of the deck the grass runs to the edge of the bluff, which drops to a wide sandy
+    beach. Beyond it the open sea runs out to a flat horizon. Waves roll in, break into foam and
+    wash up the sand, and the sea gets rougher and the surf bigger as the **Wind** rises (a
+    storm whips it up).
+  - Wooden stairs lead from the path down the bluff to the beach. Sun-bleached driftwood and dark
+    rocks lie on the sand, and tall pale dune grass grows along the bluff's edge and the back of
+    the beach. The coastal pines are bent inland by the wind, hardest near the bluff.
+  - Out to sea, a lighthouse stands on a small rocky island with the keeper's house beside it.
+    From dusk and through the night, and in fog by day, its lamp glows and two beams turn slowly
+    across the sea. (The lamp brightens a little as a beam sweeps past you; with
+    **Photosensitive safe** on it stays steady.)
+  - Gulls glide in circles over the beach by day in fair weather, and call now and then.
+  - Sound: the surf rolling in (made by the app, no recording), the gulls (a public domain
+    recording from the US National Park Service's Sound Gallery) and a foghorn every 30 seconds
+    when **Fog** is **Heavy**. They all play on the room ambience, so **Room ambience** on the
+    **Sound** tab sets how loud they are.
+  - No **Season** here: the coast stays as it is. The same `cabin_` settings as the other cabin
+    rooms.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_ocean.gd`, room files in
+    `rooms/cabin_ocean/`; the surf is `rooms/log_cabin/cabin_surf.gdshader`, the beams
+    `cabin_beam.gdshader`).
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**
