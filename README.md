@@ -1508,13 +1508,13 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest**, **Cabin: Lakeside** and **Cabin: Ocean** below put it in the woods, by a lake and on the coast): a cozy log cabin with a tall
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest**, **Cabin: Lakeside**, **Cabin: Ocean** and **Cabin: Frozen North** below put it in the woods, by a lake, on the coast and in the snowy north): a cozy log cabin with a tall
   great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
   screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
     a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
-    **Cabin: Appalachian Forest**, **Cabin: Lakeside** and **Cabin: Ocean**) are the same cabin
+    **Cabin: Appalachian Forest**, **Cabin: Lakeside**, **Cabin: Ocean** and **Cabin: Frozen North**) are the same cabin
     somewhere else.
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
@@ -1644,6 +1644,29 @@ Included rooms:
   - Built in code when the room loads (`rooms/log_cabin/cabin_ocean.gd`, room files in
     `rooms/cabin_ocean/`; the surf is `rooms/log_cabin/cabin_surf.gdshader`, the beams
     `cabin_beam.gdshader`).
+- **Cabin: Frozen North**: the Log Cabin (everything above: seats, cameras, presenters, fire,
+  lamps, Gather in, time of day, weather) deep in snow by a frozen lake.
+  - In front of the deck a snowy slope runs down to the lake, frozen over and stretching out to
+    low mountains. The wind has swept parts of the ice clean, so it is dark and glassy and
+    mirrors the sky; elsewhere snow has drifted across it in long streaks, and pale cracks run
+    through the clear ice. A trail of packed snow leads from the deck steps down onto the ice.
+  - Tall, narrow spruces and a few big pines, frosted pale, crowd the shores and the slope behind
+    the cabin, and a small wooded island sits out on the ice. Snow-capped boulders lie round
+    the yard and along the shore.
+  - A pair of old laced snowshoes leans by the corner glass door, and a wooden sled with red
+    runners stands at the foot of the deck steps.
+  - It is always winter here: the ground stays under deep snow even with **Snow on the ground**
+    at 0% (raise it, or let it snow, for even more on the roofs and railings), and frost creeps
+    up the windows.
+  - **Aurora** (Room tab, under **Sky**, only in this room): the northern lights, slow green and
+    violet curtains over the frozen lake on clear nights. Cloud thins them out; snow, rain and
+    fog hide them. 0% = none, 200% = a strong display. Shared in a co-stream.
+  - Sound: now and then the ice creaks, sings or booms as it settles (made by the app, no
+    recording), most often around dawn and dusk. It plays on the room ambience, so **Room
+    ambience** on the **Sound** tab sets how loud it is.
+  - No **Season** here. The same `cabin_` settings as the other cabin rooms, plus **Aurora**.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_north.gd`, room files in
+    `rooms/cabin_north/`; the ice is `rooms/log_cabin/cabin_ice.gdshader`).
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**

@@ -44,7 +44,13 @@ extends Room
 ##     sea, rolling surf, wind-bent pines, driftwood, a lighthouse on an islet; the sky draws a
 ##     flat sea horizon, `open_sea`). It adds the surf's sound, gulls (seen and heard by day), the
 ##     lighthouse's turning beams at dusk, at night and in fog, and a foghorn in heavy fog
-##     (_apply_ocean, _run_ocean). No Season or fireflies on the windy coast.
+##     (_apply_ocean, _run_ocean). No Season or fireflies on the windy coast. "north" = Cabin:
+##     Frozen North (rooms/cabin_north/, cabin_north.gd: deep snow, a frozen lake with
+##     wind-polished ice, spruces, snowshoes by the door, a sled; the sky keeps its own low
+##     mountains). Snow on the ground never drops below cabin_north.gd's SNOW_FLOOR there (the
+##     weather's snow_floor), so the frost on the glass and trees comes with it; the aurora
+##     ("cabin_aurora", only on this room's Room tab) hangs over the ice on clear nights; the ice
+##     creaks and booms now and then (_run_ice). No Season or fireflies.
 ## All cabin_ settings but cabin_detail are shared in a co-stream (NetSession.SHARED_CABIN, with the
 ## "room" group).
 
@@ -52,6 +58,7 @@ const Builder := preload("res://rooms/log_cabin/cabin_builder.gd")
 const Forest := preload("res://rooms/log_cabin/cabin_forest.gd")
 const Lake := preload("res://rooms/log_cabin/cabin_lake.gd")
 const Ocean := preload("res://rooms/log_cabin/cabin_ocean.gd")
+const North := preload("res://rooms/log_cabin/cabin_north.gd")
 ## The gulls' call (public domain, the US National Park Service's Sound Gallery; sounds/README.md).
 const GULL := preload("res://rooms/log_cabin/sounds/gull_1.ogg")
 ## The surf's generated sound: its mix rate, and seconds between one breaking wave and the next
@@ -79,8 +86,9 @@ const CAMP_TEX := "res://rooms/campfire/textures/"
 const DEN_FIRE_SHARE: float = 0.55
 
 ## What is built round the cabin: "clearing" (the Log Cabin), "forest" (Cabin: Appalachian
-## Forest), "lake" (Cabin: Lakeside) or "ocean" (Cabin: Ocean). Each scene room's .tscn sets it.
-@export_enum("clearing", "forest", "lake", "ocean") var scene: String = "clearing"
+## Forest), "lake" (Cabin: Lakeside), "ocean" (Cabin: Ocean) or "north" (Cabin: Frozen North).
+## Each scene room's .tscn sets it.
+@export_enum("clearing", "forest", "lake", "ocean", "north") var scene: String = "clearing"
 
 @export_group("Fire")
 ## The tallest flame: width and height in metres at Fire 100%.
@@ -140,6 +148,11 @@ var _horn_player: AudioStreamPlayer       # the foghorn (a generated tone)
 var _horn_wait: float = 4.0               # seconds until the next blast while the fog is heavy
 var horn_blasts: int = 0                  # how many times the foghorn has sounded (for tests)
 var _gull_paths: Array[Vector4] = []      # per gull: centre x, centre z, radius, speed (radians a second)
+# the frozen lake (Cabin: Frozen North only)
+var _ice_player: AudioStreamPlayer        # the ice's creaks and booms (generated sounds)
+var _ice_sounds: Array[AudioStreamWAV] = []
+var _ice_wait: float = 10.0               # seconds until the ice may sound again
+var ice_calls: int = 0                    # how many times the ice has sounded (for tests)
 ## Catches the lit room once (and again when the light changes a lot) so the glass and polished
 ## surfaces reflect the warm inside instead of the sky. Detailed look only.
 var _probe: ReflectionProbe
@@ -164,6 +177,8 @@ func _ready() -> void:
 		_parts = Lake.build(self, view)
 	elif scene == "ocean":
 		_parts = Ocean.build(self, view)
+	elif scene == "north":
+		_parts = North.build(self, view)
 	else:
 		_parts = Builder.build(self, view)
 	super._ready()
@@ -188,6 +203,8 @@ func _ready() -> void:
 		_apply_season()
 	if scene == "ocean":
 		_build_coast_sounds()
+	if scene == "north":
+		_build_ice_sounds()
 	if scene == "lake":
 		_loon_player = AudioStreamPlayer.new()
 		_loon_player.name = "Loons"
@@ -250,6 +267,15 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
+	if scene == "north":
+		# the aurora, with the sky's own settings
+		var sky_at := list.size()
+		for i in list.size():
+			if String(list[i].get("key", "")) == "cabin_stars":
+				sky_at = i + 1
+				break
+		list.insert(sky_at, {"key": "cabin_aurora", "label": "Aurora", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "The northern lights: slow green and violet curtains over the frozen lake on clear nights (cloud, snow and fog hide them). 0% = none, 200% = a strong display. They move slowly, so they are fine in photosensitive-safe mode."})
 	if SEASON_TIPS.has(scene):
 		# the scene's own setting, right after Gather in
 		var at := list.size()
@@ -276,7 +302,7 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 			_hour_drawn = -100.0        # (the lake mirrors the fire's glow)
 		"cabin_time":
 			_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
-		"cabin_clouds", "cabin_stars", "photosensitive_safe", "cabin_weather", "cabin_fog", "cabin_wind":
+		"cabin_clouds", "cabin_stars", "cabin_aurora", "photosensitive_safe", "cabin_weather", "cabin_fog", "cabin_wind":
 			_hour_drawn = -100.0        # _run_clock redraws the sky next frame
 		"cabin_lamps":
 			_probe_day = -1.0           # the reflections catch the room again
@@ -295,6 +321,8 @@ func _process(delta: float) -> void:
 		_run_loons(delta)
 	if scene == "ocean":
 		_run_ocean(delta)
+	if _ice_player:
+		_run_ice(delta)
 	_run_fire()
 	_weather.fire = clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
 	_weather.run(delta)
@@ -375,6 +403,9 @@ func _recapture() -> void:
 func _build_weather() -> void:
 	_weather = Weather.new()
 	_weather.name = "Weather"
+	if scene == "north":
+		_weather.snow_floor = North.SNOW_FLOOR        # (the north is always under snow)
+		_weather.tree_snow = 1.0                       # (snow heaped on the spruces' boughs)
 	_fx.add_child(_weather)
 	var mats: Array = (_parts["surface_mats"] as Dictionary).values()
 	_weather.setup(self, "cabin_", SKY_SHADER, _parts["shelters"], _parts["eaves"], mats,
@@ -548,7 +579,7 @@ func _apply_time(env: Environment) -> void:
 		sky.set_shader_parameter("twinkle", 0.0 if bool(AppState.get_setting("photosensitive_safe")) else 1.0)
 		sky.set_shader_parameter("cloud_amount", clouds)
 		sky.set_shader_parameter("star_amount", float(AppState.get_setting("cabin_stars")))
-		sky.set_shader_parameter("aurora_amount", 0.0)
+		sky.set_shader_parameter("aurora_amount", _aurora(clouds))
 		sky.set_shader_parameter("haze", 0.35)
 		sky.set_shader_parameter("blue_ridges", 1.0 if scene == "forest" else 0.0)
 		sky.set_shader_parameter("open_sea", 1.0 if scene == "ocean" else 0.0)
@@ -557,7 +588,7 @@ func _apply_time(env: Environment) -> void:
 		env.fog_light_color = haze
 		# (thinner in the scene rooms: the forest sky's blue ridges carry the haze, and over the lake
 		# thick haze turned the island pale)
-		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 0.3 if scene == "lake" else 0.4 if scene == "ocean" else 1.0)
+		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 0.3 if scene in ["lake", "north"] else 0.4 if scene == "ocean" else 1.0)
 		# the weather has the last word on the clouds, the fog and how dull the light is
 		_weather.apply_env(env, sky, haze)
 	# the sun by day, the moon by night; cloud dims both
@@ -953,3 +984,85 @@ func _fill_surf() -> void:
 		var sample := (_surf_lp * (0.35 + 1.6 * crash) * 2.2 + _surf_lp2 * wash * 0.25) * loud
 		buf[i] = Vector2(sample, sample * 0.97)
 	_surf_pb.push_buffer(buf)
+
+
+# ── The frozen lake ──────────────────────────────────────────
+## The aurora for the sky (camp_sky.gdshader `aurora_amount`; the shader itself only shows it at
+## night, over the north = straight out over the ice): "cabin_aurora" in Cabin: Frozen North,
+## fading out as the clouds thicken, and none at all in snow, rain, a storm or fog. 0 elsewhere.
+func _aurora(clouds: float) -> float:
+	if scene != "north":
+		return 0.0
+	if _weather != null and (_weather.kind() in ["rain", "storm", "snow"] or String(AppState.get_setting("cabin_fog")) != "off"):
+		return 0.0
+	return clampf(float(AppState.get_setting("cabin_aurora")), 0.0, 2.0) * (1.0 - smoothstep(0.4, 1.3, clouds))
+
+
+## The ice's sounds (Cabin: Frozen North): a player on the Ambience bus and three generated sounds
+## (_make_ice_sound): a long singing twang, a short one and a deep boom.
+func _build_ice_sounds() -> void:
+	_ice_player = AudioStreamPlayer.new()
+	_ice_player.name = "Ice"
+	_ice_player.bus = AudioManager.AMBIENCE_BUS
+	add_child(_ice_player)
+	_ice_sounds = [_make_ice_sound(1.6, 2400.0, 160.0, 0.0), _make_ice_sound(0.7, 1800.0, 300.0, 0.0), _make_ice_sound(2.2, 900.0, 60.0, 1.0)]
+
+
+## One sound of lake ice under strain: the "pew" of a crack running through the ice (a falling
+## whistle: the high notes arrive first, as they travel fastest through ice), from `top` Hz down
+## to `bottom` Hz over `secs` seconds, with a short crackle at its start; `boom` 0..1 adds a deep
+## thud under it. As a WAV the player can play again and again.
+func _make_ice_sound(secs: float, top: float, bottom: float, boom: float) -> AudioStreamWAV:
+	var rate := 22050
+	var count := int(rate * secs)
+	var data := PackedByteArray()
+	data.resize(count * 2)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(top + bottom)
+	var phase := 0.0
+	var thud_phase := 0.0
+	var hiss := 0.0
+	for i in count:
+		var t := float(i) / float(rate)
+		var k := t / secs
+		# the pitch falls fast at first, then slowly (the shape of the real thing)
+		var f := bottom + (top - bottom) * pow(1.0 - k, 3.0)
+		phase += TAU * f / float(rate)
+		var env := smoothstep(0.0, 0.01, t) * pow(1.0 - k, 1.6)
+		var s := sin(phase) * 0.6 + sin(phase * 2.01) * 0.15
+		# the crackle at the start: filtered noise for the first tenth of a second
+		hiss += (rng.randf_range(-1.0, 1.0) - hiss) * 0.4
+		s += hiss * (1.0 - smoothstep(0.0, 0.1, t)) * 0.8
+		if boom > 0.0:
+			thud_phase += TAU * (48.0 - 18.0 * k) / float(rate)
+			s += sin(thud_phase) * boom * smoothstep(0.0, 0.04, t) * exp(-t * 2.2) * 1.4
+		data.encode_s16(i * 2, int(clampf(s * env * 0.3, -1.0, 1.0) * 32000.0))
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.stereo = false
+	wav.data = data
+	return wav
+
+
+## Every frame on the frozen lake (cheap: a countdown): now and then the ice sounds, nearer or
+## further off. Most often as the light changes (dawn and dusk, when the ice cools or warms),
+## less often by day and night.
+func _run_ice(delta: float) -> void:
+	_ice_wait -= delta
+	if _ice_wait > 0.0:
+		return
+	var changing := _day > 0.05 and _day < 0.8
+	_ice_wait = randf_range(25.0, 70.0) if changing else randf_range(60.0, 150.0)
+	ice_sound(randf())
+
+
+## One ice sound now: amount 0..1 = how near it sounds. (Tests call it too.)
+func ice_sound(amount: float) -> void:
+	if _ice_player == null:
+		return
+	_ice_player.stream = _ice_sounds[randi() % _ice_sounds.size()]
+	_ice_player.volume_db = lerpf(-20.0, -7.0, clampf(amount, 0.0, 1.0))
+	_ice_player.pitch_scale = randf_range(0.85, 1.15)
+	_ice_player.play()
+	ice_calls += 1
