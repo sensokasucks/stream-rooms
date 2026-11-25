@@ -1385,9 +1385,11 @@ Included rooms:
     Under the ceiling, between the two rows of windows (so it never blocks them), hang a square
     air duct with grilles and a fan unit, a round duct and a run of pipes.
   - **Time of day**: the windows look out on a sky the room draws itself, with a dark fantasy
-    look: a deep blue day sky with billowing clouds lit by the sun and rays fanning out from
-    it, pink and orange clouds at sunrise and sunset, and at night a moon, a dense field of
-    stars with a few that sparkle, and purple and blue nebula clouds. The
+    look: the hall stands high in the mountains. A deep blue day sky with soft, drifting
+    clouds lit by the sun and rays fanning out from it, pink and orange clouds at sunrise and
+    sunset, and at night a moon, a dense field of round stars that twinkle gently, and purple
+    and blue nebula clouds. Snow-capped mountains stand all round, a pale far range behind a
+    taller, darker one, and a sea of cloud fills the valleys below. The
     sunbeams and the barred patches of light on the floor follow the sun (pale and blue under
     the moon), and the room's own daylight dims at night so the inlays and the fire carry it.
     Room tab:
@@ -1397,7 +1399,15 @@ Included rooms:
     - **Clouds**: how much cloud drifts across the sky (0% = clear, 200% = heavy).
     - **Nebula**: how strong the night's nebula clouds are (0% = stars only).
     - **Stars**: how bright the stars are (0% = none).
+    - **Mountains**: how tall the mountains stand (0% = none, only the sea of cloud; 200% =
+      towering).
     - **Clouds** and **Nebula** at 0% are the lightest settings for a slow graphics card.
+  - **Look** (Room tab, each PC's own, not shared in a co-stream):
+    - **Detailed**: rock photos on the granite, the forge and the marble pillars that show
+      when the camera is close (pits, cracks and grain that catch the lamps and the fire), and
+      heat haze shimmering over the forge, with a little smoke.
+    - **Simple**: the plain stone and no haze, the lightest for a slow graphics card.
+    - **Auto** (the default) picks from **Graphics quality**: Low = Simple, otherwise Detailed.
     - **Light rays**: the sunbeams and floor patches (0% = off).
   - **Please stand by**: this room has no curtain. Closing the curtain (the **Curtain** button,
     its hotkey or Stream Core) fades a "please stand by" test card in over the big screen
@@ -1723,5 +1733,6 @@ Bundled third-party parts keep their own licenses, as noted next to them:
 - `rooms/route22/textures/` photo textures (sandstone, desert ground, sand, asphalt, weathered planks, rusty metal, the woody's teak and maple veneer, seat vinyl and carpet, and the other vehicles' tyre rubber, leather, ribbed sheet metal and slatted siding, made from Poly Haven photos) and `rooms/route22/models/` (boulders, stones, barrels, a dead quiver-tree trunk and dry branches cut down from Poly Haven scans): CC0. The filler ads, the rock noise and everything else in those folders are made by the project's own scripts.
 - `rooms/route22/sounds/` (the coyotes' howls): public domain recordings from Yellowstone National Park's sound library (US National Park Service), cut short; credits in that folder's README.
 - Screen shader code from godotshaders.com: CC0; window interior shader adapted from MIT-licensed code
+- Forge Hall rock photos (`rooms/forge_hall/textures/stone_*.jpg`, from Poly Haven's Rock Surface, Dark Rock 02 and Marble Rock 01): CC0, https://polyhaven.com
 
 The NDI runtime is not part of this project and is installed separately under NDI's own terms. As an additional permission under GPL-3.0 section 7, you may combine and convey this program with the NDI runtime libraries.
