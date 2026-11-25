@@ -85,7 +85,7 @@ powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1
 powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions -SkipImport
 ```
 
-It rebuilds the editor's class cache first, runs each test one at a time with `--mp-profile=test` from a fresh `settings_test.cfg` (so tests start from the defaults and **never touch the owner's live `settings.cfg`**), stops a test after a time limit, and prints a table of PASS / FAIL / script errors. Logs and screenshots go to `C:\temp\sr_tests`.
+`-Screen 0` opens the test windows on the first monitor (Redot's `--screen`; the extra copies two-process tests start themselves still open where Redot puts them). It rebuilds the editor's class cache first, runs each test one at a time with `--mp-profile=test` from a fresh `settings_test.cfg` (so tests start from the defaults and **never touch the owner's live `settings.cfg`**), stops a test after a time limit, and prints a table of PASS / FAIL / script errors. Logs and screenshots go to `C:\temp\sr_tests`.
 
 - GitHub runs a short check on every pull request (`.github/workflows/tests.yml`): `tools/lint_warnings.py` (exits 1 on findings), a headless `--import` that fails on SCRIPT ERROR / Parse Error / Failed to load script, and the fast tests in `tools/ci_tests.sh` under xvfb with `--rendering-driver opengl3` (judged by the `DONE fails=0` line, not the exit code). It doesn't replace the full set on the PC.
 - Redot console exe: `G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe`.
