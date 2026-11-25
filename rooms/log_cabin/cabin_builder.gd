@@ -225,6 +225,7 @@ const S_IRON := 15
 const S_GRASS := 16      # the ground outside (a colour photo, the campfire's)
 const S_DIRT := 17       # the trodden paths (a colour photo, the campfire's)
 const S_LITTER := 18     # the forest floor (a colour photo, the campfire's; Cabin: Appalachian Forest)
+const S_SAND := 19       # a lake beach (a colour photo, the campfire's; Cabin: Lakeside)
 ## Per kind: [texture in textures/ ("" = none; a path starting "res://" is a colour photo used
 ## as it is, see cabin_surface.gdshader `photo`), metres per copy, the world axis the
 ## picture's up follows (-1 = none, 0 = x, 1 = y, 2 = z), mapping (see cabin_surface.gdshader),
@@ -249,10 +250,11 @@ const SURFACES: Dictionary = {
 	S_GRASS: ["res://rooms/campfire/textures/ground_grass.jpg", 4.0, -1, 0, 0.0, 0.95, 0.3, 0.0],
 	S_DIRT: ["res://rooms/campfire/textures/ground_dirt.jpg", 3.0, -1, 0, 0.0, 0.95, 0.3, 0.0],
 	S_LITTER: ["res://rooms/campfire/textures/ground_forest.jpg", 3.5, -1, 0, 0.0, 0.95, 0.3, 0.0],
+	S_SAND: ["res://rooms/campfire/textures/ground_sand.jpg", 3.0, -1, 0, 0.0, 0.95, 0.3, 0.0],
 }
 ## Colour photos (the ground) are tinted by this (cabin_surface.gdshader `photo_tint`): the
 ## campfire's grass photo is a dry summer meadow, greened here to suit the forest.
-const PHOTO_TINTS: Dictionary = {S_GRASS: Color(0.6, 0.74, 0.48), S_DIRT: Color(0.82, 0.78, 0.72)}
+const PHOTO_TINTS: Dictionary = {S_GRASS: Color(0.6, 0.74, 0.48), S_DIRT: Color(0.82, 0.78, 0.72), S_SAND: Color(0.86, 0.82, 0.74)}
 ## How strongly the photo's light and dark show (cabin_surface.gdshader `grain_strength`; 1 = as
 ## in the photo). The stone photo's pale mortar was harsh in full sun.
 const GRAIN_STRENGTH: Dictionary = {S_STONE: 0.65}

@@ -1508,13 +1508,13 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** below puts it in the woods): a cozy log cabin with a tall
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** and **Cabin: Lakeside** below put it in the woods and by a lake): a cozy log cabin with a tall
   great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
   screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
     a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
-    **Cabin: Appalachian Forest**) are the same cabin somewhere else.
+    **Cabin: Appalachian Forest** and **Cabin: Lakeside**) are the same cabin somewhere else.
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
     and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
@@ -1598,6 +1598,28 @@ Included rooms:
   - Built in code when the room loads (`rooms/log_cabin/cabin_forest.gd`, room files in
     `rooms/cabin_forest/`). The trees, ferns, grass, forest floor and creek water are the
     Lakeside Campfire's.
+- **Cabin: Lakeside**: the Log Cabin (everything above: seats, cameras, presenters, fire, lamps,
+  Gather in, time of day, weather) on the shore of a calm lake.
+  - A lawn runs down from the deck to a sandy beach. The shore curves away on both sides as two
+    wooded arms, and between them the lake opens out to the far shore and the mountains, which
+    the water mirrors. A small wooded island sits out on the lake.
+  - A wooden dock runs out from the beach, with two chairs at its end and a ladder into the
+    water; a red canoe is pulled up on the beach beside it. Reeds and cattails grow along the
+    shore, lily pads (some in flower) float in the shallows, and granite boulders sit on the
+    beach and in the woods.
+  - Tall white pines, firs and birches (more birches by the water), with a forest of pines and
+    firs over the far shores.
+  - The water glitters under the sun and the moon, turns grey under rain clouds, catches the
+    warm glow of the cabin's windows at night, and gets choppier as the **Wind** rises.
+  - Loons call across the water now and then: mostly at dawn, dusk and at night, rarely by day,
+    and never in rain, a storm or snow. They play on the room ambience, so **Room ambience**
+    on the **Sound** tab sets how loud they are. The recordings are public domain, from
+    Yellowstone National Park's sound library (see `rooms/log_cabin/sounds/README.md`).
+  - Room tab, on top of the Log Cabin's settings: **Season**: **Summer** (green, and fireflies
+    on clear summer nights) or **Autumn** (the birches turn gold and the pine needles go
+    brown; the pines and firs stay green). Shared in a co-stream.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_lake.gd`, room files in
+    `rooms/cabin_lake/`). The trees, grass, sand and lake water are the Lakeside Campfire's.
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**

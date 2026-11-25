@@ -36,25 +36,37 @@ extends Room
 ##     Appalachian Forest (rooms/cabin_forest/, cabin_forest.gd: the valley, the creek, the
 ##     hardwoods and hemlocks; the sky draws layered blue ridges). The forest adds Season
 ##     ("cabin_season" summer / autumn: the leaves, the forest floor and the far treetops turn)
-##     and fireflies on clear summer nights.
+##     and fireflies on clear summer nights. "lake" = Cabin: Lakeside (rooms/cabin_lake/,
+##     cabin_lake.gd: a lawn down to a beach and a lake, pines, firs and birches, a dock, a canoe,
+##     reeds and lily pads; the sky keeps its own mountains, which the lake mirrors). The lake
+##     has Season and fireflies too, and loons calling now and then (_run_loons).
 ## All cabin_ settings but cabin_detail are shared in a co-stream (NetSession.SHARED_CABIN, with the
 ## "room" group).
 
 const Builder := preload("res://rooms/log_cabin/cabin_builder.gd")
 const Forest := preload("res://rooms/log_cabin/cabin_forest.gd")
+const Lake := preload("res://rooms/log_cabin/cabin_lake.gd")
+## The loons' calls (public domain, Yellowstone National Park's sound library; sounds/README.md).
+const LOONS: Array[AudioStream] = [preload("res://rooms/log_cabin/sounds/loon_1.ogg"),
+	preload("res://rooms/log_cabin/sounds/loon_2.ogg"), preload("res://rooms/log_cabin/sounds/loon_3.ogg")]
 const FIRE_SHADER := preload("res://rooms/forge_hall/fire.gdshader")
 ## The flames of each fire: [metres sideways, metres out into the room (+) / into the firebox (-),
 ## size as a share of flame_size], in the fire marker's own axes (the den's fire faces +X).
 const FIRE_FLAMES: Array = [[0.0, 0.0, 1.0], [-0.22, 0.05, 0.75], [0.24, 0.04, 0.7], [-0.1, -0.08, 0.6], [0.12, -0.06, 0.55]]
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
+## The Season setting's tooltip in each scene room.
+const SEASON_TIPS: Dictionary = {
+	"forest": "The forest's season. Summer: green leaves, and fireflies on clear nights. Autumn: the oaks, maples, poplars and birches turn orange, red and gold, the forest floor turns brown and the far slopes go copper. The hemlocks stay green.",
+	"lake": "The lake's season. Summer: green leaves, and fireflies on clear nights. Autumn: the birches turn gold and the pine needles go brown. The pines and firs stay green.",
+}
 const Weather := preload("res://rooms/weather/room_weather.gd")
 const CAMP_TEX := "res://rooms/campfire/textures/"
 ## The den's fire next to the big one: share of the light's energy and range.
 const DEN_FIRE_SHARE: float = 0.55
 
-## What is built round the cabin: "clearing" (the Log Cabin) or "forest" (Cabin: Appalachian
-## Forest). Each scene room's .tscn sets it.
-@export_enum("clearing", "forest") var scene: String = "clearing"
+## What is built round the cabin: "clearing" (the Log Cabin), "forest" (Cabin: Appalachian
+## Forest) or "lake" (Cabin: Lakeside). Each scene room's .tscn sets it.
+@export_enum("clearing", "forest", "lake") var scene: String = "clearing"
 
 @export_group("Fire")
 ## The tallest flame: width and height in metres at Fire 100%.
@@ -99,7 +111,9 @@ var _fire_lights: Array[OmniLight3D] = []   # one per fire, in the order of _par
 var _fire_strength: Array[float] = []       # each light's share of fire_light_energy
 var _smoke: Array[CPUParticles3D] = []   # one per chimney (Builder's smoke_spots)
 var _smoke_mat: StandardMaterial3D        # the puffs' material, tinted by the daylight
-var _fireflies: CPUParticles3D            # the forest's fireflies on clear summer nights (null elsewhere)
+var _fireflies: CPUParticles3D            # the scene's fireflies on clear summer nights (null in the clearing)
+var _loon_player: AudioStreamPlayer       # the lake's loons (null in the other scenes)
+var _loon_wait: float = 8.0               # seconds until the loons may call again
 ## Catches the lit room once (and again when the light changes a lot) so the glass and polished
 ## surfaces reflect the warm inside instead of the sky. Detailed look only.
 var _probe: ReflectionProbe
@@ -120,6 +134,8 @@ func _ready() -> void:
 	var view := String(AppState.get_setting("cabin_view"))
 	if scene == "forest":
 		_parts = Forest.build(self, view)
+	elif scene == "lake":
+		_parts = Lake.build(self, view)
 	else:
 		_parts = Builder.build(self, view)
 	super._ready()
@@ -139,9 +155,14 @@ func _ready() -> void:
 	_build_smoke()
 	_build_probe()
 	_build_weather()
-	if scene == "forest":
+	if scene != "clearing":
 		_build_fireflies()
 		_apply_season()
+	if scene == "lake":
+		_loon_player = AudioStreamPlayer.new()
+		_loon_player.name = "Loons"
+		_loon_player.bus = AudioManager.AMBIENCE_BUS
+		add_child(_loon_player)
 	_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
 	EventBus.setting_changed.connect(_on_cabin_setting_changed)
 	_apply_detail()
@@ -199,8 +220,8 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
-	if scene == "forest":
-		# the forest's own setting, right after Gather in
+	if scene != "clearing":
+		# the scene's own setting, right after Gather in
 		var at := list.size()
 		for i in list.size():
 			if String(list[i].get("heading", "")) == "Time of day":
@@ -208,7 +229,7 @@ func get_controls() -> Array[Dictionary]:
 				break
 		list.insert(at, {"key": "cabin_season", "label": "Season", "type": "option",
 			"options": [["summer", "Summer"], ["autumn", "Autumn"]],
-			"tooltip": "The forest's season. Summer: green leaves, and fireflies on clear nights. Autumn: the oaks, maples, poplars and birches turn orange, red and gold, the forest floor turns brown and the far slopes go copper. The hemlocks stay green."})
+			"tooltip": SEASON_TIPS.get(scene, "")})
 	return list
 
 
@@ -222,12 +243,14 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 	match key:
 		"cabin_fire":
 			_apply_fire()
+			_hour_drawn = -100.0        # (the lake mirrors the fire's glow)
 		"cabin_time":
 			_hour = fposmod(float(AppState.get_setting("cabin_time")), 24.0)
 		"cabin_clouds", "cabin_stars", "photosensitive_safe", "cabin_weather", "cabin_fog", "cabin_wind":
 			_hour_drawn = -100.0        # _run_clock redraws the sky next frame
 		"cabin_lamps":
 			_probe_day = -1.0           # the reflections catch the room again
+			_hour_drawn = -100.0        # (and the lake mirrors the lit windows)
 		"cabin_season":
 			_apply_season()
 			_hour_drawn = -100.0        # (the fireflies follow the season)
@@ -238,6 +261,8 @@ func _on_cabin_setting_changed(key: String, _value: Variant) -> void:
 func _process(delta: float) -> void:
 	super._process(delta)
 	_time += delta
+	if _loon_player:
+		_run_loons(delta)
 	_run_fire()
 	_weather.fire = clampf(float(AppState.get_setting("cabin_fire")), 0.0, 2.0)
 	_weather.run(delta)
@@ -336,7 +361,7 @@ func _lean_smoke() -> void:
 
 
 # ── The forest: season and fireflies ─────────────────────────
-## Season ("cabin_season", Cabin: Appalachian Forest only): in autumn the leaf cards turn
+## Season ("cabin_season", the scene rooms): in autumn the leaf cards turn
 ## (campfire_trees.gd's foliage shader `autumn`, with the campfire's colour ranges), the forest
 ## floor photo goes browner, the far treetops coloured into the land go copper and the far
 ## low-poly round trees turn orange, gold and red. The hemlocks stay green.
@@ -497,8 +522,9 @@ func _apply_time(env: Environment) -> void:
 		env.ambient_light_color = night_ambient.lerp(day_ambient, _day).lerp(Color(0.66, 0.46, 0.42), dusk * 0.35)
 		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, _day)
 		env.fog_light_color = haze
-		# (thinner in the forest room: there the sky's blue ridges carry the distance haze)
-		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 1.0)
+		# (thinner in the scene rooms: the forest sky's blue ridges carry the haze, and over the lake
+		# thick haze turned the island pale)
+		env.fog_density = 0.003 * lerpf(1.0, 0.6, _day) * (0.45 if scene == "forest" else 0.3 if scene == "lake" else 1.0)
 		# the weather has the last word on the clouds, the fog and how dull the light is
 		_weather.apply_env(env, sky, haze)
 	# the sun by day, the moon by night; cloud dims both
@@ -524,6 +550,8 @@ func _apply_time(env: Environment) -> void:
 		water.set_shader_parameter("sky_horizon", hor)
 		water.set_shader_parameter("light_dir", world_dir)
 		water.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b))
+	if _parts.has("lake_mat"):
+		_apply_lake(hor, light_col * (energy / maxf(sun_energy, 0.01)) * (2.2 if sun.y > 0.02 else 7.0), world_dir)
 	if _fireflies:
 		# out on summer nights while it is dry (they wait out rain and snow)
 		var tonight := String(AppState.get_setting("cabin_season")) == "summer" and _day < 0.35 \
@@ -688,3 +716,52 @@ func get_fire_lights() -> Array[OmniLight3D]:
 ## The sun / moon lamp (for tests).
 func get_sun() -> DirectionalLight3D:
 	return _sun
+
+
+# ── The lake ─────────────────────────────────────────────────
+## The lake's water (Cabin: Lakeside; the Lakeside Campfire's camp_water.gdshader, unshaded):
+## the sky colours to mirror, the far shore's colour, the glitter path under the sun or the moon,
+## the cabin's warm windows streaking across it at night, and the waves, which grow with the wind
+## (a storm whips it up). Called by _apply_time whenever the sky is redrawn (the hour moved, or
+## the weather or the lamps changed).
+func _apply_lake(hor: Color, glitter: Color, light_dir: Vector3) -> void:
+	var lake := _parts["lake_mat"] as ShaderMaterial
+	var dull := _weather.sun_share() if _weather else 1.0         # 1 on a clear day, low under rain clouds
+	var top := Color(0.01, 0.015, 0.04).lerp(Color(0.12, 0.3, 0.7), _day).lerp(hor, 1.0 - dull)
+	lake.set_shader_parameter("sky_top", top)
+	lake.set_shader_parameter("sky_horizon", hor)
+	lake.set_shader_parameter("shore_color", Color(0.03, 0.07, 0.05).lerp(Color(0.003, 0.005, 0.007), 1.0 - _day).lerp(hor, 0.3 * (1.0 - dull)))
+	lake.set_shader_parameter("deep_color", Color(0.012, 0.05, 0.065) * (0.08 + 0.92 * _day))
+	lake.set_shader_parameter("light_dir", light_dir)
+	lake.set_shader_parameter("light_color", Vector3(glitter.r, glitter.g, glitter.b) * dull)
+	# the cabin's glass glows warm at night: a streak on the water from the middle of the gable
+	var warm := float(AppState.get_setting("cabin_fire")) * 0.5 + (0.6 if bool(AppState.get_setting("cabin_lamps")) else 0.0)
+	lake.set_shader_parameter("fire_pos", global_transform * Vector3(0.0, 2.5, -1.0))
+	lake.set_shader_parameter("fire_color", Vector3(1.0, 0.55, 0.25) * warm * (1.0 - 0.85 * _day))
+	var w := _weather.wind() if _weather else 0.4
+	lake.set_shader_parameter("wave", 0.6 + 0.9 * w)
+	lake.set_shader_parameter("flow", Vector2(0.03, -0.02) * (1.0 + 2.0 * w))
+
+
+## The loons (Cabin: Lakeside): every so often one of the three recordings plays on the Ambience
+## bus, nearer or further off. They call most at dawn, dusk and through the night, now and then
+## by day, and keep quiet in rain, a storm or snow. Every frame (cheap: a countdown).
+func _run_loons(delta: float) -> void:
+	_loon_wait -= delta
+	if _loon_wait > 0.0 or _loon_player.playing:
+		return
+	var quiet := _weather != null and _weather.kind() in ["rain", "storm", "snow"]
+	# (dawn, dusk and night: _day below 0.6; a waiting time of about one to three minutes)
+	var lively := _day < 0.6
+	_loon_wait = randf_range(50.0, 110.0) if lively else randf_range(120.0, 260.0)
+	if not quiet:
+		call_loon(randf())
+
+
+## One loon call now: amount 0..1 = how near it sounds. (Tests call it too.)
+func call_loon(amount: float) -> void:
+	if _loon_player == null:
+		return
+	_loon_player.stream = LOONS[randi() % LOONS.size()]
+	_loon_player.volume_db = linear_to_db(lerpf(0.25, 0.9, clampf(amount, 0.0, 1.0)))
+	_loon_player.play()
