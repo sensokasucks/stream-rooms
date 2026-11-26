@@ -34,6 +34,8 @@ const Car := preload("res://rooms/route22/r22_car.gd")
 ## This room's id (rooms/route22_cruise/room_info.tres) and the Drive-In's: the Scene switch.
 const MY_ID := "route22_cruise"
 const OTHER_ID := "route22"
+## The green sister room (rooms/route81): the Scenery switch.
+const GREEN_ID := "route81"
 ## The woody's place: its middle, in the right-hand lane.
 const CAR_AT := Vector3(1.8, 0.0, 0.0)
 ## Where the riders sit (the bottom middle of each picture), car space, metres: on the two front
@@ -92,6 +94,9 @@ func _ready() -> void:
 	# the Scene switch shows where we are
 	if String(AppState.get_setting("r22_scene")) != "cruise":
 		AppState.set_setting("r22_scene", "cruise")
+	# ... and so does the Scenery switch
+	if String(AppState.get_setting("r22_land")) != "desert":
+		AppState.set_setting("r22_land", "desert")
 
 
 func _exit_tree() -> void:
@@ -110,6 +115,9 @@ func _on_r22_setting_changed(key: String, value: Variant) -> void:
 	# the Scene switch: off to the Drive-In (only while this room is the one showing)
 	if key == "r22_scene" and String(value) == "drivein" and not _retired and String(AppState.get_setting("room_id")) == MY_ID:
 		AppState.request_room(OTHER_ID)
+	# the Scenery switch: off to Route 81's green mountains
+	if key == "r22_land" and String(value) == "route81" and not _retired and String(AppState.get_setting("room_id")) == MY_ID:
+		AppState.request_room(GREEN_ID)
 
 
 func _process(delta: float) -> void:
@@ -208,6 +216,7 @@ func get_desert() -> Desert:
 func get_controls() -> Array[Dictionary]:
 	var out: Array[Dictionary] = [{"heading": "Route 22"}]
 	out.append(scene_control())
+	out.append(land_control())
 	out.append_array([
 		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d km/h", "zero": "Parked",
 			"tooltip": "How fast the woody drives. 50 km/h is an easy cruise; 0 parks it at the roadside (the desert stands still)."},
@@ -250,6 +259,12 @@ func get_controls() -> Array[Dictionary]:
 static func scene_control() -> Dictionary:
 	return {"key": "r22_scene", "label": "Scene", "type": "option", "options": [["drivein", "Drive-in lot (with the audience)"], ["cruise", "Cruise (just chatting, in the car)"]],
 		"tooltip": "Route 22 has two scenes in the same desert: the drive-in lot, with the big screen and the chat audience in lawn chairs, convertibles and pickup beds, and the cruise, where co-stream guests ride in the red woody down the endless highway. Switching loads the other one."}
+
+
+## The Scenery switch, the same in the two Cruise rooms (this one and rooms/route81).
+static func land_control() -> Dictionary:
+	return {"key": "r22_land", "label": "Scenery", "type": "option", "options": [["desert", "Route 22 (desert highway)"], ["route81", "Route 81 (Pennsylvania mountains)"]],
+		"tooltip": "Where the cruise drives. Route 22: the two-lane desert highway with red rock, roadside stops and billboards. Route 81: a divided interstate through green mountains, with forest, rock cuts, valley overlooks and tunnels. Switching loads the other one; the car, the seats and the cameras stay the same."}
 
 
 ## The hour, the weather and the roadside life: the same controls in both Route 22 rooms.

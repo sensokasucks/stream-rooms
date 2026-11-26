@@ -79,6 +79,22 @@ var wet: float = 0.0
 var dust: float = 0.0
 var storm: float = 0.0
 
+## ── Hooks for Route 81 (rooms/route81/route81_room.gd; the desert rooms leave them alone) ──
+## The road's compass turn, radians (r81_trip.gd: how far the highway has swung round since the
+## trip began; positive = turned right). The sun and the moon swing the other way with it, like
+## the far ridges do, so a curve really changes where the light comes from.
+var heading: float = 0.0
+## 0..1 = how deep inside a tunnel the car is (r81_trip.gd): takes the sky's ambient light away.
+var cover: float = 0.0
+## True on Route 81: green country. No dust storm (that weather counts as Clear) and no blowing
+## sand, blue-grey haze instead of the desert's orange, and the sky without mesas (r22_sky.gdshader
+## `land`). The room sets it before setup().
+var green_land: bool = false
+## Multiplies every weather's fog density (Route 81: thinner, so the valley shows).
+var fog_scale: float = 1.0
+
+var _heading_drawn: float = 0.0   # the heading and cover the sky was last drawn with
+var _cover_drawn: float = 0.0
 var _room: Node3D
 var _kit: Dictionary
 var _sun: DirectionalLight3D
@@ -155,8 +171,7 @@ func setup(room: Node3D, kit: Dictionary, centre: Vector3, heat: Array[Transform
 		mi.visible = false
 		_heat_sheets.append(mi)
 	_hour = fposmod(float(AppState.get_setting("r22_time")), 24.0)
-	var w: Dictionary = WEATHER.get(String(AppState.get_setting("r22_weather")), WEATHER["clouddeck"])
-	_snap_weather(w)
+	_snap_weather(_weather_now())
 	if sound and room.has_method("_start_generated_ambience"):
 		_amb = room.call("_start_generated_ambience", MIX_RATE, 0.3)
 		_howl_player = AudioStreamPlayer.new()
@@ -269,15 +284,18 @@ func tick(delta: float, travel: float, bend: float, hill: float, speed: float) -
 	_cloud_drift = Vector2(fposmod(_cloud_drift.x, TRAVEL_WRAP), fposmod(_cloud_drift.y, TRAVEL_WRAP))
 	var env := get_world_3d().environment if is_inside_tree() else null
 	var env_id := env.get_instance_id() if env else 0
-	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn or _flash > 0.0 or _changing:
+	var turned := absf(heading - _heading_drawn) > 0.002 or absf(cover - _cover_drawn) > 0.01
+	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn or _flash > 0.0 or _changing or turned:
 		_hour_drawn = _hour
+		_heading_drawn = heading
+		_cover_drawn = cover
 		_env_drawn = env_id
 		_apply_sky(env)
 	_apply_shared(travel, bend, hill, wind)
 	_rain.emitting = storm > 0.35
 	_rain.visible = storm > 0.05
 	_rain.gravity = Vector3(wind * 4.0, -30.0, speed * 0.8)
-	_sand.emitting = dust > 0.2 or wind > 0.75
+	_sand.emitting = (dust > 0.2 or wind > 0.75) and not green_land
 	_sand.visible = _sand.emitting or _sand.visible and dust > 0.05
 	_sand.gravity = Vector3(6.0 + 14.0 * wind, 0.2, speed)
 	_fill_ambience(wind)
@@ -291,7 +309,7 @@ var _changing: bool = false       # the weather is still easing (redraw the sky 
 ## The weather's numbers move towards the setting's targets: a few seconds for cloud and dust;
 ## rain soaks the ground in about 20 s and it dries in about two minutes.
 func _ease_weather(delta: float) -> void:
-	var w: Dictionary = WEATHER.get(String(AppState.get_setting("r22_weather")), WEATHER["clouddeck"])
+	var w := _weather_now()
 	var clouds_to := float(w["clouds"]) * clampf(float(AppState.get_setting("r22_clouds")), 0.0, 2.0)
 	var before := _clouds + dust + storm + _haze + _rainbow + _fog * 100.0 + _sun_through
 	_clouds = move_toward(_clouds, clouds_to, delta * 0.3)
@@ -304,6 +322,15 @@ func _ease_weather(delta: float) -> void:
 	var wet_to := float(w["wet"])
 	wet = move_toward(wet, wet_to, delta * (0.05 if wet_to > wet else 0.008))
 	_changing = absf(before - (_clouds + dust + storm + _haze + _rainbow + _fog * 100.0 + _sun_through)) > 0.00001
+
+
+## The chosen weather's targets (r22_weather). In green country (Route 81) a dust storm counts
+## as Clear: the setting is shared with the desert rooms, so it can still say "dust".
+func _weather_now() -> Dictionary:
+	var choice := String(AppState.get_setting("r22_weather"))
+	if green_land and choice == "dust":
+		choice = "clear"
+	return WEATHER.get(choice, WEATHER["clouddeck"])
 
 
 ## Jumps straight to a weather (when the room loads).
@@ -363,6 +390,8 @@ func _apply_sky(env: Environment) -> void:
 	night = 1.0 - smoothstep(0.05, 0.45, day)
 	var dusk := (1.0 - smoothstep(0.0, 0.4, absf(sun.y))) * smoothstep(-0.3, -0.05, sun.y)
 	var turn := _room.global_basis.orthonormalized() if _room else Basis.IDENTITY
+	# Route 81: the road has turned, so the whole sky's lights have swung round the other way
+	turn = Basis(Vector3.UP, heading) * turn
 	var flash := _flash_shown()
 	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.62, 0.66, 0.78), day).lerp(Color(0.95, 0.55, 0.35), dusk * 0.6)
 	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
@@ -381,19 +410,21 @@ func _apply_sky(env: Environment) -> void:
 		sky.set_shader_parameter("rainbow", _rainbow * smoothstep(0.02, 0.15, sun.y) * smoothstep(0.75, 0.45, sun.y))
 		sky.set_shader_parameter("dust", dust)
 		sky.set_shader_parameter("haze", clampf(_haze, 0.0, 1.0))
+		sky.set_shader_parameter("land", 1.0 if green_land else 0.0)
 		var amb := night_ambient.lerp(day_ambient, day).lerp(Color(0.75, 0.48, 0.42), dusk * 0.35)
 		amb = amb.lerp(Color(0.6, 0.42, 0.3), dust * 0.6).lerp(Color(0.45, 0.48, 0.55), storm * 0.5)
 		env.ambient_light_color = amb
-		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, day) * (1.0 - 0.3 * storm) + flash * 0.6
+		# (inside a Route 81 tunnel almost none of the sky's light is left)
+		env.ambient_light_energy = (lerpf(night_ambient_energy, day_ambient_energy, day) * (1.0 - 0.3 * storm) + flash * 0.6) * (1.0 - 0.8 * cover)
 		var fog_col := hor.lerp(Color(0.62, 0.4, 0.25) * (0.06 + 0.94 * day), dust)
 		env.fog_light_color = fog_col.lerp(Color(0.5, 0.52, 0.6) * (0.05 + 0.95 * day), storm * 0.5)
-		env.fog_density = _fog
+		env.fog_density = _fog * fog_scale
 		# the volumetric haze (when the graphics settings have it on): sunbeams through the rock
 		# gaps on Detailed, thick in a dust storm
 		if env.volumetric_fog_enabled:
 			var vol := 0.0 if detail_level() == "low" else 0.004 + 0.03 * dust + 0.008 * storm + 0.004 * dusk
 			env.volumetric_fog_density = vol
-			env.volumetric_fog_albedo = Color(0.9, 0.7, 0.55).lerp(Color(0.85, 0.6, 0.4), dust)
+			env.volumetric_fog_albedo = Color(0.82, 0.86, 0.9) if green_land else Color(0.9, 0.7, 0.55).lerp(Color(0.85, 0.6, 0.4), dust)
 	# the sun by day, the moon by night
 	var light_dir := sun
 	var light_col := Color(1.0, 0.52, 0.25).lerp(Color(1.0, 0.95, 0.86), smoothstep(0.05, 0.45, sun.y))
@@ -421,6 +452,15 @@ func _apply_sky(env: Environment) -> void:
 		m.set_shader_parameter("sky_horizon", Vector3(hor.r, hor.g, hor.b) * (0.6 + 0.4 * day))
 		m.set_shader_parameter("heat", heat)
 		m.set_shader_parameter("night", night)
+	# Route 81's far ridges (r81_backdrop.gdshader) light and haze themselves: tell them the sun
+	if _kit.has("backdrop"):
+		var back := _kit["backdrop"] as ShaderMaterial
+		back.set_shader_parameter("sun_dir", turn * light_dir)
+		back.set_shader_parameter("day", maxf(day, 0.06 * smoothstep(0.05, 0.25, moon.y)))
+		back.set_shader_parameter("sky_horizon", Vector3(hor.r, hor.g, hor.b))
+		# its haze thickens with the weather's fog, a little slower (they are mountains: they
+		# must still show at 10 km on a clear day)
+		back.set_shader_parameter("haze_length", 1.6 / maxf(_fog * fog_scale, 0.00005))
 
 
 ## Writes the shared uniforms to every Route 22 material (r22_common.gdshaderinc) and the night

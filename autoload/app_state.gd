@@ -116,6 +116,11 @@ const BASE_DEFAULTS: Dictionary = {
 	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
 	# Route 22 (rooms/route22 Drive-In, rooms/route22_cruise Cruise): one desert, two scenes.
 	"r22_scene": "drivein",      # Scene switch: drivein | cruise (each room sets it to its own on load; changing it loads the other)
+	"r22_land": "desert",        # Cruise Scenery switch: desert (rooms/route22_cruise) | route81 (rooms/route81); each room sets it to its own on load, changing it loads the other
+	"r81_tunnels": "medium",     # Route 81: how often a tunnel comes: short | medium | long | never (r81_trip.gd PERIODS)
+	"r81_views": 0.6,            # Route 81: how often a side opens into an overlook, 0..1 (r81_trip.gd boundary)
+	"r81_forest": 100.0,         # Route 81: share of the roadside trees drawn on this PC, 0..100 (r81_trip.gd _apply_forest)
+	"r81_season": "summer",      # Route 81: summer | fall (leaf colours, r81_common.gdshaderinc)
 	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
 	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
 	"r22_weather": "clouddeck",  # clear | clouddeck | dust | storm | afterrain (r22_desert.gd WEATHER)

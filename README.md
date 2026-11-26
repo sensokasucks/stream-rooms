@@ -1781,6 +1781,42 @@ Included rooms:
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
     with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
     convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
+- **Route 81 Cruise**: the Cruise's green sister, a work in progress (the first of four build
+  rounds is in: the road, the land and the tunnels). The same red woody and the same four
+  seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
+  median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
+  away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. The
+  **Scenery** choice at the top of the Room tab of either Cruise jumps between **Route 22
+  (desert highway)** and **Route 81 (Pennsylvania mountains)**. All place names on the green
+  signs and the tunnels are made up.
+  - **Speed**, **Curves and hills** and **How busy** are the same sliders as the desert
+    Cruise's. Here the curves are stronger and really turn the car: the far ridges and the sun
+    swing round as the highway bends. The road also climbs and falls between about 40 and
+    240 m above the valley floor, so the same overlook is a gentle field one time and a long
+    fall another. Traffic runs on the other road across the median, and now and then something
+    passes you in the left lane; a lot of it is trucks.
+  - **Tunnels**: **Often** (about every 4 km), **Now and then** (7 km), **Seldom** (13 km) or
+    **Never**. Each tunnel is 400 m long with orange lamps, and the country on the far side is
+    different (another height, another stretch of the ridges). The woody's headlights come on
+    inside. In photosensitive-safe mode the lamps' light goes by evenly instead of in pools.
+  - **How often views open up**: how much of the road has an overlook on one side rather than
+    woods or rock (0% = **Never**).
+  - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
+    lower it on a slow PC). **Season**: **Summer (green)** or **Fall colours**.
+  - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Thunderstorm**,
+    **After rain**; the desert's dust storm counts as Clear here), **Clouds**, **Stars**, **Heat
+    shimmer**, **Wind** and **Set detail** work as on Route 22 and share its settings.
+  - Cameras and reaction targets: as on the Route 22 Cruise.
+  - In a co-stream the road (tunnels, views, season) is the host's, and the guests' road keeps
+    pace with the host's. **Forest density** and **Set detail** are each PC's own.
+  - Still to come: more kinds of country behind the tunnels (farm valley, river crossing, coal
+    plateau, city valley, Endless Mountains), streetlights, radio towers, power lines, gas
+    stations, towns, billboards with their own picture folder, and more weather.
+  - Source: built in code in `rooms/route81/` on top of Route 22's parts (`r81_land.gd` the
+    land, trees and far ridges, `r81_pieces.gd` rails, tunnels and signs, `r81_trip.gd` which
+    land comes where, `r81_traffic.gd`). The rock, grass, forest floor, asphalt and concrete
+    photos come from [Poly Haven](https://polyhaven.com) (CC0) through
+    `rooms/route81/textures/make_textures.py`. Test: `test_route81`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

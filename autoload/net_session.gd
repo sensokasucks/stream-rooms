@@ -99,6 +99,10 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	"r22_time", "r22_day_minutes", "r22_weather", "r22_clouds", "r22_stars", "r22_heat", "r22_wind",
 	"r22_speed", "r22_curves", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
 	"r22_bb_classic", "r22_bb_monopole", "r22_bb_wooden", "r22_bb_rooftop", "r22_bb_neon", "r22_bb_trailer",
+	# Route 81 (rooms/route81) drives on the r22_ keys above; its own: how the road is made up
+	# (every PC must build the same road) and the season. Not shared: r81_forest (each PC's own
+	# tree count), r22_land (each PC loads rooms itself). Its distance driven: room event "r81_travel".
+	"r81_tunnels", "r81_views", "r81_season",
 	"r22_scenery", "r22_plants", "r22_animals", "r22_tumbleweeds", "r22_dust_devils", "r22_birds", "r22_critters", "r22_coyotes", "r22_neon", "r22_marquee", "r22_lot_lights",
 	# the Drive-In's hour, sky and parking spaces (rooms/drive_in/drive_in_room.gd; the spaces
 	# are its seats, so everyone needs the same number); its Set detail and fireflies stay each
@@ -408,7 +412,7 @@ func is_locked(what: String) -> bool:
 
 ## Which share group a setting key (or "room" / "curtain") belongs to; "" = not shared at all.
 func _group_of(what: String) -> String:
-	if what == "room" or what == "screen_peer" or what == "screen_tab_peer" or ((what.begins_with("camp_") or what.begins_with("r22_") or what.begins_with("drive_")) and _shared.has(what)):
+	if what == "room" or what == "screen_peer" or what == "screen_tab_peer" or ((what.begins_with("camp_") or what.begins_with("r22_") or what.begins_with("r81_") or what.begins_with("drive_")) and _shared.has(what)):
 		return "room"
 	if what == "curtain" or what == "house_lights" or what.begins_with("curtain_"):
 		return "curtain"
