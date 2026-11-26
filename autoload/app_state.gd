@@ -121,6 +121,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"r81_views": 0.6,            # Route 81: how often a side opens into an overlook, 0..1 (r81_trip.gd boundary)
 	"r81_forest": 100.0,         # Route 81: share of the roadside trees drawn on this PC, 0..100 (r81_trip.gd _apply_forest)
 	"r81_season": "summer",      # Route 81: summer | fall (leaf colours, r81_common.gdshaderinc)
+	"r81_country": "tour",       # Route 81: the country by the road: tour (each in turn, a new one after every tunnel) | ridge | farm | river | endless (r81_trip.gd country)
 	"r81_lights": "sodium",      # Route 81: streetlights sodium | led | mixed | off (r81_trip.gd _apply)
 	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
 	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still

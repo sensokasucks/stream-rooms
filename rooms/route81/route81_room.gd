@@ -218,6 +218,8 @@ func get_controls() -> Array[Dictionary]:
 		{"heading": "The road"},
 		{"key": "r81_tunnels", "label": "Tunnels", "type": "option", "options": [["short", "Often (about every 4 km)"], ["medium", "Now and then (about every 7 km)"], ["long", "Seldom (about every 13 km)"], ["never", "Never"]],
 			"tooltip": "How often the highway goes through a mountain. Each tunnel is 400 m long, and the country on its far side is different: another height, another stretch of the ridges."},
+		{"key": "r81_country", "label": "Country", "type": "option", "options": [["tour", "The tour (changes after every tunnel)"], ["ridge", "Ridge and gaps"], ["farm", "Farm valley"], ["river", "River crossing"], ["endless", "Endless Mountains"]],
+			"tooltip": "What kind of country the highway runs through. The tour: each kind in turn, a new one on the far side of every tunnel. Ridge and gaps: woods, rock cuts and overlooks. Farm valley: crop fields, farms, small towns and gas stations. River crossing: a long bridge over a wide river. Endless Mountains: the highest road, with the widest views."},
 		{"key": "r81_views", "label": "How often views open up", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0, "zero": "Never",
 			"tooltip": "How much of the road has an overlook on one side (a guardrail and the ground falling away to the valley) rather than woods or a rock cut. 100% = about half of every side; 0% = woods and rock all the way."},
 		{"key": "r81_forest", "label": "Forest density", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d%%", "zero": "No trees",

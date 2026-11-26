@@ -11,8 +11,8 @@ extends Node3D
 ## "r81_travel") and guests ease onto it.
 ##
 ## ── What a place looks like (boundary(), part_at()) ──
-## Each side of the highway has an edge profile (r81_land.gd KINDS: woods, cut, drop, mount) at
-## every boundary between two places. A side keeps its profile for eight boundaries (640 m,
+## Each side of the highway has an edge profile (r81_land.gd KINDS: woods, cut, drop, mount,
+## field, lawn, lot, water) at every boundary between two places. A side keeps its profile for eight boundaries (640 m,
 ## long enough to take a view in), then rolls
 ## again: an overlook ("drop") with a chance set by the "How often views open up" slider
 ## (r81_views), a rock cut, or woods. The right side rolls at boundaries 0, 8, 16.. and the left at
@@ -21,7 +21,20 @@ extends Node3D
 ## Tunnels come every `period()` places (the Tunnels choice, r81_tunnels): the road runs into a
 ## rock cut, the mountain closes over it for 400 m, and it comes out the far side in a new
 ## region (see `region`): another stretch of the far view, another height. That is how this room
-## will change between very different kinds of country in the later regions.
+## changes between very different kinds of country.
+##
+## ── Countries (country(), region_of()) ──
+## Every region is one kind of country (COUNTRIES), in turn, or always the one the Country
+## choice names (r81_country):
+##   ridge    woods, rock cuts and overlooks high on a ridge (round 1's road),
+##   farm     low in a valley: crop fields with farms (r81_places.gd), small towns, gas stations,
+##   river    low down too; halfway through, the road crosses a wide river on a long bridge
+##            (crossing(): both sides are "water" for eight places),
+##   endless  the Endless Mountains: the highest road, most of it overlook.
+## A side that stays field, lawn or lot for all eight boundaries of its stretch gets a
+## "feature" from r81_places.gd on its seven whole places (feature_at()).
+## With Tunnels = Never the country by the road still changes, every NO_TUNNEL_COUNTRY places,
+## through a stretch of woods; the far view stays the first region's.
 ##
 ## ── What else is worked out here, all from travel ──
 ##   bend / hill   the road's curve and roll ahead (for r22_common.gdshaderinc), three times
@@ -33,6 +46,7 @@ extends Node3D
 ##                 view lies,
 ##   tunnel_a / tunnel_b, cover   where the nearest tunnel is and how deep in it the car is.
 ## Settings: r22_speed and r22_curves (shared with the desert Cruise), r81_tunnels, r81_views,
+## r81_country,
 ## r81_forest (how much of the trees is drawn), r81_season, r22_detail.
 ## route81_room.gd makes it (setup) and calls tick() every frame.
 
@@ -41,6 +55,7 @@ const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Pieces := preload("res://rooms/route81/r81_pieces.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
+const Places := preload("res://rooms/route81/r81_places.gd")
 
 ## How far behind and ahead of the car places are kept (metres). Further ahead than the desert's:
 ## there is no flat ground to hide where the land ends, only distance, haze and the curve.
@@ -80,6 +95,20 @@ const LIT_BEFORE: int = 8
 const LIT_FROM: int = 6
 const LIT_TO: int = 13
 const NO_TUNNEL_PERIOD: int = 60
+
+## The kinds of country, in the order the tour (r81_country = "tour") drives through them.
+const COUNTRIES: PackedStringArray = ["ridge", "farm", "river", "endless"]
+## Each country's height above the valley floor (metres): [middle, slow swing, quick swing].
+## The river country is low so its bridge is not absurdly high (the river lies on the valley
+## floor, FLOOR_BELOW under the lowest road); the bridge piers (r81_pieces.gd PIER_MAX_ALT)
+## allow up to 320.
+const HEIGHTS: Dictionary = {"ridge": Vector3(140.0, 70.0, 30.0), "farm": Vector3(45.0, 18.0, 8.0),
+	"river": Vector3(30.0, 10.0, 4.0), "endless": Vector3(215.0, 55.0, 25.0)}
+## With Tunnels = Never: places per country.
+const NO_TUNNEL_COUNTRY: int = 120
+## A river crossing: both sides are water for boundaries mid - CROSS_HALF .. mid + CROSS_HALF
+## (see crossing()), 640 m of bridge, with an overlook's falling ground before and after.
+const CROSS_HALF: int = 4
 
 ## Metres driven (from START). Read by the room for the shaders and the sound.
 var travel: float = START
@@ -165,6 +194,50 @@ static func _dice(n: int) -> float:
 	return float(x % 10000) / 10000.0
 
 
+## The kind of country region r is: the Country choice (r81_country), or on the "tour" each
+## of COUNTRIES in turn.
+static func country(r: int) -> String:
+	var c := String(AppState.get_setting("r81_country"))
+	return c if COUNTRIES.has(c) else COUNTRIES[posmod(r, COUNTRIES.size())]
+
+
+## How many places one country lasts: from the middle of one tunnel to the middle of the next,
+## or NO_TUNNEL_COUNTRY without tunnels.
+static func country_span() -> int:
+	var p := period()
+	return p if p > 0 else NO_TUNNEL_COUNTRY
+
+
+## Which region boundary (or place) b lies in. With tunnels a region starts in the middle of a
+## tunnel (3 places past its first), the same count as `region`.
+static func region_of(b: int) -> int:
+	var p := period()
+	return floori(float(b - 3) / float(p)) if p > 0 else floori(float(b) / float(NO_TUNNEL_COUNTRY))
+
+
+## The river crossing's part at boundary b: "water" on the bridge, "drop" on the boundary
+## before and after it (the valley side falling to the river), "" anywhere else. Only river
+## country has one, in the middle of its stretch (a little before the middle without tunnels,
+## clear of the streetlights' places, lit_at()).
+static func crossing(b: int) -> String:
+	if country(region_of(b)) != "river":
+		return ""
+	var span := country_span()
+	var mid := roundi(float(span) * 0.5) if period() > 0 else 37
+	var off := absi(posmod(b, span) - mid)
+	if off <= CROSS_HALF:
+		return "water"
+	return "drop" if off == CROSS_HALF + 1 else ""
+
+
+## The eight boundaries a side keeps one profile for: [the group's number, its first boundary].
+## The right side's groups start at boundaries 0, 8, 16.., the left's at 4, 12, 20..
+static func _group(side: int, b: int) -> Vector2i:
+	var off := 0 if side > 0 else 4
+	var group := floori(float(b + off) / 8.0)
+	return Vector2i(group, group * 8 - off)
+
+
 ## The edge profile of one side (+1 = our right, -1 = the left, beyond the other road) at
 ## boundary b, the line between places b - 1 and b. See the top of the file.
 static func boundary(side: int, b: int) -> String:
@@ -176,14 +249,60 @@ static func boundary(side: int, b: int) -> String:
 		# rock cuts lead into and out of every tunnel (the land only knows cut <-> mountain)
 		if j == 0 or j == 6 or j == 7 or j == p - 1:
 			return "cut"
-	var group := floori(float(b + (0 if side > 0 else 4)) / 8.0)
+	elif posmod(b, NO_TUNNEL_COUNTRY) <= 1:
+		# without tunnels, one kind of country hands over to the next in the woods
+		return "woods"
+	var cross := crossing(b)
+	if cross != "":
+		return cross
+	var group := _group(side, b).x
 	var roll := _dice(group * 2 + (1 if side > 0 else 0))
-	var open := views() * 0.5
-	if roll < open:
-		return "drop"
-	if roll < open + 0.28:
-		return "cut"
+	var v := views()
+	# each country's shares of the roll, in the order they are tried; what is left is woods
+	var shares: Array = []
+	match country(region_of(b)):
+		"farm":
+			shares = [["field", 0.46], ["lawn", 0.22], ["lot", 0.1], ["drop", v * 0.12]]
+		"river":
+			shares = [["drop", v * 0.6], ["field", 0.14], ["lot", 0.06], ["cut", 0.1]]
+		"endless":
+			shares = [["drop", v * 0.75], ["cut", 0.2], ["lot", 0.04]]
+		_:
+			shares = [["drop", v * 0.5], ["cut", 0.28], ["lot", 0.05]]
+	for share: Array in shares:
+		roll -= float(share[1])
+		if roll < 0.0:
+			return String(share[0])
 	return "woods"
+
+
+## What people built on `side` of place k: [a r81_places.gd feature, which of its places this
+## is (0..6)], or [] for none. A stretch has one when the side is field, lawn or lot at all
+## eight of its boundaries (so no tunnel, river or country's end cuts into it).
+static func feature_at(side: int, k: int) -> Array:
+	var g := _group(side, k)
+	var i := k - g.y
+	var kind := boundary(side, g.y)
+	if i > 6 or not (kind == "field" or kind == "lawn" or kind == "lot"):
+		return []
+	for b in range(g.y + 1, g.y + 8):
+		if boundary(side, b) != kind:
+			return []
+	var roll := _dice(g.x * 2 + (1 if side > 0 else 0) + 7919)
+	match kind:
+		"field":
+			# (one stretch of fields in four is only fields)
+			if roll > 0.75:
+				return []
+			return ["farm" if roll < 0.45 else "amish", i]
+		"lawn":
+			return ["town_cozy" if roll < 0.5 else "town_historic", i]
+	return ["gas" if roll < 0.45 else ("truck_stop" if roll < 0.75 else "old_station"), i]
+
+
+## Whether place k is (or is turning into) the river bridge.
+static func bridge_at(k: int) -> bool:
+	return boundary(1, k) == "water" or boundary(1, k + 1) == "water"
 
 
 ## Which part of a tunnel place k is ("in", "tube", "out", r81_pieces.gd), or "" for open road.
@@ -235,9 +354,15 @@ func _work_out() -> void:
 		if tunnel_a > 0.0 and tunnel_b < 0.0:
 			cover = clampf(minf(tunnel_a, -tunnel_b) / COVER_FADE, 0.0, 1.0)
 		region = floori((here - 3.0) / float(p))
-	# the height: two slow waves, starting somewhere else in every region (the jump happens in
-	# the dark, in the middle of the tunnel)
-	altitude = 140.0 + 70.0 * sin(travel / 1900.0 + float(region) * 2.0) + 30.0 * sin(travel / 730.0 + 1.0)
+	# the height: this country's (HEIGHTS), in two slow waves that start somewhere else in every
+	# region (the jump happens in the dark, in the middle of the tunnel)
+	var h: Vector3 = HEIGHTS[country(region)]
+	if p <= 0:
+		# no tunnel to hide a jump: ease to the next country's height over its last fifth
+		var at := here / float(NO_TUNNEL_COUNTRY)
+		var r0 := floori(at)
+		h = (HEIGHTS[country(r0)] as Vector3).lerp(HEIGHTS[country(r0 + 1)], smoothstep(0.8, 1.0, at - float(r0)))
+	altitude = h.x + h.y * sin(travel / 1900.0 + float(region) * 2.0) + h.z * sin(travel / 730.0 + 1.0)
 
 
 ## The places' numbers in view now.
@@ -321,7 +446,12 @@ static func wires_at(k: int) -> bool:
 
 ## What place k is, in one line: both sides' profiles, the tunnel part, which variant of the land.
 func _look(k: int) -> String:
-	return "%s>%s / %s>%s / %s / %d%s" % [boundary(-1, k), boundary(-1, k + 1), boundary(1, k), boundary(1, k + 1), part_at(k), posmod(k, 3), (" lit" if lit_at(k) else "") + (" wires" if wires_at(k) else "")]
+	var built := ""
+	for side: int in [-1, 1]:
+		var f := feature_at(side, k)
+		if not f.is_empty():
+			built += " %s%d%s" % [f[0], f[1], "R" if side > 0 else "L"]
+	return "%s>%s / %s>%s / %s / %d%s" % [boundary(-1, k), boundary(-1, k + 1), boundary(1, k), boundary(1, k + 1), part_at(k), posmod(k, 3), (" lit" if lit_at(k) else "") + (" wires" if wires_at(k) else "") + built]
 
 
 ## One side's land and trees for a place (built the first time it is needed, then kept).
@@ -349,11 +479,12 @@ func _make_slot() -> void:
 	root.name = "Place_%d" % _slots.size()
 	root.visible = false
 	add_child(root)
-	var slot := {"root": root, "trees": [] as Array[MultiMeshInstance3D], "land": {}, "props": {}, "tree_of": {}}
+	var slot := {"root": root, "trees": [] as Array[MultiMeshInstance3D], "land": {}, "props": {}, "built": {}, "tree_of": {}}
 	for side: int in [1, -1]:
 		var tag := "R" if side > 0 else "L"
 		slot["land"][side] = _mesh_node(root, "Land" + tag, _kit["land"], true)
 		slot["props"][side] = _mesh_node(root, "Props" + tag, _kit["prop"], true)
+		slot["built"][side] = _mesh_node(root, "Places" + tag, _kit["prop"], true)
 		# one node per group of trees (Land._trees) and kind; "cards" meshes bring their own
 		# materials, the low-poly ones all wear kit["trees"]
 		for group: String in ["far", "near", "cards"]:
@@ -381,6 +512,10 @@ func _make_slot() -> void:
 	var wires := _mesh_node(root, "PowerLine", _kit["trees"], true)
 	wires.mesh = Pieces.power_line()
 	slot["wires"] = wires
+	# the river bridge: parapets and girders, and the piers, which wear the tree material for
+	# the same reason as the power line (they reach down into the valley)
+	slot["bridge"] = _mesh_node(root, "Bridge", _kit["prop"], true)
+	slot["piers"] = _mesh_node(root, "BridgePiers", _kit["trees"], true)
 	var pole := _mesh_node(root, "LightPole", _kit["prop"], true)
 	pole.mesh = Pieces.light_pole()
 	slot["pole"] = pole
@@ -419,10 +554,15 @@ func _dress(slot: Dictionary, k: int) -> void:
 		var strip := _strip(side, from, to, k)
 		(slot["land"][side] as MeshInstance3D).mesh = strip["mesh"]
 		(slot["props"][side] as MeshInstance3D).mesh = Pieces.props(side, from, to)
+		var f := feature_at(side, k)
+		(slot["built"][side] as MeshInstance3D).mesh = null if f.is_empty() else Places.build(String(f[0]), int(f[1]), side)
 		for group: String in strip["trees"]:
 			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
 				(slot["tree_of"]["%d|%s|%s" % [side, group, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"][group] as Dictionary).get(kind)
 	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
+	var over := bridge_at(k)
+	(slot["bridge"] as MeshInstance3D).mesh = Pieces.bridge(boundary(1, k), boundary(1, k + 1)) if over else null
+	(slot["piers"] as MeshInstance3D).mesh = Pieces.bridge_piers(boundary(1, k), boundary(1, k + 1)) if over else null
 	# a streetlight (every other one wears the second lamp material, for the "Mixed" choice)
 	var lit := lit_at(k)
 	(slot["pole"] as MeshInstance3D).visible = lit
@@ -439,7 +579,8 @@ func _dress(slot: Dictionary, k: int) -> void:
 	if part == "in":
 		tunnel_words.text = "%s TUNNEL" % Pieces.TUNNELS[posmod(floori(float(k) / float(maxi(period(), 1))), Pieces.TUNNELS.size())].to_upper()
 	# a green sign about every 700 m of open road, never in or right at a tunnel
-	var signed := part == "" and posmod(k, 9) == 4 and boundary(1, k) != "mount" and boundary(1, k + 1) != "mount"
+	# (nor on the bridge: it stands on the ground beside the shoulder)
+	var signed := part == "" and posmod(k, 9) == 4 and boundary(1, k) != "mount" and boundary(1, k + 1) != "mount" and not over
 	(slot["sign"] as MeshInstance3D).visible = signed
 	var sign_words := slot["sign_words"] as Label3D
 	sign_words.visible = signed

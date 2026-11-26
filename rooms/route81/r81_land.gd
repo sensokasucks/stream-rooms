@@ -13,7 +13,13 @@ extends RefCounted
 ##   woods   a ditch, then forest on gently rising ground,
 ##   cut     a blasted rock wall close to the road, forest on the hill above it,
 ##   drop    a guardrail, then the ground falls away into the valley (the overlook side),
-##   mount   the mountain a tunnel goes through: solid above the road.
+##   mount   the mountain a tunnel goes through: solid above the road,
+##   field   farmland: a ditch, a wire fence (r81_places.gd), then flat crop fields in strips
+##           with a hedgerow of trees and a woodlot far out,
+##   lawn    flat mown ground where a town or a gas station stands (r81_places.gd), with lines
+##           of street trees,
+##   water   a river crossing: no ground at all beside the road (it is a bridge, r81_pieces.gd
+##           bridge()); the land is the river's bed, far below.
 ## A strip has a profile where it starts and one where it ends, and blends between the two
 ## along its length (side_mesh(from, to)), so any strip can follow any strip that ends the way
 ## it starts. That is how a rock cut opens into an overlook, or the drop swaps sides.
@@ -64,7 +70,14 @@ const OPP_L: float = -30.8
 ## How far the land reaches from the road's edge, metres.
 const REACH: float = 900.0
 ## The edge profiles (see the top of the file).
-const KINDS: PackedStringArray = ["woods", "cut", "drop", "mount"]
+const KINDS: PackedStringArray = ["woods", "cut", "drop", "mount", "field", "lawn", "lot", "water"]
+## Fields and lawns are flat and stay at road height out to this far from the road (so farms,
+## towns and gas stations can stand on them: r81_places.gd); beyond it they fall to the valley
+## like everything else.
+const FLAT_REACH: float = 230.0
+## Under a bridge the ground is the river's bed: this far below the road before the valley's
+## depth lowers it further (the foot of the long slope every profile ends on).
+const WATER_Y: float = -92.6
 ## Tunnels: the roof's height over the road, how much higher the mountain gets behind the
 ## tunnel mouth, and how far outside the paved edge the tunnel walls stand.
 const TUNNEL_H: float = 9.0
@@ -136,7 +149,27 @@ static func _drop_depth(u: float) -> float:
 static func far_depth(kind: String, u: float) -> float:
 	if kind == "drop":
 		return _drop_depth(u)
+	if kind == "water":
+		return 1.0
+	if kind == "field" or kind == "lawn" or kind == "lot":
+		return _drop_depth(u) * smoothstep(FLAT_REACH, FLAT_REACH + 100.0, u)
 	return _drop_depth(u) * smoothstep(40.0, 110.0, u)
+
+
+## The ground's height on a field, a lawn or a lot at `u` from the paved edge, the same all along the
+## strip out to FLAT_REACH (r81_places.gd stands its buildings and fences on this).
+static func flat_height(kind: String, u: float) -> float:
+	if kind != "field":
+		# a gentle swale beside the shoulder, then level
+		return -0.03 * minf(u, 3.0) - 0.25 * sin(PI * clampf((u - 3.0) / 8.0, 0.0, 1.0))
+	if u < 3.0:
+		return -0.03 * u
+	if u < 6.0:
+		return lerpf(-0.09, -0.6, (u - 3.0) / 3.0)
+	if u < 12.0:
+		return lerpf(-0.6, 0.3, (u - 6.0) / 6.0)
+	# the fields roll a little, the same along the whole stretch
+	return 0.3 + smoothstep(12.0, 60.0, u) * 0.9 * _nx(u * 0.6, 7.0)
 
 
 ## The long slope every profile ends on (metres, before the depth lowers it further): the
@@ -148,7 +181,8 @@ static func far_height(u: float) -> float:
 
 ## One profile's cross-section at `u` metres out from the paved edge, `zt` (0..1) of the way
 ## along the strip. salt = the strip's own number (its bumps). Returns
-## [height (m), depth (0..1), depth's slope per metre of u, rock, grass, forest (weights 0..1)].
+## [height (m), depth (0..1), depth's slope per metre of u, rock, grass, forest, crop field
+## (weights 0..1)].
 static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat32Array:
 	var env := sin(PI * clampf(zt, 0.0, 1.0))        # 0 at both ends of the strip: seams match
 	var y := 0.0
@@ -157,7 +191,32 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 	var rock := 0.0
 	var grass := 0.0
 	var forest := 0.0
+	var field := 0.0
 	match kind:
+		"field":
+			# shoulder, a shallow ditch, the fence line at 13 m, then fields. No bumps of the
+			# strip's own out to FLAT_REACH: the buildings on it are built from flat_height().
+			y = flat_height(kind, u)
+			y += smoothstep(FLAT_REACH, FLAT_REACH + 120.0, u) * (5.0 * _nx(u, 1.0) + 4.0 * env * _nz(u, zt, salt))
+			grass = 1.0 - smoothstep(13.0, 16.0, u)
+			# a hedgerow at about 150 m, a woodlot from 400 m
+			forest = maxf(smoothstep(147.0, 150.0, u) * (1.0 - smoothstep(157.0, 160.0, u)), smoothstep(395.0, 420.0, u))
+			field = (1.0 - grass) * (1.0 - forest)
+		"lawn", "lot":
+			y = flat_height(kind, u)
+			y += smoothstep(FLAT_REACH, FLAT_REACH + 120.0, u) * (5.0 * _nx(u, 1.0) + 4.0 * env * _nz(u, zt, salt))
+			if kind == "lawn":
+				# a town: two lines of street trees, and the woods behind it
+				forest = maxf(maxf(smoothstep(84.0, 86.0, u) * (1.0 - smoothstep(93.0, 95.0, u)), smoothstep(139.0, 141.0, u) * (1.0 - smoothstep(148.0, 150.0, u))),
+					smoothstep(205.0, 225.0, u))
+			else:
+				# a lot (a gas station, a truck stop): open ground, the woods behind
+				forest = smoothstep(140.0, 160.0, u)
+			grass = 1.0 - forest
+		"water":
+			# no ground at road height at all, even right at the road's edge: the road is a
+			# bridge here, and this is the river's bed under and beside it
+			y = WATER_Y
 		"cut":
 			# the wall's height varies along the strip (18 m at the seams) and it leans back a little
 			var h := 18.0 + 5.0 * env * _nz(0.0, zt * 1.5, salt)
@@ -205,11 +264,13 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 			grass = 1.0 - smoothstep(7.5, 10.0, u)
 			forest = 1.0 - grass
 	# far out every profile runs into the same long slope down to the valley (see the top)
-	if kind != "drop":
+	if kind != "drop" and kind != "water":
 		y = lerpf(y, far_height(u), smoothstep(400.0, REACH, u))
 	depth = far_depth(kind, u)
 	slope = (far_depth(kind, u + 1.0) - far_depth(kind, u - 1.0)) * 0.5
-	return PackedFloat32Array([y, depth, slope, rock, grass, forest])
+	if kind == "water":
+		slope = 0.0
+	return PackedFloat32Array([y, depth, slope, rock, grass, forest, field])
 
 
 ## The mountain over a tunnel at `u` out from the paved edge. rise 0..1 = how far the mountain
@@ -219,10 +280,10 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 static func mount(u: float, rise: float) -> PackedFloat32Array:
 	var base := edge("cut", u, 0.0, 0.0)
 	if u < TRENCH - 0.02:
-		return PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+		return PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 	# (base already runs into the far slope; the mountain does the same, and sinks with it)
 	var m := lerpf(mount_height(rise, u), far_height(u), smoothstep(400.0, REACH, u))
-	return PackedFloat32Array([maxf(m, base[0]), base[1], base[2], 0.0, 0.0, 1.0])
+	return PackedFloat32Array([maxf(m, base[0]), base[1], base[2], 0.0, 0.0, 1.0, 0.0])
 
 
 ## The mountain's height straight over the tunnel (the roof slab over the road, r81_pieces.gd,
@@ -258,10 +319,17 @@ static func blend(from: String, to: String, u: float, zt: float, salt: float) ->
 	var b := edge(to, u, zt, salt)
 	var t := smoothstep(0.15, 0.85, zt)
 	var out := PackedFloat32Array()
-	out.resize(6)
-	for i in 6:
+	out.resize(a.size())
+	for i in a.size():
 		out[i] = lerpf(a[i], b[i], t)
 	return out
+
+
+## How much of a river crossing the spot zt along a strip from profile `from` to `to` is:
+## 0 = solid ground, 1 = the bridge is over the river's bed (the same blend as blend()'s).
+static func water_share(from: String, to: String, zt: float) -> float:
+	var t := smoothstep(0.15, 0.85, zt)
+	return (1.0 - t) * (1.0 if from == "water" else 0.0) + t * (1.0 if to == "water" else 0.0)
 
 
 ## The median between the two roads at `m` metres from our road's edge (0..14): a grass swale;
@@ -271,10 +339,15 @@ static func median(from: String, to: String, m: float, zt: float) -> PackedFloat
 	var width := ROAD_L - OPP_R
 	if rise >= 0.0 and m > TRENCH - 0.02 and m < width - TRENCH + 0.02:
 		# (the same height as the top over the two roads, r81_pieces.gd lid(), so they join flush)
-		return PackedFloat32Array([mount_height(rise, TRENCH), 0.0, 0.0, 0.0, 0.0, 1.0])
+		return PackedFloat32Array([mount_height(rise, TRENCH), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0])
 	if rise >= 0.0:
-		return PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-	return PackedFloat32Array([-0.9 * sin(PI * m / width), 0.0, 0.0, 0.0, 1.0, 0.0])
+		return PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+	# over a river both roads are bridges and the gap between them is open air: the "median"
+	# is the river's bed far below (see edge("water"))
+	var wet := water_share(from, to, zt)
+	if wet > 0.0:
+		return PackedFloat32Array([lerpf(-0.9 * sin(PI * m / width), WATER_Y, wet), wet, 0.0, 0.0, 1.0 - wet, 0.0, 0.0])
+	return PackedFloat32Array([-0.9 * sin(PI * m / width), 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
 
 
 ## The X of every line of corners of one side's strip, from the road outwards, and for each
@@ -326,6 +399,9 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 	var weights := PackedColorArray()
 	pos.resize(nc * nr)
 	uv.resize(nc * nr)
+	# x = how much crop field, y = how much river (r81_terrain.gdshader)
+	var uv2 := PackedVector2Array()
+	uv2.resize(nc * nr)
 	weights.resize(nc * nr)
 	var s := float(salt)
 	for r in nr:
@@ -335,13 +411,17 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 			var p: PackedFloat32Array
 			match int(col[1]):
 				1: p = median(from, to, float(col[2]), zt)
-				2: p = PackedFloat32Array([-0.01, 0.0, 0.0, 0.0, 0.0, 0.0])
+				2:
+					# the other road's bed: just under it, or gone where it is a bridge
+					var gone := water_share(from, to, zt)
+					p = PackedFloat32Array([lerpf(-0.01, WATER_Y, gone), gone, 0.0, 0.0, 0.0, 0.0, 0.0])
 				_: p = blend(from, to, float(col[2]), zt, s)
 			var i := r * nc + c
 			pos[i] = Vector3(float(col[0]), p[0], -zt * LENGTH)
 			# the depth's slope is per metre of u; across X it runs the other way on the left
 			uv[i] = Vector2(p[1], p[2] * float(side))
 			weights[i] = Color(p[3], p[4], p[5], 1.0)
+			uv2[i] = Vector2(p[6], water_share(from, to, zt))
 	# normals from the grid; steep ground turns to bare rock whatever the profile said
 	var normals := PackedVector3Array()
 	normals.resize(nc * nr)
@@ -365,13 +445,19 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 	for r in nr - 1:
 		for c in nc - 1:
 			var a := r * nc + c
-			idx.append_array([a, a + 1, a + nc + 1, a, a + nc + 1, a + nc])
+			# (the columns run the other way on the right side: wind its triangles the other way
+			# round, or the engine takes them for back faces and lights them from below)
+			if side > 0:
+				idx.append_array([a, a + nc + 1, a + 1, a, a + nc, a + nc + 1])
+			else:
+				idx.append_array([a, a + 1, a + nc + 1, a, a + nc + 1, a + nc])
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = pos
 	arrays[Mesh.ARRAY_NORMAL] = normals
 	arrays[Mesh.ARRAY_COLOR] = weights
 	arrays[Mesh.ARRAY_TEX_UV] = uv
+	arrays[Mesh.ARRAY_TEX_UV2] = uv2
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)

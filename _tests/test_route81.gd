@@ -19,6 +19,7 @@ extends Node
 const Trip := preload("res://rooms/route81/r81_trip.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
+const Places := preload("res://rooms/route81/r81_places.gd")
 var _fails: int = 0
 var _out: String = ""
 
@@ -53,7 +54,7 @@ func _wait_room(host: Node, room_name: String, limit: float) -> Room:
 
 ## The first place at or after `from` where `test` (called with the place number) is true, or -1.
 func _find_place(from: int, test: Callable) -> int:
-	for k in range(from, from + 400):
+	for k in range(from, from + 3000):
 		if bool(test.call(k)):
 			return k
 	return -1
@@ -65,6 +66,8 @@ func _ready() -> void:
 	var full := args.has("full")
 	var quick := args.has("quick")
 	var shots_only := args.has("shots")
+	# "countries" = only round 3's part (the farm valley, the river, the Endless Mountains)
+	var countries_only := args.has("countries")
 	DirAccess.make_dir_recursive_absolute(_out)
 	AppState.set_setting("chat_enabled", false)
 	AppState.set_setting("house_lights", 1.0)
@@ -86,6 +89,8 @@ func _ready() -> void:
 	AppState.set_setting("r81_views", 0.6)
 	AppState.set_setting("r81_forest", 100.0)
 	AppState.set_setting("r81_season", "summer")
+	# (the first parts test the ridge country's road; the countries have their own part below)
+	AppState.set_setting("r81_country", "ridge")
 	for n in range(1, 5):
 		AppState.set_setting(AppState.presenter_key(n, "on"), true)
 		AppState.set_setting(AppState.presenter_key(n, "source"), "silhouette")
@@ -138,7 +143,8 @@ func _ready() -> void:
 	for b in range(100, 800):
 		kinds[Trip.boundary(1, b)] = true
 		kinds[Trip.boundary(-1, b)] = true
-	_check(kinds.size() == 4, "the road has woods, rock cuts, overlooks and mountains (%s)" % str(kinds.keys()))
+	_check(kinds.has("woods") and kinds.has("cut") and kinds.has("drop") and kinds.has("mount") and not kinds.has("field") and not kinds.has("water"),
+		"the ridge road has woods, rock cuts, overlooks and mountains (%s)" % str(kinds.keys()))
 	AppState.set_setting("r81_views", 0.0)
 	var drops := 0
 	for b in range(100, 800):
@@ -159,87 +165,195 @@ func _ready() -> void:
 	# the chase camera looks down the road: the view for the scenery shots
 	EventBus.camera_preset_requested.emit(5)
 
-	# ── an overlook on the right, then a rock cut on the right ──
 	var from := floori(trip.travel / Land.LENGTH) + 2
-	var k_drop := _find_place(from, func(k: int) -> bool:
-		return Trip.boundary(1, k) == "drop" and Trip.boundary(1, k + 5) == "drop" and Trip.part_at(k) == "")
-	_check(k_drop > 0, "found an overlook ahead (place %d)" % k_drop)
-	trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
+	var k_drop := -1
+	if not countries_only:
+		# ── an overlook on the right, then a rock cut on the right ──
+		k_drop = _find_place(from, func(k: int) -> bool:
+			return Trip.boundary(1, k) == "drop" and Trip.boundary(1, k + 5) == "drop" and Trip.part_at(k) == "")
+		_check(k_drop > 0, "found an overlook ahead (place %d)" % k_drop)
+		trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
+		await _secs(1.5)
+		_check(trip.altitude >= 39.0 and trip.altitude <= 241.0, "the road is %.0f m above the valley" % trip.altitude)
+		await _shot("r81_overlook_chase")
+		EventBus.camera_preset_requested.emit(2)
+		await _secs(1.0)
+		await _shot("r81_overlook_passenger_side")
+		EventBus.camera_preset_requested.emit(3)
+		await _secs(1.0)
+		await _shot("r81_overlook_driver_side")
+		EventBus.camera_preset_requested.emit(0)
+		await _secs(1.0)
+		await _shot("r81_overlook_windshield")
+		EventBus.camera_preset_requested.emit(6)
+		await _secs(1.0)
+		await _shot("r81_overlook_drone")
+		AppState.set_setting("r81_season", "fall")
+		EventBus.camera_preset_requested.emit(5)
+		await _secs(1.0)
+		await _shot("r81_overlook_fall")
+		AppState.set_setting("r81_season", "summer")
+		var k_cut := _find_place(from, func(k: int) -> bool:
+			return Trip.boundary(1, k) == "cut" and Trip.boundary(1, k + 5) == "cut" and Trip.part_at(k) == "" and Trip.part_at(k + 6) == "")
+		trip.set_travel(float(k_cut) * Land.LENGTH + 20.0)
+		await _secs(1.5)
+		await _shot("r81_rock_cut")
+
+		# ── the tunnel ──
+		var k_in := (floori(trip.travel / Land.LENGTH / float(period)) + 1) * period
+		var region_before := 0
+		trip.set_travel(float(k_in) * Land.LENGTH - 60.0)
+		await _secs(1.5)
+		region_before = trip.region
+		_check(trip.cover < 0.01 and trip.tunnel_b < 0.0 and trip.tunnel_a < 0.0, "outside the tunnel: daylight (mouth %.0f m ahead)" % -trip.tunnel_a)
+		await _shot("r81_tunnel_mouth")
+		EventBus.camera_preset_requested.emit(0)
+		trip.set_travel(float(k_in) * Land.LENGTH + 200.0)
+		await _secs(1.5)
+		_check(trip.cover > 0.99, "inside the tunnel the daylight is gone (cover %.2f)" % trip.cover)
+		await _shot("r81_tunnel_inside_windshield")
+		EventBus.camera_preset_requested.emit(5)
+		await _secs(1.0)
+		await _shot("r81_tunnel_inside_chase")
+		trip.set_travel(float(k_in + 5) * Land.LENGTH + 5.0)
+		await _secs(1.5)
+		await _shot("r81_tunnel_way_out")
+		trip.set_travel(float(k_in + 7) * Land.LENGTH)
+		await _secs(1.0)
+		_check(trip.cover < 0.01 and trip.region == region_before + 1, "out the far side, in the next region (%d > %d)" % [region_before, trip.region])
+
+		# ── streetlights before and after the tunnel; a power line through the woods ──
+		var sp := Trip.street_period()
+		_check(Trip.lit_at(sp - 1) and Trip.lit_at(sp + 6) and not Trip.lit_at(sp + 3) and not Trip.lit_at(sp + 30),
+			"streetlights stand before and after a tunnel, not inside it or far from it")
+		trip.set_travel(float(k_in - 5) * Land.LENGTH + 30.0)
+		AppState.set_setting("r22_time", 22.5)
+		for choice: String in ["sodium", "led", "mixed", "off"]:
+			AppState.set_setting("r81_lights", choice)
+			await _secs(1.2)
+			await _shot("r81_streetlights_%s" % choice)
+		var lamp_glow := float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+		_check(lamp_glow < 0.01, "Streetlights Off: the lamps are dark at night (%.2f)" % lamp_glow)
+		AppState.set_setting("r81_lights", "sodium")
+		await _secs(0.3)
+		lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+		_check(lamp_glow > 0.8, "Sodium at night: the lamps shine (%.2f)" % lamp_glow)
+		AppState.set_setting("r22_time", 13.0)
+		await _secs(0.5)
+		lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+		_check(lamp_glow < 0.05, "by day they are off (%.2f)" % lamp_glow)
+		var k_wires := _find_place(from, func(k: int) -> bool: return Trip.wires_at(k))
+		_check(k_wires > 0, "found a power line crossing ahead (place %d)" % k_wires)
+		if k_wires > 0:
+			trip.set_travel(float(k_wires) * Land.LENGTH - 70.0)
+			await _secs(1.5)
+			await _shot("r81_power_line")
+
+	# ── the countries: farm valley, river crossing, Endless Mountains ──
+	AppState.set_setting("r81_country", "tour")
+	_check(Trip.country(0) == "ridge" and Trip.country(1) == "farm" and Trip.country(2) == "river" and Trip.country(3) == "endless" and Trip.country(4) == "ridge",
+		"the tour: ridge, farm valley, river, Endless Mountains, and round again")
+	_check(Trip.region_of(period + 2) == 0 and Trip.region_of(period + 3) == 1, "the country changes in the middle of a tunnel")
+	AppState.set_setting("r81_country", "farm")
+	await _secs(0.5)
+	kinds = {}
+	for b in range(100, 800):
+		kinds[Trip.boundary(1, b)] = true
+		kinds[Trip.boundary(-1, b)] = true
+	_check(kinds.has("field") and kinds.has("lawn") and kinds.has("lot") and kinds.has("mount"), "farm valley: fields, towns and lots between the tunnels (%s)" % str(kinds.keys()))
+	for feature: String in Places.FEATURES:
+		# the third place of one on the right (its middle, or near it)
+		var k_f := _find_place(from, func(k: int) -> bool:
+			var f := Trip.feature_at(1, k)
+			return not f.is_empty() and String(f[0]) == feature and int(f[1]) == 2)
+		_check(k_f > 0, "found a %s ahead (place %d)" % [feature, k_f])
+		if k_f <= 0:
+			continue
+		var meshes := 0
+		for i in 7:
+			meshes += 1 if Places.build(feature, i, 1) != null else 0
+			if Places.build(feature, i, -1) != null:
+				meshes += 1
+		_check(meshes >= 2, "the %s builds on both sides (%d meshes)" % [feature, meshes])
+		EventBus.camera_preset_requested.emit(5)
+		trip.set_travel(float(k_f) * Land.LENGTH - 130.0)
+		await _secs(1.5)
+		_check(trip.altitude < 80.0, "the farm valley's road is low (%.0f m)" % trip.altitude)
+		var placed: Array = room.find_children("PlacesR", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
+			return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
+		_check(placed.size() >= 1, "the %s stands by the road (%d places)" % [feature, placed.size()])
+		await _shot("r81_%s_chase" % feature)
+		EventBus.camera_preset_requested.emit(6)
+		await _secs(1.0)
+		await _shot("r81_%s_drone" % feature)
+		# (the driver's side camera looks across the car to the right of the road)
+		EventBus.camera_preset_requested.emit(3)
+		trip.set_travel(float(k_f) * Land.LENGTH + 30.0)
+		await _secs(1.0)
+		await _shot("r81_%s_driver_side" % feature)
+	# a town at night
+	var k_town := _find_place(from, func(k: int) -> bool:
+		var f := Trip.feature_at(1, k)
+		return not f.is_empty() and String(f[0]) == "town_cozy" and int(f[1]) == 2)
+	if k_town > 0:
+		AppState.set_setting("r22_time", 21.5)
+		EventBus.camera_preset_requested.emit(5)
+		trip.set_travel(float(k_town) * Land.LENGTH - 130.0)
+		await _secs(1.5)
+		await _shot("r81_town_cozy_night")
+		AppState.set_setting("r22_time", 13.0)
+	AppState.set_setting("r81_season", "fall")
+	await _secs(1.0)
+	await _shot("r81_farm_valley_fall")
+	AppState.set_setting("r81_season", "summer")
+
+	AppState.set_setting("r81_country", "river")
+	await _secs(0.5)
+	var k_bridge := _find_place(from, func(k: int) -> bool:
+		return Trip.boundary(1, k) == "water" and Trip.boundary(1, k - 1) != "water")
+	_check(k_bridge > 0 and Trip.boundary(-1, k_bridge) == "water" and Trip.boundary(1, k_bridge + 8) == "water" and Trip.boundary(1, k_bridge + 9) == "drop"
+		and Trip.bridge_at(k_bridge + 3) and not Trip.bridge_at(k_bridge + 10), "river country: a bridge of eight places, water on both sides (from place %d)" % k_bridge)
+	EventBus.camera_preset_requested.emit(5)
+	trip.set_travel(float(k_bridge) * Land.LENGTH - 150.0)
 	await _secs(1.5)
-	_check(trip.altitude >= 39.0 and trip.altitude <= 241.0, "the road is %.0f m above the valley" % trip.altitude)
-	await _shot("r81_overlook_chase")
-	EventBus.camera_preset_requested.emit(2)
-	await _secs(1.0)
-	await _shot("r81_overlook_passenger_side")
-	EventBus.camera_preset_requested.emit(3)
-	await _secs(1.0)
-	await _shot("r81_overlook_driver_side")
-	EventBus.camera_preset_requested.emit(0)
-	await _secs(1.0)
-	await _shot("r81_overlook_windshield")
+	_check(trip.altitude < 50.0, "the river road is low (%.0f m)" % trip.altitude)
+	await _shot("r81_bridge_ahead")
+	trip.set_travel(float(k_bridge + 3) * Land.LENGTH)
+	await _secs(1.5)
+	var decks: Array = room.find_children("Bridge", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
+		return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
+	_check(decks.size() >= 8, "the bridge's deck and railings are in view (%d places)" % decks.size())
+	await _shot("r81_bridge_chase")
+	for cam: int in [0, 3, 6]:
+		EventBus.camera_preset_requested.emit(cam)
+		await _secs(1.0)
+		await _shot("r81_bridge_cam%d" % cam)
+	EventBus.camera_preset_requested.emit(5)
+
+	AppState.set_setting("r81_country", "endless")
+	await _secs(0.5)
+	var k_high := _find_place(from, func(k: int) -> bool:
+		return Trip.boundary(1, k) == "drop" and Trip.boundary(1, k + 5) == "drop" and Trip.part_at(k) == "")
+	trip.set_travel(float(k_high) * Land.LENGTH + 180.0)
+	await _secs(1.5)
+	_check(trip.altitude > 130.0 and trip.altitude <= 296.0, "the Endless Mountains' road is high (%.0f m)" % trip.altitude)
+	await _shot("r81_endless_overlook")
 	EventBus.camera_preset_requested.emit(6)
 	await _secs(1.0)
-	await _shot("r81_overlook_drone")
-	AppState.set_setting("r81_season", "fall")
+	await _shot("r81_endless_drone")
 	EventBus.camera_preset_requested.emit(5)
-	await _secs(1.0)
-	await _shot("r81_overlook_fall")
-	AppState.set_setting("r81_season", "summer")
-	var k_cut := _find_place(from, func(k: int) -> bool:
-		return Trip.boundary(1, k) == "cut" and Trip.boundary(1, k + 5) == "cut" and Trip.part_at(k) == "" and Trip.part_at(k + 6) == "")
-	trip.set_travel(float(k_cut) * Land.LENGTH + 20.0)
-	await _secs(1.5)
-	await _shot("r81_rock_cut")
-
-	# ── the tunnel ──
-	var k_in := (floori(trip.travel / Land.LENGTH / float(period)) + 1) * period
-	var region_before := 0
-	trip.set_travel(float(k_in) * Land.LENGTH - 60.0)
-	await _secs(1.5)
-	region_before = trip.region
-	_check(trip.cover < 0.01 and trip.tunnel_b < 0.0 and trip.tunnel_a < 0.0, "outside the tunnel: daylight (mouth %.0f m ahead)" % -trip.tunnel_a)
-	await _shot("r81_tunnel_mouth")
-	EventBus.camera_preset_requested.emit(0)
-	trip.set_travel(float(k_in) * Land.LENGTH + 200.0)
-	await _secs(1.5)
-	_check(trip.cover > 0.99, "inside the tunnel the daylight is gone (cover %.2f)" % trip.cover)
-	await _shot("r81_tunnel_inside_windshield")
-	EventBus.camera_preset_requested.emit(5)
-	await _secs(1.0)
-	await _shot("r81_tunnel_inside_chase")
-	trip.set_travel(float(k_in + 5) * Land.LENGTH + 5.0)
-	await _secs(1.5)
-	await _shot("r81_tunnel_way_out")
-	trip.set_travel(float(k_in + 7) * Land.LENGTH)
-	await _secs(1.0)
-	_check(trip.cover < 0.01 and trip.region == region_before + 1, "out the far side, in the next region (%d > %d)" % [region_before, trip.region])
-
-	# ── streetlights before and after the tunnel; a power line through the woods ──
-	var sp := Trip.street_period()
-	_check(Trip.lit_at(sp - 1) and Trip.lit_at(sp + 6) and not Trip.lit_at(sp + 3) and not Trip.lit_at(sp + 30),
-		"streetlights stand before and after a tunnel, not inside it or far from it")
-	trip.set_travel(float(k_in - 5) * Land.LENGTH + 30.0)
-	AppState.set_setting("r22_time", 22.5)
-	for choice: String in ["sodium", "led", "mixed", "off"]:
-		AppState.set_setting("r81_lights", choice)
-		await _secs(1.2)
-		await _shot("r81_streetlights_%s" % choice)
-	var lamp_glow := float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
-	_check(lamp_glow < 0.01, "Streetlights Off: the lamps are dark at night (%.2f)" % lamp_glow)
-	AppState.set_setting("r81_lights", "sodium")
-	await _secs(0.3)
-	lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
-	_check(lamp_glow > 0.8, "Sodium at night: the lamps shine (%.2f)" % lamp_glow)
-	AppState.set_setting("r22_time", 13.0)
+	AppState.set_setting("r81_tunnels", "never")
+	AppState.set_setting("r81_country", "tour")
+	_check(Trip.country(Trip.region_of(10)) == "ridge" and Trip.country(Trip.region_of(Trip.NO_TUNNEL_COUNTRY + 10)) == "farm" and Trip.boundary(1, Trip.NO_TUNNEL_COUNTRY) == "woods",
+		"Tunnels Never: the country still changes, through the woods")
+	AppState.set_setting("r81_tunnels", "medium")
+	AppState.set_setting("r81_country", "ridge")
 	await _secs(0.5)
-	lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
-	_check(lamp_glow < 0.05, "by day they are off (%.2f)" % lamp_glow)
-	var k_wires := _find_place(from, func(k: int) -> bool: return Trip.wires_at(k))
-	_check(k_wires > 0, "found a power line crossing ahead (place %d)" % k_wires)
-	if k_wires > 0:
-		trip.set_travel(float(k_wires) * Land.LENGTH - 70.0)
-		await _secs(1.5)
-		await _shot("r81_power_line")
+
+	if countries_only:
+		print("DONE fails=%d" % _fails)
+		AppState.request_quit(0 if _fails == 0 else 1)
+		return
 
 	# ── the distant views: every region shows four, and each one builds and shows ──
 	var vistas := room.find_child("Vistas", true, false) as Node3D

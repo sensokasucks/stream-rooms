@@ -6,7 +6,11 @@ render_mode cull_disabled;
 //   COLOR.g  how much mown grass (shoulders, the median),
 //   COLOR.b  how much forest (leaf litter up close, a sea of tree tops far away),
 //   UV.x     its depth: 0 = stays at road height, 1 = sinks all the way to the valley floor,
-//   UV.y     how fast that depth changes across the road (per metre of X), to tilt the normal.
+//   UV.y     how fast that depth changes across the road (per metre of X), to tilt the normal,
+//   UV2.x    how much crop field (farm country): strips of corn, hay, alfalfa and bare earth
+//            running along the road, each some tens of metres wide,
+//   UV2.y    how much river (r81_land.gd water_share): at 1 the ground is the river's surface
+//            under a bridge; on the way there it is the bank falling to it.
 // Close to the camera the forest is its floor (the trees standing on it are real meshes, see
 // r81_tree.gdshader); from about 150 m out, where the real trees stop, it turns into canopy:
 // lumpy tree tops in patches of lighter and darker green (or fall colours).
@@ -22,9 +26,13 @@ uniform sampler2D rock_noise : filter_linear_mipmap, repeat_enable;
 varying vec3 o_pos;
 varying vec3 w_pos;
 varying vec3 o_nrm;
+varying float field;
+varying float river;
 
 void vertex() {
 	o_pos = VERTEX;
+	field = UV2.x;
+	river = UV2.y;
 	vec3 v = VERTEX;
 	v.y -= UV.x * alt_drop;
 	// the valley's extra slope tilts the surface: rebuild the normal from the two slopes
@@ -74,6 +82,25 @@ void fragment() {
 	grass = mix(grass, grass * vec3(1.25, 1.05, 0.7), season * 0.5);
 	grass *= 0.85 + 0.3 * patches.b;
 	col = mix(col, grass, COLOR.g);
+	// ── crop fields: contour strips along the road, each its own crop ──
+	if (field > 0.001) {
+		// (strips of uneven width: the strip number steps along X, nudged by slow noise)
+		float strip = floor(o_pos.x / 46.0 + 0.6 * texture(rock_noise, vec2(o_pos.x / 700.0, 0.37)).b);
+		float pick = fract(sin(strip * 12.9898) * 43758.5453);
+		vec3 crop = vec3(0.2, 0.36, 0.1);                               // corn
+		crop = mix(crop, vec3(0.52, 0.45, 0.2), step(0.3, pick));       // ripe hay or wheat
+		crop = mix(crop, vec3(0.13, 0.3, 0.1), step(0.55, pick));       // alfalfa
+		crop = mix(crop, vec3(0.27, 0.19, 0.12), step(0.82, pick));     // bare ploughed earth
+		// the rows, close up, and blotches of better and poorer growth
+		float rows = 0.85 + 0.15 * sin(o_pos.x * 8.0) * (1.0 - smoothstep(30.0, 90.0, dist));
+		crop *= rows * (0.8 + 0.4 * patches.a);
+		if (detail > 0.5) {
+			crop *= 0.6 + 1.2 * dot(grass_photo, vec3(0.333));
+		}
+		// fall: the corn and hay stand dry and gold
+		crop = mix(crop, crop * vec3(1.5, 1.1, 0.6), season * 0.6 * step(pick, 0.55));
+		col = mix(col, crop, field);
+	}
 	// ── rock: grey layered stone, darker in the cracks, stained down the face ──
 	vec3 n = normalize(o_nrm);
 	vec3 rock = rock_sides(o_pos, n, 8.0);
@@ -86,7 +113,12 @@ void fragment() {
 	col = mix(col, rock, COLOR.r);
 	col *= r22_cloud_shade(w_pos);
 	col *= 1.0 - 0.3 * wet;
+	// ── the river: dark, slow water with drifting lighter streaks, shiny enough to hold the sky ──
+	float water = smoothstep(0.9, 0.99, river);
+	vec3 stream = mix(vec3(0.035, 0.075, 0.07), vec3(0.07, 0.13, 0.13), texture(rock_noise, q / 90.0 + vec2(TIME * 0.004, 0.0)).b);
+	stream += 0.03 * smoothstep(0.55, 0.8, texture(rock_noise, q / vec2(140.0, 18.0) + vec2(TIME * 0.01, 0.0)).g);
+	col = mix(col, stream * r22_cloud_shade(w_pos), water);
 	ALBEDO = col;
-	ROUGHNESS = mix(0.95, 0.7, wet * COLOR.r);
-	SPECULAR = 0.08 + 0.25 * wet * COLOR.r;
+	ROUGHNESS = mix(mix(0.95, 0.7, wet * COLOR.r), 0.12, water);
+	SPECULAR = mix(0.08 + 0.25 * wet * COLOR.r, 0.6, water);
 }

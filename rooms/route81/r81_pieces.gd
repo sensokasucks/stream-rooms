@@ -69,7 +69,8 @@ static func props(side: int, from: String, to: String) -> ArrayMesh:
 			_rail(b, x, -float(i) * STEP, -float(i + 1) * STEP, float(side))
 	for i in 2:
 		var zt := (float(i) + 0.25) / 2.0
-		if Land.mount_rise(from, to, zt) < 0.0:
+		# (none in a tunnel, none on the river bridge: there is no ground beside the road there)
+		if Land.mount_rise(from, to, zt) < 0.0 and Land.water_share(from, to, zt) < 0.3:
 			Geo.reflector_post(b, Vector3(edge + float(side) * 1.4, 0.0, -zt * Land.LENGTH), side < 0)
 	var mesh := b.to_mesh()
 	_cache[key] = mesh
@@ -165,6 +166,85 @@ static func _pylon(b: Geo.Buf, foot: Vector3, steel: Color) -> void:
 			b.rod(foot + Vector3(0.0, y + 2.6, end * 1.0), foot + Vector3(0.0, y + 0.6, end * reach), 0.07, 3, steel)
 			# the insulator string the wire hangs from
 			b.rod(foot + Vector3(0.0, y + 0.6, end * reach), foot + Vector3(0.0, y, end * reach), 0.12, 4, Color(0.55, 0.6, 0.58, 0.0))
+
+
+# ── The river bridge ─────────────────────────────────────────
+## The bridge's parts for a place whose sides go from profile `from` to `to` (one of them
+## "water"; both sides of the road are the same on a crossing, r81_trip.gd crossing()): under
+## each road a deck slab with a girder's face down both edges, and a railing (kerb, two steel
+## rails) on both edges of each road, wherever the ground has fallen away (Land.water_share over a third).
+## For the prop material; cut every STEP so the bend can curve it.
+const DECK_DEEP: float = 2.2
+const RAIL_H: float = 1.05
+static func bridge(from: String, to: String) -> ArrayMesh:
+	var key := "bridge|%s|%s" % [from, to]
+	if _cache.has(key):
+		return _cache[key]
+	var b := Geo.Buf.new()
+	var concrete := Color(0.5, 0.49, 0.46)
+	var steel := Color(0.5, 0.52, 0.54)
+	var n := roundi(Land.LENGTH / STEP)
+	for i in n:
+		var zt := (float(i) + 0.5) / float(n)
+		if Land.water_share(from, to, zt) < 0.3:
+			continue
+		var z := -(float(i) + 0.5) * STEP
+		for road: Array in [[Land.ROAD_L, Land.ROAD_R], [Land.OPP_L, Land.OPP_R]]:
+			var x0 := float(road[0])
+			var x1 := float(road[1])
+			b.mat = Geo.MAT_ROCK
+			# the slab (its top a hair under the road's surface) and the two edge girders
+			b.block(Vector3((x0 + x1) * 0.5, -0.35, z), Vector3(x1 - x0 + 1.0, 0.6, STEP), concrete)
+			for x: float in [x0 - 0.3, x1 + 0.3]:
+				b.block(Vector3(x, -0.65 - DECK_DEEP * 0.5, z), Vector3(0.5, DECK_DEEP, STEP), Color(0.3, 0.36, 0.33))
+				# the railing: a low concrete kerb and two steel rails on posts, open enough to
+				# see the river through from a car seat
+				b.mat = Geo.MAT_ROCK
+				b.block(Vector3(x, 0.1, z), Vector3(0.5, 0.36, STEP), concrete)
+				b.mat = Geo.MAT_CHROME
+				for rail_y: float in [RAIL_H * 0.62, RAIL_H]:
+					b.block(Vector3(x, rail_y, z), Vector3(0.09, 0.09, STEP), steel)
+				for post in 3:
+					b.block(Vector3(x, 0.28 + (RAIL_H - 0.28) * 0.5, z + (float(post) - 1.0) * STEP / 3.0), Vector3(0.1, RAIL_H - 0.28, 0.1), steel)
+	b.mat = Geo.MAT_PAINT
+	var mesh: ArrayMesh = null if b.is_empty() else b.to_mesh()
+	_cache[key] = mesh
+	return mesh
+
+
+## The piers under a bridge place: one hammerhead pier per road, halfway along the place,
+## where the place is bridge there. For the TREE material (like the power line, see there):
+## the river lies `altitude` further down than the mesh says, and that shader lowers each
+## corner by its depth (UV.y) times the altitude. A box has one depth for all its corners, so
+## a pier is PIER_STEPS boxes, each sunk a step more than the one above and long enough to
+## still reach into the one below at the greatest altitude, PIER_MAX_ALT (the lowest ends
+## under the water).
+const PIER_STEPS: int = 8
+const PIER_MAX_ALT: float = 320.0
+static func bridge_piers(from: String, to: String) -> ArrayMesh:
+	var key := "piers|%s|%s" % [from, to]
+	if _cache.has(key):
+		return _cache[key]
+	var b := Geo.Buf.new()
+	b.mat = 0.0
+	if Land.water_share(from, to, 0.5) > 0.3:
+		# (alpha 0 = no sway in the wind)
+		var concrete := Color(0.5, 0.49, 0.46, 0.0)
+		var z := -Land.LENGTH * 0.5
+		var top := -0.65 - DECK_DEEP
+		var extra := PIER_MAX_ALT / float(PIER_STEPS)
+		for mid_x: float in ROAD_MIDS:
+			b.uv_y = 0.0
+			b.block(Vector3(mid_x, top - 1.0, z), Vector3(12.6, 2.0, 3.4), concrete)
+			for i in PIER_STEPS:
+				var y0 := lerpf(top - 2.0, Land.WATER_Y - 1.0, float(i) / float(PIER_STEPS))
+				var y1 := lerpf(top - 2.0, Land.WATER_Y - 1.0, float(i + 1) / float(PIER_STEPS)) - extra
+				b.uv_y = float(i) / float(PIER_STEPS)
+				b.block(Vector3(mid_x, (y0 + y1) * 0.5, z), Vector3(5.0, y0 - y1, 2.6), concrete)
+	b.uv_y = 0.0
+	var mesh: ArrayMesh = null if b.is_empty() else b.to_mesh()
+	_cache[key] = mesh
+	return mesh
 
 
 # ── Streetlights ─────────────────────────────────────────────
