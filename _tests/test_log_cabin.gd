@@ -261,8 +261,12 @@ func _ready() -> void:
 			"Snow: snow lies outside and the glass frosts (%.2f / %.2f)" % [float(surf0.get_shader_parameter("snow")), float(glass.get_shader_parameter("frost"))])
 		# the windows between the great room and the den are indoors: never frosted or wet
 		var inside_glass := room.get("_parts")["inside_glass_mat"] as ShaderMaterial
-		_check(float(inside_glass.get_shader_parameter("frost")) < 0.01 and float(inside_glass.get_shader_parameter("wet")) < 0.01,
-			"Snow: the windows into the den stay clear (frost %.2f)" % float(inside_glass.get_shader_parameter("frost")))
+		# (a value never set reads back as null: count that as 0)
+		var in_frost: Variant = inside_glass.get_shader_parameter("frost")
+		var in_wet: Variant = inside_glass.get_shader_parameter("wet")
+		var in_f := float(in_frost) if in_frost != null else 0.0
+		var in_w := float(in_wet) if in_wet != null else 0.0
+		_check(in_f < 0.01 and in_w < 0.01, "Snow: the windows into the den stay clear (frost %.2f)" % in_f)
 		EventBus.camera_preset_requested.emit(6)
 		await _secs(2.0)
 		await _shot(_out.path_join("weather_snow_outside.png"))

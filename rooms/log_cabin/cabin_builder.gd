@@ -1569,6 +1569,9 @@ static func _build_glass(parent: Node3D, out: Dictionary) -> void:
 	out["glass_mat"] = m
 	_add_mesh(parent, "Glass", _glass_mesh(outside), m, false)
 	var mi := Weather.glass_material(tint)
+	# (set to dry and clear outright, so the values read back as numbers, not "never set")
+	for k: String in ["rain", "wet", "frost"]:
+		mi.set_shader_parameter(k, 0.0)
 	out["inside_glass_mat"] = mi
 	_add_mesh(parent, "GlassInside", _glass_mesh(inside), mi, false)
 
