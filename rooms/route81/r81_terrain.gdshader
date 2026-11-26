@@ -14,7 +14,13 @@ render_mode cull_disabled;
 // Close to the camera the forest is its floor (the trees standing on it are real meshes, see
 // r81_tree.gdshader); from about 150 m out, where the real trees stop, it turns into canopy:
 // lumpy tree tops in patches of lighter and darker green (or fall colours).
-// Texture sizes are whole fractions of a piece's 80 m, so pieces meet without a seam.
+// Texture sizes are whole fractions of a piece's 80 m, so pieces meet without a seam, except
+// the second, turned layers that break up the repeats (below), which are smooth enough that a
+// seam does not show.
+// Repeats: one noise picture laid on every 20 m made the tree tops (and the grass photo every
+// 4 m) into regular rows that, on a hillside seen from afar, read as stripes ("watermelon",
+// Sen round 5). So the tree tops mix two layers of different sizes, one turned, and the fine
+// detail fades out with distance, where only the big patches are left.
 // r22_desert.gd writes the shared uniforms; r81_trip.gd writes alt_drop and season.
 #include "res://rooms/route81/r81_common.gdshaderinc"
 
@@ -50,11 +56,22 @@ vec3 rock_sides(vec3 p, vec3 n, float tile) {
 	return texture(tex_rock, p.zy / tile).rgb * w.x + texture(tex_rock, p.xz / tile).rgb * w.y + texture(tex_rock, p.xy / tile).rgb * w.z;
 }
 
+// The same spot turned by about 37 degrees (for a second layer whose repeats do not line up).
+vec2 turned(vec2 q) {
+	return mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * q;
+}
+
 void fragment() {
 	vec2 q = o_pos.xz;
-	vec4 lumps = texture(rock_noise, q / 20.0);
-	vec4 patches = texture(rock_noise, q / 80.0);
+	vec2 qt = turned(q);
 	float dist = length(w_pos - CAMERA_POSITION_WORLD);
+	// how much of the fine detail is left at this distance (1 near .. 0 from about 600 m)
+	float fine = 1.0 - smoothstep(150.0, 600.0, dist);
+	// (two layers, 20 m and 33 m, the second turned; stretched back to the first's contrast)
+	vec4 lumps = (texture(rock_noise, q / 20.0) + texture(rock_noise, qt / 33.0 + vec2(0.37, 0.71))) * 0.5;
+	lumps = mix(vec4(0.5), clamp((lumps - 0.5) * 1.6 + 0.5, 0.0, 1.0), fine);
+	vec4 patches = (texture(rock_noise, q / 80.0) + texture(rock_noise, qt / 190.0 + vec2(0.13, 0.52))) * 0.5;
+	patches = clamp((patches - 0.5) * 1.5 + 0.5, 0.0, 1.0);
 	// ── forest: its floor near, its canopy far ──
 	// (the floor: last year's leaves with green undergrowth coming through in patches)
 	vec3 floor_col = texture(tex_leaves, q / 5.0).rgb * vec3(0.55, 0.6, 0.45);
@@ -75,7 +92,9 @@ void fragment() {
 	// ── mown grass ──
 	// (the photo is of dry, sparse grass: keep its light and dark, in a mown summer green)
 	vec3 grass_photo = texture(tex_grass, q / 4.0).rgb;
-	vec3 grass = vec3(0.26, 0.4, 0.12) * (0.45 + 1.6 * dot(grass_photo, vec3(0.333)));
+	// (the photo's light and dark only close up: further out its 4 m repeat shows as rows)
+	float grass_shade = mix(0.5, dot(grass_photo, vec3(0.333)), 1.0 - smoothstep(30.0, 140.0, dist));
+	vec3 grass = vec3(0.26, 0.4, 0.12) * (0.45 + 1.6 * grass_shade);
 	if (detail < 0.5) {
 		grass = vec3(0.2, 0.3, 0.1);
 	}
@@ -95,7 +114,7 @@ void fragment() {
 		float rows = 0.85 + 0.15 * sin(o_pos.x * 8.0) * (1.0 - smoothstep(30.0, 90.0, dist));
 		crop *= rows * (0.8 + 0.4 * patches.a);
 		if (detail > 0.5) {
-			crop *= 0.6 + 1.2 * dot(grass_photo, vec3(0.333));
+			crop *= 0.6 + 1.2 * grass_shade;
 		}
 		// fall: the corn and hay stand dry and gold
 		crop = mix(crop, crop * vec3(1.5, 1.1, 0.6), season * 0.6 * step(pick, 0.55));
@@ -113,12 +132,25 @@ void fragment() {
 	col = mix(col, rock, COLOR.r);
 	col *= r22_cloud_shade(w_pos);
 	col *= 1.0 - 0.3 * wet;
-	// ── the river: dark, slow water with drifting lighter streaks, shiny enough to hold the sky ──
-	float water = smoothstep(0.9, 0.99, river);
-	vec3 stream = mix(vec3(0.035, 0.075, 0.07), vec3(0.07, 0.13, 0.13), texture(rock_noise, q / 90.0 + vec2(TIME * 0.004, 0.0)).b);
-	stream += 0.03 * smoothstep(0.55, 0.8, texture(rock_noise, q / vec2(140.0, 18.0) + vec2(TIME * 0.01, 0.0)).g);
-	col = mix(col, stream * r22_cloud_shade(w_pos), water);
+	// ── the river: dark, slow water, its surface broken by ripples drifting downstream ──
+	// (it was long, even lighter streaks over a mirror-flat surface, which read as corrugated
+	// sheet metal: Sen, round 5. The river flows across the road, along X.)
+	// a ragged edge where the bank meets the water, not a ruled line
+	float water = smoothstep(0.9, 0.99, river + 0.08 * (texture(rock_noise, q / 37.0).g - 0.5));
+	if (water > 0.001) {
+		vec2 flow = vec2(TIME * 0.7, 0.0);
+		float slow = texture(rock_noise, (q + flow * 0.3) / 160.0 + vec2(0.21, 0.63)).b;
+		vec3 stream = mix(vec3(0.03, 0.06, 0.055), vec3(0.075, 0.11, 0.095), slow);
+		col = mix(col, stream * r22_cloud_shade(w_pos), water);
+		// the ripples tilt the surface (two layers drifting at different speeds and sizes,
+		// fading with distance, where they would only shimmer)
+		vec2 a = texture(rock_noise, (q + flow) / 9.0).rg - 0.5;
+		vec2 b = texture(rock_noise, (qt - flow * 0.6) / 23.0 + vec2(0.4, 0.1)).gb - 0.5;
+		vec2 tilt = (a * 0.35 + b * 0.45) * (1.0 - 0.75 * smoothstep(80.0, 900.0, dist));
+		vec3 wn = normalize(vec3(tilt.x, 1.0, tilt.y));
+		NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(wn, 0.0)).xyz, water));
+	}
 	ALBEDO = col;
-	ROUGHNESS = mix(mix(0.95, 0.7, wet * COLOR.r), 0.12, water);
-	SPECULAR = mix(0.08 + 0.25 * wet * COLOR.r, 0.6, water);
+	ROUGHNESS = mix(mix(0.95, 0.7, wet * COLOR.r), 0.1, water);
+	SPECULAR = mix(0.08 + 0.25 * wet * COLOR.r, 0.45, water);
 }

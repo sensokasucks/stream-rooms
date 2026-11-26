@@ -24,6 +24,7 @@ extends Room
 const Geo := preload("res://rooms/route22/r22_geo.gd")
 const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Car := preload("res://rooms/route22/r22_car.gd")
+const Bobbleheads := preload("res://rooms/route22/r22_bobbleheads.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Trip := preload("res://rooms/route81/r81_trip.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
@@ -43,6 +44,7 @@ var _desert: Desert
 var _trip: Trip
 var _traffic: Traffic
 var _car: Car
+var _bobs: Bobbleheads             # the riders' bobbleheads on the dashboard (r22_bobbleheads.gd)
 var _kit: Dictionary
 var _backdrop: Node3D
 var _vistas: Vistas
@@ -122,6 +124,7 @@ func _process(delta: float) -> void:
 	_traffic.tick(delta, _trip.speed)
 	# headlights on in the tunnels as well as at night
 	_car.tick(delta, _trip.speed, maxf(_desert.night, _trip.cover), _desert.wet, Desert.detail_level() == "full")
+	_bobs.tick(delta, _trip.speed, _trip.bend)
 
 
 ## Lets the camera in use see as far as the far ridges (once per camera; put back by
@@ -175,6 +178,8 @@ func _build_set() -> void:
 	_car.dusty = false
 	_car.build(_kit)
 	_car.position = CAR_AT
+	_bobs = Bobbleheads.new()
+	_bobs.setup(self, _car.get_body())
 	var markers := Node3D.new()
 	markers.name = "Markers"
 	add_child(markers)
@@ -261,10 +266,13 @@ func get_controls() -> Array[Dictionary]:
 	var out: Array[Dictionary] = [{"heading": "Route 81"}]
 	out.append(DesertCruise.land_control())
 	out.append_array([
-		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d km/h", "zero": "Parked",
-			"tooltip": "How fast the woody drives. 50 km/h is an easy cruise (slow for an interstate, but it gives the view time); 0 parks it on the shoulder. The same slider as the desert Cruise's."},
-		{"key": "r22_curves", "label": "Curves and hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How much the highway winds and rolls. Here the curves also swing the far ridges and the sun round, like a real change of direction. 0% = dead straight and flat."},
+		# (the setting is km/h; the slider shows and steps in miles an hour, Sen round 5)
+		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 128.7475, "step": 1.609344, "format": "%d mph", "scale": 0.6213712, "zero": "Parked",
+			"tooltip": "How fast the woody drives, in miles an hour. 30 mph is an easy cruise (slow for an interstate, but it gives the view time); 0 parks it on the shoulder. The same slider as the desert Cruise's."},
+		{"key": "r22_curves", "label": "Curves", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the highway winds left and right. Here the curves also swing the far ridges and the sun round, like a real change of direction. 0% = dead straight."},
+		{"key": "r22_hills", "label": "Hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the highway rises and dips away in the distance. 0% = flat. (Separate from Curves, so you can have one without the other.)"},
 		{"key": "r22_traffic", "label": "How busy", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d", "zero": "Empty road",
 			"tooltip": "How much other traffic there is, a lot of it trucks: on the other road across the median, and now and then one passing you in the left lane. 100 = about one every 6 seconds. 0 = an empty road."},
 		{"heading": "The road"},
@@ -298,6 +306,9 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "r81_bb_wooden", "label": "Shape: weathered wooden sign", "type": "check", "tooltip": "A low, leaning wooden sign in a field; the picture looks sun-bleached."},
 		{"key": "r81_bb_trailer", "label": "Shape: parked trailer", "type": "check", "tooltip": "An old box trailer parked in a field with the picture on its side."},
 		{"key": "r81_bb_barn", "label": "Shape: painted barn", "type": "check", "tooltip": "A red barn in a field with the picture painted on its end wall, a little weathered."},
+	])
+	out.append_array(Bobbleheads.controls())
+	out.append_array([
 		{"heading": "Time of day"},
 		{"key": "r22_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
 			"tooltip": "The hour, 0 to 24. 6 = sunrise, 12 = noon, 18 = sunset. Where the sun stands along the road changes as the highway curves."},

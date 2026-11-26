@@ -97,7 +97,11 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	# PC loads rooms itself), r22_bb_folder / r22_bb_core (pictures are each PC's own files).
 	# The Cruise's distance driven travels separately (room event "r22_travel", r22_trip.gd).
 	"r22_time", "r22_day_minutes", "r22_weather", "r22_clouds", "r22_stars", "r22_heat", "r22_wind",
-	"r22_speed", "r22_curves", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
+	"r22_speed", "r22_curves", "r22_hills", "r22_traffic",
+	# (the dashboard's bobbleheads: every PC sees the same car)
+	"r22_bob_on", "r22_bob_size", "r22_bob_wobble", "r22_bob_1_x", "r22_bob_1_z", "r22_bob_1_turn",
+	"r22_bob_2_x", "r22_bob_2_z", "r22_bob_2_turn", "r22_bob_3_x", "r22_bob_3_z", "r22_bob_3_turn",
+	"r22_bob_4_x", "r22_bob_4_z", "r22_bob_4_turn", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
 	"r22_bb_classic", "r22_bb_monopole", "r22_bb_wooden", "r22_bb_rooftop", "r22_bb_neon", "r22_bb_trailer",
 	# Route 81 (rooms/route81) drives on the r22_ keys above; its own: how the road is made up
 	# (every PC must build the same road) and the season. Not shared: r81_forest (each PC's own

@@ -100,9 +100,12 @@ const CONDUCTORS: Array = [[22.0, -5.5], [22.0, 5.5], [26.0, -4.5], [26.0, 4.5],
 ## two sides are woods with the corridor cut (r81_land.gd WIRE_SALT; r81_trip.gd wires_at).
 ## Drawn with the TREE material (kit["trees"], r81_tree.gdshader): the pylons further out stand
 ## on ground that sinks into the valley, and that shader lowers things by the depth in UV.y.
-static func power_line() -> ArrayMesh:
-	if _cache.has("power_line"):
-		return _cache["power_line"]
+## climb_l / climb_r: how much each side climbs (r81_trip.gd climb()); a climbing side's pylons
+## stand up the mountainside. Kept per pair of climbs.
+static func power_line(climb_l: float = 0.0, climb_r: float = 0.0) -> ArrayMesh:
+	var key := "power_line|%.3f|%.3f" % [climb_l, climb_r]
+	if _cache.has(key):
+		return _cache[key]
 	var b := Geo.Buf.new()
 	b.mat = 0.0
 	# (alpha 0 = no sway in the wind)
@@ -115,7 +118,8 @@ static func power_line() -> ArrayMesh:
 		for n in PYLONS_AT.size():
 			# (the left side from its outermost pylon in, the right side from the road out)
 			var u := PYLONS_AT[PYLONS_AT.size() - 1 - n] if side < 0 else PYLONS_AT[n]
-			var p := Land.blend("woods", "woods", u, 0.5, float(Land.WIRE_SALT + (50 if side < 0 else 0)))
+			var c := climb_l if side < 0 else climb_r
+			var p := Land.blend("woods", "woods", u, 0.5, float(Land.WIRE_SALT + (50 if side < 0 else 0)), c, c)
 			feet.append([(Land.ROAD_R + u) if side > 0 else (Land.OPP_L - u), p[0], p[1]])
 	for f: Array in feet:
 		b.uv_y = float(f[2])
@@ -137,7 +141,7 @@ static func power_line() -> ArrayMesh:
 				last = at
 	b.uv_y = 0.0
 	var mesh := b.to_mesh()
-	_cache["power_line"] = mesh
+	_cache[key] = mesh
 	return mesh
 
 
@@ -214,13 +218,11 @@ static func bridge(from: String, to: String) -> ArrayMesh:
 
 ## The piers under a bridge place: one hammerhead pier per road, halfway along the place,
 ## where the place is bridge there. For the TREE material (like the power line, see there):
-## the river lies `altitude` further down than the mesh says, and that shader lowers each
-## corner by its depth (UV.y) times the altitude. A box has one depth for all its corners, so
-## a pier is PIER_STEPS boxes, each sunk a step more than the one above and long enough to
-## still reach into the one below at the greatest altitude, PIER_MAX_ALT (the lowest ends
-## under the water).
-const PIER_STEPS: int = 8
-const PIER_MAX_ALT: float = 320.0
+## that shader lowers each corner by its depth (UV.y) times the altitude, and the river lies on
+## the valley floor, the whole altitude below the road (r81_land.gd WATER_Y, depth 1). So the
+## pier's column is built from under the deck down to 1 m below the road with depth 0 at its
+## top corners and 1 at its bottom ones: the shader stretches it down to the river, however
+## high the road is (the node's extra culling margin, r81_trip.gd, covers the stretch).
 static func bridge_piers(from: String, to: String) -> ArrayMesh:
 	var key := "piers|%s|%s" % [from, to]
 	if _cache.has(key):
@@ -232,15 +234,25 @@ static func bridge_piers(from: String, to: String) -> ArrayMesh:
 		var concrete := Color(0.5, 0.49, 0.46, 0.0)
 		var z := -Land.LENGTH * 0.5
 		var top := -0.65 - DECK_DEEP
-		var extra := PIER_MAX_ALT / float(PIER_STEPS)
 		for mid_x: float in ROAD_MIDS:
 			b.uv_y = 0.0
+			# the hammerhead under the deck
 			b.block(Vector3(mid_x, top - 1.0, z), Vector3(12.6, 2.0, 3.4), concrete)
-			for i in PIER_STEPS:
-				var y0 := lerpf(top - 2.0, Land.WATER_Y - 1.0, float(i) / float(PIER_STEPS))
-				var y1 := lerpf(top - 2.0, Land.WATER_Y - 1.0, float(i + 1) / float(PIER_STEPS)) - extra
-				b.uv_y = float(i) / float(PIER_STEPS)
-				b.block(Vector3(mid_x, (y0 + y1) * 0.5, z), Vector3(5.0, y0 - y1, 2.6), concrete)
+			# the column: four sides, their bottom corners at depth 1
+			var first := b.verts.size()
+			var y0 := top - 2.0
+			var y1 := -1.0 - 0.001
+			var hx := 2.5
+			var hz := 1.3
+			var corners: Array[Vector2] = [Vector2(-hx, -hz), Vector2(hx, -hz), Vector2(hx, hz), Vector2(-hx, hz)]
+			for i in 4:
+				var p0 := corners[i]
+				var p1 := corners[(i + 1) % 4]
+				b.quad(Vector3(mid_x + p0.x, y0, z + p0.y), Vector3(mid_x + p1.x, y0, z + p1.y),
+					Vector3(mid_x + p1.x, y1, z + p1.y), Vector3(mid_x + p0.x, y1, z + p0.y), concrete)
+			for i in range(first, b.verts.size()):
+				if b.verts[i].y < y1 + 0.01:
+					b.uvs[i] = Vector2(b.mat, 1.0)
 	b.uv_y = 0.0
 	var mesh: ArrayMesh = null if b.is_empty() else b.to_mesh()
 	_cache[key] = mesh
@@ -391,18 +403,25 @@ static func lid(part: String) -> ArrayMesh:
 ## The trees on the mountain over the two roads and the rock between them (the land's own trees,
 ## r81_land.gd _trees, only stand outside the roads). Scattered from a fixed seed over the
 ## stretch that is mountain, leaving the first metres behind the mouth bare so no crown hangs
-## over the portal. Returns {tree kind: MultiMesh} for r81_tree.gdshader.
+## over the portal. Returns {"top": {tree kind: MultiMesh} of low-poly trees for r81_tree.gdshader
+## (the Low look), "top_cards": the same trees as the campfire's Blender trees (the Detailed look,
+## r81_land.gd tree_batches)}.
 static func lid_trees(part: String) -> Dictionary:
-	var key := "lid_trees|" + part
+	# (the Blender trees wear this room's materials: kept per Land.kit_serial)
+	var key := "lid_trees|%s|%d" % [part, Land.kit_serial]
 	if _cache.has(key):
 		return _cache[key]
 	var from := "cut" if part == "in" else "mount"
 	var to := "cut" if part == "out" else "mount"
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 8100 + key.hash() % 1000
+	# (seeded by the part alone, as before, so every PC and every load grows the same trees)
+	rng.seed = 8100 + ("lid_trees|" + part).hash() % 1000
 	var lists := {}
+	var cards := {}
 	for kind in Land.TREES:
 		lists[kind] = []
+	for kind in Land.CARD_KINDS:
+		cards[kind] = []
 	var x0 := Land.OPP_L - Land.TRENCH
 	var x1 := Land.ROAD_R + Land.TRENCH
 	for i in roundi((x1 - x0) * Land.LENGTH * 0.03):
@@ -417,7 +436,17 @@ static func lid_trees(part: String) -> Dictionary:
 		var kind := "pine" if pick > 0.85 else ("oak" if pick < 0.5 else "maple")
 		var xf := Transform3D(Basis(Vector3.UP, turn).scaled(Vector3(size, size, size)), Vector3(x, Land.mount_height(rise, Land.TRENCH) - 0.5, -zt * Land.LENGTH))
 		(lists[kind] as Array).append([xf, Color(0.0, pick, 0.0, 0.0)])
-	var out := Land.tree_batches(lists)
+		# the Blender tree on the same spot (sizes as r81_land.gd _trees gives them)
+		var card_kind := kind
+		var tall := size * 10.7
+		if kind == "pine":
+			card_kind = "fir" if pick > 0.93 else "pine"
+			tall *= 1.15
+		elif kind == "oak" and pick > 0.3:
+			card_kind = "birch"
+			tall *= 0.85
+		(cards[card_kind] as Array).append([Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * tall), xf.origin), Color(0.0, pick, 0.0, 0.0)])
+	var out := {"top": Land.tree_batches(lists), "top_cards": Land.tree_batches(cards, true)}
 	_cache[key] = out
 	return out
 

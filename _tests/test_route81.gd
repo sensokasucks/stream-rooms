@@ -7,6 +7,8 @@ extends Node
 ##     slider at 0 leaves no overlooks, Tunnels "never" leaves no tunnels,
 ##   driving into a tunnel takes the daylight away (cover) and changes the region,
 ##   the heading swings the far ridges, the altitude moves the valley,
+##   one side climbs a mountainside (round 5), the river carries on past the land's edge,
+##   Curves and Hills are separate, the dashboard's bobbleheads,
 ##   traffic comes, a stray co-stream travel message is ignored,
 ##   the Scenery switch goes to the desert Cruise and back.
 ## Saves screenshots of every camera, an overlook, a rock cut, a tunnel mouth, inside a tunnel,
@@ -45,11 +47,16 @@ func _wait_room(host: Node, room_name: String, limit: float) -> Room:
 	var waited := 0.0
 	while waited < limit:
 		var r: Room = host.get_current_room()
-		if r != null and r.name == room_name:
+		# (a room loaded again while the last copy is still waiting to be freed, RoomHost's
+		# OLD_ROOM_FREE_DELAY, gets a made-up name: it is known by its script then)
+		var same_script := r != null and r.get_script() != null and String((r.get_script() as Script).resource_path).get_file().get_basename().to_pascal_case() == room_name
+		if r != null and (r.name == room_name or same_script):
 			await _secs(1.0)
 			return r
 		await _secs(0.5)
 		waited += 0.5
+	var shown: Room = host.get_current_room()
+	print("(waited %.0f s for %s; showing %s, room_id %s)" % [limit, room_name, shown.name if shown else "nothing", AppState.get_setting("room_id")])
 	return null
 
 
@@ -102,6 +109,20 @@ func _detailed_trees(trip: Trip) -> void:
 		if far.multimesh.mesh.get_faces().size() != 6:
 			bad.append("%s: the far level is not one square" % t.name)
 	_check(sets >= 6 and bad.is_empty(), "%d sets of detailed trees: same trees at every level, each with its band %s" % [sets, str(bad.slice(0, 4))])
+	# round 5: every tree is a Blender tree on the Detailed look, the far ones too ("cards2":
+	# light level and far picture only), and no low-poly tree is drawn beside them
+	var far_cards := 0
+	var low_poly := 0
+	for node: Node in trip.find_children("Trees*", "MultiMeshInstance3D", true, false):
+		var t := node as MultiMeshInstance3D
+		if not t.is_visible_in_tree() or t.multimesh == null:
+			continue
+		var group := String(t.get_meta("group", ""))
+		if group == "cards2":
+			far_cards += 1
+		elif group in ["far", "near", "top"]:
+			low_poly += 1
+	_check(far_cards >= 6 and low_poly == 0, "the far trees are Blender trees too (%d batches), no low-poly trees (%d)" % [far_cards, low_poly])
 	for i: int in [5, 3, 0, 6]:
 		EventBus.camera_preset_requested.emit(i)
 		await _secs(2.5)
@@ -228,6 +249,21 @@ func _ready() -> void:
 		drops += 1 if Trip.boundary(1, b) == "drop" or Trip.boundary(-1, b) == "drop" else 0
 	_check(drops == 0, "views at 0%: no overlooks")
 	AppState.set_setting("r81_views", 0.6)
+	# Round 5: the ridge road runs along a mountainside: one side climbs, never both, and the
+	# climbing side has no overlooks
+	var one_up := true
+	var no_view_up := true
+	for b in range(100, 800):
+		var up_r := Trip.climb(1, b)
+		var up_l := Trip.climb(-1, b)
+		one_up = one_up and up_r + up_l == 1.0
+		if (up_r > 0.5 and Trip.boundary(1, b) == "drop") or (up_l > 0.5 and Trip.boundary(-1, b) == "drop"):
+			no_view_up = false
+	_check(one_up and no_view_up, "ridge country: one side climbs the mountain, never with an overlook on it")
+	var hill_side := Land.edge("woods", 600.0, 0.5, 3.0, 1.0)
+	var valley_side := Land.edge("woods", Land.REACH, 0.5, 3.0, 0.0)
+	_check(hill_side[0] > 120.0 and hill_side[1] == 0.0 and absf(valley_side[0]) < 0.5 and valley_side[1] > 0.99,
+		"a climbing side rises %.0f m by 600 m out; a falling side reaches the valley floor at the land's edge" % hill_side[0])
 	AppState.set_setting("r81_tunnels", "never")
 	_check(Trip.period() == 0 and Trip.part_at(b0) == "" and Trip.boundary(1, b0 + 3) != "mount", "Tunnels Never: no tunnels")
 	AppState.set_setting("r81_tunnels", "medium")
@@ -251,7 +287,7 @@ func _ready() -> void:
 		_check(k_drop > 0, "found an overlook ahead (place %d)" % k_drop)
 		trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
 		await _secs(1.5)
-		_check(trip.altitude >= 39.0 and trip.altitude <= 241.0, "the road is %.0f m above the valley" % trip.altitude)
+		_check(trip.altitude >= 20.0 and trip.altitude <= 300.0, "the road is %.0f m above the valley" % trip.altitude)
 		await _shot("r81_overlook_chase")
 		EventBus.camera_preset_requested.emit(2)
 		await _secs(1.0)
@@ -432,8 +468,11 @@ func _ready() -> void:
 	await _secs(0.5)
 	var k_bridge := _find_place(from, func(k: int) -> bool:
 		return Trip.boundary(1, k) == "water" and Trip.boundary(1, k - 1) != "water")
-	_check(k_bridge > 0 and Trip.boundary(-1, k_bridge) == "water" and Trip.boundary(1, k_bridge + 8) == "water" and Trip.boundary(1, k_bridge + 9) == "drop"
-		and Trip.bridge_at(k_bridge + 3) and not Trip.bridge_at(k_bridge + 10), "river country: a bridge of eight places, water on both sides (from place %d)" % k_bridge)
+	var wide := 2 * Trip.CROSS_HALF
+	_check(k_bridge > 0 and Trip.boundary(-1, k_bridge) == "water" and Trip.boundary(1, k_bridge + wide) == "water" and Trip.boundary(1, k_bridge + wide + 1) == "drop"
+		and Trip.bridge_at(k_bridge + 2) and not Trip.bridge_at(k_bridge + wide + 2), "river country: a bridge of %d places, water on both sides (from place %d)" % [wide, k_bridge])
+	_check(Trip.river_middle(k_bridge + Trip.CROSS_HALF) and not Trip.river_middle(k_bridge), "the river's far reaches hang on the crossing's middle place")
+	_check(Trip.climb(1, k_bridge) == 0.0 and Trip.climb(-1, k_bridge) == 0.0, "river country: both sides fall to the valley")
 	EventBus.camera_preset_requested.emit(5)
 	trip.set_travel(float(k_bridge) * Land.LENGTH - 150.0)
 	await _secs(1.5)
@@ -443,7 +482,10 @@ func _ready() -> void:
 	await _secs(1.5)
 	var decks: Array = room.find_children("Bridge", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
 		return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
-	_check(decks.size() >= 8, "the bridge's deck and railings are in view (%d places)" % decks.size())
+	_check(decks.size() >= wide + 1, "the bridge's deck and railings are in view (%d places)" % decks.size())
+	var far_river: Array = room.find_children("RiverFar", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
+		return (n as MeshInstance3D).is_visible_in_tree())
+	_check(far_river.size() == 1, "the river carries on past the land's edge (%d)" % far_river.size())
 	await _shot("r81_bridge_chase")
 	for cam: int in [0, 3, 6]:
 		EventBus.camera_preset_requested.emit(cam)
@@ -561,11 +603,16 @@ func _ready() -> void:
 	var turn0 := backdrop.rotation.y
 	trip.set_travel(trip.travel + 1400.0)
 	await _secs(0.5)
-	_check(absf(backdrop.rotation.y - turn0) > 0.02 and backdrop.position.y < -100.0, "the far ridges swing with the road and lie below it (%.2f rad, %.0f m)" % [backdrop.rotation.y - turn0, backdrop.position.y])
+	_check(absf(backdrop.rotation.y - turn0) > 0.02 and backdrop.position.y < -15.0 and absf(backdrop.position.y + trip.altitude) < 0.01,
+		"the far ridges swing with the road and their valley floor lies the road's height below it (%.2f rad, %.0f m)" % [backdrop.rotation.y - turn0, backdrop.position.y])
 	AppState.set_setting("r22_curves", 0.0)
 	await _secs(0.3)
-	_check(absf(trip.bend) < 0.0000001 and absf(trip.heading) < 0.0001, "Curves 0: dead straight")
+	_check(absf(trip.bend) < 0.0000001 and absf(trip.heading) < 0.0001 and absf(trip.hill) > 0.0000001, "Curves 0: dead straight (the hills stay)")
 	AppState.set_setting("r22_curves", 0.5)
+	AppState.set_setting("r22_hills", 0.0)
+	await _secs(0.3)
+	_check(absf(trip.hill) < 0.0000001 and absf(trip.bend) > 0.0000001, "Hills 0: flat (the curves stay)")
+	AppState.set_setting("r22_hills", 0.5)
 
 	# ── parked, traffic, co-stream ──
 	var traffic: Node = room.call("get_traffic")
@@ -575,7 +622,37 @@ func _ready() -> void:
 	before = trip.travel
 	await _secs(1.0)
 	_check(absf(trip.travel - before) < 0.01, "Parked: the land stands still")
+	# the bobbleheads on the dashboard: one per rider who is on; they stand still while parked
+	# and swing when the car sets off
+	var bobs := room.find_child("Bobbleheads", true, false) as Node3D
+	var shown := 0
+	if bobs:
+		for c: Node in bobs.get_children():
+			shown += 1 if (c as Node3D).visible else 0
+	_check(bobs != null and bobs.visible and shown == 4, "four bobbleheads on the dashboard (%d)" % shown)
+	AppState.set_setting(AppState.presenter_key(3, "on"), false)
+	await _secs(0.3)
+	_check(bobs != null and not (bobs.get_child(2) as Node3D).visible, "a rider who is off has no bobblehead")
+	AppState.set_setting(AppState.presenter_key(3, "on"), true)
 	AppState.set_setting("r22_speed", 50.0)
+	await _secs(1.5)
+	var swung := 0.0
+	if bobs:
+		for c: Node in bobs.get_children():
+			var pivot := c.get_node("Pivot") as Node3D
+			swung = maxf(swung, pivot.basis.y.angle_to(Vector3.UP))
+	_check(swung > 0.02, "the bobbleheads swing as the car sets off (%.2f rad)" % swung)
+	if bobs:
+		var pic := bobs.get_child(0).get_node("Pivot/Picture") as MeshInstance3D
+		_check(pic.material_override != null and pic.mesh != null, "a bobblehead wears its rider's picture")
+	EventBus.camera_preset_requested.emit(4)
+	await _secs(0.5)
+	await _shot("r81_bobbleheads")
+	EventBus.camera_preset_requested.emit(5)
+	AppState.set_setting("r22_bob_on", false)
+	await _secs(0.2)
+	_check(bobs != null and not bobs.visible, "Bobbleheads off: none")
+	AppState.set_setting("r22_bob_on", true)
 	var mine := trip.travel
 	EventBus.net_room_event.emit(2, "Host", "r81_travel", [mine + 500.0, 13.9])
 	await _secs(0.1)

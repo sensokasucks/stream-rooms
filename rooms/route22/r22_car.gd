@@ -133,6 +133,12 @@ func build(kit: Dictionary) -> void:
 		(mi as MeshInstance3D).layers |= REFLECT_LAYER
 
 
+## The car's body (everything but the wheels; it sways a little): r22_bobbleheads.gd stands
+## the dashboard's bobbleheads on it so they ride its sway.
+func get_body() -> Node3D:
+	return _body
+
+
 ## The positions of the model's marker nodes whose names start with `prefix`, in name order
 ## (Wheel_1.., Seat_1.., LampFront_1.., LampTail_1..: models/make_woody.py).
 func _marks(model: Node3D, prefix: String) -> Array[Vector3]:

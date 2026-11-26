@@ -31,6 +31,7 @@ const Billboards := preload("res://rooms/route22/r22_billboards.gd")
 const Traffic := preload("res://rooms/route22/r22_traffic.gd")
 const Extras := preload("res://rooms/route22/r22_extras.gd")
 const Car := preload("res://rooms/route22/r22_car.gd")
+const Bobbleheads := preload("res://rooms/route22/r22_bobbleheads.gd")
 ## This room's id (rooms/route22_cruise/room_info.tres) and the Drive-In's: the Scene switch.
 const MY_ID := "route22_cruise"
 const OTHER_ID := "route22"
@@ -63,6 +64,7 @@ var _boards: Billboards
 var _traffic: Traffic
 var _extras: Extras
 var _car: Car
+var _bobs: Bobbleheads             # the riders' bobbleheads on the dashboard
 var _kit: Dictionary
 var _retired: bool = false
 
@@ -131,6 +133,7 @@ func _process(delta: float) -> void:
 	_traffic.tick(delta, _trip.speed)
 	_extras.tick(delta, _trip.speed, wind, _desert.day)
 	_car.tick(delta, _trip.speed, _desert.night, _desert.wet, Desert.detail_level() == "full")
+	_bobs.tick(delta, _trip.speed, _trip.bend)
 
 
 ## The ground, the road, the car and the markers. The ground and the road never move (their
@@ -160,6 +163,8 @@ func _build_set() -> void:
 	set_root.add_child(_car)
 	_car.build(_kit)
 	_car.position = CAR_AT
+	_bobs = Bobbleheads.new()
+	_bobs.setup(self, _car.get_body())
 	var markers := Node3D.new()
 	markers.name = "Markers"
 	add_child(markers)
@@ -218,10 +223,13 @@ func get_controls() -> Array[Dictionary]:
 	out.append(scene_control())
 	out.append(land_control())
 	out.append_array([
-		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d km/h", "zero": "Parked",
-			"tooltip": "How fast the woody drives. 50 km/h is an easy cruise; 0 parks it at the roadside (the desert stands still)."},
-		{"key": "r22_curves", "label": "Curves and hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How much the road winds and rolls away in the distance. 0% = dead straight and flat."},
+		# (the setting is km/h; the slider shows and steps in miles an hour, Sen round 5)
+		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 128.7475, "step": 1.609344, "format": "%d mph", "scale": 0.6213712, "zero": "Parked",
+			"tooltip": "How fast the woody drives, in miles an hour. 30 mph is an easy cruise; 0 parks it at the roadside (the desert stands still)."},
+		{"key": "r22_curves", "label": "Curves", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the road winds left and right away in the distance. 0% = dead straight."},
+		{"key": "r22_hills", "label": "Hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the road rises and dips away in the distance. 0% = flat."},
 		{"key": "r22_traffic", "label": "How busy", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d", "zero": "Empty road",
 			"tooltip": "How much other traffic there is: pickups, semis, motorhomes, motorcycles, old sedans and the odd tour bus. 100 = about one every 10 seconds, mostly oncoming, now and then one overtaking. 0 = an empty road."},
 		{"key": "r22_scenery", "label": "Landmarks and stops", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d%%", "zero": "Lonely road",
@@ -246,6 +254,7 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "r22_bb_neon", "label": "Shape: neon arrow", "type": "check", "tooltip": "A board with a big pink neon arrow pointing at it."},
 		{"key": "r22_bb_trailer", "label": "Shape: parked trailer", "type": "check", "tooltip": "An old box trailer parked in the dirt with the picture on its side."},
 	])
+	out.append_array(Bobbleheads.controls())
 	out.append_array(desert_controls())
 	out.append_array([
 		{"heading": "Look"},
