@@ -27,7 +27,9 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The fast tests take about 12 minutes on a normal GitHub machine and a third longer on a
+    # slow one (seen 2026-11-26: every test passed, the job was stopped at 15), so leave room.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
