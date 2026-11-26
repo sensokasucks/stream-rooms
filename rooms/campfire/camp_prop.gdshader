@@ -13,6 +13,12 @@ render_mode cull_disabled;
 // world position from three sides (no UV mapping needed), and holds the photo divided by its
 // average colour with 0.5 = no change, so an object keeps its own colour and gains the grain.
 // textures/make_textures.py makes them (CC0 photos from Poly Haven).
+// Level of detail (only the detailed trees use it, campfire_forest.gd): a tree is drawn by
+// several MultiMeshes, one per level, and each level only keeps the trees whose distance from
+// `lod_eye` (the camera, set by campfire_room.gd while it moves) is inside the level's band,
+// which each tree carries in its MultiMesh custom data (INSTANCE_CUSTOM.g = from, .b = to,
+// metres); the others are folded to a point and draw nothing. .b = 0 (no custom data, every
+// other use of this shader) = no band, everything is drawn.
 
 uniform float glow = 0.0;
 uniform float sway = 0.0;
@@ -21,6 +27,7 @@ uniform float wind = 1.0;
 uniform float roughness = 0.85;
 // 0 = plain colours (the low-poly look), 1 = with the detail textures.
 uniform float detail = 0.0;
+uniform vec3 lod_eye = vec3(0.0);
 uniform sampler2D tex_bark : filter_linear_mipmap_anisotropic, repeat_enable;        // 1
 uniform sampler2D tex_rock : filter_linear_mipmap_anisotropic, repeat_enable;        // 2
 uniform sampler2D tex_planks : filter_linear_mipmap_anisotropic, repeat_enable;      // 3
@@ -54,6 +61,12 @@ void vertex() {
 		float lean = sin(TIME * 0.7 + w.x * 0.13 + w.z * 0.09) + 0.4 * sin(TIME * 1.9 + w.x * 0.7 + w.z * 0.5);
 		vec3 push = vec3(1.0, 0.0, 0.35) * lean * sway * wind * COLOR.a * COLOR.a;
 		VERTEX += (inverse(MODEL_MATRIX) * vec4(push, 0.0)).xyz;
+	}
+	if (INSTANCE_CUSTOM.b > 0.0) {
+		float d = distance(MODEL_MATRIX[3].xyz, lod_eye);
+		if (d < INSTANCE_CUSTOM.g || d >= INSTANCE_CUSTOM.b) {
+			VERTEX = vec3(0.0);
+		}
 	}
 }
 
