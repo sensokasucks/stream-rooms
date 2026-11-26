@@ -40,6 +40,7 @@ const Geo := preload("res://rooms/route22/r22_geo.gd")
 const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Pieces := preload("res://rooms/route81/r81_pieces.gd")
+const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 
 ## How far behind and ahead of the car places are kept (metres). Further ahead than the desert's:
 ## there is no flat ground to hide where the land ends, only distance, haze and the curve.
@@ -68,8 +69,17 @@ const COVER_FADE: float = 25.0
 const FLOOR_BELOW: float = 94.0
 ## Seconds between the host's travel messages to its guests.
 const SYNC_EVERY: float = 4.0
-## The tunnel lamps' colour (sodium orange; the Streetlights choice will set it in a later round).
+## The lamps' colours for the Streetlights choice (r81_lights): old orange sodium, cool white LED.
 const LAMP := Color(1.0, 0.62, 0.25)
+const LAMP_LED := Color(0.8, 0.9, 1.0)
+## Places with a streetlight: the 8 before a tunnel's first place and the 8 after its last
+## (LIT_BEFORE, LIT_FROM..LIT_TO, counted from the tunnel's first place). r81_road.gdshader
+## draws the light on the road by the same numbers. With Tunnels = Never the same pattern
+## repeats every NO_TUNNEL_PERIOD places, so the road still has lit stretches.
+const LIT_BEFORE: int = 8
+const LIT_FROM: int = 6
+const LIT_TO: int = 13
+const NO_TUNNEL_PERIOD: int = 60
 
 ## Metres driven (from START). Read by the room for the shaders and the sound.
 var travel: float = START
@@ -91,6 +101,7 @@ var tunnel_b: float = 0.0
 
 var _kit: Dictionary
 var _backdrop: Node3D
+var _vistas: Vistas
 var _slots: Array[Dictionary] = []      # the place nodes, made as needed (see _make_slot)
 var _free: Array[int] = []              # indexes into _slots of the ones not in use
 var _placed: Dictionary = {}            # k -> {"slot": index, "look": what it was dressed as}
@@ -98,13 +109,16 @@ var _strips: Dictionary = {}            # "side|from|to|salt" -> Land.side_strip
 var _forest_drawn: float = -1.0         # the Forest density share last applied to the tree batches
 var _lights: Array[OmniLight3D] = []    # the tunnel lamps' light on the car
 var _sync_in: float = SYNC_EVERY
+var _night: float = 0.0                 # 0 day .. 1 night, from the room every frame (tick)
 
 
 ## kit: r22_geo.gd new_kit() with r81_land.gd add_materials() done. backdrop: the far view
-## (Land.build_backdrop), which this node lowers and turns.
-func setup(kit: Dictionary, backdrop: Node3D) -> void:
+## (Land.build_backdrop), which this node lowers and turns. vistas: the distant views standing
+## on it (r81_vistas.gd), which this node tells the region.
+func setup(kit: Dictionary, backdrop: Node3D, vistas: Vistas = null) -> void:
 	_kit = kit
 	_backdrop = backdrop
+	_vistas = vistas
 	name = "Trip"
 	for z: float in [-5.0, 6.0]:
 		var l := OmniLight3D.new()
@@ -187,7 +201,8 @@ static func part_at(k: int) -> String:
 
 ## Called every frame by the room. night = 0..1 from r22_desert.gd (unused for now: the
 ## streetlights of a later round will need it).
-func tick(delta: float, _night: float) -> void:
+func tick(delta: float, night: float) -> void:
+	_night = night
 	speed = move_toward(speed, _target_speed(), delta * 3.0)       # about 3 m/s² either way
 	travel += speed * delta
 	_work_out()
@@ -255,7 +270,8 @@ func _place() -> void:
 			(_slots[gone]["root"] as Node3D).visible = false
 			_free.append(gone)
 			_placed.erase(k)
-	var tree_reach := TREES_NEAR_LOW if Desert.detail_level() == "low" else TREES_NEAR
+	var low := Desert.detail_level() == "low"
+	var tree_reach := TREES_NEAR_LOW if low else TREES_NEAR
 	for k in range(span.x, span.y + 1):
 		var look := _look(k)
 		if not _placed.has(k):
@@ -271,14 +287,41 @@ func _place() -> void:
 		root.visible = true
 		root.position = Vector3(0.0, 0.0, travel - float(k) * Land.LENGTH)
 		var near := root.position.z > -tree_reach and root.position.z < tree_reach
+		# beside the road the Low look draws the low-poly trees ("near") and the Detailed look
+		# the leaf-card ones ("cards"); everything else ("far", the tunnels' tops) shows on both
+		var skip := "cards" if low else "near"
 		for t: MultiMeshInstance3D in slot["trees"]:
-			t.visible = near and t.multimesh != null
+			t.visible = near and t.multimesh != null and String(t.get_meta("group", "")) != skip
 	_apply_forest()
+
+
+## How many places the streetlights' pattern repeats after (the tunnels' period when there are
+## tunnels), and whether place k has a streetlight.
+static func street_period() -> int:
+	var p := period()
+	return p if p > 0 else NO_TUNNEL_PERIOD
+
+
+static func lit_at(k: int) -> bool:
+	var sp := street_period()
+	var j := posmod(k, sp)
+	return j >= sp - LIT_BEFORE or (j >= LIT_FROM and j <= LIT_TO)
+
+
+## Whether a power line crosses the road at place k: now and then, where both sides are plain
+## woods from end to end and there is no tunnel.
+static func wires_at(k: int) -> bool:
+	if posmod(k, 11) != 5 or part_at(k) != "":
+		return false
+	for side: int in [-1, 1]:
+		if boundary(side, k) != "woods" or boundary(side, k + 1) != "woods":
+			return false
+	return true
 
 
 ## What place k is, in one line: both sides' profiles, the tunnel part, which variant of the land.
 func _look(k: int) -> String:
-	return "%s>%s / %s>%s / %s / %d" % [boundary(-1, k), boundary(-1, k + 1), boundary(1, k), boundary(1, k + 1), part_at(k), posmod(k, 3)]
+	return "%s>%s / %s>%s / %s / %d%s" % [boundary(-1, k), boundary(-1, k + 1), boundary(1, k), boundary(1, k + 1), part_at(k), posmod(k, 3), (" lit" if lit_at(k) else "") + (" wires" if wires_at(k) else "")]
 
 
 ## One side's land and trees for a place (built the first time it is needed, then kept).
@@ -287,6 +330,9 @@ func _strip(side: int, from: String, to: String, k: int) -> Dictionary:
 	var salt := 0
 	if from != "mount" and to != "mount":
 		salt = (10 + posmod(k, 3)) if from == to else 1
+	# (a power line's place: the variant with the corridor cut through its trees)
+	if wires_at(k):
+		salt = Land.WIRE_SALT
 	if side < 0:
 		salt += 50
 	var key := "%d|%s|%s|%d" % [side, from, to, salt]
@@ -308,15 +354,20 @@ func _make_slot() -> void:
 		var tag := "R" if side > 0 else "L"
 		slot["land"][side] = _mesh_node(root, "Land" + tag, _kit["land"], true)
 		slot["props"][side] = _mesh_node(root, "Props" + tag, _kit["prop"], true)
-		for kind in Land.TREES:
-			var t := MultiMeshInstance3D.new()
-			t.name = "Trees%s_%s" % [tag, kind]
-			t.material_override = _kit["trees"]
-			# the shaders move things a long way (the bend, the valley): never cull early
-			t.extra_cull_margin = 700.0
-			root.add_child(t)
-			(slot["trees"] as Array[MultiMeshInstance3D]).append(t)
-			slot["tree_of"]["%d|%s" % [side, kind]] = t
+		# one node per group of trees (Land._trees) and kind; "cards" meshes bring their own
+		# materials, the low-poly ones all wear kit["trees"]
+		for group: String in ["far", "near", "cards"]:
+			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
+				var t := MultiMeshInstance3D.new()
+				t.name = "Trees%s_%s_%s" % [tag, group, kind]
+				if group != "cards":
+					t.material_override = _kit["trees"]
+				t.set_meta("group", group)
+				# the shaders move things a long way (the bend, the valley): never cull early
+				t.extra_cull_margin = 700.0
+				root.add_child(t)
+				(slot["trees"] as Array[MultiMeshInstance3D]).append(t)
+				slot["tree_of"]["%d|%s|%s" % [side, group, kind]] = t
 	slot["lid"] = _mesh_node(root, "MountainTop", _kit["land"], true)
 	for kind in Land.TREES:
 		var t := MultiMeshInstance3D.new()
@@ -326,6 +377,16 @@ func _make_slot() -> void:
 		root.add_child(t)
 		(slot["trees"] as Array[MultiMeshInstance3D]).append(t)
 		slot["tree_of"]["0|" + kind] = t
+	# (the power line wears the tree material: see Pieces.power_line)
+	var wires := _mesh_node(root, "PowerLine", _kit["trees"], true)
+	wires.mesh = Pieces.power_line()
+	slot["wires"] = wires
+	var pole := _mesh_node(root, "LightPole", _kit["prop"], true)
+	pole.mesh = Pieces.light_pole()
+	slot["pole"] = pole
+	var heads := _mesh_node(root, "LightHeads", _kit["street_a"], false)
+	heads.mesh = Pieces.light_heads()
+	slot["heads"] = heads
 	slot["lining"] = _mesh_node(root, "TunnelLining", _kit["tunnel"], false)
 	slot["frame"] = _mesh_node(root, "Portal", _kit["prop"], true)
 	var board := _mesh_node(root, "Sign", _kit["prop"], true)
@@ -358,8 +419,15 @@ func _dress(slot: Dictionary, k: int) -> void:
 		var strip := _strip(side, from, to, k)
 		(slot["land"][side] as MeshInstance3D).mesh = strip["mesh"]
 		(slot["props"][side] as MeshInstance3D).mesh = Pieces.props(side, from, to)
-		for kind in Land.TREES:
-			(slot["tree_of"]["%d|%s" % [side, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"] as Dictionary).get(kind)
+		for group: String in strip["trees"]:
+			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
+				(slot["tree_of"]["%d|%s|%s" % [side, group, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"][group] as Dictionary).get(kind)
+	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
+	# a streetlight (every other one wears the second lamp material, for the "Mixed" choice)
+	var lit := lit_at(k)
+	(slot["pole"] as MeshInstance3D).visible = lit
+	(slot["heads"] as MeshInstance3D).visible = lit
+	(slot["heads"] as MeshInstance3D).material_override = _kit["street_a" if posmod(k, 2) == 0 else "street_b"]
 	(slot["lid"] as MeshInstance3D).mesh = Pieces.lid(part) if part != "" else null
 	var top_trees: Dictionary = Pieces.lid_trees(part) if part != "" else {}
 	for kind in Land.TREES:
@@ -379,6 +447,14 @@ func _dress(slot: Dictionary, k: int) -> void:
 		sign_words.text = Pieces.sign_words(k)
 
 
+## The car's spot in the far view (r81_land.gd build_backdrop), in the far view's own metres,
+## when region r starts: midway between the two nearest ridges, somewhere else along them in
+## every region so each looks at other crests and gaps. r81_vistas.gd lays its views out
+## round this spot.
+static func region_spot(r: int) -> Vector3:
+	return Vector3(0.0, 0.0, fposmod(float(r) * 3100.0, 9000.0) - 4500.0)
+
+
 ## Forest density (r81_forest, 0..100): how much of every batch of trees is drawn. The trees in
 ## a batch are in random order (r81_land.gd _trees), so drawing the first part thins evenly.
 func _apply_forest() -> void:
@@ -387,9 +463,10 @@ func _apply_forest() -> void:
 		return
 	_forest_drawn = share
 	for key: String in _strips:
-		for kind: String in _strips[key]["trees"]:
-			var mm := _strips[key]["trees"][kind] as MultiMesh
-			mm.visible_instance_count = -1 if share >= 1.0 else roundi(float(mm.instance_count) * share)
+		for group: String in _strips[key]["trees"]:
+			for kind: String in _strips[key]["trees"][group]:
+				var mm := _strips[key]["trees"][group][kind] as MultiMesh
+				mm.visible_instance_count = -1 if share >= 1.0 else roundi(float(mm.instance_count) * share)
 
 
 ## Hands the numbers to the things that show them: the valley's depth and the season to Route
@@ -397,29 +474,73 @@ func _apply_forest() -> void:
 ## light on the car.
 func _apply() -> void:
 	var season := 1.0 if String(AppState.get_setting("r81_season")) == "fall" else 0.0
+	# (the trees' sway: the same number r22_desert.gd gives its own plants from the Wind slider)
+	var wind := 0.4 + 2.2 * clampf(float(AppState.get_setting("r22_wind")), 0.0, 1.0)
 	for m: ShaderMaterial in _kit["r81"]:
 		m.set_shader_parameter("alt_drop", altitude)
 		m.set_shader_parameter("season", season)
+		m.set_shader_parameter("wind", wind)
 	# photosensitive-safe mode: the lamps' light slides by evenly instead of in pools
 	var safe := bool(AppState.get_setting("photosensitive_safe"))
 	var pulse := 0.25 if safe else clampf(float(AppState.get_setting("flash_strength")), 0.25, 1.0)
+	# The Streetlights choice: colour A is the even-numbered poles' and the tunnels', colour B
+	# the odd poles' (only "Mixed" makes them differ). "Off" darkens the poles, not the tunnels.
+	var lights := String(AppState.get_setting("r81_lights"))
+	var col_a := LAMP_LED if lights == "led" else LAMP
+	var col_b := LAMP_LED if lights == "led" or lights == "mixed" else LAMP
+	var street_on := 0.0 if lights == "off" else _night
+	# The road shader only gets the wrapped travel (r22_desert.gd). What the wrapping took
+	# off, kept small by wrapping it at two rounds of the streetlights' pattern (two, because
+	# "Mixed" goes by even and odd places), lets it work out the place it is drawing.
+	var route_base := fposmod(travel - fposmod(travel, Desert.TRAVEL_WRAP), Land.LENGTH * 2.0 * float(street_period()))
 	for key: String in ["road81", "road81_opp"]:
 		var road := _kit[key] as ShaderMaterial
 		road.set_shader_parameter("tunnel_a", tunnel_a)
 		road.set_shader_parameter("tunnel_b", tunnel_b)
 		road.set_shader_parameter("pulse", pulse)
+		road.set_shader_parameter("lamp_color", col_a)
+		road.set_shader_parameter("street_period", float(street_period()))
+		road.set_shader_parameter("street_a", col_a)
+		road.set_shader_parameter("street_b", col_b)
+		road.set_shader_parameter("street_on", street_on)
+		road.set_shader_parameter("route_base", route_base)
+	(_kit["street_a"] as ShaderMaterial).set_shader_parameter("lamp_color", col_a)
+	(_kit["street_b"] as ShaderMaterial).set_shader_parameter("lamp_color", col_b)
+	(_kit["street_a"] as ShaderMaterial).set_shader_parameter("glow", street_on)
+	(_kit["street_b"] as ShaderMaterial).set_shader_parameter("glow", street_on)
+	(_kit["tunnel"] as ShaderMaterial).set_shader_parameter("lamp_color", col_a)
 	(_kit["tunnel"] as ShaderMaterial).set_shader_parameter("pulse", pulse)
+	(_kit["vista"] as ShaderMaterial).set_shader_parameter("steady", 1.0 if safe else 0.0)
 	if _backdrop:
-		# every region looks at another stretch of the ridges, a little turned
-		var r := float(region)
-		_backdrop.position = Vector3(400.0 * sin(r * 2.3), -(altitude + FLOOR_BELOW), fposmod(r * 3100.0, 9000.0) - 4500.0)
-		_backdrop.rotation = Vector3(0.0, heading + 0.35 * sin(r * 1.9), 0.0)
+		# The far view is turned round the car (not round its own middle, which would swing
+		# the ridges sideways by kilometres): the car's spot in it stays under the car.
+		var spot := region_spot(region)
+		var turned := Basis(Vector3.UP, heading)
+		# It creeps back a tenth as fast as the road goes by, along the ridges, so a town in
+		# the valley is ahead when a region starts and behind when it ends. (Without tunnels
+		# there are no regions to start anew in: it sways slowly to and fro instead.)
+		var p := period()
+		var crept := 0.1 * (travel - (float(region * p) + 3.0) * Land.LENGTH) if p > 0 else 900.0 * sin(travel / 7000.0)
+		var here := spot + Vector3(0.0, 0.0, -crept)
+		_backdrop.transform = Transform3D(turned, Vector3(0.0, -(altitude + FLOOR_BELOW), 0.0) - turned * here)
+		# morning mist lies in the hollows of some regions (r81_backdrop.gdshader)
+		(_kit["backdrop"] as ShaderMaterial).set_shader_parameter("mist", 0.6 if posmod(region, 3) == 1 else 0.12)
+		if _vistas:
+			_vistas.show_region(region, spot)
 	# the lamps' light on the car and the riders: a gentle swell as each lamp goes over (one every
 	# 8 m, the same spacing as the lining's), steady in photosensitive-safe mode
 	var swell := 0.0 if safe else 0.35 * pulse * sin(TAU * travel / Pieces.STEP)
+	# ...and outside at night, a streetlight's as the car passes under it (the pole stands
+	# halfway along its place; steady at half strength in photosensitive-safe mode)
+	var here := floori(travel / Land.LENGTH)
+	var from_pole := fposmod(travel, Land.LENGTH) - Land.LENGTH * 0.5
+	var under := 0.0
+	if lit_at(here) and cover < 0.01:
+		under = street_on * (0.5 if safe else exp(-from_pole * from_pole / 900.0))
 	for l in _lights:
-		l.visible = cover > 0.01
-		l.light_energy = cover * (1.5 + swell)
+		l.visible = cover > 0.01 or under > 0.01
+		l.light_color = col_a if cover > 0.01 or posmod(here, 2) == 0 else col_b
+		l.light_energy = cover * (1.5 + swell) + under * 1.2
 
 
 ## The signs' words follow the bend like the signs (Label3D is not drawn by our shaders, so

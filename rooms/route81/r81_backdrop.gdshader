@@ -14,6 +14,9 @@ uniform vec3 sun_dir = vec3(0.3, 0.8, 0.5);
 uniform float day = 1.0;
 uniform vec3 sky_horizon = vec3(0.62, 0.66, 0.78);
 uniform float season = 0.0;
+// Morning mist lying in the valley's hollows: 0 = none .. 1 = thick (r81_trip.gd: some regions
+// have more of it). It burns off as the day goes on (it follows `day` here only by being lit).
+uniform float mist = 0.1;
 // Metres over which the haze takes about two thirds of the colour.
 uniform float haze_length = 4500.0;
 
@@ -47,7 +50,13 @@ void fragment() {
 		float open = smoothstep(0.5, 0.56, big + 0.3 * mid) * step(0.35, pick);
 		col = mix(col, field, open);
 	}
-	float lit = 0.35 + 0.75 * max(dot(normalize(w_nrm), normalize(sun_dir)), 0.0);
+	// mist: soft white pools on the floor and round the ridges' feet, thinning with height
+	float low = 1.0 - smoothstep(0.0, 90.0, o_pos.y);
+	float pool = smoothstep(0.62 - 0.3 * mist, 0.8, texture(rock_noise, q / 5200.0).b * 0.6 + big * 0.4);
+	col = mix(col, vec3(0.82, 0.85, 0.88), low * pool * mist);
+	// (a face seen from behind is lit as if it faced us: the valley floor is built facing down)
+	vec3 n = normalize(w_nrm) * (FRONT_FACING ? 1.0 : -1.0);
+	float lit = 0.35 + 0.75 * max(dot(n, normalize(sun_dir)), 0.0);
 	col *= lit * (0.03 + 0.97 * day);
 	float haze = 1.0 - exp(-dist / haze_length);
 	ALBEDO = mix(col, sky_horizon, clamp(haze, 0.0, 0.97));

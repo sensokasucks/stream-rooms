@@ -1781,8 +1781,9 @@ Included rooms:
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
     with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
     convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
-- **Route 81 Cruise**: the Cruise's green sister, a work in progress (the first of four build
-  rounds is in: the road, the land and the tunnels). The same red woody and the same four
+- **Route 81 Cruise**: the Cruise's green sister, a work in progress (two of four build rounds
+  are in: the road, the land and the tunnels; then the detailed forest, the distant views and
+  the lights). The same red woody and the same four
   seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
   median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
   away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. The
@@ -1803,15 +1804,30 @@ Included rooms:
     woods or rock (0% = **Never**).
   - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
     lower it on a slow PC). **Season**: **Summer (green)** or **Fall colours**.
+  - On the **Detailed** look (**Set detail**) the two or three rows of trees nearest the road
+    are full trees with limbs and photographed leaves (oak, maple, birch, fir and pine, the
+    Lakeside Campfire's); behind them and on the **Low** look they are plain low-poly ones.
+  - **Streetlights**: tall poles stand in the median before and after every tunnel and light
+    the road at night. **Sodium (orange)**, **LED (white)**, **Mixed** (every other pole is
+    LED) or **Off** (dark poles; the tunnels stay lit). The tunnel lamps take the same colour.
+    In photosensitive-safe mode their light on the road is even instead of in pools.
+  - Distant views: from an overlook every stretch of country between two tunnels shows a
+    different pair of things in the valley (a river bend, a patchwork of farms, a town whose
+    windows light up at night, a stone railway viaduct with a train on it, a reservoir and its
+    dam, a field of bare boulders, a water gap), one thing on the nearest ridge (a ski hill, a
+    wind farm with turning blades, a strip mine, a fire tower, a quarry) and a radio mast with
+    red warning lights. Some stretches have morning mist lying in the valley. They creep past
+    slowly as you drive. Now and then a power line crosses the highway through a corridor cut
+    in the forest.
   - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Thunderstorm**,
     **After rain**; the desert's dust storm counts as Clear here), **Clouds**, **Stars**, **Heat
     shimmer**, **Wind** and **Set detail** work as on Route 22 and share its settings.
   - Cameras and reaction targets: as on the Route 22 Cruise.
-  - In a co-stream the road (tunnels, views, season) is the host's, and the guests' road keeps
+  - In a co-stream the road (tunnels, views, season, streetlights) is the host's, and the guests' road keeps
     pace with the host's. **Forest density** and **Set detail** are each PC's own.
   - Still to come: more kinds of country behind the tunnels (farm valley, river crossing, coal
-    plateau, city valley, Endless Mountains), streetlights, radio towers, power lines, gas
-    stations, towns, billboards with their own picture folder, and more weather.
+    plateau, city valley, Endless Mountains), gas stations, towns, billboards with their own
+    picture folder, and more weather.
   - Source: built in code in `rooms/route81/` on top of Route 22's parts (`r81_land.gd` the
     land, trees and far ridges, `r81_pieces.gd` rails, tunnels and signs, `r81_trip.gd` which
     land comes where, `r81_traffic.gd`). The rock, grass, forest floor, asphalt and concrete

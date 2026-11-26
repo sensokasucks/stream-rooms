@@ -42,6 +42,14 @@ const TREE_SHADER := preload("res://rooms/route81/r81_tree.gdshader")
 const ROAD_SHADER := preload("res://rooms/route81/r81_road.gdshader")
 const TUNNEL_SHADER := preload("res://rooms/route81/r81_tunnel.gdshader")
 const BACKDROP_SHADER := preload("res://rooms/route81/r81_backdrop.gdshader")
+const FOLIAGE_SHADER := preload("res://rooms/route81/r81_foliage.gdshader")
+const LAMP_SHADER := preload("res://rooms/route81/r81_lamp.gdshader")
+const VISTA_SHADER := preload("res://rooms/route81/r81_vista.gdshader")
+const BARK_SHADER := preload("res://rooms/route81/r81_bark.gdshader")
+## The campfire's tree kit: it builds the detailed trees' meshes (trunk, limbs, leaf cards),
+## and its leaf and bark photos are used on them.
+const CampTrees := preload("res://rooms/campfire/campfire_trees.gd")
+const CAMP_TEX := "res://rooms/campfire/textures/"
 
 ## A place's length along the road, metres (the same as Route 22's pieces).
 const LENGTH: float = 80.0
@@ -74,9 +82,23 @@ const TREES: PackedStringArray = ["oak", "maple", "pine"]
 ## Trees stand from the edge of the woods out to this far from the road; past it the land's
 ## shader paints the canopy (r81_terrain.gdshader).
 const TREE_REACH: float = 300.0
+## The Detailed look's trees (leaf cards on real limbs, card_mesh()): their kinds, and how far
+## from the road's edge they stand. Further out the low-poly trees are drawn on both looks;
+## nobody can tell them apart behind two rows of detailed ones.
+const CARD_KINDS: PackedStringArray = ["oak", "maple", "birch", "fir", "pine"]
+const CARD_REACH: float = 46.0
+## A power line's place (r81_trip.gd wires_at) uses this strip variant (the `salt` of
+## side_strip; the left side's is 50 more, like every variant): a corridor WIRE_CUT metres wide
+## is kept clear of trees across the middle of the place, where the line crosses the road.
+const WIRE_SALT: int = 30
+const WIRE_CUT: float = 34.0
 
 static var _noise: FastNoiseLite
 static var _tree_meshes: Dictionary = {}
+# The detailed trees' meshes carry their materials, which belong to one room's kit: both are
+# made anew by add_materials().
+static var _card_meshes: Dictionary = {}
+static var _card_mats: Dictionary = {}
 
 
 static func _n() -> FastNoiseLite:
@@ -293,7 +315,7 @@ static func _rows(from: String, to: String) -> PackedFloat32Array:
 
 ## One side's strip of land for a place: the mesh (for r81_terrain.gdshader) and its trees.
 ## side +1 / -1, from / to = its edge profiles at the start and the end, salt = its own number.
-## Returns {"mesh": ArrayMesh, "trees": {tree kind: MultiMesh}}.
+## Returns {"mesh": ArrayMesh, "trees": the three groups of tree batches, see _trees()}.
 static func side_strip(side: int, from: String, to: String, salt: int) -> Dictionary:
 	var cols := _columns(side)
 	var rows := _rows(from, to)
@@ -362,12 +384,22 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 ## tree kind; each tree's custom data = (its ground's depth, a number of its own, 0, 0) for
 ## r81_tree.gdshader. The trees are in random order, so drawing only the first part of each
 ## MultiMesh (the Forest density slider, r81_trip.gd) thins the forest evenly.
+## Returns three groups, each {tree kind: MultiMesh}:
+##   "far"    low-poly trees further than CARD_REACH from the road (drawn on both looks),
+##   "near"   low-poly trees nearer than that (the Low look),
+##   "cards"  the same near trees as detailed ones (the Detailed look; kinds CARD_KINDS).
+## r81_trip.gd shows "near" or "cards".
 static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5000 + salt * 131 + (7 if side > 0 else 0)
-	var lists := {}
+	var far := {}
+	var near := {}
+	var cards := {}
 	for kind in TREES:
-		lists[kind] = []
+		far[kind] = []
+		near[kind] = []
+	for kind in CARD_KINDS:
+		cards[kind] = []
 	var s := float(salt)
 	# [from u, to u, trees per square metre]
 	for band: Array in [[6.0, 40.0, 0.03], [40.0, 120.0, 0.025], [120.0, TREE_REACH, 0.009]]:
@@ -381,6 +413,9 @@ static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary
 			var p := blend(from, to, u, zt, s)
 			if p[5] < 0.6:
 				continue
+			# the power line's corridor: no trees under the wires
+			if salt % 50 == WIRE_SALT and absf(zt - 0.5) * LENGTH < WIRE_CUT * 0.5:
+				continue
 			# not on a rock face (the ground a metre either side is much higher or lower)
 			var hi := blend(from, to, u + 1.0, zt, s)[0]
 			var lo := blend(from, to, u - 1.0, zt, s)[0]
@@ -390,16 +425,33 @@ static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary
 			# conifers come in patches, about one tree in six
 			var kind := "pine" if _n().get_noise_2d(u * 0.05 + s, zt * 3.0 + s * 0.7) > 0.32 else ("oak" if pick < 0.6 else "maple")
 			var xf := Transform3D(Basis(Vector3.UP, turn).scaled(Vector3(size, size * rng.randf_range(0.9, 1.2), size)), Vector3(x, p[0] - 0.3, -zt * LENGTH))
-			(lists[kind] as Array).append([xf, Color(p[1], pick, 0.0, 0.0)])
-	return tree_batches(lists)
+			var data := Color(p[1], pick, 0.0, 0.0)
+			if u > CARD_REACH:
+				(far[kind] as Array).append([xf, data])
+				continue
+			(near[kind] as Array).append([xf, data])
+			# The detailed tree on the same spot. Its mesh is 1 unit tall, so its scale is its
+			# height in metres: 12 to 22 m, the low-poly tree's size and a little more, because
+			# a real crown is airier than a lump and looks smaller at the same size.
+			# Some oaks are birches and the conifers are firs (hemlock-like) or pines.
+			var card_kind := kind
+			var tall := size * rng.randf_range(10.0, 11.5)
+			if kind == "pine":
+				card_kind = "fir" if pick < 0.65 else "pine"
+				tall *= 1.15
+			elif kind == "oak" and pick > 0.48:
+				card_kind = "birch"
+				tall *= 0.85
+			(cards[card_kind] as Array).append([Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * tall), xf.origin), data])
+	return {"far": tree_batches(far), "near": tree_batches(near), "cards": tree_batches(cards, true)}
 
 
 ## Turns lists of trees, {tree kind: [[Transform3D, custom data Color], ...]}, into one MultiMesh
 ## per kind that has any ({tree kind: MultiMesh}). r81_pieces.gd uses it for the trees on top of
-## the tunnels.
-static func tree_batches(lists: Dictionary) -> Dictionary:
+## the tunnels. detailed = the lists hold CARD_KINDS, drawn with card_mesh().
+static func tree_batches(lists: Dictionary, detailed: bool = false) -> Dictionary:
 	var out := {}
-	for kind in TREES:
+	for kind in (CARD_KINDS if detailed else TREES):
 		var list: Array = lists.get(kind, [])
 		if list.is_empty():
 			continue
@@ -409,7 +461,7 @@ static func tree_batches(lists: Dictionary) -> Dictionary:
 		# (per-tree colours are not used, but without them the OpenGL renderer hands the shader
 		# the custom data as the colour and every tree comes out black)
 		mm.use_colors = true
-		mm.mesh = tree_mesh(kind)
+		mm.mesh = card_mesh(kind) if detailed else tree_mesh(kind)
 		mm.instance_count = list.size()
 		for i in list.size():
 			mm.set_instance_transform(i, list[i][0])
@@ -463,15 +515,30 @@ static func tree_mesh(kind: String) -> ArrayMesh:
 	return mesh
 
 
+## The mesh of one kind of detailed tree (CARD_KINDS), 1 unit tall with its foot at the origin:
+## the campfire's tree (campfire_trees.gd kit(): a trunk and limbs, and the leaves as cards)
+## wearing Route 81's own materials (add_materials() makes them, so it must have run first).
+## The mesh has its materials on its surfaces: the MultiMeshInstance3D that draws it must not
+## be given a material_override.
+static func card_mesh(kind: String) -> ArrayMesh:
+	if not _card_meshes.has(kind):
+		_card_meshes[kind] = CampTrees.kit(kind, _card_mats)
+	return _card_meshes[kind]
+
+
 # ── Materials ────────────────────────────────────────────────
 ## Route 81's own materials, added to a Route 22 kit (Geo.new_kit()). Each goes through
 ## Geo._note, so r22_desert.gd writes it the shared uniforms (bend, travel, wet...), and into
 ## kit["r81"], the list r81_trip.gd writes the altitude and the season to.
 ##   kit["land"]    the ground (r81_terrain.gdshader)
-##   kit["trees"]   the trees (r81_tree.gdshader)
+##   kit["trees"]   the low-poly trees (r81_tree.gdshader)
+##   the detailed trees' bark and leaves (r81_bark / r81_foliage.gdshader) are not in the kit
+##   by name: card_mesh() puts them on the tree meshes
 ##   kit["tunnel"]  the tunnels' lining (r81_tunnel.gdshader)
 ##   kit["road81"]  our road, kit["road81_opp"] the other direction's (r81_road.gdshader)
-##   kit["backdrop"] the far ridges (r81_backdrop.gdshader; lit by route81_room.gd)
+##   kit["street_a"] / kit["street_b"] the streetlights' lamp heads (r81_lamp.gdshader)
+##   kit["backdrop"] the far ridges (r81_backdrop.gdshader), kit["vista"] the distant views
+##                  standing on them (r81_vista.gdshader); both are lit by r22_desert.gd
 static func add_materials(kit: Dictionary) -> void:
 	var own: Array[ShaderMaterial] = []
 	kit["r81"] = own
@@ -486,6 +553,27 @@ static func add_materials(kit: Dictionary) -> void:
 	trees.shader = TREE_SHADER
 	kit["trees"] = Geo._note(kit, trees)
 	own.append(trees)
+	# The detailed trees. The names are the ones campfire_trees.gd kit() looks up: "trunk", and
+	# a leaf material per species. [name, leaf card photo, tint, evergreen]
+	_card_meshes = {}
+	_card_mats = {}
+	var bark := ShaderMaterial.new()
+	bark.shader = BARK_SHADER
+	bark.set_shader_parameter("tex_bark", load(CAMP_TEX + "detail_bark_pine.jpg"))
+	bark.set_shader_parameter("tex_bark_oak", load(CAMP_TEX + "detail_bark_oak.jpg"))
+	bark.set_shader_parameter("tex_bark_birch", load(CAMP_TEX + "detail_bark_birch.jpg"))
+	_card_mats["trunk"] = Geo._note(kit, bark)
+	own.append(bark)
+	for k: Array in [["fir", "card_fir.png", Color(0.82, 0.95, 0.85), 1.0], ["pine", "card_pine.png", Color(0.9, 1.0, 0.85), 1.0],
+			["leaves", "card_oak.png", Color.WHITE, 0.0], ["leaves_birch", "card_birch.png", Color.WHITE, 0.0],
+			["leaves_maple", "card_maple.png", Color.WHITE, 0.0]]:
+		var leaves := ShaderMaterial.new()
+		leaves.shader = FOLIAGE_SHADER
+		leaves.set_shader_parameter("card", load(CAMP_TEX + String(k[1])))
+		leaves.set_shader_parameter("tint", k[2])
+		leaves.set_shader_parameter("evergreen", k[3])
+		_card_mats[String(k[0])] = Geo._note(kit, leaves)
+		own.append(leaves)
 	var tunnel := ShaderMaterial.new()
 	tunnel.shader = TUNNEL_SHADER
 	tunnel.set_shader_parameter("tex_concrete", load(TEX + "tunnel_concrete.jpg"))
@@ -499,11 +587,22 @@ static func add_materials(kit: Dictionary) -> void:
 		# (kit["roads"]: r22_desert.gd writes those `night`)
 		(kit["roads"] as Array[ShaderMaterial]).append(road)
 		kit[key] = Geo._note(kit, road)
+	# the streetlights' lamp heads: one material for even-numbered places' poles, one for odd
+	for key: String in ["street_a", "street_b"]:
+		var lamp := ShaderMaterial.new()
+		lamp.shader = LAMP_SHADER
+		kit[key] = Geo._note(kit, lamp)
 	var back := ShaderMaterial.new()
 	back.shader = BACKDROP_SHADER
 	back.set_shader_parameter("rock_noise", Geo.ROCK_NOISE)
 	kit["backdrop"] = back
 	own.append(back)
+	# the distant views (r81_vistas.gd); r22_desert.gd lights it together with the backdrop
+	var vista := ShaderMaterial.new()
+	vista.shader = VISTA_SHADER
+	vista.set_shader_parameter("rock_noise", Geo.ROCK_NOISE)
+	kit["vista"] = vista
+	own.append(vista)
 
 
 ## A flat strip of road from x0 to x1 (its own X) and z0 to z1, cut every `step` metres along
@@ -532,17 +631,40 @@ static func road_strip(x0: float, x1: float, z0: float, z1: float, step: float) 
 # ── The far view ─────────────────────────────────────────────
 ## How far out each row of ridges stands (metres from the road, on both sides) and how high its
 ## crest is above the valley floor.
-const RIDGES: Array = [[1500.0, 250.0], [2900.0, 330.0], [4800.0, 420.0], [7600.0, 520.0], [12000.0, 650.0]]
+const RIDGES: Array = [[3300.0, 280.0], [4900.0, 350.0], [6900.0, 430.0], [9600.0, 530.0], [13500.0, 650.0]]
 ## Half the length of a ridge along the road, metres.
 const RIDGE_HALF: float = 16000.0
+## A ridge's foot lies this many times its height from its crest line.
+const RIDGE_SPREAD: float = 2.3
+
+
+## A point on ridge `i` (0 = the nearest) on one side (-1 left, +1 right) of the far view, in
+## the far view's own metres: `z` along the ridge, `across` from -1 (one foot) through 0 (the
+## crest) to +1 (the other foot); the foot on the road's side is across = -side.
+## Each ridge is a long tent shape whose crest wanders, rises and falls, and now and then dips
+## into a gap (where a river would cut through). build_backdrop() makes the ridges from this,
+## and r81_vistas.gd stands its towers, ski trails and quarries on them with it.
+static func ridge_point(side: float, i: int, z: float, across: float) -> Vector3:
+	var n := _n()
+	var out := float(RIDGES[i][0])
+	var high := float(RIDGES[i][1])
+	var salt := float(i) * 13.0 + side * 5.0
+	var h := high * (0.72 + 0.28 * n.get_noise_2d(z * 0.0004, salt))
+	h *= 1.0 + 0.06 * n.get_noise_2d(z * 0.004, salt + 3.0)
+	# a gap: the crest dips most of the way down
+	h *= 1.0 - 0.75 * smoothstep(0.42, 0.5, n.get_noise_2d(z * 0.00025 + 40.0, salt + 9.0))
+	var wander := 260.0 * n.get_noise_2d(z * 0.0002, salt + 20.0)
+	# the tent's cross-section: foot 0, shoulder 0.72 of the way up at 0.4, crest 1
+	var a := absf(across)
+	var share := lerpf(1.0, 0.72, a / 0.4) if a < 0.4 else lerpf(0.72, 0.0, (a - 0.4) / 0.6)
+	return Vector3(side * (out + wander) + across * high * RIDGE_SPREAD, h * share, z)
 
 
 ## The far view: a valley floor and five rows of long parallel ridges on each side, the
-## Pennsylvania "ridge and valley" look. Its origin is the valley floor under the car; the
-## ridges run along its own Z. r81_trip.gd lowers it by the altitude and turns it with the
-## road's heading, so the view swings round as the road curves.
-## Each ridge is a long tent shape whose crest wanders, rises and falls, and now and then dips
-## into a gap (where a river would cut through).
+## Pennsylvania "ridge and valley" look. Its origin is on the valley floor; the ridges run
+## along its own Z, the nearest 3 km off, which leaves a broad valley for the distant views
+## (r81_vistas.gd). r81_trip.gd lowers it by the altitude and turns it round the car with the
+## road's heading, so the view swings as the road curves.
 static func build_backdrop(kit: Dictionary) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Backdrop"
@@ -551,26 +673,15 @@ static func build_backdrop(kit: Dictionary) -> Node3D:
 	var ridge_col := Color(0.0, 0.0, 0.0)
 	var far := RIDGE_HALF * 1.2
 	b.quad(Vector3(-far, 0.0, -far), Vector3(far, 0.0, -far), Vector3(far, 0.0, far), Vector3(-far, 0.0, far), floor_col)
-	var n := _n()
 	var steps := 80
 	for side: float in [-1.0, 1.0]:
 		for i in RIDGES.size():
-			var out := float(RIDGES[i][0])
-			var high := float(RIDGES[i][1])
-			var salt := float(i) * 13.0 + side * 5.0
 			var grid: Array = []
 			# five lines of corners across the ridge: foot, shoulder, crest, shoulder, foot
-			for across: Array in [[-1.0, 0.0], [-0.4, 0.72], [0.0, 1.0], [0.4, 0.72], [1.0, 0.0]]:
+			for across: float in [-1.0, -0.4, 0.0, 0.4, 1.0]:
 				var row := PackedVector3Array()
 				for j in steps + 1:
-					var z := lerpf(-RIDGE_HALF, RIDGE_HALF, float(j) / float(steps))
-					var h := high * (0.72 + 0.28 * n.get_noise_2d(z * 0.0004, salt))
-					h *= 1.0 + 0.06 * n.get_noise_2d(z * 0.004, salt + 3.0)
-					# a gap: the crest dips most of the way down
-					h *= 1.0 - 0.75 * smoothstep(0.42, 0.5, n.get_noise_2d(z * 0.00025 + 40.0, salt + 9.0))
-					var wander := 260.0 * n.get_noise_2d(z * 0.0002, salt + 20.0)
-					var x := side * (out + wander) + float(across[0]) * high * 2.3
-					row.append(Vector3(x, h * float(across[1]), z))
+					row.append(ridge_point(side, i, lerpf(-RIDGE_HALF, RIDGE_HALF, float(j) / float(steps)), across))
 				grid.append(row)
 			b.surface(grid, false, [ridge_col, ridge_col, ridge_col, ridge_col, ridge_col])
 	var mi := Geo.add_mesh(root, "Ridges", b, kit["backdrop"], false)

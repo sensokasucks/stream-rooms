@@ -9,7 +9,8 @@ render_mode cull_disabled;
 //   16 m), a solid yellow line on the left (median) edge and a solid white one on the right,
 //   rumble strips outside both lines, wet weather shine and puddles,
 //   and inside a tunnel (world Z between tunnel_a and tunnel_b) no daylight: pools of lamp
-//   light instead (lamp_color; one lamp every 8 m, like r81_tunnel.gdshader's).
+//   light instead (lamp_color; one lamp every 8 m, like r81_tunnel.gdshader's),
+//   and at night pools of light under the streetlights.
 // r22_desert.gd sets the shared uniforms and night; r81_trip.gd sets the tunnel span.
 #include "res://rooms/route22/r22_common.gdshaderinc"
 
@@ -24,6 +25,19 @@ uniform float flow = 1.0;
 uniform float tunnel_a = 0.0;
 uniform float tunnel_b = 0.0;
 uniform vec3 lamp_color : source_color = vec3(1.0, 0.62, 0.25);
+// Streetlights (r81_trip.gd lit_at and _apply): a pole stands in the median halfway along
+// every lit place (places are 80 m; the lit ones are the 8 before a tunnel's first place and
+// the 6th to 13th after it, repeating every street_period places). street_a = the colour of
+// the poles with even place numbers, street_b the odd ones'; street_on = 0 by day or with
+// the lights off .. 1 at night.
+uniform float street_period = 88.0;
+uniform vec3 street_a : source_color = vec3(1.0, 0.62, 0.25);
+uniform vec3 street_b : source_color = vec3(1.0, 0.62, 0.25);
+uniform float street_on = 0.0;
+// `travel` is wrapped (r22_common.gdshaderinc), so it cannot say which place a spot is in:
+// route_base = the metres to add to (travel - z) to get the true distance along the route,
+// itself wrapped at a length the streetlights' pattern divides (r81_trip.gd _apply).
+uniform float route_base = 0.0;
 // How strongly the tunnel's light pools stand out as they slide by: 1 = full, less in
 // photosensitive-safe mode (r81_trip.gd), so the road never pulses hard.
 uniform float pulse = 1.0;
@@ -80,6 +94,16 @@ void fragment() {
 	float pool = mix(0.72, 0.45 + 0.55 * smoothstep(4.0, 0.0, abs(fract(along / 8.0) - 0.5) * 8.0), pulse);
 	ALBEDO = col * (1.0 - 0.97 * inside);
 	EMISSION = col * lamp_color * pool * inside * 0.9;
+	// a streetlight's pool: brightest under the lamp (which hangs over the left lane, x = -3
+	// on both roads), fading along and across; evened out in photosensitive-safe mode
+	float route = -flow * along + route_base;
+	float place = floor(route / 80.0);
+	float nth = mod(place, street_period);
+	float lit = max(step(street_period - 8.0, nth), step(6.0, nth) * step(nth, 13.0));
+	float from_pole = fract(route / 80.0) * 80.0 - 40.0;
+	float across = exp(-(x + 3.0) * (x + 3.0) / 90.0);
+	float glow = across * mix(0.45, exp(-from_pole * from_pole / 900.0), pulse);
+	EMISSION += col * mix(street_a, street_b, mod(place, 2.0)) * glow * lit * street_on * (1.0 - inside) * 2.4;
 	ROUGHNESS = rough;
 	SPECULAR = 0.4 + 0.3 * wet;
 }

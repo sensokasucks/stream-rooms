@@ -26,6 +26,7 @@ const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Car := preload("res://rooms/route22/r22_car.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Trip := preload("res://rooms/route81/r81_trip.gd")
+const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Traffic := preload("res://rooms/route81/r81_traffic.gd")
 const DesertCruise := preload("res://rooms/route22_cruise/route22_cruise_room.gd")
 ## This room's id (rooms/route81/room_info.tres) and the desert Cruise's: the Scenery switch.
@@ -43,6 +44,7 @@ var _traffic: Traffic
 var _car: Car
 var _kit: Dictionary
 var _backdrop: Node3D
+var _vistas: Vistas
 var _retired: bool = false
 var _camera: Camera3D            # the camera whose reach we raised
 var _camera_far: float = 0.0     # its reach before
@@ -68,7 +70,7 @@ func _ready() -> void:
 	_desert.setup(self, _kit, Vector3(CAR_AT.x, 0.0, -6.0), heat, Vector2(90.0, 4.4), true)
 	_trip = Trip.new()
 	_desert.add_child(_trip)
-	_trip.setup(_kit, _backdrop)
+	_trip.setup(_kit, _backdrop, _vistas)
 	_traffic = Traffic.new()
 	_desert.add_child(_traffic)
 	_traffic.setup(_kit, _desert, false, Vector2(-520.0, 320.0))
@@ -153,6 +155,10 @@ func _build_set() -> void:
 			road.rotation = Vector3(0.0, PI, 0.0)
 	_backdrop = Land.build_backdrop(_kit)
 	set_root.add_child(_backdrop)
+	# the distant views stand on the far view and turn with it; r81_trip.gd picks them
+	_vistas = Vistas.new()
+	_vistas.setup(_kit)
+	_backdrop.add_child(_vistas)
 	_car = Car.new()
 	set_root.add_child(_car)
 	_car.plate_text = "ROUTE 81"
@@ -178,6 +184,11 @@ func _build_set() -> void:
 ## How far the car has driven (metres; for tests).
 func get_travel() -> float:
 	return _trip.travel
+
+
+## The room's materials by name (r22_geo.gd new_kit plus r81_land.gd add_materials), for tests.
+func get_kit() -> Dictionary:
+	return _kit
 
 
 ## The parts, for tests.
@@ -213,6 +224,8 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "How many of the trees near the road are drawn on this PC. 100% = all of them. Lower it if the room runs slowly; the far forest is painted and stays. Each PC in a co-stream chooses its own."},
 		{"key": "r81_season", "label": "Season", "type": "option", "options": [["summer", "Summer (green)"], ["fall", "Fall colours"]],
 			"tooltip": "Summer: every shade of green. Fall: the hardwoods turn gold, orange and red; the pines stay green."},
+		{"key": "r81_lights", "label": "Streetlights", "type": "option", "options": [["sodium", "Sodium (orange)"], ["led", "LED (white)"], ["mixed", "Mixed"], ["off", "Off"]],
+			"tooltip": "The lamps on the tall poles in the median before and after every tunnel, and the lamps inside the tunnels. Sodium: the old orange glow. LED: cool white. Mixed: every other pole has been replaced with LED. Off: the poles stand dark (the tunnels stay lit)."},
 		{"heading": "Time of day"},
 		{"key": "r22_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
 			"tooltip": "The hour, 0 to 24. 6 = sunrise, 12 = noon, 18 = sunset. Where the sun stands along the road changes as the highway curves."},

@@ -102,7 +102,7 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	# Route 81 (rooms/route81) drives on the r22_ keys above; its own: how the road is made up
 	# (every PC must build the same road) and the season. Not shared: r81_forest (each PC's own
 	# tree count), r22_land (each PC loads rooms itself). Its distance driven: room event "r81_travel".
-	"r81_tunnels", "r81_views", "r81_season",
+	"r81_tunnels", "r81_views", "r81_season", "r81_lights",
 	"r22_scenery", "r22_plants", "r22_animals", "r22_tumbleweeds", "r22_dust_devils", "r22_birds", "r22_critters", "r22_coyotes", "r22_neon", "r22_marquee", "r22_lot_lights",
 	# the Drive-In's hour, sky and parking spaces (rooms/drive_in/drive_in_room.gd; the spaces
 	# are its seats, so everyone needs the same number); its Set detail and fireflies stay each

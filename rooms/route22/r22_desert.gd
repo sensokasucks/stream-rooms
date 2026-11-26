@@ -453,8 +453,11 @@ func _apply_sky(env: Environment) -> void:
 		m.set_shader_parameter("heat", heat)
 		m.set_shader_parameter("night", night)
 	# Route 81's far ridges (r81_backdrop.gdshader) light and haze themselves: tell them the sun
-	if _kit.has("backdrop"):
-		var back := _kit["backdrop"] as ShaderMaterial
+	# (and the distant views standing on them, r81_vista.gdshader, the same way)
+	for far_key: String in ["backdrop", "vista"]:
+		if not _kit.has(far_key):
+			continue
+		var back := _kit[far_key] as ShaderMaterial
 		back.set_shader_parameter("sun_dir", turn * light_dir)
 		back.set_shader_parameter("day", maxf(day, 0.06 * smoothstep(0.05, 0.25, moon.y)))
 		back.set_shader_parameter("sky_horizon", Vector3(hor.r, hor.g, hor.b))

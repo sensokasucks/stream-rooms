@@ -5,6 +5,9 @@ render_mode cull_disabled;
 //   COLOR.rgb  its colour (summer),
 //   COLOR.a    how much it sways (0 at the trunk's foot, 1 at the crown's top),
 //   UV.x       0 = trunk, 1 = leaves that turn in fall, 2 = needles (green all year).
+// The power line's pylons and wires are drawn with this too (r81_pieces.gd power_line): they
+// are "trunk" (UV.x 0) with no sway (COLOR.a 0), and as they are not instances their depth is
+// in UV.y instead.
 // Each tree (instance) carries INSTANCE_CUSTOM: r = its depth (how far it sinks into the
 // valley, like the land it stands on, see r81_common.gdshaderinc), g = a number of its own
 // 0..1 (its shade of green and its fall colour).
@@ -20,7 +23,7 @@ void vertex() {
 	kind = UV.x;
 	pick = INSTANCE_CUSTOM.g;
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	w.y -= INSTANCE_CUSTOM.r * alt_drop;
+	w.y -= (INSTANCE_CUSTOM.r + UV.y) * alt_drop;
 	float lean = sin(TIME * 0.9 + w.x * 0.11 + w.z * 0.13) + 0.4 * sin(TIME * 2.7 + w.x * 0.6);
 	w += vec3(0.8, 0.0, 0.45) * lean * 0.12 * wind * COLOR.a * COLOR.a;
 	w = r22_bend(w);

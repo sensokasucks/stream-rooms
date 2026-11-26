@@ -8,7 +8,7 @@ render_mode unshaded, cull_disabled, fog_disabled;
 //         outside of the tube (seen only by a camera that ends up inside the hill),
 //   UV.y  height above the road, metres.
 // No distance fog either: the sky-coloured haze does not belong inside a mountain.
-// lamp_color: warm orange sodium lamps for now (the Streetlights choice will set it).
+// lamp_color: the Streetlights choice's colour (r81_trip.gd _apply: orange sodium or white LED).
 #include "res://rooms/route22/r22_common.gdshaderinc"
 
 uniform sampler2D tex_concrete : filter_linear_mipmap_anisotropic, repeat_enable;

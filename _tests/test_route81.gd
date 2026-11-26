@@ -18,6 +18,7 @@ extends Node
 
 const Trip := preload("res://rooms/route81/r81_trip.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
+const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 var _fails: int = 0
 var _out: String = ""
 
@@ -212,6 +213,80 @@ func _ready() -> void:
 	trip.set_travel(float(k_in + 7) * Land.LENGTH)
 	await _secs(1.0)
 	_check(trip.cover < 0.01 and trip.region == region_before + 1, "out the far side, in the next region (%d > %d)" % [region_before, trip.region])
+
+	# ── streetlights before and after the tunnel; a power line through the woods ──
+	var sp := Trip.street_period()
+	_check(Trip.lit_at(sp - 1) and Trip.lit_at(sp + 6) and not Trip.lit_at(sp + 3) and not Trip.lit_at(sp + 30),
+		"streetlights stand before and after a tunnel, not inside it or far from it")
+	trip.set_travel(float(k_in - 5) * Land.LENGTH + 30.0)
+	AppState.set_setting("r22_time", 22.5)
+	for choice: String in ["sodium", "led", "mixed", "off"]:
+		AppState.set_setting("r81_lights", choice)
+		await _secs(1.2)
+		await _shot("r81_streetlights_%s" % choice)
+	var lamp_glow := float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+	_check(lamp_glow < 0.01, "Streetlights Off: the lamps are dark at night (%.2f)" % lamp_glow)
+	AppState.set_setting("r81_lights", "sodium")
+	await _secs(0.3)
+	lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+	_check(lamp_glow > 0.8, "Sodium at night: the lamps shine (%.2f)" % lamp_glow)
+	AppState.set_setting("r22_time", 13.0)
+	await _secs(0.5)
+	lamp_glow = float((room.call("get_kit")["street_a"] as ShaderMaterial).get_shader_parameter("glow"))
+	_check(lamp_glow < 0.05, "by day they are off (%.2f)" % lamp_glow)
+	var k_wires := _find_place(from, func(k: int) -> bool: return Trip.wires_at(k))
+	_check(k_wires > 0, "found a power line crossing ahead (place %d)" % k_wires)
+	if k_wires > 0:
+		trip.set_travel(float(k_wires) * Land.LENGTH - 70.0)
+		await _secs(1.5)
+		await _shot("r81_power_line")
+
+	# ── the distant views: every region shows four, and each one builds and shows ──
+	var vistas := room.find_child("Vistas", true, false) as Node3D
+	_check(vistas != null and (vistas.call("showing") as PackedStringArray).size() == 4, "this region shows four distant views (%s)" % [vistas.call("showing") if vistas else "none"])
+	var seen := {}
+	for r in 12:
+		var list: Array = Vistas.picks(r)
+		_check(list.size() == 4 and String(list[0][0]) != String(list[1][0]), "region %d: two different valley views, a ridge thing and a mast (%s)" % [r, list])
+		for pick: Array in list:
+			seen[String(pick[0])] = true
+	_check(seen.size() == Vistas.VALLEY.size() + Vistas.RIDGE.size() + 1, "twelve regions show every view there is (%d)" % seen.size())
+	# a look at each from above the car, on an overlook, through a long lens
+	trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
+	await _secs(1.0)
+	var lens := Camera3D.new()
+	lens.far = 30000.0
+	lens.fov = 24.0
+	add_child(lens)
+	var spot: Vector3 = Trip.region_spot(trip.region)
+	var names: Array = Array(Vistas.VALLEY) + Array(Vistas.RIDGE) + ["radio"]
+	for view: String in names:
+		vistas.call("show_views", [[view, 1.0]], spot)
+		await _secs(0.3)
+		var shown := vistas.get_child(vistas.get_child_count() - 1) as Node3D
+		var mesh_node := (shown if shown is MeshInstance3D else shown.get_child(shown.get_child_count() - 1)) as MeshInstance3D
+		var ok := mesh_node != null and mesh_node.mesh != null and mesh_node.mesh.get_surface_count() > 0
+		_check(ok, "the %s view builds" % view)
+		if ok:
+			lens.global_position = Vector3(0.0, 45.0, 0.0)
+			lens.look_at(mesh_node.global_transform * mesh_node.get_aabb().get_center())
+			# (the ridge things are small and far: a longer lens for them)
+			lens.fov = 24.0 if Vistas.VALLEY.has(view) else 9.0
+			lens.make_current()
+			await _secs(0.5)
+			await _shot("r81_view_%s" % view)
+	AppState.set_setting("r22_time", 22.5)
+	vistas.call("show_views", [["town", 1.0]], spot)
+	lens.fov = 24.0
+	lens.look_at((vistas.get_child(vistas.get_child_count() - 1) as Node3D).global_position)
+	await _secs(1.5)
+	await _shot("r81_view_town_night")
+	AppState.set_setting("r22_time", 13.0)
+	lens.queue_free()
+	vistas.call("show_region", trip.region + 1000, spot)
+	vistas.call("show_region", trip.region, spot)
+	EventBus.camera_preset_requested.emit(5)
+	await _secs(1.0)
 
 	if shots_only:
 		print("DONE fails=%d" % _fails)

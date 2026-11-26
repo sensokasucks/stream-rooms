@@ -86,6 +86,130 @@ static func _rail(b: Geo.Buf, x: float, z0: float, z1: float, side: float) -> vo
 	b.mat = Geo.MAT_PAINT
 
 
+# ── The power line ───────────────────────────────────────────
+## How far from the road's edge the pylons stand on each side (metres), their height, and the
+## conductors: [height on the pylon, metres along the road from its middle].
+const PYLONS_AT: PackedFloat32Array = [30.0, 160.0, 290.0]
+const PYLON_H: float = 34.0
+const CONDUCTORS: Array = [[22.0, -5.5], [22.0, 5.5], [26.0, -4.5], [26.0, 4.5], [30.0, -3.5], [30.0, 3.5], [34.0, 0.0]]
+
+
+## A high-voltage line crossing the highway through its corridor in the forest: three lattice
+## pylons on each side and the wires between them, sagging, over both roads. For a place whose
+## two sides are woods with the corridor cut (r81_land.gd WIRE_SALT; r81_trip.gd wires_at).
+## Drawn with the TREE material (kit["trees"], r81_tree.gdshader): the pylons further out stand
+## on ground that sinks into the valley, and that shader lowers things by the depth in UV.y.
+static func power_line() -> ArrayMesh:
+	if _cache.has("power_line"):
+		return _cache["power_line"]
+	var b := Geo.Buf.new()
+	b.mat = 0.0
+	# (alpha 0 = no sway in the wind)
+	var steel := Color(0.4, 0.42, 0.43, 0.0)
+	var wire := Color(0.1, 0.1, 0.11, 0.0)
+	var z := -Land.LENGTH * 0.5
+	# the pylons' feet from the far left to the far right: [x, ground height, depth]
+	var feet: Array = []
+	for side: int in [-1, 1]:
+		for n in PYLONS_AT.size():
+			# (the left side from its outermost pylon in, the right side from the road out)
+			var u := PYLONS_AT[PYLONS_AT.size() - 1 - n] if side < 0 else PYLONS_AT[n]
+			var p := Land.blend("woods", "woods", u, 0.5, float(Land.WIRE_SALT + (50 if side < 0 else 0)))
+			feet.append([(Land.ROAD_R + u) if side > 0 else (Land.OPP_L - u), p[0], p[1]])
+	for f: Array in feet:
+		b.uv_y = float(f[2])
+		_pylon(b, Vector3(float(f[0]), float(f[1]) - 0.5, z), steel)
+	# the wires, pylon to pylon, in short pieces so each can sink with the ground under it
+	for i in feet.size() - 1:
+		var a: Array = feet[i]
+		var c: Array = feet[i + 1]
+		var span := absf(float(c[0]) - float(a[0]))
+		var pieces := 10
+		for w: Array in CONDUCTORS:
+			var last := Vector3.ZERO
+			for j in pieces + 1:
+				var t := float(j) / float(pieces)
+				var at := Vector3(lerpf(float(a[0]), float(c[0]), t), lerpf(float(a[1]), float(c[1]), t) + float(w[0]) - span * 0.14 * t * (1.0 - t), z + float(w[1]))
+				if j > 0:
+					b.uv_y = lerpf(float(a[2]), float(c[2]), t - 0.5 / float(pieces))
+					b.rod(last, at, 0.09, 3, wire)
+				last = at
+	b.uv_y = 0.0
+	var mesh := b.to_mesh()
+	_cache["power_line"] = mesh
+	return mesh
+
+
+## One lattice pylon standing on `foot`: four legs leaning in to a narrow top, rings of braces,
+## and three cross-arms (along the road, Z) that hold the conductors.
+static func _pylon(b: Geo.Buf, foot: Vector3, steel: Color) -> void:
+	var base := 4.0
+	var top := 0.9
+	for leg: Vector2 in [Vector2(-1.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(-1.0, 1.0)]:
+		b.rod(foot + Vector3(leg.x * base, 0.0, leg.y * base), foot + Vector3(leg.x * top, PYLON_H, leg.y * top), 0.16, 4, steel)
+	for level in 6:
+		var y0 := PYLON_H * float(level) / 6.0
+		var y1 := PYLON_H * float(level + 1) / 6.0
+		var h0 := lerpf(base, top, y0 / PYLON_H)
+		var h1 := lerpf(base, top, y1 / PYLON_H)
+		# a ring, and one diagonal on each face
+		for face in 4:
+			var a := Basis(Vector3.UP, PI * 0.5 * float(face))
+			b.rod(foot + a * Vector3(-h1, y1, h1), foot + a * Vector3(h1, y1, h1), 0.08, 3, steel)
+			b.rod(foot + a * Vector3(-h0, y0, h0), foot + a * Vector3(h1, y1, h1), 0.07, 3, steel)
+	for arm: Array in [[22.0, 5.5], [26.0, 4.5], [30.0, 3.5]]:
+		var y := float(arm[0])
+		var reach := float(arm[1])
+		b.block(foot + Vector3(0.0, y + 0.6, 0.0), Vector3(0.5, 0.35, reach * 2.0 + 0.6), steel)
+		for end: float in [-1.0, 1.0]:
+			b.rod(foot + Vector3(0.0, y + 2.6, end * 1.0), foot + Vector3(0.0, y + 0.6, end * reach), 0.07, 3, steel)
+			# the insulator string the wire hangs from
+			b.rod(foot + Vector3(0.0, y + 0.6, end * reach), foot + Vector3(0.0, y, end * reach), 0.12, 4, Color(0.55, 0.6, 0.58, 0.0))
+
+
+# ── Streetlights ─────────────────────────────────────────────
+## A streetlight stands in the middle of the median, halfway along its place: a tall mast with
+## an arm over each road. Which places have one is r81_trip.gd lit_at(); the light it throws on
+## the road is drawn by r81_road.gdshader, which must agree with POLE_X, ARM and the mast's
+## place halfway along.
+const POLE_X: float = (Land.ROAD_L + Land.OPP_R) * 0.5
+const POLE_H: float = 13.0
+## How far each arm reaches from the mast, metres (to over the road's left lane).
+const ARM: float = 8.5
+
+
+## The mast and its two arms (for the prop material).
+static func light_pole() -> ArrayMesh:
+	if _cache.has("light_pole"):
+		return _cache["light_pole"]
+	var b := Geo.Buf.new()
+	var z := -Land.LENGTH * 0.5
+	var foot := Vector3(POLE_X, -0.9, z)
+	var steel := Color(0.5, 0.52, 0.53)
+	b.mat = Geo.MAT_ROCK
+	b.block(foot + Vector3(0.0, 0.3, 0.0), Vector3(0.7, 0.6, 0.7), Color(0.6, 0.59, 0.56))
+	b.mat = Geo.MAT_PAINT
+	b.cyl(Transform3D(Basis.IDENTITY, foot + Vector3(0.0, 0.6, 0.0)), 0.16, 0.09, POLE_H - 0.4, 8, steel)
+	for side: float in [-1.0, 1.0]:
+		# the arm rises a little towards its lamp
+		b.rod(Vector3(POLE_X, POLE_H - 1.4, z), Vector3(POLE_X + side * ARM, POLE_H, z), 0.07, 6, steel)
+	var mesh := b.to_mesh()
+	_cache["light_pole"] = mesh
+	return mesh
+
+
+## The two lamp heads at the arms' ends (for a lamp material, kit["street_a"] or ["street_b"]).
+static func light_heads() -> ArrayMesh:
+	if _cache.has("light_heads"):
+		return _cache["light_heads"]
+	var b := Geo.Buf.new()
+	for side: float in [-1.0, 1.0]:
+		b.block(Vector3(POLE_X + side * (ARM + 0.3), POLE_H - 0.08, -Land.LENGTH * 0.5), Vector3(1.2, 0.24, 0.5), Color.WHITE)
+	var mesh := b.to_mesh()
+	_cache["light_heads"] = mesh
+	return mesh
+
+
 # ── Tunnels ──────────────────────────────────────────────────
 ## The stretch of a place (along Z, metres; [start, end], start > end) that is under the mountain.
 static func _covered(part: String) -> Vector2:
