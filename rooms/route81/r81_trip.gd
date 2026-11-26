@@ -30,7 +30,10 @@ extends Node3D
 ##   farm     low in a valley: crop fields with farms (r81_places.gd), small towns, gas stations,
 ##   river    low down too; halfway through, the road crosses a wide river on a long bridge
 ##            (crossing(): both sides are "water" for eight places),
-##   endless  the Endless Mountains: the highest road, most of it overlook.
+##   endless  the Endless Mountains: the highest road, most of it overlook,
+##   coal     the coal plateau: high and scrubby, with patch towns (some dead, one over a mine
+##            fire with smoke coming out of the ground), a breaker and culm banks,
+##   city     the city valley: low, an old industrial city along much of the road.
 ## A side that stays field, lawn or lot for all eight boundaries of its stretch gets a
 ## "feature" from r81_places.gd on its seven whole places (feature_at()).
 ## With Tunnels = Never the country by the road still changes, every NO_TUNNEL_COUNTRY places,
@@ -98,13 +101,14 @@ const LIT_TO: int = 13
 const NO_TUNNEL_PERIOD: int = 60
 
 ## The kinds of country, in the order the tour (r81_country = "tour") drives through them.
-const COUNTRIES: PackedStringArray = ["ridge", "farm", "river", "endless"]
+const COUNTRIES: PackedStringArray = ["ridge", "farm", "river", "endless", "coal", "city"]
 ## Each country's height above the valley floor (metres): [middle, slow swing, quick swing].
 ## The river country is low so its bridge is not absurdly high (the river lies on the valley
 ## floor, FLOOR_BELOW under the lowest road); the bridge piers (r81_pieces.gd PIER_MAX_ALT)
 ## allow up to 320.
 const HEIGHTS: Dictionary = {"ridge": Vector3(140.0, 70.0, 30.0), "farm": Vector3(45.0, 18.0, 8.0),
-	"river": Vector3(30.0, 10.0, 4.0), "endless": Vector3(215.0, 55.0, 25.0)}
+	"river": Vector3(30.0, 10.0, 4.0), "endless": Vector3(215.0, 55.0, 25.0),
+	"coal": Vector3(170.0, 40.0, 20.0), "city": Vector3(42.0, 14.0, 6.0)}
 ## With Tunnels = Never: places per country.
 const NO_TUNNEL_COUNTRY: int = 120
 ## A river crossing: both sides are water for boundaries mid - CROSS_HALF .. mid + CROSS_HALF
@@ -121,6 +125,8 @@ var hill: float = 0.0
 var heading: float = 0.0
 ## Metres the road is above the valley floor now.
 var altitude: float = 140.0
+## Valley fog 0..1 from the weather (r22_desert.gd mist; the room hands it over every frame).
+var mist: float = 0.0
 ## 0 = under the open sky .. 1 = deep in a tunnel.
 var cover: float = 0.0
 ## Which stretch of country this is: goes up by one in the middle of every tunnel.
@@ -284,6 +290,10 @@ static func boundary(side: int, b: int) -> String:
 			shares = [["drop", v * 0.6], ["field", 0.14], ["lot", 0.06], ["cut", 0.1]]
 		"endless":
 			shares = [["drop", v * 0.75], ["cut", 0.2], ["lot", 0.04]]
+		"coal":
+			shares = [["lot", 0.36], ["drop", v * 0.35], ["cut", 0.16]]
+		"city":
+			shares = [["lot", 0.62], ["lawn", 0.1], ["drop", v * 0.1]]
 		_:
 			shares = [["drop", v * 0.5], ["cut", 0.28], ["lot", 0.05]]
 	for share: Array in shares:
@@ -314,6 +324,18 @@ static func feature_at(side: int, k: int) -> Array:
 			return ["farm" if roll < 0.45 else "amish", i]
 		"lawn":
 			return ["town_cozy" if roll < 0.5 else "town_historic", i]
+	# a lot: what stands on it depends on the country
+	match country(region_of(g.y)):
+		"coal":
+			if roll < 0.3:
+				return ["coal_town", i]
+			if roll < 0.52:
+				return ["dead_town", i]
+			if roll < 0.72:
+				return ["mine_fire", i]
+			return ["breaker" if roll < 0.9 else "old_station", i]
+		"city":
+			return ["city" if roll < 0.8 else "truck_stop", i]
 	return ["gas" if roll < 0.45 else ("truck_stop" if roll < 0.75 else "old_station"), i]
 
 
@@ -520,6 +542,13 @@ func _make_slot() -> void:
 				root.add_child(t)
 				(slot["trees"] as Array[MultiMeshInstance3D]).append(t)
 				slot["tree_of"]["%d|%s|%s" % [side, group, kind]] = t
+	# the mine fire's smoke: up to four plumes a place (two a side), parked until needed
+	slot["smoke"] = [] as Array[CPUParticles3D]
+	for n in 4:
+		var plume := _smoke_plume()
+		plume.name = "Smoke%d" % n
+		root.add_child(plume)
+		(slot["smoke"] as Array[CPUParticles3D]).append(plume)
 	var boards := Node3D.new()
 	boards.name = "Boards"
 	root.add_child(boards)
@@ -570,6 +599,45 @@ func _mesh_node(parent: Node3D, node_name: String, mat: Material, shadows: bool)
 	return mi
 
 
+## One plume of the mine fire's smoke: slow grey-white puffs rising and leaning with the
+## wind, drawn with Route 22's dust wisp (r22_dust.gdshader). Its particles live in the
+## plume's own space so they slide past with their place (the land moves, not the car).
+func _smoke_plume() -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.local_coords = true
+	p.amount = 26
+	p.lifetime = 11.0
+	p.preprocess = 11.0
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.emission_sphere_radius = 1.2
+	p.direction = Vector3(0.25, 1.0, 0.1)
+	p.spread = 9.0
+	p.gravity = Vector3(0.12, 0.05, 0.0)
+	p.initial_velocity_min = 1.6
+	p.initial_velocity_max = 2.6
+	p.angle_min = 0.0
+	p.angle_max = 360.0
+	p.scale_amount_min = 3.5
+	p.scale_amount_max = 6.0
+	var grow := Curve.new()
+	grow.add_point(Vector2(0.0, 0.25))
+	grow.add_point(Vector2(1.0, 1.0))
+	p.scale_amount_curve = grow
+	var fade := Gradient.new()
+	fade.set_color(0, Color(0.78, 0.78, 0.76, 0.0))
+	fade.add_point(0.12, Color(0.78, 0.78, 0.76, 0.5))
+	fade.set_color(fade.get_point_count() - 1, Color(0.85, 0.85, 0.85, 0.0))
+	p.color_ramp = fade
+	var quad := QuadMesh.new()
+	quad.material = Geo.dust_material(Vector2.ONE, 0.7)
+	p.mesh = quad
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.extra_cull_margin = 700.0
+	p.visible = false
+	p.emitting = false
+	return p
+
+
 ## Gives a place node the parts place k needs.
 func _dress(slot: Dictionary, k: int) -> void:
 	var part := part_at(k)
@@ -587,6 +655,18 @@ func _dress(slot: Dictionary, k: int) -> void:
 	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
 	if _boards:
 		_boards.fill(slot["boards"], k, board_slots(k))
+	var vents: Array[Vector3] = []
+	for side: int in [1, -1]:
+		var f := feature_at(side, k)
+		if not f.is_empty():
+			vents.append_array(Places.smoke_spots(String(f[0]), int(f[1]), side))
+	var plumes: Array[CPUParticles3D] = slot["smoke"]
+	for n in plumes.size():
+		plumes[n].visible = n < vents.size()
+		plumes[n].emitting = n < vents.size()
+		if n < vents.size():
+			plumes[n].set_meta("base", vents[n])
+			plumes[n].position = vents[n]
 	var over := bridge_at(k)
 	(slot["bridge"] as MeshInstance3D).mesh = Pieces.bridge(boundary(1, k), boundary(1, k + 1)) if over else null
 	(slot["piers"] as MeshInstance3D).mesh = Pieces.bridge_piers(boundary(1, k), boundary(1, k + 1)) if over else null
@@ -734,7 +814,7 @@ func _apply() -> void:
 		var here := spot + Vector3(0.0, 0.0, -crept)
 		_backdrop.transform = Transform3D(turned, Vector3(0.0, -(altitude + FLOOR_BELOW), 0.0) - turned * here)
 		# morning mist lies in the hollows of some regions (r81_backdrop.gdshader)
-		(_kit["backdrop"] as ShaderMaterial).set_shader_parameter("mist", 0.6 if posmod(region, 3) == 1 else 0.12)
+		(_kit["backdrop"] as ShaderMaterial).set_shader_parameter("mist", maxf(0.6 if posmod(region, 3) == 1 else 0.12, mist))
 		if _vistas:
 			_vistas.show_region(region, spot)
 	# the lamps' light on the car and the riders: a gentle swell as each lamp goes over (one every
@@ -753,13 +833,15 @@ func _apply() -> void:
 		l.light_energy = cover * (1.5 + swell) + under * 1.2
 
 
-## The signs' words follow the bend like the signs (Label3D is not drawn by our shaders, so
-## r22_common.gdshaderinc's r22_bend is done here).
+## The signs' words and the mine fire's smoke follow the bend like the land (neither is drawn
+## by our shaders, so r22_common.gdshaderinc's r22_bend is done here).
 func _bend_words() -> void:
 	for k: int in _placed:
 		var slot: Dictionary = _slots[_placed[k]["slot"]]
 		var root := slot["root"] as Node3D
-		for l: Label3D in [slot["sign_words"], slot["tunnel_words"]]:
+		var movers: Array = [slot["sign_words"], slot["tunnel_words"]]
+		movers.append_array(slot["smoke"])
+		for l: Node3D in movers:
 			if not l.visible:
 				continue
 			var base: Vector3 = l.get_meta("base")

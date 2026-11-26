@@ -258,46 +258,64 @@ func _ready() -> void:
 
 	# ── the countries: farm valley, river crossing, Endless Mountains ──
 	AppState.set_setting("r81_country", "tour")
-	_check(Trip.country(0) == "ridge" and Trip.country(1) == "farm" and Trip.country(2) == "river" and Trip.country(3) == "endless" and Trip.country(4) == "ridge",
-		"the tour: ridge, farm valley, river, Endless Mountains, and round again")
+	_check(Trip.country(0) == "ridge" and Trip.country(1) == "farm" and Trip.country(2) == "river" and Trip.country(3) == "endless" and Trip.country(4) == "coal"
+		and Trip.country(5) == "city" and Trip.country(6) == "ridge", "the tour: ridge, farm valley, river, Endless Mountains, coal plateau, city valley, and round again")
 	_check(Trip.region_of(period + 2) == 0 and Trip.region_of(period + 3) == 1, "the country changes in the middle of a tunnel")
 	AppState.set_setting("r81_country", "farm")
 	await _secs(0.5)
+	_check(Places.FEATURES.size() == 12, "twelve kinds of roadside place")
 	kinds = {}
 	for b in range(100, 800):
 		kinds[Trip.boundary(1, b)] = true
 		kinds[Trip.boundary(-1, b)] = true
 	_check(kinds.has("field") and kinds.has("lawn") and kinds.has("lot") and kinds.has("mount"), "farm valley: fields, towns and lots between the tunnels (%s)" % str(kinds.keys()))
-	for feature: String in Places.FEATURES:
-		# the third place of one on the right (its middle, or near it)
-		var k_f := _find_place(from, func(k: int) -> bool:
-			var f := Trip.feature_at(1, k)
-			return not f.is_empty() and String(f[0]) == feature and int(f[1]) == 2)
-		_check(k_f > 0, "found a %s ahead (place %d)" % [feature, k_f])
-		if k_f <= 0:
-			continue
-		var meshes := 0
-		for i in 7:
-			meshes += 1 if Places.build(feature, i, 1) != null else 0
-			if Places.build(feature, i, -1) != null:
-				meshes += 1
-		_check(meshes >= 2, "the %s builds on both sides (%d meshes)" % [feature, meshes])
-		EventBus.camera_preset_requested.emit(5)
-		trip.set_travel(float(k_f) * Land.LENGTH - 130.0)
-		await _secs(1.5)
-		_check(trip.altitude < 80.0, "the farm valley's road is low (%.0f m)" % trip.altitude)
-		var placed: Array = room.find_children("PlacesR", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
-			return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
-		_check(placed.size() >= 1, "the %s stands by the road (%d places)" % [feature, placed.size()])
-		await _shot("r81_%s_chase" % feature)
-		EventBus.camera_preset_requested.emit(6)
-		await _secs(1.0)
-		await _shot("r81_%s_drone" % feature)
-		# (the driver's side camera looks across the car to the right of the road)
-		EventBus.camera_preset_requested.emit(3)
-		trip.set_travel(float(k_f) * Land.LENGTH + 30.0)
-		await _secs(1.0)
-		await _shot("r81_%s_driver_side" % feature)
+	# every kind of place, in the country it belongs to
+	for group: Array in [["farm", ["farm", "amish", "town_cozy", "town_historic", "gas", "truck_stop", "old_station"]],
+			["coal", ["coal_town", "dead_town", "mine_fire", "breaker"]], ["city", ["city"]]]:
+		var land := String(group[0])
+		AppState.set_setting("r81_country", land)
+		await _secs(0.5)
+		for feature: String in group[1]:
+			# the third place of one on the right (its middle, or near it)
+			var k_f := _find_place(from, func(k: int) -> bool:
+				var f := Trip.feature_at(1, k)
+				return not f.is_empty() and String(f[0]) == feature and int(f[1]) == 2)
+			_check(k_f > 0, "found a %s ahead (place %d)" % [feature, k_f])
+			if k_f <= 0:
+				continue
+			var meshes := 0
+			for i in 7:
+				meshes += 1 if Places.build(feature, i, 1) != null else 0
+				if Places.build(feature, i, -1) != null:
+					meshes += 1
+			_check(meshes >= 2, "the %s builds on both sides (%d meshes)" % [feature, meshes])
+			EventBus.camera_preset_requested.emit(5)
+			trip.set_travel(float(k_f) * Land.LENGTH - 130.0)
+			await _secs(1.5)
+			_check((trip.altitude < 80.0) == (land != "coal"), "%s country's road is %s (%.0f m)" % [land, "high" if land == "coal" else "low", trip.altitude])
+			var placed: Array = room.find_children("PlacesR", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
+				return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
+			_check(placed.size() >= 1, "the %s stands by the road (%d places)" % [feature, placed.size()])
+			await _shot("r81_%s_chase" % feature)
+			EventBus.camera_preset_requested.emit(6)
+			await _secs(1.0)
+			await _shot("r81_%s_drone" % feature)
+			# (the driver's side camera looks across the car to the right of the road)
+			EventBus.camera_preset_requested.emit(3)
+			trip.set_travel(float(k_f) * Land.LENGTH + 30.0)
+			await _secs(1.0)
+			await _shot("r81_%s_driver_side" % feature)
+	# the mine fire smokes
+	AppState.set_setting("r81_country", "coal")
+	var k_fire := _find_place(from, func(k: int) -> bool:
+		var f := Trip.feature_at(1, k)
+		return not f.is_empty() and String(f[0]) == "mine_fire" and int(f[1]) == 2)
+	trip.set_travel(float(k_fire) * Land.LENGTH - 60.0)
+	await _secs(1.5)
+	var plumes: Array = trip.find_children("Smoke*", "CPUParticles3D", true, false).filter(func(n: Node) -> bool: return (n as CPUParticles3D).is_visible_in_tree() and (n as CPUParticles3D).emitting)
+	_check(plumes.size() >= 2 and Places.smoke_spots("mine_fire", 2, 1).size() == 2 and Places.smoke_spots("dead_town", 2, 1).is_empty(), "smoke rises over the mine fire, not over the other dead town (%d plumes)" % plumes.size())
+	AppState.set_setting("r81_country", "farm")
+	await _secs(0.5)
 	# a town at night
 	var k_town := _find_place(from, func(k: int) -> bool:
 		var f := Trip.feature_at(1, k)
@@ -382,6 +400,34 @@ func _ready() -> void:
 	AppState.set_setting("r81_tunnels", "medium")
 	AppState.set_setting("r81_country", "ridge")
 	await _secs(0.5)
+
+	# ── round 4's weather: valley fog, drizzle, "Weather changes by itself" ──
+	# (mist eases in over about 12 s and the drizzle over about 7 s: r22_desert.gd)
+	var sky: Node = room.call("get_desert")
+	AppState.set_setting("r22_weather", "fog")
+	await _secs(14.0)
+	_check(float(sky.get("mist")) > 0.5 and float(sky.get("storm")) < 0.05, "Valley fog: mist without a storm (%.2f)" % float(sky.get("mist")))
+	_check(absf(float(trip.get("mist")) - float(sky.get("mist"))) < 0.05, "the far view gets the same mist as the sky")
+	await _shot("r81_fog")
+	AppState.set_setting("r22_weather", "drizzle")
+	await _secs(9.0)
+	var rain: CPUParticles3D = sky.get("_rain")
+	_check(float(sky.get("drizzle")) > 0.5 and float(sky.get("storm")) < 0.05, "Drizzle: light rain without thunder")
+	_check(rain != null and rain.emitting and rain.amount <= 300, "the drizzle is a thin rain (a third of the storm's drops)")
+	await _shot("r81_drizzle")
+	AppState.set_setting("r22_weather", "clear")
+	_check(not bool(AppState.DEFAULTS["r81_drift"]), "Weather changes by itself is off unless asked for")
+	_check(String(room.call("next_weather", "storm", 0.1)) == "afterrain" and String(room.call("next_weather", "fog", 0.1)) == "clear",
+		"drifting weather: a storm clears up, fog lifts")
+	_check(String(room.call("next_weather", "clear", 0.99)) == "drizzle" and String(room.call("next_weather", "dust", 0.1)) == "clouddeck",
+		"drifting weather: every roll gives a weather, and the desert's dust counts as clear")
+	var reached: Dictionary = {}
+	var at := "clear"
+	for n in 400:
+		at = String(room.call("next_weather", at, fmod(float(n) * 0.377, 1.0)))
+		reached[at] = true
+	_check(reached.size() == 6, "drifting weather reaches all six weathers (%d)" % reached.size())
+	await _secs(2.0)
 
 	if countries_only:
 		print("DONE fails=%d" % _fails)

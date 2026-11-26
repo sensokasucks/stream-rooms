@@ -1781,9 +1781,10 @@ Included rooms:
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
     with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
     convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
-- **Route 81 Cruise**: the Cruise's green sister, a work in progress (three of four build rounds
-  are in: the road, the land and the tunnels; the detailed forest, the distant views and
-  the lights; then the farm valley, the towns, the river bridge and the billboards). The same red woody and the same four
+- **Route 81 Cruise**: the Cruise's green sister, built in four rounds (the road, the land
+  and the tunnels; the detailed forest, the distant views and the lights; the farm valley, the
+  towns, the river bridge and the billboards; then the coal country, the city, more weather and
+  the countryside's sounds). The same red woody and the same four
   seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
   median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
   away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. The
@@ -1815,6 +1816,14 @@ Included rooms:
       with the other road's bridge and its piers beside you.
     - **Endless Mountains**: the highest road (up to about 300 m above the valley), most of it
       overlook.
+    - **Coal country**: a high plateau of scrub woods and black heaps of mine waste. Along the
+      way: a coal town of double houses along one street with its company store and
+      wooden church, a huge old coal breaker, a town left empty (cellar walls and chimneys,
+      boarded-up houses, leaning poles) and one where an old mine burns underground: scorched
+      sunken ground, dead grey trees and smoke rising beside the street.
+    - **City valley**: low in a wide valley through an old industrial city: a brick mill
+      with saw-tooth roofs and tall smokestacks, warehouses, streets of brick row houses, a
+      few taller blocks downtown and a big stone church, all lit at night.
   - **How often views open up**: how much of the road has an overlook on one side rather than
     woods or rock (0% = **Never**).
   - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
@@ -1844,14 +1853,24 @@ Included rooms:
     and **painted barn** (the picture painted on a red barn's end wall). Boards stand in
     fields, at the quiet ends of towns and in front of woods, never at an overlook, a rock
     cut, the bridge or a tunnel. Any picture size works; 1920 x 1080 fills every shape best.
-  - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Thunderstorm**,
-    **After rain**; the desert's dust storm counts as Clear here), **Clouds**, **Stars**, **Heat
+  - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Valley fog**,
+    **Drizzle**, **Thunderstorm**, **After rain**; the desert's dust storm counts as Clear
+    here), **Clouds**, **Stars**, **Heat
     shimmer**, **Wind** and **Set detail** work as on Route 22 and share its settings.
+  - **Valley fog** and **Drizzle** are Route 81's own weathers. Valley fog lies in the valleys
+    of the far view and hangs over the road; on the **Detailed** look the sun and the lamps
+    throw beams in it. Drizzle is a grey sky with a steady light rain and no thunder. (If you
+    jump to the desert with one of them picked, fog shows as a cloud deck and drizzle as After
+    rain.)
+  - **Weather changes by itself**: off, the weather stays what you picked. On, it moves on
+    every four to nine minutes the way weather does: clear, cloud, a foggy spell, drizzle, now
+    and then a thunderstorm and the wet road after it. For the hour to move too, set **Day
+    length**.
+  - Sound: by day birds sing in the woods (quieter at speed and in the rain), and inside a
+    tunnel the wind, rain and crickets drop away and the road noise booms.
   - Cameras and reaction targets: as on the Route 22 Cruise.
   - In a co-stream the road (tunnels, country, views, season, streetlights, the billboards' rules) is the host's, and the guests' road keeps
-    pace with the host's. **Forest density**, **Set detail** and the billboard pictures are each PC's own.
-  - Still to come: the coal plateau and the city valley, abandoned coal towns, more trucks,
-    more weather and the countryside's own sounds.
+    pace with the host's (with **Weather changes by itself** on, the host's weather is everyone's). **Forest density**, **Set detail** and the billboard pictures are each PC's own.
   - Source: built in code in `rooms/route81/` on top of Route 22's parts (`r81_land.gd` the
     land, trees and far ridges, `r81_pieces.gd` rails, tunnels and signs, `r81_trip.gd` which
     land comes where, `r81_traffic.gd`). The rock, grass, forest floor, asphalt and concrete

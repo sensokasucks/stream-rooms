@@ -33,7 +33,18 @@ const Land := preload("res://rooms/route81/r81_land.gd")
 ##   gas            a gas station at an exit: canopy, pumps, store and a tall pole sign
 ##   truck_stop     a truck stop: high canopies, a diner, parked trailers, light masts
 ##   old_station    a closed-down filling station from the 1930s, rusting
-const FEATURES: PackedStringArray = ["farm", "amish", "town_cozy", "town_historic", "gas", "truck_stop", "old_station"]
+##   coal_town      (coal country) a patch town: rows of plain double houses on a gravel
+##                  street, a company store, a wooden church, a black culm bank behind
+##   dead_town      the same town with nobody left: grey houses, gaps where some fell in,
+##                  leaning poles, no light at night
+##   mine_fire      a dead town over a burning coal seam: scorched ground, dead trees, and
+##                  smoke rising from cracks (r81_trip.gd puts the smoke at smoke_spots())
+##   breaker        an old coal breaker: a tall black timber works stepping down a slope, its
+##                  conveyor, a culm bank and a few hopper cars on a siding
+##   city           (the city valley) seven places of an old industrial city: warehouses, brick
+##                  row houses, a mill with smokestacks, a few downtown blocks, a stone church
+const FEATURES: PackedStringArray = ["farm", "amish", "town_cozy", "town_historic", "gas", "truck_stop", "old_station",
+	"coal_town", "dead_town", "mine_fire", "breaker", "city"]
 
 const ASPHALT := Color(0.13, 0.13, 0.14)
 const GRAVEL := Color(0.42, 0.4, 0.36)
@@ -64,6 +75,11 @@ static func build(feature: String, i: int, side: int) -> ArrayMesh:
 		"gas": _gas(b, i, side)
 		"truck_stop": _truck_stop(b, i, side, rng)
 		"old_station": _old_station(b, i, side, rng)
+		"coal_town": _coal_town(b, i, side, rng, false, false)
+		"dead_town": _coal_town(b, i, side, rng, true, false)
+		"mine_fire": _coal_town(b, i, side, rng, true, true)
+		"breaker": _breaker(b, i, side, rng)
+		"city": _city(b, i, side, rng)
 	var mesh: ArrayMesh = null if b.is_empty() else b.to_mesh()
 	_cache[key] = mesh
 	return mesh
@@ -617,3 +633,248 @@ static func _old_station(b: Geo.Buf, i: int, side: int, rng: RandomNumberGenerat
 	b.mat = Geo.MAT_RUBBER
 	b.cyl(Transform3D(Basis.IDENTITY, at + face * Vector3(-4.4, 0.0, 3.6) + Vector3(rng.randf_range(-0.3, 0.3), 0.0, 0.0)), 0.4, 0.4, 0.22, 10, Color(0.05, 0.05, 0.05))
 	b.mat = Geo.MAT_PAINT
+
+
+# ── Coal country ─────────────────────────────────────────────
+const COAL := Color(0.05, 0.05, 0.055)
+const SOOT := Color(0.3, 0.29, 0.27)
+
+## Where the mine fire's smoke comes out of the ground on place `i` of a "mine_fire" town on
+## `side`, in the place's own metres (r81_trip.gd stands a smoke plume on each; [] = none).
+static func smoke_spots(feature: String, i: int, side: int) -> Array[Vector3]:
+	var out: Array[Vector3] = []
+	if feature != "mine_fire" or i < 1 or i > 5:
+		return out
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash("smoke|%d|%d" % [i, side])
+	for n in 2:
+		out.append(_at(side, "lawn", rng.randf_range(20.0, 75.0), 0.2, rng.randf_range(-70.0, -10.0)))
+	return out
+
+
+## A black heap of mine waste (a culm bank): a wide, lumpy cone.
+static func _culm(b: Geo.Buf, at: Vector3, radius: float, height: float, rng: RandomNumberGenerator) -> void:
+	b.mat = Geo.MAT_ROCK
+	b.cyl(Transform3D(Basis.IDENTITY, at + Vector3(0.0, -1.0, 0.0)), radius, radius * 0.25, height + 1.0, 14, COAL.lightened(0.04), COAL)
+	b.blob(at + Vector3(radius * 0.4, height * 0.25, rng.randf_range(-6.0, 6.0)), Vector3(radius * 0.5, height * 0.4, radius * 0.5), 8, 5, COAL.lightened(0.05), COAL, 0.2, rng)
+	b.mat = Geo.MAT_PAINT
+
+
+## A patch town of the coal fields (see FEATURES): alive, dead, or dead over a mine fire.
+static func _coal_town(b: Geo.Buf, i: int, side: int, rng: RandomNumberGenerator, dead: bool, burning: bool) -> void:
+	if i < 1 or i > 5:
+		return
+	_paving(b, side, "lawn", 30.0, 6.0, 0.0, -Land.LENGTH, GRAVEL.darkened(0.45 if dead else 0.25))
+	if burning:
+		# scorched, sunken patches where the fire has come up under the street
+		for n in 3:
+			_paving(b, side, "lawn", rng.randf_range(18.0, 70.0), rng.randf_range(8.0, 16.0), rng.randf_range(-10.0, -30.0), rng.randf_range(-45.0, -70.0), Color(0.07, 0.06, 0.06))
+	var paints: Array[Color] = [Color(0.6, 0.6, 0.56), Color(0.5, 0.55, 0.5), Color(0.62, 0.55, 0.42), Color(0.45, 0.5, 0.58), Color(0.6, 0.45, 0.4)]
+	for u: float in [40.0, 64.0]:
+		if i == 3 and u < 50.0 and not dead:
+			continue        # (the store and the church stand here)
+		var z := -6.0
+		while z > -74.0:
+			var at := _at(side, "lawn", u, 0.0, z - 5.0)
+			var gone := dead and rng.randf() < (0.5 if burning else 0.3)
+			if gone:
+				# what is left of a house: its stone cellar walls and the chimney
+				b.mat = Geo.MAT_ROCK
+				b.block(at + Vector3(0.0, 0.4, 0.0), Vector3(8.0, 0.8, 9.6), STONE.darkened(0.3))
+				b.block(at + Vector3(0.0, 0.5, 0.0), Vector3(7.2, 1.0, 8.8), Color(0.12, 0.11, 0.1))
+				b.block(at + Vector3(rng.randf_range(-2.0, 2.0), 2.6, 0.0), Vector3(0.9, 5.2, 0.9), BRICK.darkened(0.4))
+				b.mat = Geo.MAT_PAINT
+			else:
+				# a double house: two front doors under one long roof, its ridge along the street
+				var wall := SOOT.lerp(Color(0.2, 0.19, 0.18), rng.randf() * 0.5) if dead else paints[rng.randi() % paints.size()]
+				Geo.building(b, at, Vector3(9.6, 6.0, 8.0), _face(side, rng.randf_range(-0.03, 0.03)), wall, ROOF_DARK, true, 0 if dead else 3, not dead and rng.randf() < 0.75)
+				if dead:
+					# boarded windows
+					var face := Basis(Vector3.UP, _face(side))
+					b.mat = Geo.MAT_WOOD
+					for wx: float in [-2.8, 0.6, 3.2]:
+						b.box(Transform3D(face, at + face * Vector3(wx, 1.6, 4.04)), Vector3(0.95, 1.1, 0.06), Color(0.34, 0.29, 0.22))
+					b.mat = Geo.MAT_PAINT
+			z -= 11.6
+	# poles along the street: leaning and wireless in a dead town
+	for n in 3:
+		var foot := _at(side, "lawn", 34.5, 0.0, -12.0 - 27.0 * float(n))
+		var lean := Vector3(rng.randf_range(-1.2, 1.2), 0.0, rng.randf_range(-1.2, 1.2)) if dead else Vector3.ZERO
+		b.mat = Geo.MAT_WOOD
+		b.rod(foot, foot + Vector3(0.0, 8.0, 0.0) + lean, 0.13, 6, Color(0.3, 0.25, 0.2))
+		b.block(foot + Vector3(0.0, 7.4, 0.0) + lean * 0.92, Vector3(1.8, 0.12, 0.12), Color(0.3, 0.25, 0.2))
+		if not dead:
+			b.mat = Geo.MAT_LIGHT
+			b.block(foot + Vector3(-float(side) * 0.9, 6.6, 0.0), Vector3(0.5, 0.15, 0.3), LAMP_WARM)
+		b.mat = Geo.MAT_PAINT
+	if i == 3 and not dead:
+		# the company store (brick, flat roof, a long porch) and the wooden church
+		var at := _at(side, "lawn", 43.0, 0.0, -22.0)
+		Geo.building(b, at, Vector3(16.0, 6.5, 11.0), _face(side), BRICK.darkened(0.1), ROOF_DARK, false, 4, true)
+		_church(b, _at(side, "lawn", 46.0, 0.0, -58.0), _face(side), Color(0.7, 0.7, 0.66), ROOF_DARK, ROOF_DARK, true)
+	if i == 2:
+		_culm(b, _at(side, "lawn", 150.0, 0.0, -40.0), 42.0, 26.0, rng)
+	if burning:
+		# trees killed by the heat: bare grey trunks with a few limbs
+		for n in 9:
+			var foot := _at(side, "lawn", rng.randf_range(16.0, 110.0), 0.0, rng.randf_range(-78.0, -2.0))
+			var tall := rng.randf_range(5.0, 10.0)
+			b.mat = Geo.MAT_WOOD
+			b.rod(foot, foot + Vector3(rng.randf_range(-0.6, 0.6), tall, rng.randf_range(-0.6, 0.6)), 0.16, 5, Color(0.42, 0.4, 0.38))
+			for limb in 3:
+				var from := foot + Vector3(0.0, tall * rng.randf_range(0.45, 0.85), 0.0)
+				b.rod(from, from + Vector3(rng.randf_range(-2.2, 2.2), rng.randf_range(0.6, 1.8), rng.randf_range(-2.2, 2.2)), 0.06, 4, Color(0.42, 0.4, 0.38))
+		b.mat = Geo.MAT_PAINT
+
+
+## An old coal breaker (see FEATURES), on places 2 and 3 of its stretch.
+static func _breaker(b: Geo.Buf, i: int, side: int, rng: RandomNumberGenerator) -> void:
+	if i == 1 or i == 4:
+		_culm(b, _at(side, "lawn", 120.0 + 20.0 * float(i % 2), 0.0, -40.0), 36.0, 22.0, rng)
+	if i != 2 and i != 3:
+		return
+	var tar := Color(0.1, 0.095, 0.09)
+	var face := Basis(Vector3.UP, _face(side))
+	if i == 2:
+		# the works: black timber blocks stepping up to a head house, rows of small windows
+		for step in 4:
+			var high := 10.0 + 9.0 * float(step)
+			var at := _at(side, "lawn", 60.0 + 9.0 * float(step), 0.0, -30.0 - 6.0 * float(step))
+			b.mat = Geo.MAT_WOOD
+			b.box(Transform3D(face, at + Vector3(0.0, high * 0.5, 0.0)), Vector3(22.0 - 3.0 * float(step), high, 12.0), tar)
+			b.mat = Geo.MAT_PANEL
+			b.box(Transform3D(face * Basis(Vector3.RIGHT, 0.25), at + Vector3(0.0, high + 0.6, 0.0)), Vector3(23.0 - 3.0 * float(step), 0.25, 13.5), Color(0.2, 0.2, 0.21))
+			b.mat = Geo.MAT_GLASS
+			var floors := 2 + step * 2
+			for f in floors:
+				for w in 6:
+					if rng.randf() < 0.85:
+						b.box(Transform3D(face, at + face * Vector3(-7.0 + 2.6 * float(w), 3.0 + 4.0 * float(f), 6.03)), Vector3(1.1, 1.5, 0.06), Color(0.2, 0.24, 0.28) if rng.randf() < 0.7 else Color(0.03, 0.03, 0.03))
+		# the conveyor up to the head house: a long covered ramp on trestle legs
+		var low := _at(side, "lawn", 30.0, 2.0, -62.0)
+		var top := _at(side, "lawn", 84.0, 36.0, -52.0)
+		b.mat = Geo.MAT_WOOD
+		for n in 6:
+			var a := low.lerp(top, float(n) / 6.0)
+			var c := low.lerp(top, float(n + 1) / 6.0)
+			b.rod(a, c, 1.5, 4, tar)
+			b.rod(Vector3(c.x, 0.0, c.z), c, 0.25, 4, tar)
+		b.mat = Geo.MAT_PAINT
+	else:
+		# the siding: rails on dark ballast, and a few rusty hopper cars
+		_paving(b, side, "lawn", 36.0, 4.0, 0.0, -Land.LENGTH, Color(0.16, 0.15, 0.14))
+		b.mat = Geo.MAT_RUST
+		for rail: float in [-0.75, 0.75]:
+			var z := 0.0
+			while z > -Land.LENGTH + 0.01:
+				b.block(_at(side, "lawn", 36.0 + rail, 0.16, z - 4.0), Vector3(0.1, 0.14, 8.0), Color(0.3, 0.24, 0.2))
+				z -= 8.0
+		for n in 4:
+			if rng.randf() < 0.2:
+				continue
+			var at := _at(side, "lawn", 36.0, 0.0, -12.0 - 13.0 * float(n))
+			b.mat = Geo.MAT_RUST
+			b.block(at + Vector3(0.0, 2.4, 0.0), Vector3(2.9, 2.6, 11.0), Color(0.22, 0.14, 0.1).lerp(Color(0.1, 0.1, 0.1), rng.randf()))
+			b.mat = Geo.MAT_ROCK
+			b.block(at + Vector3(0.0, 3.75, 0.0), Vector3(2.5, 0.3, 10.2), COAL)
+			b.mat = Geo.MAT_RUBBER
+			for wz: float in [-3.8, 3.8]:
+				b.block(at + Vector3(0.0, 0.6, wz), Vector3(2.4, 0.9, 1.8), Color(0.06, 0.06, 0.06))
+		b.mat = Geo.MAT_PAINT
+
+
+# ── The city valley ──────────────────────────────────────────
+## A block of several storeys with a strip of windows on every floor of its road face (most
+## lit at night). at = the middle of its floor; `wide` along the road, `deep` away from it.
+static func _block(b: Geo.Buf, side: int, at: Vector3, wide: float, deep: float, storeys: int, wall: Color, rng: RandomNumberGenerator) -> void:
+	var face := Basis(Vector3.UP, _face(side))
+	var high := 4.5 + 3.4 * float(storeys - 1)
+	b.mat = Geo.MAT_PAINT
+	b.box(Transform3D(face, at + Vector3(0.0, high * 0.5, 0.0)), Vector3(wide, high, deep), wall)
+	b.box(Transform3D(face, at + Vector3(0.0, high + 0.3, 0.0)), Vector3(wide + 0.5, 0.6, deep + 0.5), wall.darkened(0.25))
+	for f in storeys:
+		var lit := rng.randf() < (0.8 if f == 0 else 0.45)
+		b.mat = Geo.MAT_LIGHT if lit else Geo.MAT_GLASS
+		var col := (LAMP_WARM if rng.randf() < 0.7 else Color(0.8, 0.9, 1.0)) * (1.0 if f == 0 else 0.7) if lit else Color(0.13, 0.16, 0.2)
+		b.box(Transform3D(face, at + face * Vector3(0.0, (2.0 if f == 0 else 2.9 + 3.4 * float(f)), deep * 0.5 + 0.03)), Vector3(wide * 0.84, 2.3 if f == 0 else 1.5, 0.06), col)
+		# (the end walls have windows too: they are what shows from up the road)
+		for e: float in [-1.0, 1.0]:
+			b.box(Transform3D(face, at + face * Vector3(e * (wide * 0.5 + 0.03), (2.0 if f == 0 else 2.9 + 3.4 * float(f)), 0.0)), Vector3(0.06, 1.5, deep * 0.7), col)
+	b.mat = Geo.MAT_PAINT
+
+
+## A tall brick smokestack with a dark band round its top.
+static func _stack(b: Geo.Buf, at: Vector3, height: float) -> void:
+	b.mat = Geo.MAT_ROCK
+	b.cyl(Transform3D(Basis.IDENTITY, at), 2.1, 1.3, height, 10, BRICK.darkened(0.1))
+	b.cyl(Transform3D(Basis.IDENTITY, at + Vector3(0.0, height - 2.5, 0.0)), 1.45, 1.4, 2.5, 10, Color(0.12, 0.1, 0.1))
+	b.mat = Geo.MAT_PAINT
+
+
+## An old industrial city along the highway (see FEATURES), seven places long.
+static func _city(b: Geo.Buf, i: int, side: int, rng: RandomNumberGenerator) -> void:
+	_paving(b, side, "lawn", 30.0, 8.0, 0.0, -Land.LENGTH, ASPHALT)
+	_paving(b, side, "lawn", 84.0, 7.0, 0.0, -Land.LENGTH, ASPHALT)
+	for n in 2:
+		_lot_light(b, _at(side, "lawn", 24.5, 0.0, -20.0 - 40.0 * float(n)), 9.0)
+	var bricks: Array[Color] = [BRICK, BRICK.darkened(0.2), Color(0.48, 0.3, 0.2), Color(0.42, 0.38, 0.33), Color(0.55, 0.5, 0.42)]
+	match i:
+		0, 6:
+			# warehouses: long low sheds of ribbed metal and brick, loading doors to the street
+			for n in 3:
+				var at := _at(side, "lawn", 48.0, 0.0, -14.0 - 26.0 * float(n))
+				var face := Basis(Vector3.UP, _face(side))
+				b.mat = Geo.MAT_PANEL if n != 1 else Geo.MAT_PAINT
+				b.box(Transform3D(face, at + Vector3(0.0, 4.0, 0.0)), Vector3(23.0, 8.0, 26.0), Color(0.42, 0.45, 0.46) if n != 1 else bricks[rng.randi() % bricks.size()])
+				b.mat = Geo.MAT_PANEL
+				b.box(Transform3D(face * Basis(Vector3.RIGHT, 0.06), at + Vector3(0.0, 8.5, 0.0)), Vector3(24.0, 0.3, 27.0), Color(0.3, 0.31, 0.32))
+				b.mat = Geo.MAT_RUST
+				for door in 3:
+					b.box(Transform3D(face, at + face * Vector3(-7.0 + 7.0 * float(door), 2.0, 13.03)), Vector3(3.6, 4.0, 0.06), Color(0.25, 0.3, 0.33))
+			b.mat = Geo.MAT_PAINT
+		1, 5:
+			# brick row houses on both streets, a corner store with its lit window
+			for u: float in [42.0, 94.0]:
+				var z := -5.0
+				while z > -76.0:
+					var wall := bricks[rng.randi() % bricks.size()]
+					Geo.building(b, _at(side, "lawn", u, 0.0, z - 3.0), Vector3(5.6, 8.5, 10.0), _face(side), wall, ROOF_DARK, false, 2, rng.randf() < 0.75)
+					# the upstairs windows
+					var face := Basis(Vector3.UP, _face(side))
+					b.mat = Geo.MAT_LIGHT if rng.randf() < 0.5 else Geo.MAT_GLASS
+					for wx: float in [-1.3, 1.3]:
+						b.box(Transform3D(face, _at(side, "lawn", u, 5.6, z - 3.0) + face * Vector3(wx, 0.0, 5.03)), Vector3(0.9, 1.5, 0.06), LAMP_WARM * 0.8 if b.mat == Geo.MAT_LIGHT else Color(0.15, 0.18, 0.22))
+					b.mat = Geo.MAT_PAINT
+					z -= 5.9
+		2:
+			# the mill: three brick halls in a row under saw-tooth roofs, two smokestacks, a tank
+			for n in 3:
+				var at := _at(side, "lawn", 52.0, 0.0, -14.0 - 26.0 * float(n))
+				_block(b, side, at, 25.0, 30.0, 3, BRICK.darkened(0.15), rng)
+				var face := Basis(Vector3.UP, _face(side))
+				b.mat = Geo.MAT_PANEL
+				for tooth in 3:
+					b.box(Transform3D(face * Basis(Vector3.RIGHT, 0.5), at + face * Vector3(0.0, 12.6, -10.0 + 10.0 * float(tooth))), Vector3(25.0, 0.2, 7.0), Color(0.3, 0.31, 0.32))
+			_stack(b, _at(side, "lawn", 78.0, 0.0, -20.0), 44.0)
+			_stack(b, _at(side, "lawn", 82.0, 0.0, -58.0), 36.0)
+			_water_tower(b, _at(side, "lawn", 112.0, 0.0, -40.0), BRICK)
+		3:
+			# downtown: a few taller blocks, each its own height and stone
+			var z := -3.0
+			while z > -74.0:
+				var wide := rng.randf_range(13.0, 19.0)
+				_block(b, side, _at(side, "lawn", 46.0, 0.0, z - wide * 0.5), wide, 20.0, rng.randi_range(4, 9), [STONE, STONE.lightened(0.15), BRICK, Color(0.5, 0.46, 0.4), Color(0.3, 0.31, 0.34)][rng.randi() % 5], rng)
+				z -= wide + 1.0
+			z = -6.0
+			while z > -70.0:
+				var wide := rng.randf_range(14.0, 20.0)
+				_block(b, side, _at(side, "lawn", 100.0, 0.0, z - wide * 0.5), wide, 18.0, rng.randi_range(3, 6), bricks[rng.randi() % bricks.size()], rng)
+				z -= wide + 4.0
+		4:
+			# the big stone church, a school beside it, row houses behind
+			_church(b, _at(side, "lawn", 50.0, 0.0, -22.0), _face(side), STONE.darkened(0.1), ROOF_DARK, Color(0.25, 0.36, 0.3), true)
+			_block(b, side, _at(side, "lawn", 48.0, 0.0, -58.0), 30.0, 16.0, 3, BRICK, rng)
+			var z := -5.0
+			while z > -76.0:
+				Geo.building(b, _at(side, "lawn", 96.0, 0.0, z - 3.0), Vector3(5.6, 8.5, 10.0), _face(side), bricks[rng.randi() % bricks.size()], ROOF_DARK, false, 2, rng.randf() < 0.75)
+				z -= 5.9

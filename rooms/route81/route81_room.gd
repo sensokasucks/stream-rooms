@@ -114,6 +114,8 @@ func _process(delta: float) -> void:
 	_reach_far()
 	_trip.tick(delta, _desert.night)
 	_desert.heading = _trip.heading
+	_trip.mist = _desert.mist
+	_drift_weather(delta)
 	_desert.cover = _trip.cover
 	_desert.road_noise = clampf(_trip.speed / 22.0, 0.0, 1.2)
 	_desert.tick(delta, _trip.travel, _trip.bend, _trip.hill, _trip.speed)
@@ -195,6 +197,43 @@ func get_travel() -> float:
 
 
 ## The room's materials by name (r22_geo.gd new_kit plus r81_land.gd add_materials), for tests.
+## What the weather can turn into from each weather: [next weather, its share of the chances].
+const DRIFT: Dictionary = {
+	"clear": [["clouddeck", 0.6], ["fog", 0.2], ["drizzle", 0.2]],
+	"clouddeck": [["clear", 0.45], ["drizzle", 0.3], ["storm", 0.15], ["fog", 0.1]],
+	"fog": [["clear", 0.6], ["clouddeck", 0.4]],
+	"drizzle": [["clouddeck", 0.4], ["afterrain", 0.35], ["storm", 0.25]],
+	"storm": [["afterrain", 0.8], ["drizzle", 0.2]],
+	"afterrain": [["clear", 0.7], ["clouddeck", 0.3]],
+}
+## Seconds a weather lasts before it drifts on (a random time between the two).
+const DRIFT_EVERY := Vector2(240.0, 540.0)
+var _drift_in: float = 300.0
+
+
+## "Weather changes by itself" (r81_drift): every few minutes the Weather setting moves on to
+## one of the weathers that follow the current one (DRIFT). Not on a co-stream guest: the
+## setting is shared, so the host's drift reaches everyone.
+func _drift_weather(delta: float) -> void:
+	if not bool(AppState.get_setting("r81_drift")) or NetSession.get_role() == "guest":
+		return
+	_drift_in -= delta
+	if _drift_in > 0.0:
+		return
+	_drift_in = randf_range(DRIFT_EVERY.x, DRIFT_EVERY.y)
+	AppState.set_setting("r22_weather", next_weather(String(AppState.get_setting("r22_weather")), randf()))
+
+
+## The weather that follows `now` for a roll 0..1 (see DRIFT; the desert's dust counts as clear).
+static func next_weather(now: String, roll: float) -> String:
+	var options: Array = DRIFT.get(now, DRIFT["clear"])
+	for o: Array in options:
+		roll -= float(o[1])
+		if roll < 0.0:
+			return String(o[0])
+	return String(options[0][0])
+
+
 ## Route 81's billboards (for tests).
 func get_billboards() -> Billboards:
 	return _boards
@@ -231,8 +270,8 @@ func get_controls() -> Array[Dictionary]:
 		{"heading": "The road"},
 		{"key": "r81_tunnels", "label": "Tunnels", "type": "option", "options": [["short", "Often (about every 4 km)"], ["medium", "Now and then (about every 7 km)"], ["long", "Seldom (about every 13 km)"], ["never", "Never"]],
 			"tooltip": "How often the highway goes through a mountain. Each tunnel is 400 m long, and the country on its far side is different: another height, another stretch of the ridges."},
-		{"key": "r81_country", "label": "Country", "type": "option", "options": [["tour", "The tour (changes after every tunnel)"], ["ridge", "Ridge and gaps"], ["farm", "Farm valley"], ["river", "River crossing"], ["endless", "Endless Mountains"]],
-			"tooltip": "What kind of country the highway runs through. The tour: each kind in turn, a new one on the far side of every tunnel. Ridge and gaps: woods, rock cuts and overlooks. Farm valley: crop fields, farms, small towns and gas stations. River crossing: a long bridge over a wide river. Endless Mountains: the highest road, with the widest views."},
+		{"key": "r81_country", "label": "Country", "type": "option", "options": [["tour", "The tour (changes after every tunnel)"], ["ridge", "Ridge and gaps"], ["farm", "Farm valley"], ["river", "River crossing"], ["endless", "Endless Mountains"], ["coal", "Coal plateau"], ["city", "City valley"]],
+			"tooltip": "What kind of country the highway runs through. The tour: each kind in turn, a new one on the far side of every tunnel. Ridge and gaps: woods, rock cuts and overlooks. Farm valley: crop fields, farms, small towns and gas stations. River crossing: a long bridge over a wide river. Endless Mountains: the highest road, with the widest views. Coal plateau: patch towns, some abandoned, one over a mine fire with smoke coming out of the ground, a coal breaker and black culm banks. City valley: an old industrial city of brick mills, smokestacks and row houses along the road."},
 		{"key": "r81_views", "label": "How often views open up", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0, "zero": "Never",
 			"tooltip": "How much of the road has an overlook on one side (a guardrail and the ground falling away to the valley) rather than woods or a rock cut. 100% = about half of every side; 0% = woods and rock all the way."},
 		{"key": "r81_forest", "label": "Forest density", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d%%", "zero": "No trees",
@@ -266,8 +305,10 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "Lets the clock run: how many minutes a whole day and night takes, starting from the Time of day. 0 = the clock stands still."},
 		{"heading": "Weather"},
 		{"key": "r22_weather", "label": "Weather", "type": "option",
-			"options": [["clear", "Clear"], ["clouddeck", "Cloud deck"], ["storm", "Thunderstorm"], ["afterrain", "After rain (wet road, rainbow)"]],
-			"tooltip": "Clear: open sky. Cloud deck: a ceiling of cloud that lights up at sunset. Thunderstorm: dark cloud, rain and lightning (soft and slow in photosensitive-safe mode). After rain: a wet, shining road, clearing cloud and a rainbow opposite a low sun. Changes ease in over a few seconds. (The desert's dust storm counts as Clear here.)"},
+			"options": [["clear", "Clear"], ["clouddeck", "Cloud deck"], ["fog", "Valley fog"], ["drizzle", "Drizzle"], ["storm", "Thunderstorm"], ["afterrain", "After rain (wet road, rainbow)"]],
+			"tooltip": "Clear: open sky. Cloud deck: a ceiling of cloud that lights up at sunset. Valley fog: fog lies in the valleys and hangs over the road; on the Detailed look the sun and the lamps throw beams in it. Drizzle: a grey sky and a steady light rain, no thunder. Thunderstorm: dark cloud, rain and lightning (soft and slow in photosensitive-safe mode). After rain: a wet, shining road, clearing cloud and a rainbow opposite a low sun. Changes ease in over a few seconds. (The desert's dust storm counts as Clear here; in the desert, fog shows as a cloud deck and drizzle as After rain.)"},
+		{"key": "r81_drift", "label": "Weather changes by itself", "type": "check",
+			"tooltip": "Off: the weather stays what you picked. On: every few minutes it moves on by itself, the way weather does (clear, cloud, a foggy spell, drizzle, now and then a thunderstorm and the wet road after it). In a co-stream the host's weather is everyone's. For the hour to move too, set Day length."},
 		{"key": "r22_clouds", "label": "Clouds", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "More or less cloud than the weather normally brings. 0% = none."},
 		{"key": "r22_stars", "label": "Stars", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
