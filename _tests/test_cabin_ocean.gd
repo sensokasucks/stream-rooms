@@ -147,12 +147,12 @@ func _ready() -> void:
 	_check(float(beam_mat.get_shader_parameter("strength")) > 0.4 and not (gulls[0] as Node3D).visible, "at night the beams show and the gulls are gone")
 	await _view(5, "ocean_night_deck_view.png", 2.0)
 	await _view(6, "ocean_night_outside.png")
-	# heavy fog by day: the beams show, the foghorn sounds
+	# heavy fog by day: the beams show only as a dim, spread-out glow, the foghorn sounds
 	AppState.set_setting("cabin_time", 13.0)
 	AppState.set_setting("cabin_fog", "heavy")
 	room.set("_horn_wait", 0.0)
 	await _secs(1.0)
-	_check(float(beam_mat.get_shader_parameter("strength")) > 0.4, "in heavy fog the beams show by day")
+	_check(float(beam_mat.get_shader_parameter("strength")) > 0.15 and float(beam_mat.get_shader_parameter("haze")) > 0.9, "in heavy fog the beams show by day, dim and spread out")
 	_check(int(room.get("horn_blasts")) > 0, "the foghorn sounds in heavy fog")
 	await _view(5, "ocean_fog_deck_view.png")
 	AppState.set_setting("cabin_fog", "off")

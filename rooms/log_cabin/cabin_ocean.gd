@@ -33,7 +33,7 @@ extends RefCounted
 ##   lamp        the lighthouse lamp's glow (a MeshInstance3D; the room swells it as a beam
 ##               sweeps past), lamp_mat its material (the room sets its strength),
 ##   beam        the beams' pivot (a Node3D; the room turns it about its Y axis),
-##   beam_mat    the beams' material (the room sets their strength),
+##   beam_mat    the beams' material (the room sets their strength and haze),
 ##   gulls       Array[Node3D]: the gulls (the room flies them),
 ##   leaf_mats   the leaf-card materials by name (unused here: the coast has no Season),
 ##   far_trees   the low-poly tree MultiMeshInstance3Ds.
@@ -85,8 +85,11 @@ const VIEW_Y: float = 0.9
 ## the bluff.
 const PATH_START := Vector2(6.8, -4.8)
 const STAIRS_X: float = 13.0
-## The surf strip: from x = -SURF_HALF to SURF_HALF along the beach.
-const SURF_HALF: float = 420.0
+## The surf strip: from x = -SURF_HALF to SURF_HALF along the beach. Far longer than anyone
+## sees clearly (round 7: at 420 m its end showed as a hard seam where the waves stopped); its
+## last SURF_FADE metres at each end fade out (cabin_surf.gdshader, by UV2.y).
+const SURF_HALF: float = 880.0          # (the land reaches 900 m each way: LAND_SIZE)
+const SURF_FADE: float = 420.0
 const C_SAND := Color(0.72, 0.66, 0.54)
 const C_BLUFF := Color(0.6, 0.5, 0.38)          # the bluff's face: sandy clay
 const C_GRASS_SEA := Color(0.42, 0.48, 0.28)     # wind-dried coastal grass (the Simple look)
@@ -316,8 +319,9 @@ static func _build_sea(parent: Node3D, out: Dictionary) -> void:
 
 ## The surf strip along the beach: a grid from 14 m up the sand to 96 m out to sea, laid on the
 ## sand (just above it) and on the sea, which cabin_surf.gdshader paints foam on. UV: x = metres
-## along the beach, y = metres out from the waterline; UV2.x = 0..1 from one end to the other
-## (the shader fades the ends).
+## along the beach, y = metres out from the waterline; UV2.x = 0..1 from one end to the other,
+## UV2.y = 1 along the middle falling to 0 over the last SURF_FADE metres (the shader fades the
+## ends with it).
 static func _build_surf(parent: Node3D, out: Dictionary) -> void:
 	var verts := PackedVector3Array()
 	var uvs := PackedVector2Array()
@@ -331,7 +335,7 @@ static func _build_surf(parent: Node3D, out: Dictionary) -> void:
 		o += 1.0 if o < 30.0 else 3.0              # (fine where the waves break and wash)
 	var cols := 0
 	var x := -SURF_HALF
-	while x <= SURF_HALF:
+	while x <= SURF_HALF + 0.01:
 		var wz := edge_z(x) - WATERLINE
 		for off: float in outs:
 			var z := wz - off
@@ -339,14 +343,16 @@ static func _build_surf(parent: Node3D, out: Dictionary) -> void:
 			verts.append(Vector3(x, y, z))
 			normals.append(Vector3.UP)
 			uvs.append(Vector2(x, off))
-			uv2s.append(Vector2((x + SURF_HALF) / (2.0 * SURF_HALF), 0.0))
+			# UV2: x = 0..1 end to end (as before), y = 1 in the middle fading to 0 at the ends
+			uv2s.append(Vector2((x + SURF_HALF) / (2.0 * SURF_HALF), clampf((SURF_HALF - absf(x)) / SURF_FADE, 0.0, 1.0)))
 		if cols > 0:
 			for k in outs.size() - 1:
 				var a := (cols - 1) * outs.size() + k
 				var b := cols * outs.size() + k
 				idx.append_array([a, b, a + 1, a + 1, b, b + 1])
 		cols += 1
-		x += 3.0
+		# 3 m apart near the cabin, wider far along the beach (where it is only a far white line)
+		x += 3.0 if absf(x) < 300.0 else minf(3.0 + (absf(x) - 300.0) * 0.02, 15.0)
 	var arrays: Array = []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -433,8 +439,9 @@ static func _build_beach_things(parent: Node3D, surf: Dictionary) -> void:
 # ── The lighthouse ───────────────────────────────────────────
 ## The lighthouse on its islet: a tapering white tower with a red band, a dark gallery and
 ## railing, a glass lantern room with a dark roof, and the keeper's small white house with a red
-## roof. The lamp's glow is its own unshaded billboard (out "lamp"); the two beams (long soft
-## cones pointing opposite ways) hang on a pivot the room turns (out "beam", "beam_mat").
+## roof. The lamp's glow is its own unshaded billboard (out "lamp"); the two beams (long cones
+## pointing opposite ways, drawn by cabin_beam.gdshader as soft shafts of light with no outline)
+## hang on a pivot the room turns (out "beam", "beam_mat").
 static func _build_lighthouse(parent: Node3D, surf: Dictionary, out: Dictionary) -> void:
 	var b := Builder.Buf.new()
 	var base := Vector3(ISLET.x, height(ISLET.x, ISLET.y) - 0.3, ISLET.y)
@@ -504,10 +511,14 @@ static func _build_lighthouse(parent: Node3D, surf: Dictionary, out: Dictionary)
 	pivot.position = lamp_at
 	var beam_mat := ShaderMaterial.new()
 	beam_mat.shader = BEAM_SHADER
+	# (the shader works out the shaft's brightness from these same sizes: keep them in step)
+	beam_mat.set_shader_parameter("half_len", 160.0)
+	beam_mat.set_shader_parameter("r_lamp", 0.5)
+	beam_mat.set_shader_parameter("r_end", 18.0)
 	for side: float in [1.0, -1.0]:
 		var cone := CylinderMesh.new()
 		cone.top_radius = 0.5
-		cone.bottom_radius = 22.0
+		cone.bottom_radius = 18.0
 		cone.height = 320.0
 		cone.radial_segments = 16
 		cone.rings = 1

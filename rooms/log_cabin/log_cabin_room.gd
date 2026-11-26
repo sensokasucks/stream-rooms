@@ -263,7 +263,7 @@ func get_controls() -> Array[Dictionary]:
 		{"key": "cabin_wind", "label": "Wind", "min": 0.0, "max": 2.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How hard the wind blows: the trees sway, the rain slants, the snow drifts sideways, the chimney smoke leans and you hear it. 0% = still, 200% = a gale. A storm always blows hard."},
 		{"key": "cabin_snow", "label": "Snow on the ground", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "Snow lying on the ground, the roofs, the deck and the railings (and frost on the trees). More piles up on top while it snows, and melts away slowly after."},
+			"tooltip": "Snow lying on the ground, the roofs, the deck and the railings (and frost on the trees). More piles up on top while it snows and melts away within about a minute once it stops; the snow this slider sets stays until you lower it."},
 		{"key": "cabin_weather_fx", "label": "Rain and snow amount", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How many raindrops and snowflakes this PC draws. Lower it on a slow graphics card; the wet glass, the sound and the snow on the ground stay. Each PC in a co-stream chooses its own."},
 	]
@@ -860,10 +860,15 @@ func _apply_ocean(hor: Color, light_col: Color, glitter: Color, light_dir: Vecto
 	var fog := String(AppState.get_setting("cabin_fog"))
 	var murk := 1.0 if fog == "heavy" else 0.5 if fog == "light" else 0.0
 	var dark := 1.0 - smoothstep(0.15, 0.7, _day)
-	(_parts["beam_mat"] as ShaderMaterial).set_shader_parameter("strength", clampf(dark * (0.6 + 0.6 * murk) + murk * 0.5, 0.0, 1.2))
+	# The beams: soft shafts after dark (cabin_beam.gdshader). The lighthouse is about 700 m out,
+	# so in fog the fog between swallows most of it: light fog leaves wide, faint shafts, heavy
+	# fog only a dim glow sweeping round near the lamp (and the foghorn).
+	var beam_mat := _parts["beam_mat"] as ShaderMaterial
+	beam_mat.set_shader_parameter("strength", clampf(maxf(dark, murk * 0.5) * (1.0 - 0.45 * murk), 0.0, 1.0))
+	beam_mat.set_shader_parameter("haze", murk)
 	var lamp := _parts["lamp"] as MeshInstance3D
 	lamp.visible = dark > 0.05 or murk > 0.0
-	(_parts["lamp_mat"] as StandardMaterial3D).albedo_color = Color.WHITE * clampf(dark + murk * 0.6, 0.0, 1.0)
+	(_parts["lamp_mat"] as StandardMaterial3D).albedo_color = Color.WHITE * clampf(maxf(dark, murk * 0.6) * (1.0 - 0.5 * murk), 0.0, 1.0)
 
 
 ## The coast's sounds: the surf (generated, on the Ambience bus like the weather's sound), the
@@ -927,7 +932,11 @@ func _run_ocean(delta: float) -> void:
 		to_cam.y = 0.0
 		var facing := absf(beam.global_basis.x.normalized().dot(to_cam.normalized()))
 		var swell := 0.0 if bool(AppState.get_setting("photosensitive_safe")) else pow(facing, 40.0) * 1.2
-		lamp.scale = Vector3.ONE * (1.0 + swell)
+		# in fog the lamp is a bigger, dimmer smudge of light (the fog spreads it; _apply_ocean
+		# dims it), not a sharp point
+		var fog := String(AppState.get_setting("cabin_fog"))
+		var spread := 3.0 if fog == "heavy" else 1.8 if fog == "light" else 1.0
+		lamp.scale = Vector3.ONE * (1.0 + swell) * spread
 	# the gulls: out by day in fair weather, gliding round their circles, banking into the turn
 	var kind := _weather.kind() if _weather else "clear"
 	var flying := _day > 0.3 and kind in ["clear", "cloudy"]

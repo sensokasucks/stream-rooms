@@ -5,7 +5,9 @@ extends Node
 ## the Room tab's four controls do their job: Fire (flames, coals, the fires' light), Lamps (the
 ## house lights go out), Light outside (day / dusk / night: sun or moon, sky colours) and Gather
 ## in (Den reloads the room with the presenters on the den's sofa and armchair, the den's screen
-## as the main one and its cameras first).
+## as the main one and its cameras first). The weather: rain, a storm (soft lightning in safe
+## mode), snow (the outside panes frost, the windows into the den stay clear), the snow that fell
+## melts within a minute of clearing, and fog.
 ## Saves one screenshot per camera, the dusk / night / day looks and the den's cameras into the output folder (look
 ## at them: the look is not checked here).
 ##   <redot console exe> --path . _tests/test_log_cabin.tscn -- C:/temp/sr_tests --mp-profile=test
@@ -257,6 +259,10 @@ func _ready() -> void:
 		_check(snow_p.emitting and not rain_p.emitting, "Snow: flakes fall, the rain has stopped")
 		_check(float(surf0.get_shader_parameter("snow")) >= 0.79 and float(glass.get_shader_parameter("frost")) > 0.9,
 			"Snow: snow lies outside and the glass frosts (%.2f / %.2f)" % [float(surf0.get_shader_parameter("snow")), float(glass.get_shader_parameter("frost"))])
+		# the windows between the great room and the den are indoors: never frosted or wet
+		var inside_glass := room.get("_parts")["inside_glass_mat"] as ShaderMaterial
+		_check(float(inside_glass.get_shader_parameter("frost")) < 0.01 and float(inside_glass.get_shader_parameter("wet")) < 0.01,
+			"Snow: the windows into the den stay clear (frost %.2f)" % float(inside_glass.get_shader_parameter("frost")))
 		EventBus.camera_preset_requested.emit(6)
 		await _secs(2.0)
 		await _shot(_out.path_join("weather_snow_outside.png"))
@@ -282,6 +288,13 @@ func _ready() -> void:
 		AppState.set_setting("cabin_fog", "off")
 		AppState.set_setting("cabin_weather", "clear")
 		await _secs(0.5)
+		# the snow that fell melts within about a minute once the weather clears (it once took ten)
+		AppState.set_setting("cabin_weather", "snow")
+		weather.call("settle")
+		AppState.set_setting("cabin_weather", "clear")
+		for i in 65:
+			weather.call("run", 1.0)
+		_check(float(weather.call("snow_cover")) < 0.02, "Clear: the snow that fell has melted a minute later (%.2f)" % float(weather.call("snow_cover")))
 		# (fog_density too: switching fog_mode resets it to 1.0, which once drowned clear days in fog)
 		_check(env.fog_mode == Environment.FOG_MODE_EXPONENTIAL and env.fog_density < 0.01,
 			"Clear: the fog is back to the room's own thin haze (density %.4f)" % env.fog_density)

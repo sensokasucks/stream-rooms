@@ -1554,9 +1554,12 @@ Included rooms:
       - **Storm**: the same, plus strong wind, lightning with thunder a moment later, and the
         lamps dipping now and then. In photosensitive-safe mode the lightning is a soft, slow glow
         and the lamps don't dip; **Flash strength** turns it down too.
-      - **Snow**: flakes drift down, frost grows up the windows, and snow slowly piles up on the
-        ground, the roofs, the deck and the railings, with frost on the trees.
-      - When the weather clears, the glass dries and the snow melts slowly instead of all at once.
+      - **Snow**: flakes drift down, frost creeps in from the edges of the windows (thickest at
+        the bottom), and snow piles up on the ground, the roofs, the deck and the railings over
+        a couple of minutes, with frost on the trees. The windows between the den and the great
+        room are indoors, so they never get rain or frost.
+      - When the weather clears, the glass dries over a minute or so and the snow that fell
+        melts within about a minute (faster in rain). Snow set with **Snow on the ground** stays.
     - **Fog**: **Off**, **Light** or **Heavy**, on top of any weather. Heavy fog swallows the
       trees within about 30 metres; the inside of the cabin stays clear.
     - **Wind**: how hard the wind blows (the trees, the rain's slant, the snow, the chimney

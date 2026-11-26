@@ -8,12 +8,15 @@ render_mode blend_mix, cull_disabled, depth_draw_opaque;
 //   wet    how much water is on the glass, 0..1. Rises while it rains and falls slowly after,
 //          so the beads dry a few at a time (the small ones first) instead of vanishing at once.
 //          The view through wet glass goes soft and a little darker.
-//   frost  0..1, cold weather: frost grows up from the bottom of the panes
+//   frost  0..1, cold weather: frost creeps in from the edges of the panes, most from the
+//          bottom. A pane with UVs in metres from its bottom-left corner and its size in UV2
+//          (the Log Cabin's, cabin_builder.gd _glass_pane) knows where its edges are; one
+//          without (UV2 = 0) frosts up from the bottom by height instead.
 //   refract  0 on a slow PC (Low graphics): the drops still show but don't bend or blur the view
 // The drop, runner and frost pictures are our own (textures/make_weather_textures.py), not
 // noise made up in the shader. Slow on purpose: nothing flickers.
-// Panes are mapped by world position, so no UVs are needed: a pane facing along Z uses x and y,
-// one facing along X uses z and y.
+// The drops and the frost picture are mapped by world position: a pane facing along Z uses x and
+// y, one facing along X uses z and y.
 
 uniform sampler2D screen : hint_screen_texture, filter_linear_mipmap;
 uniform sampler2D drops : filter_linear_mipmap, repeat_enable;
@@ -30,6 +33,8 @@ uniform float refract = 1.0;
 // metres one copy of the bead picture covers (make_weather_textures.py draws the beads for 0.8)
 uniform float bead_size = 0.8;
 uniform vec3 frost_color : source_color = vec3(0.86, 0.92, 0.98);
+// metres of glass one copy of the frost picture covers
+uniform float frost_size = 1.3;
 
 varying vec3 w_pos;
 varying vec3 w_normal;
@@ -82,12 +87,36 @@ void fragment() {
 	run_cover *= mix(0.5, 1.0, sharp);
 	float drop_cover = max(bead * smoothstep(0.02, 0.2, d.b) * sharp + wet * 0.25 * (1.0 - sharp), run_cover);
 
-	// frost: thick near the bottom of the glass, thin higher up
-	float fr = texture(frost_tex, p / 0.9).r;
-	float low = 1.0 - smoothstep(0.0, 3.0, w_pos.y);
+	// frost: creeps in from the pane's edges as it gets colder, furthest from the bottom (the
+	// coldest air sinks there), with crystals reaching out ahead of the solid frost. The crystal
+	// picture is laid twice (the second copy turned and smaller) and its edge wobbled by the
+	// picture's smooth noise, so neither the pattern nor the frost line visibly repeats.
 	float frost_cover = 0.0;
 	if (frost > 0.001) {
-		frost_cover = smoothstep(0.5, 0.75, fr * 0.6 + (low * 0.5 + 0.5) * frost - 0.3);
+		vec2 q1 = p / frost_size;
+		vec2 q2 = mat2(vec2(0.8, 0.6), vec2(-0.6, 0.8)) * p / (frost_size * 0.63) + vec2(0.31, 0.17);
+		vec3 f1 = texture(frost_tex, q1).rgb;
+		float f2 = texture(frost_tex, q2).r;
+		float fr = max(f1.r, f2 * 0.9);
+		float wander = texture(frost_tex, p / (frost_size * 2.7) + vec2(0.5, 0.2)).g;
+		float lumps = f1.b;
+		if (UV2.x > 0.0) {
+			// how far in from the nearest edge (metres): the bottom edge counts as nearer, so the
+			// frost reaches furthest up from the sill; the top a little nearer too
+			float edge = min(min(UV.x, UV2.x - UV.x), min(UV.y * 0.55, (UV2.y - UV.y) * 0.85));
+			// how far in the frost has crept: about 0.15 to 0.4 m at full frost (wandering), less
+			// on a small pane, so the middle of every pane stays clear to see through
+			float reach = frost * min(0.28, 0.25 * min(UV2.x, UV2.y)) * (0.55 + 0.9 * wander) + 0.02 * lumps;
+			float solid = 1.0 - smoothstep(reach * 0.35, reach, edge);
+			// the crystals reach on ahead of the solid frost, thinning out
+			float ahead = 1.0 - smoothstep(reach * 0.7, reach * 1.6, edge);
+			float spikes = smoothstep(0.45, 0.7, fr) * ahead;
+			frost_cover = max(solid * (0.5 + 0.5 * fr), spikes) * smoothstep(0.0, 0.08, frost);
+		} else {
+			// a pane without its size (another room's glass): thick near the bottom, thin higher up
+			float low = 1.0 - smoothstep(0.0, 3.0, w_pos.y);
+			frost_cover = smoothstep(0.5, 0.75, fr * 0.6 + (low * 0.5 + 0.5) * frost - 0.3);
+		}
 	}
 
 	// the view through the glass: bent by the drops, soft through the wet film

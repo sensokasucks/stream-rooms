@@ -136,6 +136,7 @@ func settle() -> void:
 	var look := _look()
 	_rain_now = float(look["rain"])
 	_wet = _rain_now
+	_built_snow = 0.6 if bool(look["snow"]) else 0.0
 	_frost = 1.0 if bool(look["snow"]) else (0.45 if snow_cover() > 0.3 else 0.0)
 	_pushed = Vector4(-1, -1, -1, -1)
 
@@ -234,7 +235,12 @@ func run(delta: float) -> void:
 	_rain_now = move_toward(_rain_now, rain_target, delta / 4.0)
 	_wet = move_toward(_wet, rain_target, delta / (20.0 if rain_target > _wet else 90.0))
 	_frost = move_toward(_frost, 1.0 if snowing else (0.45 if snow_cover() > 0.3 else 0.0), delta / 60.0)
-	_built_snow = move_toward(_built_snow, 0.6 if snowing else 0.0, delta / (300.0 if snowing else 600.0))
+	# snow piles up over about two minutes of snowfall; once it stops it melts in about a minute
+	# (half a minute in rain), so changing the weather shows on the ground soon after. It used to
+	# take ten minutes and the snow seemed to stay for good. Snow wanted for longer: the
+	# "Snow on the ground" slider (or the room's snow_floor), which this never melts.
+	var melt := 30.0 if rain_target > 0.0 else 60.0
+	_built_snow = move_toward(_built_snow, 0.6 if snowing else 0.0, delta / (120.0 if snowing else melt))
 	# the falling rain and snow
 	if _rain:
 		_rain.emitting = rain_target > 0.0 and fx > 0.01

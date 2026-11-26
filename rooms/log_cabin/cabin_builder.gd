@@ -43,6 +43,9 @@ const RIDGE_Y: float = 8.6
 const LOG_R: float = 0.17
 const LOG_STEP: float = 0.3
 const LOG_OVERHANG: float = 0.32
+## How far a log cut by a window or doorway reaches into the frame's jamb (the jambs are 0.08 m
+## thick and 0.4 m deep, deeper than a log), so its end never sits on the jamb's face.
+const JAMB_TUCK: float = 0.04
 ## The roof reaches this far past the side walls (sideways) and past the front and back walls.
 const ROOF_SIDE: float = 0.7
 const ROOF_FRONT: float = 1.2
@@ -616,7 +619,9 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##     the lantern, which glow with the house lights (the room script sets its `level`),
 ##   smoke_spots (Array[Vector3]): the tops of the two chimneys, where the room script lets the
 ##     smoke rise (the great room's first),
-##   glass_mat (ShaderMaterial, rooms/weather/weather_glass.gdshader): every window pane,
+##   glass_mat (ShaderMaterial, rooms/weather/weather_glass.gdshader): every outside window pane,
+##   inside_glass_mat (the same shader): the two windows between the great room and the den,
+##     which the weather never touches,
 ##   shelters, eaves: the indoors and the dripping roof edges, for the weather (see shelters()),
 ##   tree_mats (Array): the detailed trees' materials (the weather sets their wind and frost).
 static func build(room: Node3D, view: String = "great_room") -> Dictionary:
@@ -771,9 +776,11 @@ static func _spans(wall: String, from: float, to: float, y: float) -> Array[Vect
 	var out: Array[Vector2] = []
 	var at := from
 	for c in cuts:
-		if c.x > at:
-			out.append(Vector2(at, c.x))
-		at = maxf(at, c.y)
+		# (each log stops JAMB_TUCK inside the frame's jamb, so its round end is hidden in the
+		# timber: ending exactly on the jamb's face, the two flickered through each other)
+		if c.x - JAMB_TUCK > at:
+			out.append(Vector2(at, c.x - JAMB_TUCK))
+		at = maxf(at, c.y + JAMB_TUCK)
 	if to > at:
 		out.append(Vector2(at, to))
 	return out
@@ -995,9 +1002,9 @@ static func _build_great_room(b: Buf) -> void:
 	for sx: float in [-1.0, 1.0]:
 		var xf := Transform3D(Basis.IDENTITY, Vector3(sx * 2.1, 0.0, 3.92))
 		_sofa(b, xf, 3, 1.0, C_LEATHER)
-		# a knitted throw over one end of the back
+		# a knitted throw over one end of the back (tipped back like the back cushions)
 		b.mat = S_FLEECE
-		b.soft_box(xf * Transform3D(Basis(Vector3.RIGHT, -0.25), Vector3(-sx * 0.9, 0.85, 0.43)), Vector3(0.75, 0.42, 0.1), 0.04, C_FABRIC if sx < 0.0 else C_THROW_GREEN, 1.0)
+		b.soft_box(xf * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(-sx * 0.9, 0.85, 0.43)), Vector3(0.75, 0.42, 0.1), 0.04, C_FABRIC if sx < 0.0 else C_THROW_GREEN, 1.0)
 	# the four armchairs (under the Arm_ seats), turned to face the screen
 	for s: Array in SEATS:
 		if String(s[0]).begins_with("Arm"):
@@ -1041,7 +1048,9 @@ static func _sofa(b: Buf, xf: Transform3D, seats: int, seat_w: float, col: Color
 		var x := (float(i) - float(seats - 1) * 0.5) * seat_w
 		# seat cushion and back cushion, plump
 		b.soft_box(xf * Transform3D(Basis.IDENTITY, Vector3(x, 0.44, -0.04)), Vector3(seat_w - 0.03, 0.14, 0.76), 0.06, col.lightened(0.04), 1.0)
-		b.soft_box(xf * Transform3D(Basis(Vector3.RIGHT, -0.18), Vector3(x, 0.75, 0.22)), Vector3(seat_w - 0.05, 0.48, 0.2), 0.08, col.lightened(0.02), 1.0)
+		# (the back cushion leans back, top towards +Z: a turn about +X by a positive angle tips
+		# the top backwards; a negative one made the sofas look as if they leaned forward)
+		b.soft_box(xf * Transform3D(Basis(Vector3.RIGHT, 0.16), Vector3(x, 0.75, 0.2)), Vector3(seat_w - 0.05, 0.48, 0.2), 0.08, col.lightened(0.02), 1.0)
 	# rolled arms
 	for sd: float in [-1.0, 1.0]:
 		var ax := sd * (w * 0.5 + 0.11)
@@ -1102,18 +1111,28 @@ static func _table_things(b: Buf, top: Vector3, kind: int) -> void:
 static func _build_back_rooms(b: Buf) -> void:
 	# kitchen: an L of base cupboards (doors marked out) with a stone worktop, open shelves with
 	# enamel mugs, and a cast iron stove with a kettle
+	# The stove stands in a gap in the back run of cupboards (x STOVE_L..STOVE_R), its front a
+	# little proud of theirs: cupboards, doors and worktop all stop at the gap, so no two faces
+	# share a plane (shared planes flicker: z-fighting).
+	const STOVE_L := -3.55
+	const STOVE_R := -2.5
 	var cup := C_TIMBER.lightened(0.15)
 	b.mat = S_TIMBER
-	b.block(Vector3(-HALF_W + 0.15, 0.0, 8.35), Vector3(-2.1, 0.88, BACK_Z - 0.15), cup)
-	b.block(Vector3(-HALF_W + 0.15, 0.0, 7.35), Vector3(-5.85, 0.88, 8.35), cup)
+	b.block(Vector3(-HALF_W + 0.15, 0.0, 8.35), Vector3(STOVE_L, 0.88, BACK_Z - 0.15), cup)
+	b.block(Vector3(STOVE_R, 0.0, 8.35), Vector3(-2.1, 0.88, BACK_Z - 0.15), cup)
+	b.block(Vector3(-HALF_W + 0.15, 0.0, 7.35), Vector3(-5.85, 0.88, 8.35 - 0.002), cup)
 	var dx := -HALF_W + 0.25
 	while dx < -2.3:
-		b.block(Vector3(dx, 0.1, 8.33), Vector3(dx + 0.5, 0.8, 8.36), cup.darkened(0.12))
-		b.block(Vector3(dx + 0.42, 0.62, 8.31), Vector3(dx + 0.45, 0.7, 8.33), C_IRON)
+		if dx + 0.5 > STOVE_L and dx < STOVE_R:
+			dx += 0.6
+			continue
+		b.block(Vector3(dx, 0.1, 8.32), Vector3(dx + 0.5, 0.8, 8.345), cup.darkened(0.12))
+		b.block(Vector3(dx + 0.42, 0.62, 8.3), Vector3(dx + 0.45, 0.7, 8.32), C_IRON)
 		dx += 0.6
 	b.mat = S_STONE
-	b.block(Vector3(-HALF_W + 0.15, 0.88, 8.3), Vector3(-2.05, 0.94, BACK_Z - 0.15), C_STONE_DARK)
-	b.block(Vector3(-HALF_W + 0.15, 0.88, 7.3), Vector3(-5.8, 0.94, 8.35), C_STONE_DARK)
+	b.block(Vector3(-HALF_W + 0.15, 0.88, 8.3), Vector3(STOVE_L, 0.94, BACK_Z - 0.15), C_STONE_DARK)
+	b.block(Vector3(STOVE_R, 0.88, 8.3), Vector3(-2.05, 0.94, BACK_Z - 0.15), C_STONE_DARK)
+	b.block(Vector3(-HALF_W + 0.15, 0.885, 7.3), Vector3(-5.8, 0.935, 8.3), C_STONE_DARK)
 	b.mat = S_TIMBER
 	for sy: float in [1.45, 1.85]:
 		b.block(Vector3(-HALF_W + 0.15, sy, 8.6), Vector3(-3.6, sy + 0.04, BACK_Z - 0.15), C_TIMBER.lightened(0.2))
@@ -1123,7 +1142,11 @@ static func _build_back_rooms(b: Buf) -> void:
 		b.cyl(Transform3D(Basis.IDENTITY, Vector3(mx, 1.49, 8.75)), 0.045, 0.045, 0.1, 10, C_MUG if i % 2 == 0 else Color(0.2, 0.3, 0.45))
 		b.block(Vector3(mx - 0.08, 1.89, 8.65), Vector3(mx + 0.08, 1.93, 8.8), Color(0.75, 0.72, 0.66))
 	b.mat = S_IRON
-	b.block(Vector3(-3.5, 0.0, 8.35), Vector3(-2.55, 0.94, BACK_Z - 0.18), C_IRON.lightened(0.05))
+	b.block(Vector3(-3.5, 0.0, 8.28), Vector3(-2.55, 0.935, BACK_Z - 0.18), C_IRON.lightened(0.05))
+	# its firebox door (standing a little proud of the front) with a handle, and the ash door below
+	b.block(Vector3(-3.32, 0.32, 8.255), Vector3(-2.73, 0.72, 8.28), C_IRON.lightened(0.15))
+	b.block(Vector3(-2.84, 0.5, 8.235), Vector3(-2.79, 0.56, 8.255), C_IRON.lightened(0.35))
+	b.block(Vector3(-3.25, 0.1, 8.265), Vector3(-2.8, 0.24, 8.28), C_IRON.lightened(0.12))
 	b.block(Vector3(-3.45, 0.94, 8.4), Vector3(-2.6, 0.97, 8.85), C_IRON)
 	b.cyl(Transform3D(Basis.IDENTITY, Vector3(-3.15, 0.97, 8.6)), 0.12, 0.08, 0.16, 12, Color(0.55, 0.12, 0.08))
 	b.rod(Vector3(-3.15, 1.13, 8.6), Vector3(-3.15, 1.17, 8.6), 0.03, 6, C_IRON)
@@ -1295,8 +1318,8 @@ static func _den_spans(z: float, from: float, to: float, y: float) -> Array[Vect
 	var at := from
 	for w: Array in DEN_WINDOWS:
 		if is_equal_approx(float(w[0]), z) and y > float(w[3]) - LOG_R * 0.5 and y < float(w[4]) + LOG_R * 0.5:
-			out.append(Vector2(at, float(w[1])))
-			at = float(w[2])
+			out.append(Vector2(at, float(w[1]) - JAMB_TUCK))     # (ends hidden in the jambs, as in _spans)
+			at = float(w[2]) + JAMB_TUCK
 	out.append(Vector2(at, to))
 	return out
 
@@ -1389,7 +1412,7 @@ static func _build_den_furniture(b: Buf) -> void:
 	# throws: a wool one over the far arm, a red one over the back; two little pillows
 	b.mat = S_FLEECE
 	b.soft_box(sofa * Transform3D(Basis.IDENTITY, Vector3(-1.76, 0.55, 0.0)), Vector3(0.3, 0.32, 0.95), 0.06, C_WOOL, 1.0)
-	b.soft_box(sofa * Transform3D(Basis(Vector3.RIGHT, -0.25), Vector3(0.7, 0.9, 0.42)), Vector3(0.9, 0.32, 0.12), 0.05, C_RUG, 1.0)
+	b.soft_box(sofa * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0.7, 0.9, 0.42)), Vector3(0.9, 0.32, 0.12), 0.05, C_RUG, 1.0)
 	b.mat = S_WOOL
 	for sx: float in [-1.45, 1.45]:
 		b.soft_box(sofa * Transform3D(Basis(Vector3.FORWARD, 0.3 * signf(sx)), Vector3(sx, 0.68, 0.08)), Vector3(0.4, 0.38, 0.14), 0.07, C_FABRIC, 1.0)
@@ -1397,7 +1420,7 @@ static func _build_den_furniture(b: Buf) -> void:
 	var arm := _den_seat_xf(DEN_ARMCHAIR)
 	_sofa(b, arm, 1, 0.72, C_LEATHER.lightened(0.05))
 	b.mat = S_FLEECE
-	b.soft_box(arm * Transform3D(Basis(Vector3.RIGHT, -0.2), Vector3(0.0, 0.92, 0.42)), Vector3(0.7, 0.32, 0.1), 0.04, C_THROW_GREEN, 1.0)
+	b.soft_box(arm * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0.0, 0.92, 0.42)), Vector3(0.7, 0.32, 0.1), 0.04, C_THROW_GREEN, 1.0)
 	# side table by the armchair (the table lamp stands on it)
 	_side_table(b, Vector3(-11.35, 0.0, 3.0))
 	# the floor lamp's stand behind the sofa's far end
@@ -1500,16 +1523,31 @@ static func _build_outside_bits(b: Buf) -> void:
 
 
 ## The see-through glass: the two big gable windows either side of the chimney (following the roof
-## line), the corner glass doors, and the side and back windows. One mesh with the weather's
-## glass material (rooms/weather/weather_glass.gdshader: rain drops, wet blur, frost; out
-## "glass_mat"), which casts no shadow (so sunlight comes in).
+## line, one pane between each pair of posts, split at the beam at eave height), the corner glass
+## doors, and the side and back windows. The outside panes are one mesh ("Glass") with the
+## weather's glass material (rooms/weather/weather_glass.gdshader: rain drops, wet blur, frost;
+## out "glass_mat"). The two windows in the left wall look into the den, so they are indoors: a
+## second mesh ("GlassInside") with its own copy of the material that the weather is never given
+## (out "inside_glass_mat"), so it never gets wet or frosty. Neither casts a shadow (so sunlight
+## comes in). Each pane gets UVs in metres from its own bottom-left corner and its size in UV2
+## (_glass_pane), so the shader can grow frost in from the pane's edges.
 static func _build_glass(parent: Node3D, out: Dictionary) -> void:
-	var g := Buf.new()
-	var tint := Color(0.78, 0.86, 0.9, 0.12)
+	# ([corners, UVs, UV2s] as plain Arrays: a Packed array taken out of an Array is a copy, so
+	# appending to it would be lost)
+	var outside: Array = [[], [], []]
+	var inside: Array = [[], [], []]
+	# the front gables: panes between the posts (MULLIONS) from the outer wall to the chimney,
+	# below and above the beam at eave height (the posts and beam hide the joins)
 	for sx: float in [-1.0, 1.0]:
-		var xo := sx * HALF_W
-		var xi := sx * CHIM_HALF
-		g.quad(Vector3(xo, 0.0, 0.0), Vector3(xi, 0.0, 0.0), Vector3(xi, roof_y(xi), 0.0), Vector3(xo, roof_y(xo), 0.0), tint)
+		var xs: Array[float] = []
+		for m: float in MULLIONS:
+			xs.append(m * sx)
+		xs.sort()
+		for i in xs.size() - 1:
+			var x0 := xs[i]
+			var x1 := xs[i + 1]
+			_glass_pane(outside, Vector3(x0, 0.0, 0.0), Vector3(x1, 0.0, 0.0), EAVE_Y, EAVE_Y)
+			_glass_pane(outside, Vector3(x0, EAVE_Y, 0.0), Vector3(x1, EAVE_Y, 0.0), roof_y(x1), roof_y(x0))
 	for w: Array in WINDOWS:
 		var from := float(w[1])
 		var to := float(w[2])
@@ -1517,16 +1555,64 @@ static func _build_glass(parent: Node3D, out: Dictionary) -> void:
 		var top := float(w[4])
 		match String(w[0]):
 			"back":
-				g.quad(Vector3(from, sill, BACK_Z), Vector3(to, sill, BACK_Z), Vector3(to, top, BACK_Z), Vector3(from, top, BACK_Z), tint)
+				_glass_pane(outside, Vector3(from, sill, BACK_Z), Vector3(to, sill, BACK_Z), top, top)
+			"left":
+				# (the left wall's windows open into the den: indoors)
+				_glass_pane(inside if from >= DEN_Z.x and to <= DEN_Z.y else outside, Vector3(-HALF_W, sill, from), Vector3(-HALF_W, sill, to), top, top)
 			_:
-				var x := -HALF_W if String(w[0]) == "left" else HALF_W
-				g.quad(Vector3(x, sill, from), Vector3(x, sill, to), Vector3(x, top, to), Vector3(x, top, from), tint)
+				_glass_pane(outside, Vector3(HALF_W, sill, from), Vector3(HALF_W, sill, to), top, top)
 	for w: Array in DEN_WINDOWS:
 		var z := float(w[0])
-		g.quad(Vector3(float(w[1]), float(w[3]), z), Vector3(float(w[2]), float(w[3]), z), Vector3(float(w[2]), float(w[4]), z), Vector3(float(w[1]), float(w[4]), z), tint)
-	var m := Weather.glass_material(Color(0.78, 0.86, 0.9, 0.12))
+		_glass_pane(outside, Vector3(float(w[1]), float(w[3]), z), Vector3(float(w[2]), float(w[3]), z), float(w[4]), float(w[4]))
+	var tint := Color(0.78, 0.86, 0.9, 0.12)
+	var m := Weather.glass_material(tint)
 	out["glass_mat"] = m
-	_add_mesh(parent, "Glass", g.to_mesh(), m, false)
+	_add_mesh(parent, "Glass", _glass_mesh(outside), m, false)
+	var mi := Weather.glass_material(tint)
+	out["inside_glass_mat"] = mi
+	_add_mesh(parent, "GlassInside", _glass_mesh(inside), mi, false)
+
+
+## One upright pane into `arrays` ([verts, UVs, UV2s]): from bottom corner a to bottom corner b
+## (same height), up to top_b above b and top_a above a (the gable panes' tops slope with the
+## roof). UV = metres across from a and up from the bottom; UV2 = the pane's width and its height
+## at that corner. Between corners the GPU blends UV2.y in a straight line, which is exactly the
+## sloping top's height there, so the shader knows the distance to every edge.
+static func _glass_pane(arrays: Array, a: Vector3, b: Vector3, top_b: float, top_a: float) -> void:
+	var w := a.distance_to(b)
+	var ha := top_a - a.y
+	var hb := top_b - b.y
+	if w < 0.01 or (ha < 0.01 and hb < 0.01):
+		return
+	var ta := Vector3(a.x, top_a, a.z)
+	var tb := Vector3(b.x, top_b, b.z)
+	var corners := [[a, Vector2(0.0, 0.0), ha], [b, Vector2(w, 0.0), hb], [tb, Vector2(w, hb), hb], [ta, Vector2(0.0, ha), ha]]
+	for k: int in [0, 1, 2, 0, 2, 3]:
+		var c: Array = corners[k]
+		(arrays[0] as Array).append(c[0])
+		(arrays[1] as Array).append(c[1])
+		(arrays[2] as Array).append(Vector2(w, float(c[2])))
+
+
+## The panes collected by _glass_pane as a mesh (normals worked out from the corners; the glass
+## shader draws both sides).
+static func _glass_mesh(arrays: Array) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	var verts := PackedVector3Array(arrays[0])
+	if verts.is_empty():
+		return mesh
+	var normals := PackedVector3Array()
+	for i in range(0, verts.size(), 3):
+		var n := (verts[i + 2] - verts[i]).cross(verts[i + 1] - verts[i]).normalized()
+		normals.append_array([n, n, n])
+	var data: Array = []
+	data.resize(Mesh.ARRAY_MAX)
+	data[Mesh.ARRAY_VERTEX] = verts
+	data[Mesh.ARRAY_NORMAL] = normals
+	data[Mesh.ARRAY_TEX_UV] = PackedVector2Array(arrays[1])
+	data[Mesh.ARRAY_TEX_UV2] = PackedVector2Array(arrays[2])
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, data)
+	return mesh
 
 
 ## The two screens: the big one on the tall chimney above the mantel, and the den's above its

@@ -6,7 +6,8 @@ render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, fog_disabled;
 // breaks, leaves a trail of broken foam behind it, then runs up the sand as a thin sheet of
 // wash and fades. Nothing here is real geometry: it is all foam painted on the strip.
 // The strip's UV: x = metres along the beach, y = metres out to sea from the waterline (below 0
-// = up the sand). log_cabin_room.gd (_apply_ocean) sets `daylight`, `light_color`, `size` and
+// = up the sand). UV2.y: 1 along the middle, falling to 0 towards the strip's two far ends.
+// log_cabin_room.gd (_apply_ocean) sets `daylight`, `light_color`, `size` and
 // `foam_tint`.
 
 // How bright the foam is: 0.08 at night .. 1 in full sun (the sky's light on white water).
@@ -58,7 +59,11 @@ void fragment() {
 	foam *= smoothstep(0.25, 0.6, lace * 0.6 + fine * 0.6);         // lace, not a solid band
 	// fade out far from the beach, past where the strip ends, and at its two ends
 	foam *= smoothstep(96.0, 75.0, out_m) * smoothstep(-12.0 * size, -4.0, out_m);
-	foam *= smoothstep(0.0, 0.08, UV2.x) * smoothstep(1.0, 0.92, UV2.x);
-	ALBEDO = vec3(0.93, 0.96, 0.98) * light_color * daylight;
-	ALPHA = clamp(foam, 0.0, 0.92);
+	// the strip's two ends (UV2.y: 1 along the middle, 0 at the ends, over hundreds of metres)
+	foam *= smoothstep(0.0, 1.0, UV2.y);
+	// At night the foam is only a little lighter than the dark sea under it and thinner, so it
+	// never paints a dark band over the water (round 7: it did, and where the strip ended the
+	// sea beyond looked lighter, a hard seam).
+	ALBEDO = vec3(0.93, 0.96, 0.98) * light_color * max(daylight, 0.1);
+	ALPHA = clamp(foam, 0.0, 0.92) * mix(0.45, 1.0, smoothstep(0.08, 0.5, daylight));
 }
