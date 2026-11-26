@@ -32,6 +32,9 @@ extends Room
 
 const Builder := preload("res://rooms/campfire/campfire_builder.gd")
 const Games := preload("res://rooms/campfire/campfire_games.gd")
+const Forest := preload("res://rooms/campfire/campfire_forest.gd")
+## Metres the camera must move before the trees' levels of detail are re-aimed (_aim_tree_levels).
+const LOD_EYE_STEP: float = 1.0
 const SKY_SHADER := preload("res://rooms/campfire/camp_sky.gdshader")
 const BUTTERFLY_SHADER := preload("res://rooms/campfire/camp_butterfly.gdshader")
 const SHAFT_SHADER := preload("res://rooms/campfire/camp_shaft.gdshader")
@@ -109,6 +112,7 @@ var _flare: float = 0.0           # extra fire from a stick, 0..1.2, dying away
 var _flare_shown: float = 0.0     # what the flames and light show of it (eased; slower in safe mode)
 var _retired: bool = false        # another room has taken over (retire()): leave the sky alone
 var _time: float = 0.0
+var _tree_eye: Vector3 = Vector3(1e9, 0.0, 0.0)    # where the trees' levels last counted from
 var _last_level: float = -1.0     # the house light level the glows were last set for
 var _screen_nodes: Array[Node3D] = []     # the screen's parts, found once the app has added them
 # the generated sound
@@ -246,6 +250,23 @@ func _process(delta: float) -> void:
 		_apply_glows()
 	_keep_screen_hidden()
 	_fill_ambience()
+	_aim_tree_levels()
+
+
+## The detailed trees' levels of detail (campfire_forest.gd) count metres from the camera: tell
+## their materials where it is, but only when it has moved more than a step (the camera rig
+## glides between views; most of the time it stands still and this does nothing).
+func _aim_tree_levels() -> void:
+	if not bool(_parts.get("forest_lod", false)) or detail_level() == "low":
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var eye := cam.global_position
+	if eye.distance_squared_to(_tree_eye) < LOD_EYE_STEP * LOD_EYE_STEP:
+		return
+	_tree_eye = eye
+	Forest.update_eye(_parts["plant_mats"], eye)
 
 
 # ── The big screen ───────────────────────────────────────────
@@ -785,7 +806,8 @@ func _build_mist() -> void:
 
 ## Autumn ("camp_autumn", Room tab > Autumn colours; shared in a co-stream): the leafy trees
 ## change colour, the firs and pines stay green. The detailed trees do it in their leaf
-## materials (camp_foliage.gdshader `autumn`, with a colour range per species); the low-poly
+## materials (camp_foliage.gdshader `autumn`, with a colour range per species) and the far ones
+## in their picture material (camp_impostor.gdshader, the same ranges per row); the low-poly
 ## round trees get their MultiMesh colours multiplied (their first, summer colours are kept in
 ## the node's "summer" metadata so switching back is exact).
 func _apply_autumn() -> void:
@@ -799,6 +821,20 @@ func _apply_autumn() -> void:
 			m.set_shader_parameter("autumn", 1.0 if on else 0.0)
 			m.set_shader_parameter("fall_a", row[1])
 			m.set_shader_parameter("fall_b", row[2])
+	# the far trees' pictures (campfire_forest.gd): the same ranges per species row
+	var imp := mats.get("impostor") as ShaderMaterial
+	if imp:
+		var fall_a := PackedVector3Array()
+		var fall_b := PackedVector3Array()
+		var ranges: Dictionary = {"oak": [Color(0.62, 0.36, 0.1), Color(0.5, 0.2, 0.07)], "maple": [Color(0.9, 0.42, 0.06), Color(0.72, 0.1, 0.05)],
+			"birch": [Color(0.95, 0.74, 0.1), Color(0.9, 0.58, 0.08)]}
+		for species in Forest.SPECIES:
+			var pair: Array = ranges.get(species, [Color.BLACK, Color.BLACK])
+			fall_a.append(Vector3((pair[0] as Color).r, (pair[0] as Color).g, (pair[0] as Color).b))
+			fall_b.append(Vector3((pair[1] as Color).r, (pair[1] as Color).g, (pair[1] as Color).b))
+		imp.set_shader_parameter("fall_a", fall_a)
+		imp.set_shader_parameter("fall_b", fall_b)
+		imp.set_shader_parameter("autumn", 1.0 if on else 0.0)
 	var turns: Array[Color] = [Color(3.2, 0.75, 0.3), Color(3.2, 1.25, 0.3), Color(3.0, 0.45, 0.3)]      # x green = orange, yellow, red
 	for list_key: String in ["lowpoly_far", "lowpoly_near", "close_woods"]:
 		for n: Node3D in _parts.get(list_key, []):

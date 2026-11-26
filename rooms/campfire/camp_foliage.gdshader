@@ -13,6 +13,11 @@ render_mode cull_disabled;
 // it, rooms/weather/room_weather.gd `tree_snow`; Cabin: Frozen North): white on the cards that
 // face up and on the lighter parts of the picture, so the crowns look heaped with snow on top
 // and dark green underneath. 0 = none (every other room).
+// lod_eye, lod_fade and INSTANCE_CUSTOM.g / .b: level of detail with a soft change between
+// levels (the detailed campfire trees, campfire_forest.gd; see camp_lod.gdshaderinc); no custom
+// data = always drawn.
+
+#include "res://rooms/campfire/camp_lod.gdshaderinc"
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float cut = 0.33;
@@ -40,9 +45,13 @@ void vertex() {
 	float flutter = sin(TIME * 3.1 + w.x * 2.3 + w.y * 1.7 + w.z * 2.9);
 	vec3 push = (vec3(1.0, 0.0, 0.35) * lean + vec3(0.2, 0.35, 0.3) * flutter * 0.25) * sway * wind * COLOR.a * COLOR.a;
 	VERTEX += (inverse(MODEL_MATRIX) * vec4(push, 0.0)).xyz;
+	lod_keep = lod_vertex(VERTEX, INSTANCE_CUSTOM, MODEL_MATRIX[3].xyz);
 }
 
 void fragment() {
+	if (lod_drop(FRAGCOORD.xy, lod_keep)) {
+		discard;
+	}
 	vec4 t = texture(card, UV);
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = cut;

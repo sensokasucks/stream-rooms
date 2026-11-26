@@ -243,8 +243,12 @@ func _ready() -> void:
 	_check(mixed, "the detailed forest mixes firs, pines, oaks, birches and maples (%s)" % str(species))
 	var as_many := 0
 	for holder: Node3D in [detail_near, detail_far]:
+		# (the Blender trees: one patch node per level, campfire_forest.gd; count the far pictures,
+		# every tree has one)
 		for kid in holder.get_children():
-			as_many += (kid as MultiMeshInstance3D).multimesh.instance_count
+			if String(kid.name).begins_with("Far_"):
+				for mmi: MultiMeshInstance3D in kid.get_children():
+					as_many += mmi.multimesh.instance_count
 	_check(as_many == int(parts["tree_count"]), "one detailed tree for every low-poly one (%d / %d)" % [as_many, int(parts["tree_count"])])
 	AppState.set_setting("camp_detail", "near")
 	await _secs(0.3)

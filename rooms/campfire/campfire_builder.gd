@@ -21,6 +21,8 @@ const GROUND_SHADER := preload("res://rooms/campfire/camp_ground.gdshader")
 const PROP_SHADER := preload("res://rooms/campfire/camp_prop.gdshader")
 ## The detailed trees, grass tufts and ferns (see _build_detailed_plants).
 const Trees := preload("res://rooms/campfire/campfire_trees.gd")
+## The detailed trees' Blender models and their levels of detail (see _build_detailed_plants).
+const Forest := preload("res://rooms/campfire/campfire_forest.gd")
 ## The photo textures (CC0, made by textures/make_textures.py).
 const TEX := "res://rooms/campfire/textures/"
 
@@ -533,6 +535,8 @@ static func _marker_facing(parent: Node3D, node_name: String, at: Vector3, towar
 ##   lowpoly_near, lowpoly_far (Array[Node3D]): the forest's low-poly trees, near and far (is_near),
 ##   detail_near, detail_far, close_woods_detail, undergrowth (Node3D): the detailed plants,
 ##     built hidden (see _build_detailed_plants),
+##   plant_mats (Dictionary): their materials; forest_lod (bool): the detailed trees are the
+##     Blender ones with levels of detail (campfire_room.gd points them at the camera),
 ##   detail_mats (Array[ShaderMaterial]): see _note_material.
 static func build(room: Node3D) -> Dictionary:
 	_setup_noise()
@@ -968,20 +972,27 @@ static func _build_close_woods(parent: Node3D, out: Dictionary, fir: Buf, round_
 
 # ── The detailed plants ──────────────────────────────────────
 ## The detailed look of the forest ("camp_detail", Room tab > Set detail): every tree of the
-## forest and of the close woods once more, as a detailed tree from campfire_trees.gd standing
-## on the same spot, plus grass tufts and ferns. All built hidden; campfire_room.gd's
-## _apply_detail() shows the detailed lot or the low-poly lot of each group:
+## forest and of the close woods once more, as a detailed tree standing on the same spot, plus
+## grass tufts and ferns. All built hidden; campfire_room.gd's _apply_detail() shows the
+## detailed lot or the low-poly lot of each group:
 ##   out["detail_near"]         Node3D: the forest's trees within NEAR_RADIUS of the fire
 ##   out["detail_far"]          Node3D: the rest of the forest
 ##   out["close_woods_detail"]  Node3D: the close woods (only shown while they are switched on)
 ##   out["undergrowth"]         Node3D: grass tufts and ferns
 ## `forest` / `close`: the records _build_forest and _build_close_woods made.
+## The trees are the Blender models (models/trees.glb), each drawn at three levels of detail by
+## distance from the camera: campfire_forest.gd builds the groups and explains how.
+## If trees.glb is missing, the older trees built in code (campfire_trees.gd kit()) stand in.
 ## Which species stands where is worked out from the spot itself (species_at), so it is the
 ## same on every PC and adding this changed nothing in the low-poly set.
 static func _build_detailed_plants(parent: Node3D, out: Dictionary, forest: Array[Dictionary], close: Array[Dictionary]) -> void:
 	var mats := Trees.materials(TREE_SWAY)
+	var kit := {}
+	if ResourceLoader.exists(Forest.MODELS):
+		Forest.add_materials(mats)
+		kit = Forest.meshes(mats)
 	out["plant_mats"] = mats
-	var kits: Dictionary = {}                 # species -> its mesh, made the first time it is needed
+	out["forest_lod"] = not kit.is_empty()         # campfire_room.gd keeps the levels on the camera
 	var groups: Dictionary = {"detail_near": {}, "detail_far": {}, "close_woods_detail": {}}      # group -> species -> [spots, tints]
 	var counts: Dictionary = {}               # species -> how many, for the test and the log
 	for is_close: bool in [false, true]:
@@ -1003,17 +1014,22 @@ static func _build_detailed_plants(parent: Node3D, out: Dictionary, forest: Arra
 			tints.append(tint)
 			group[species][1] = tints          # (a PackedColorArray is copied when read out of an Array)
 			counts[species] = int(counts.get(species, 0)) + 1
+	var old_kits: Dictionary = {}             # species -> its code-built mesh, only without trees.glb
 	for group_name: String in groups:
+		var group: Dictionary = groups[group_name]
+		var holder_name := group_name.to_pascal_case()        # DetailNear, DetailFar, CloseWoodsDetail
+		if not kit.is_empty():
+			out[group_name] = Forest.build(parent, holder_name, group, kit, mats)
+			continue
 		var holder := Node3D.new()
-		holder.name = group_name.to_pascal_case()        # DetailNear, DetailFar, CloseWoodsDetail
+		holder.name = holder_name
 		holder.visible = false
 		parent.add_child(holder)
 		out[group_name] = holder
-		var group: Dictionary = groups[group_name]
 		for species: String in group:
-			if not kits.has(species):
-				kits[species] = Trees.kit(species, mats)
-			_add_plants(holder, species.to_pascal_case(), kits[species], group[species][0], group[species][1], true)
+			if not old_kits.has(species):
+				old_kits[species] = Trees.kit(species, mats)
+			_add_plants(holder, species.to_pascal_case(), old_kits[species], group[species][0], group[species][1], true)
 	out["species_counts"] = counts
 	_build_undergrowth(parent, out, mats)
 
@@ -1058,15 +1074,27 @@ static func _pick(roll: float, shares: Array) -> String:
 ## the screen go down to CLOSE_SLIM; at 0.3 a 10 m fir's boughs reach 0.9 m, still clear of the
 ## screen 1.1 m in front of it). Leafy trees and pines are built to other proportions
 ## (campfire_trees.gd), so they are kept from getting needle-thin or wider than they are tall.
+## Firs behind the screen (Sen, round 2: they looked too thin) are stretched along the wall
+## (world x) to FIR_WALL_WIDE of their height, so their boughs meet their neighbours', and kept
+## at 0.3 towards the screen (world z), so they still stay clear of the picture.
+## Birches stand a little smaller than the other leafy trees (Sen, round 2: too big).
+const FIR_WALL_WIDE: float = 0.5
 static func _detailed_spot(xf: Transform3D, species: String) -> Transform3D:
 	if species == "young_fir":
 		return xf
 	var size := xf.basis.get_scale()
 	if species == "fir":
+		var behind_screen := xf.origin.z < SCREEN_Z - 0.8 and absf(xf.origin.x) < CLOSE_WALL_HALF
+		if behind_screen and size.x < size.y * FIR_WALL_WIDE:
+			# turned first, then stretched in world axes (the stretch must not turn with the tree)
+			var depth := maxf(size.x, size.y * 0.3)
+			return Transform3D(Basis.from_scale(Vector3(size.y * FIR_WALL_WIDE, size.y, depth)) * xf.basis.orthonormalized(), xf.origin)
 		if size.x >= size.y * 0.3:
 			return xf
 		return Transform3D(xf.basis.orthonormalized().scaled(Vector3(size.y * 0.3, size.y, size.y * 0.3)), xf.origin)
 	var tall := size.y * (0.85 if species != "pine" else 1.05)
+	if species == "birch":
+		tall = size.y * 0.72
 	var wide := clampf(size.x, tall * 0.55, tall * 0.9)
 	return Transform3D(xf.basis.orthonormalized().scaled(Vector3(wide, tall, wide)), xf.origin)
 
