@@ -13,6 +13,8 @@ render_mode cull_disabled;
 // it, rooms/weather/room_weather.gd `tree_snow`; Cabin: Frozen North): white on the cards that
 // face up and on the lighter parts of the picture, so the crowns look heaped with snow on top
 // and dark green underneath. 0 = none (every other room).
+// lod_eye and INSTANCE_CUSTOM.g / .b: level of detail, as in camp_prop.gdshader (the detailed
+// campfire trees, campfire_forest.gd); no custom data = always drawn.
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float cut = 0.33;
@@ -29,6 +31,7 @@ uniform vec3 fall_b : source_color = vec3(0.85, 0.3, 0.08);
 // How much light comes through a leaf from behind (0 = none).
 uniform float see_through = 0.35;
 uniform float snow_load : hint_range(0.0, 1.0) = 0.0;
+uniform vec3 lod_eye = vec3(0.0);
 
 varying float tree_pick;       // 0..1, fixed for each tree (its number in the MultiMesh)
 
@@ -40,6 +43,12 @@ void vertex() {
 	float flutter = sin(TIME * 3.1 + w.x * 2.3 + w.y * 1.7 + w.z * 2.9);
 	vec3 push = (vec3(1.0, 0.0, 0.35) * lean + vec3(0.2, 0.35, 0.3) * flutter * 0.25) * sway * wind * COLOR.a * COLOR.a;
 	VERTEX += (inverse(MODEL_MATRIX) * vec4(push, 0.0)).xyz;
+	if (INSTANCE_CUSTOM.b > 0.0) {
+		float d = distance(MODEL_MATRIX[3].xyz, lod_eye);
+		if (d < INSTANCE_CUSTOM.g || d >= INSTANCE_CUSTOM.b) {
+			VERTEX = vec3(0.0);
+		}
+	}
 }
 
 void fragment() {
