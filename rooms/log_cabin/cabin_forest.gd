@@ -188,9 +188,11 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	var yard_share := PackedFloat32Array()     # 1 = mown yard, 0 = forest floor, soft between
 	verts.resize(n * n)
 	normals.resize(n * n)
 	colors.resize(n * n)
+	yard_share.resize(n * n)
 	var coords := PackedFloat32Array()
 	coords.resize(n)
 	for i in n:
@@ -213,6 +215,8 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 			var near := C_LITTER.lerp(C_MOSS, 0.35 * mottle)
 			# the mown yard (the Simple look shows these colours; Detailed shows the grass photo)
 			var yard_d := Vector2((x - YARD.x) / 1.15, z - YARD.y).length()
+			var share := (1.0 - smoothstep(YARD_R - 5.0, YARD_R - 1.0, yard_d)) * smoothstep(2.5, 5.0, creek_distance(x, z))
+			yard_share[k] = share
 			near = near.lerp(Builder.C_GRASS, 1.0 - smoothstep(YARD_R - 5.0, YARD_R - 1.0, yard_d))
 			var c := near.lerp(canopy, smoothstep(70.0, 140.0, r))
 			c.a = 1.0 - smoothstep(85.0, 150.0, r)
@@ -233,13 +237,27 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 				yard_idx.append_array([a, b, c, b, d, c])
 			else:
 				wood_idx.append_array([a, b, c, b, d, c])
+	# Each cell is wholly yard or wholly forest floor, so the two photos used to meet in a hard
+	# zigzag along the grid. Each part now also gets a UV2.x per corner, the share of the OTHER
+	# photo there (cabin_surface.gdshader `tex_b`, set by cabin_builder.gd PHOTO_BLEND): the
+	# yard's photo fades into the forest floor's over the last few metres of the yard and the
+	# forest floor's into the yard's, the same mix at a shared corner from either side, so the
+	# edge is a soft band.
+	var to_wood := PackedVector2Array()
+	var to_yard := PackedVector2Array()
+	to_wood.resize(n * n)
+	to_yard.resize(n * n)
+	for k in n * n:
+		to_wood[k] = Vector2(1.0 - yard_share[k], 0.0)
+		to_yard[k] = Vector2(yard_share[k], 0.0)
 	var mesh := ArrayMesh.new()
-	for part: Array in [[yard_idx, Builder.S_GRASS], [wood_idx, Builder.S_LITTER]]:
+	for part: Array in [[yard_idx, Builder.S_GRASS, to_wood], [wood_idx, Builder.S_LITTER, to_yard]]:
 		var arrays: Array = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_TEX_UV2] = part[2]
 		arrays[Mesh.ARRAY_INDEX] = part[0]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, surf[part[1]])

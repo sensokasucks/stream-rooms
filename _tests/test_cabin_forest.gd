@@ -1,7 +1,7 @@
 extends Node
 ## Cabin: Appalachian Forest (rooms/cabin_forest/, log_cabin_room.gd with scene = "forest",
 ## cabin_forest.gd): the room loads with the cabin and the forest round it (the land with its
-## valley, the creek (flowing downhill), the near trees in both looks, the far forest), the sky draws the blue
+## valley, the yard fading softly into the forest floor, the creek (flowing downhill), the near trees in both looks, the far forest), the sky draws the blue
 ## ridges, the trees in front of the deck stay below the view, Season turns the leaves and the
 ## forest floor, and the fireflies come out on dry summer nights only. Saves screenshots of the
 ## deck's view and the cabin from outside by day, at dusk, at night, in autumn, in the rain and in
@@ -79,6 +79,14 @@ func _ready() -> void:
 	# the land, the creek, the far forest
 	var land := room.find_child("Land", true, false) as MeshInstance3D
 	_check(land != null and land.mesh.get_surface_count() == 2, "the land is built (yard and forest floor)")
+	if land != null and land.mesh.get_surface_count() == 2:
+		# the yard's grass fades into the forest floor (UV2.x = the other photo's share) over a
+		# band of corners, instead of the hard zigzag edge there was before round 8
+		var u2: PackedVector2Array = land.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2]
+		var between := 0
+		for u in u2:
+			between += 1 if u.x > 0.05 and u.x < 0.95 else 0
+		_check(between > 50, "the yard's edge fades into the forest floor (%d corners in between)" % between)
 	var creek := room.find_child("Creek", true, false) as MeshInstance3D
 	_check(creek != null and parts.has("stream_mat"), "the creek runs past the cabin")
 	if creek != null:

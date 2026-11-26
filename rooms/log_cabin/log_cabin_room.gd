@@ -441,8 +441,14 @@ func _apply_season() -> void:
 			m.set_shader_parameter("fall_b", row[2])
 	var litter := _parts.get("litter_mat") as ShaderMaterial
 	if litter:
-		litter.set_shader_parameter("photo_tint", Color(1.08, 0.86, 0.66) if autumn else Color(0.74, 0.88, 0.58))
+		var tint := Color(1.08, 0.86, 0.66) if autumn else Color(0.74, 0.88, 0.58)
+		litter.set_shader_parameter("photo_tint", tint)
 		litter.set_shader_parameter("far_tint", Vector3(2.1, 1.05, 0.5) if autumn else Vector3.ONE)
+		# the grass's fade into the forest floor at the yard's edge (cabin_surface.gdshader tex_b)
+		# shows the forest floor in the same colours
+		var grass := (_parts.get("surface_mats", {}) as Dictionary).get(Builder.S_GRASS) as ShaderMaterial
+		if grass:
+			grass.set_shader_parameter("b_tint", tint)
 	# the far round trees: each one's summer colour (kept the first time) times orange, gold or red
 	var turns: Array[Color] = [Color(3.2, 1.35, 0.2), Color(3.0, 1.9, 0.25), Color(3.3, 0.95, 0.15)]  # copper, gold, rust (less red-pink than plain red)
 	for n: Node3D in _parts.get("far_trees", []):

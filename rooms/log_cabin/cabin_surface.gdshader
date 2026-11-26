@@ -21,6 +21,11 @@ render_mode cull_disabled;
 // floor, laid on the ground outside): Detailed shows the photo itself (times `photo_tint`)
 // instead of tinting the mesh's colour, except where the corner's colour has an alpha below 1
 // (0 = the mesh's own colour only; the forest room's far slopes).
+// A colour photo can fade into a second one, `tex_b` (laid flat from above, `b_tile` metres a
+// copy, times `b_tint`), by the mesh's UV2.x (0 = all this photo, 1 = all the other): the forest
+// room's mown yard into the forest floor and back (cabin_forest.gd _build_land), so the edge
+// between them is a soft band instead of a hard zigzag along the land's grid. Meshes without a
+// UV2 (or with it at 0) never show tex_b.
 // `wet` and `snow` (the weather, see below) work on both looks.
 
 uniform float detail = 0.0;
@@ -39,6 +44,9 @@ uniform float metallic = 0.0;
 uniform float photo = 0.0;
 // what a colour photo is multiplied by (cabin_builder.gd PHOTO_TINTS: the grass made greener)
 uniform vec3 photo_tint : source_color = vec3(1.0);
+uniform sampler2D tex_b : filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float b_tile = 3.0;
+uniform vec3 b_tint : source_color = vec3(1.0);
 // how strongly the grain shows: 1 = as in the photo, 0 = flat (cabin_builder.gd GRAIN_STRENGTH)
 uniform float grain_strength = 1.0;
 // what the corner colours are multiplied by where their alpha is below 1 (the forest room's far
@@ -151,7 +159,11 @@ void fragment() {
 	// (a colour photo gives way to the mesh's own colour where its alpha is below 1: the forest
 	// room's far slopes, coloured as treetops, cabin_forest.gd)
 	vec3 own = COLOR.rgb * mix(far_tint, vec3(1.0), COLOR.a);
-	ALBEDO = (detail > 0.5 && photo > 0.5) ? mix(own, grain * photo_tint, COLOR.a) : own * grain * 2.0;
+	vec3 shot = grain * photo_tint;
+	if (detail > 0.5 && photo > 0.5 && UV2.x > 0.001) {
+		shot = mix(shot, texture(tex_b, w_pos.xz / b_tile).rgb * b_tint, clamp(UV2.x, 0.0, 1.0));
+	}
+	ALBEDO = (detail > 0.5 && photo > 0.5) ? mix(own, shot, COLOR.a) : own * grain * 2.0;
 	float rough = clamp(roughness + (0.5 - (grain.r + grain.g + grain.b) / 3.0) * rough_vary * 2.0, 0.04, 1.0);
 	if (wet + snow > 0.001 && !under_roof(w_pos, shelter_a_box, shelter_a_roof) && !under_roof(w_pos, shelter_b_box, shelter_b_roof)) {
 		// snow settles on what faces up, patchy at first (the photo's light and dark decide where)

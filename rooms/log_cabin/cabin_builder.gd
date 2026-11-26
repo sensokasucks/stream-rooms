@@ -46,6 +46,10 @@ const LOG_OVERHANG: float = 0.32
 ## How far a log cut by a window or doorway reaches into the frame's jamb (the jambs are 0.08 m
 ## thick and 0.4 m deep, deeper than a log), so its end never sits on the jamb's face.
 const JAMB_TUCK: float = 0.04
+## Window and door frames: how wide the jambs are, and how tall the sill and the head are (tall
+## enough that the log under the sill and the one over the head always reach into them).
+const FRAME_T: float = 0.08
+const FRAME_DEEP: float = 0.12
 ## The roof reaches this far past the side walls (sideways) and past the front and back walls.
 const ROOF_SIDE: float = 0.7
 const ROOF_FRONT: float = 1.2
@@ -88,12 +92,17 @@ const STAIR_START_Z: float = 1.7
 const STAIR_STEPS: int = 14
 ## Windows in the side and back log walls: [wall ("left" x = -HALF_W, "right" x = +HALF_W,
 ## "back" z = BACK_Z), from, to (z for the side walls, x for the back wall), sill, top].
+## The sills and tops are picked against the log rows (side walls y = 0.17 + 0.3 k, the back
+## wall 0.15 higher) so the log under the sill and the one over the top both tuck into the
+## frame's sill and head (_window_frame): 0.95 / 2.3 on the side walls, 1.2 / 2.2 on the back.
+## Other values leave a slit between a log and the frame, or a log showing in the opening.
 const WINDOWS: Array = [
-	["left", 5.8, 8.0, 0.9, 2.2], ["left", 2.2, 4.4, 0.9, 2.3], ["right", 6.2, 8.2, 0.9, 2.2],
+	["left", 5.8, 8.0, 0.95, 2.3], ["left", 2.2, 4.4, 0.95, 2.3], ["right", 6.2, 8.2, 0.95, 2.3],
 	["back", -5.6, -4.3, 1.2, 2.2], ["back", 3.4, 4.6, 1.2, 2.2],
 ]
-## The doorway from the great room into the den, in the left wall: z from, z to, top.
-const DEN_DOOR: Vector3 = Vector3(4.6, 5.6, 2.15)
+## The doorway from the great room into the den, in the left wall: z from, z to, top (2.08: the
+## log over it, at 2.27, rests on the frame's head; higher and that log hung into the opening).
+const DEN_DOOR: Vector3 = Vector3(4.6, 5.6, 2.08)
 ## The back door (the entrance from the stoop): x from, x to, top.
 const BACK_DOOR: Vector3 = Vector3(-0.5, 0.5, 2.1)
 ## The glass doors in the two front corners: x from, x to (left one; the right one is mirrored).
@@ -111,8 +120,9 @@ const DEN_EAVE_Y: float = 3.3
 const DEN_CEIL_Y: float = 3.15
 const DEN_RIDGE_Y: float = 4.9
 const DEN_MID_Z: float = 5.3
-## The den's windows: [the z of the wall they are in, x from, x to, sill, top].
-const DEN_WINDOWS: Array = [[8.6, -10.9, -8.7, 0.9, 2.4], [2.0, -11.3, -9.4, 0.9, 2.4]]
+## The den's windows: [the z of the wall they are in, x from, x to, sill, top] (sill and top
+## picked against the log rows like WINDOWS').
+const DEN_WINDOWS: Array = [[8.6, -10.9, -8.7, 0.95, 2.4], [2.0, -11.3, -9.4, 0.95, 2.4]]
 ## The den's chimney on its far wall: how far it sticks into the room (x of its face), its z
 ## from / to, and the firebox in its face (z from, z to, bottom, top).
 const DEN_CHIM_FACE_X: float = -11.85
@@ -135,9 +145,17 @@ const DEN_CAMERAS: Array = [
 	["04_Den_Hearth", Vector3(-11.2, 1.75, 5.3), Vector3(-7.0, 1.1, 5.3)],
 ]
 
+## The loft's rows of seats (_build_back_rooms): [how high the row's step is over the loft
+## floor, the z of its seats, the step's front z, its back z]. The first row is the bench at
+## the railing, on the floor itself. The steps run across LOFT_TIER_X (x from, to), short of the
+## stairs' landing on the right and of the low roof on the left.
+const LOFT_TIERS: Array[Vector4] = [Vector4(0.0, 5.75, 0.0, 0.0), Vector4(0.3, 6.75, 6.3, 7.3), Vector4(0.6, 7.85, 7.3, 8.86)]
+const LOFT_TIER_X: Vector2 = Vector2(-5.2, 4.6)
 ## Chat seats: [name, x, seat height, z, what it faces ("screen" or a Vector3 point)].
-## 18 on the main floor, 5 at the loft railing, 7 on the deck = 30 (plan v2). Seats along a row
-## are 1 m apart or more, so all stay at the default Seat spacing (audience_seat_gap 1.0).
+## 18 on the main floor, 21 in the loft (5 at the railing and 8 on each step behind it,
+## LOFT_TIERS; seat height = LOFT_Y + the step + 0.42) and 7 on the deck = 46. Seats along a row
+## are 1 m apart or more, so all stay at the default Seat spacing (audience_seat_gap 1.0). The
+## loft's rows leave a gap in the middle, under the Loft camera's view of the screen.
 const SEATS: Array = [
 	# sheepskins and cushions on the hearth rug
 	["Hearth_1", -1.5, 0.12, 1.85, "screen"], ["Hearth_2", -0.5, 0.12, 1.85, "screen"],
@@ -154,6 +172,14 @@ const SEATS: Array = [
 	# the bench at the loft railing
 	["Loft_1", -4.2, 3.22, 5.75, "screen"], ["Loft_2", -2.8, 3.22, 5.75, "screen"], ["Loft_3", -1.4, 3.22, 5.75, "screen"],
 	["Loft_4", 1.4, 3.22, 5.75, "screen"], ["Loft_5", 2.8, 3.22, 5.75, "screen"],
+	# the loft's second row, on the low step
+	["Loft_6", -4.0, 3.52, 6.75, "screen"], ["Loft_7", -3.0, 3.52, 6.75, "screen"], ["Loft_8", -2.0, 3.52, 6.75, "screen"],
+	["Loft_9", -1.0, 3.52, 6.75, "screen"], ["Loft_10", 1.0, 3.52, 6.75, "screen"], ["Loft_11", 2.0, 3.52, 6.75, "screen"],
+	["Loft_12", 3.0, 3.52, 6.75, "screen"], ["Loft_13", 4.0, 3.52, 6.75, "screen"],
+	# the back row, on the high step
+	["Loft_14", -4.0, 3.82, 7.85, "screen"], ["Loft_15", -3.0, 3.82, 7.85, "screen"], ["Loft_16", -2.0, 3.82, 7.85, "screen"],
+	["Loft_17", -1.0, 3.82, 7.85, "screen"], ["Loft_18", 1.0, 3.82, 7.85, "screen"], ["Loft_19", 2.0, 3.82, 7.85, "screen"],
+	["Loft_20", 3.0, 3.82, 7.85, "screen"], ["Loft_21", 4.0, 3.82, 7.85, "screen"],
 	# the deck: Adirondack chairs facing the view, and three round the fire table
 	["Deck_1", -6.0, 0.25, -2.9, Vector3(-6.0, 0.0, -30.0)], ["Deck_2", -4.2, 0.25, -2.9, Vector3(-4.2, 0.0, -30.0)],
 	["Deck_3", 4.2, 0.25, -2.9, Vector3(4.2, 0.0, -30.0)], ["Deck_4", 6.0, 0.25, -2.9, Vector3(6.0, 0.0, -30.0)],
@@ -168,7 +194,9 @@ const PODIUM_SEAT_Y: float = 0.45
 ## Camera views: [name (after "CAM_"; the leading number sets the order), where it stands, what
 ## it looks at]. The one with "Reaction" in its name is used for react pauses.
 const CAMERAS: Array = [
-	["01_Loft", Vector3(0.0, 4.7, 7.6), Vector3(0.0, 2.4, 0.8)],
+	# (high in the loft, over the middle gap between its rows of seats and just behind the collar
+	# tie, which stays above the picture)
+	["01_Loft", Vector3(0.0, 5.0, 7.25), Vector3(0.0, 2.4, 0.8)],
 	["02_Reaction_Hearth", Vector3(0.0, 1.6, 1.25), Vector3(0.0, 1.5, 8.0)],
 	["03_Sofa", Vector3(-3.4, 1.3, 5.2), Vector3(0.6, 2.2, 0.8)],
 	["04_Stair_Corner", Vector3(4.9, 2.5, 5.0), Vector3(-1.2, 1.7, 1.0)],
@@ -258,6 +286,10 @@ const SURFACES: Dictionary = {
 ## Colour photos (the ground) are tinted by this (cabin_surface.gdshader `photo_tint`): the
 ## campfire's grass photo is a dry summer meadow, greened here to suit the forest.
 const PHOTO_TINTS: Dictionary = {S_GRASS: Color(0.6, 0.74, 0.48), S_DIRT: Color(0.82, 0.78, 0.72), S_SAND: Color(0.86, 0.82, 0.74)}
+## Ground photos that fade into another one where a mesh asks for it by its UV2.x
+## (cabin_surface.gdshader `tex_b`): the forest room's yard grass and forest floor fade into each
+## other at the yard's edge (cabin_forest.gd _build_land). Other meshes leave UV2 at 0.
+const PHOTO_BLEND: Dictionary = {S_GRASS: S_LITTER, S_LITTER: S_GRASS}
 ## How strongly the photo's light and dark show (cabin_surface.gdshader `grain_strength`; 1 = as
 ## in the photo). The stone photo's pale mortar was harsh in full sun.
 const GRAIN_STRENGTH: Dictionary = {S_STONE: 0.65}
@@ -312,6 +344,11 @@ static func _surface_materials(out: Dictionary) -> Dictionary:
 		m.set_shader_parameter("roughness", float(s[5]))
 		m.set_shader_parameter("specular", float(s[6]))
 		m.set_shader_parameter("metallic", float(s[7]))
+		if PHOTO_BLEND.has(id):
+			var other: Array = SURFACES[PHOTO_BLEND[id]]
+			m.set_shader_parameter("tex_b", load(String(other[0])))
+			m.set_shader_parameter("b_tile", float(other[1]))
+			m.set_shader_parameter("b_tint", PHOTO_TINTS.get(PHOTO_BLEND[id], Color.WHITE))
 		# no texture: nothing to switch on (detail would only multiply by a missing picture)
 		m.set_shader_parameter("detail", 0.0)
 		mats[id] = m
@@ -703,26 +740,36 @@ static func build_cabin(room: Node3D, view: String = "great_room") -> Dictionary
 
 # ── Walls ────────────────────────────────────────────────────
 ## The three log walls (left, right, back). Each log row runs the wall's length, broken where a
-## window or door is; the end logs stick out past the corners.
+## window or door is; the end logs stick out past the corners. Under them, squared sill timbers
+## on the stone footing (_sills). The chinking between two rows only runs where both rows have a
+## log (_joints), and stops at the corners, short of the log ends.
 static func _build_walls(b: Buf) -> void:
 	var rows := int(floor((EAVE_Y - LOG_R) / LOG_STEP)) + 1
+	var below: Dictionary = {}       # wall -> the row underneath's spans (for the chinking)
 	for r in rows:
 		var y := LOG_R + float(r) * LOG_STEP
 		# the two side walls run from the glass wall (z = 0) to the back wall
 		for side: String in ["left", "right"]:
 			var x := -HALF_W if side == "left" else HALF_W
-			for span in _spans(side, -LOG_OVERHANG, BACK_Z + LOG_OVERHANG, y):
+			var spans := _spans(side, -LOG_OVERHANG, BACK_Z + LOG_OVERHANG, y)
+			for span in spans:
 				b.mat = S_LOG
 				b.rod(Vector3(x, y, span.x), Vector3(x, y, span.y), _log_r(r, span.x), 14, _log_col(r, span.x), C_LOG_END)
-				if r > 0:
-					_chinking(b, Vector3(x, y - LOG_STEP * 0.5, span.x), Vector3(x, y - LOG_STEP * 0.5, span.y))
+			if r > 0:
+				for j in _joints(spans, below[side], -0.05, BACK_Z):
+					_chinking(b, Vector3(x, y - LOG_STEP * 0.5, j.x), Vector3(x, y - LOG_STEP * 0.5, j.y))
+			below[side] = spans
 		# the back wall runs across, half a log higher (the corners interlock)
 		var yb := y + LOG_STEP * 0.5
-		for span in _spans("back", -HALF_W - LOG_OVERHANG, HALF_W + LOG_OVERHANG, yb):
+		var back := _spans("back", -HALF_W - LOG_OVERHANG, HALF_W + LOG_OVERHANG, yb)
+		for span in back:
 			b.mat = S_LOG
 			b.rod(Vector3(span.x, yb, BACK_Z), Vector3(span.y, yb, BACK_Z), _log_r(r + 7, span.x), 14, _log_col(r + 1, span.x), C_LOG_END)
-			if r > 0:
-				_chinking(b, Vector3(span.x, yb - LOG_STEP * 0.5, BACK_Z), Vector3(span.y, yb - LOG_STEP * 0.5, BACK_Z))
+		if r > 0:
+			for j in _joints(back, below["back"], -HALF_W, HALF_W):
+				_chinking(b, Vector3(j.x, yb - LOG_STEP * 0.5, BACK_Z), Vector3(j.y, yb - LOG_STEP * 0.5, BACK_Z))
+		below["back"] = back
+	_sills(b)
 	# the back gable above the logs: upright boards up to the ridge
 	b.mat = S_CEILING
 	var top := EAVE_Y + LOG_STEP * 0.5
@@ -735,7 +782,11 @@ static func _build_walls(b: Buf) -> void:
 	b.block(Vector3(BACK_DOOR.x, 0.0, BACK_Z - 0.06), Vector3(BACK_DOOR.y, BACK_DOOR.z, BACK_Z + 0.06), C_TIMBER.darkened(0.2))
 	b.block(Vector3(BACK_DOOR.x - 0.1, 0.0, BACK_Z - 0.2), Vector3(BACK_DOOR.x, BACK_DOOR.z + 0.1, BACK_Z + 0.2), C_FRAME)
 	b.block(Vector3(BACK_DOOR.y, 0.0, BACK_Z - 0.2), Vector3(BACK_DOOR.y + 0.1, BACK_DOOR.z + 0.1, BACK_Z + 0.2), C_FRAME)
-	b.block(Vector3(BACK_DOOR.x - 0.1, BACK_DOOR.z, BACK_Z - 0.2), Vector3(BACK_DOOR.y + 0.1, BACK_DOOR.z + 0.12, BACK_Z + 0.2), C_FRAME)
+	# (the head reaches 0.18 up, to the bottom of the first log over the door)
+	b.block(Vector3(BACK_DOOR.x - 0.1, BACK_DOOR.z, BACK_Z - 0.2), Vector3(BACK_DOOR.y + 0.1, BACK_DOOR.z + 0.18, BACK_Z + 0.2), C_FRAME)
+	# the threshold board under the door, a little above the floor (on the floor's own top it
+	# flickered)
+	b.block(Vector3(BACK_DOOR.x - 0.1, -0.2, BACK_Z - 0.2), Vector3(BACK_DOOR.y + 0.1, 0.015, BACK_Z + 0.2), C_FRAME.darkened(0.1))
 
 
 ## A log's radius: LOG_R, a little thicker or thinner from log to log (row, and where it starts),
@@ -748,6 +799,44 @@ static func _log_r(row: int, start: float) -> float:
 static func _log_col(row: int, start: float) -> Color:
 	var k := sin(float(row) * 1.9 + start * 0.7)
 	return C_LOG.darkened(0.08 * k) if k > 0.0 else C_LOG.lightened(-0.06 * k)
+
+
+## Where chinking goes between two log rows: the stretches where the row (`upper`) and the row
+## under it (`lower`) both have a log, kept between lo and hi (the wall's corners, so it never
+## reaches the log ends sticking out past them). Chinking under a log that stops at a window
+## would hang across the opening's top; chinking out to the log ends showed over their end
+## grain and flickered with it.
+static func _joints(upper: Array[Vector2], lower: Array[Vector2], lo: float, hi: float) -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	for u in upper:
+		for l in lower:
+			var a := maxf(maxf(u.x, l.x), lo)
+			var c := minf(minf(u.y, l.y), hi)
+			if c - a > 0.05:
+				out.append(Vector2(a, c))
+	return out
+
+
+## The squared sill timbers the log walls stand on, on top of the stone footing: under each side
+## wall up to just over the floor, under the back wall (whose first log is half a row higher, so
+## its sill is taller) up to that log. They close the slit there was between the floor and the
+## first logs, where you could see in under the walls. Each stops at the doorways (the doors
+## have their own threshold boards). Their faces never share a plane with each other or the
+## footing (the faces at the corners are a couple of centimetres apart).
+static func _sills(b: Buf) -> void:
+	var keep := b.mat
+	b.mat = S_TIMBER
+	var col := C_TIMBER.darkened(0.15)
+	for sx: float in [-1.0, 1.0]:
+		var x := sx * HALF_W
+		var runs: Array[Vector2] = [Vector2(-0.12, BACK_Z)]
+		if sx < 0.0:
+			runs = [Vector2(-0.12, DEN_DOOR.x), Vector2(DEN_DOOR.y, BACK_Z)]
+		for run in runs:
+			b.block(Vector3(x - 0.14, -0.2, run.x), Vector3(x + 0.14, 0.06, run.y), col)
+	for run: Vector2 in [Vector2(-HALF_W - 0.12, BACK_DOOR.x - 0.1), Vector2(BACK_DOOR.y + 0.1, HALF_W + 0.12)]:
+		b.block(Vector3(run.x, -0.2, BACK_Z - 0.14), Vector3(run.y, 0.2, BACK_Z + 0.14), col)
+	b.mat = keep
 
 
 ## The chinking along the joint between two stacked logs (from `a` to `b`, the joint's line in
@@ -786,20 +875,25 @@ static func _spans(wall: String, from: float, to: float, y: float) -> Array[Vect
 	return out
 
 
-## A timber frame round a window opening, with a sill.
+## A timber frame round a window opening: jambs `FRAME_T` wide, and a sill and a head
+## `FRAME_DEEP` tall so the logs under and over the opening tuck into them (see WINDOWS). A
+## doorway (sill 0) gets a threshold board a little above the floor instead of a sill (a sill's
+## top on the floor's own top flickered).
 static func _window_frame(b: Buf, wall: String, from: float, to: float, sill: float, top: float) -> void:
-	var t := 0.08
+	var t := FRAME_T
+	var low := sill - FRAME_DEEP if sill > 0.0 else -0.05
+	var step := sill if sill > 0.0 else 0.015
 	if wall == "back":
-		b.block(Vector3(from - t, sill - t, BACK_Z - 0.22), Vector3(to + t, sill, BACK_Z + 0.22), C_FRAME)
-		b.block(Vector3(from - t, top, BACK_Z - 0.2), Vector3(to + t, top + t, BACK_Z + 0.2), C_FRAME)
-		b.block(Vector3(from - t, sill, BACK_Z - 0.2), Vector3(from, top, BACK_Z + 0.2), C_FRAME)
-		b.block(Vector3(to, sill, BACK_Z - 0.2), Vector3(to + t, top, BACK_Z + 0.2), C_FRAME)
+		b.block(Vector3(from - t, low, BACK_Z - 0.22), Vector3(to + t, step, BACK_Z + 0.22), C_FRAME)
+		b.block(Vector3(from - t, top, BACK_Z - 0.2), Vector3(to + t, top + FRAME_DEEP, BACK_Z + 0.2), C_FRAME)
+		b.block(Vector3(from - t, step, BACK_Z - 0.2), Vector3(from, top, BACK_Z + 0.2), C_FRAME)
+		b.block(Vector3(to, step, BACK_Z - 0.2), Vector3(to + t, top, BACK_Z + 0.2), C_FRAME)
 		return
 	var x := -HALF_W if wall == "left" else HALF_W
-	b.block(Vector3(x - 0.22, sill - t, from - t), Vector3(x + 0.22, sill, to + t), C_FRAME)
-	b.block(Vector3(x - 0.2, top, from - t), Vector3(x + 0.2, top + t, to + t), C_FRAME)
-	b.block(Vector3(x - 0.2, sill, from - t), Vector3(x + 0.2, top, from), C_FRAME)
-	b.block(Vector3(x - 0.2, sill, to), Vector3(x + 0.2, top, to + t), C_FRAME)
+	b.block(Vector3(x - 0.22, low, from - t), Vector3(x + 0.22, step, to + t), C_FRAME)
+	b.block(Vector3(x - 0.2, top, from - t), Vector3(x + 0.2, top + FRAME_DEEP, to + t), C_FRAME)
+	b.block(Vector3(x - 0.2, step, from - t), Vector3(x + 0.2, top, from), C_FRAME)
+	b.block(Vector3(x - 0.2, step, to), Vector3(x + 0.2, top, to + t), C_FRAME)
 
 
 # ── Floor, roof, beams, the front frame ──────────────────────
@@ -922,6 +1016,9 @@ static func _build_chimney(b: Buf, markers: Node3D, out: Dictionary) -> void:
 		if fire_hole or behind_screen:
 			continue
 		var s := Vector3(rng.randf_range(0.25, 0.5), rng.randf_range(0.18, 0.3), 0.08)
+		# kept wholly on the face: a stone reaching past the chimney's side stuck out of it into
+		# the glass wall's post beside it
+		x = clampf(x, -CHIM_HALF + s.x * 0.5 + 0.04, CHIM_HALF - s.x * 0.5 - 0.04)
 		b.soft_box(Transform3D(Basis.IDENTITY, Vector3(x, y, CHIM_IN_Z + 0.01)), s, 0.035, C_STONE.darkened(rng.randf_range(0.0, 0.2)), 0.7)
 	# the raised hearth, with a niche of split logs in its front
 	b.block(Vector3(-HEARTH_HALF, 0.0, CHIM_IN_Z), Vector3(HEARTH_HALF, HEARTH_H, CHIM_IN_Z + HEARTH_OUT), C_STONE.lightened(0.1))
@@ -1002,9 +1099,8 @@ static func _build_great_room(b: Buf) -> void:
 	for sx: float in [-1.0, 1.0]:
 		var xf := Transform3D(Basis.IDENTITY, Vector3(sx * 2.1, 0.0, 3.92))
 		_sofa(b, xf, 3, 1.0, C_LEATHER)
-		# a knitted throw over one end of the back (tipped back like the back cushions)
-		b.mat = S_FLEECE
-		b.soft_box(xf * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(-sx * 0.9, 0.85, 0.43)), Vector3(0.75, 0.42, 0.1), 0.04, C_FABRIC if sx < 0.0 else C_THROW_GREEN, 1.0)
+		# a knitted throw over one end of the back
+		_throw_over_back(b, xf, -sx * 0.9, 0.75, C_FABRIC if sx < 0.0 else C_THROW_GREEN)
 	# the four armchairs (under the Arm_ seats), turned to face the screen
 	for s: Array in SEATS:
 		if String(s[0]).begins_with("Arm"):
@@ -1064,6 +1160,19 @@ static func _sofa(b: Buf, xf: Transform3D, seats: int, seat_w: float, col: Color
 	b.mat = keep
 
 
+## A throw over a sofa's (or armchair's, _sofa) back, `w` metres wide, centred `x` along it in
+## the sofa's own space (xf): thin cloth lying on top of the back's frame and hanging down the
+## back's outside. It stays clear of the back cushions in front: the old thick, tipped slabs
+## poked through them, like extra cushions stuck in the seats.
+static func _throw_over_back(b: Buf, xf: Transform3D, x: float, w: float, col: Color) -> void:
+	var keep := b.mat
+	b.mat = S_FLEECE
+	# (the back's frame: 0.16 deep round z 0.38, top at y 1.0)
+	b.soft_box(xf * Transform3D(Basis.IDENTITY, Vector3(x, 1.015, 0.39)), Vector3(w, 0.035, 0.2), 0.015, col, 1.0)
+	b.soft_box(xf * Transform3D(Basis.IDENTITY, Vector3(x, 0.74, 0.478)), Vector3(w, 0.54, 0.03), 0.012, col, 1.0)
+	b.mat = keep
+
+
 ## A small side table at `at` (on the floor) with a stone lamp base on it (the lamp's shade is
 ## _build_lamps') and a book and a mug beside it.
 static func _side_table(b: Buf, at: Vector3) -> void:
@@ -1107,7 +1216,7 @@ static func _table_things(b: Buf, top: Vector3, kind: int) -> void:
 
 # ── Under the loft ───────────────────────────────────────────
 ## The kitchen in the back left corner, the dining table with its bench, the mudroom bench and
-## coat pegs by the back door, and the bookshelves; plus a bench and a bed up in the loft.
+## coat pegs by the back door, and the bookshelves; plus the rows of seats up in the loft.
 static func _build_back_rooms(b: Buf) -> void:
 	# kitchen: an L of base cupboards (doors marked out) with a stone worktop, open shelves with
 	# enamel mugs, and a cast iron stove with a kettle
@@ -1215,24 +1324,29 @@ static func _build_back_rooms(b: Buf) -> void:
 			x += w + 0.008
 			if rng.randf() < 0.06:
 				x += 0.2
-	# loft: the bench at the railing (the Loft_ seats) with cushions, a bed with a quilt
-	b.mat = S_TIMBER
-	b.block(Vector3(-4.8, LOFT_Y + 0.35, 5.6), Vector3(3.4, LOFT_Y + 0.42, 6.0), C_TIMBER.lightened(0.05))
-	for x: float in [-4.6, -2.1, 0.0, 2.1, 3.2]:
-		b.block(Vector3(x - 0.05, LOFT_Y, 5.65), Vector3(x + 0.05, LOFT_Y + 0.35, 5.95), C_TIMBER)
-	b.mat = S_WOOL
-	for s: Array in SEATS:
-		if String(s[0]).begins_with("Loft"):
-			b.soft_box(Transform3D(Basis.IDENTITY, Vector3(float(s[1]), LOFT_Y + 0.45, 5.8)), Vector3(0.7, 0.07, 0.38), 0.03, C_FABRIC.darkened(0.1), 1.0)
-	b.mat = S_TIMBER
-	b.block(Vector3(-3.05, LOFT_Y, 7.0), Vector3(-0.75, LOFT_Y + 0.35, BACK_Z - 0.2), C_TIMBER.darkened(0.1))
-	b.block(Vector3(-3.05, LOFT_Y, 8.65), Vector3(-0.75, LOFT_Y + 1.1, BACK_Z - 0.18), C_TIMBER.darkened(0.15))
-	b.mat = S_WOOL
-	b.soft_box(Transform3D(Basis.IDENTITY, Vector3(-1.9, LOFT_Y + 0.45, 7.8)), Vector3(2.2, 0.2, 1.6), 0.08, C_WOOL, 1.0)
-	b.soft_box(Transform3D(Basis.IDENTITY, Vector3(-1.9, LOFT_Y + 0.58, 7.55)), Vector3(2.28, 0.08, 1.15), 0.04, C_RUG.lightened(0.1), 1.0)
-	for px: float in [-2.45, -1.35]:
-		b.soft_box(Transform3D(Basis.IDENTITY, Vector3(px, LOFT_Y + 0.62, 8.4)), Vector3(0.7, 0.16, 0.36), 0.07, C_WOOL.lightened(0.05), 1.0)
-	b.rug_quad(Vector2(-2.0, 6.3), Vector2(2.0, 6.9), LOFT_Y + 0.01, C_RUG_MEAN.darkened(0.1))
+	# loft: audience seating in three rows, like a little gallery: the bench at the railing on
+	# the loft floor, then two benches each on a raised step behind it (LOFT_TIERS), so every row
+	# sees the screen over the one in front. Each Loft_ seat gets a cushion on its bench.
+	for t: Vector4 in LOFT_TIERS:
+		var lift := t.x                       # the step's height over the loft floor
+		if lift > 0.0:
+			b.mat = S_FLOOR
+			b.block(Vector3(LOFT_TIER_X.x, LOFT_Y, t.z), Vector3(LOFT_TIER_X.y, LOFT_Y + lift, t.w), C_FLOOR.darkened(0.06 * lift / 0.3))
+			# a nosing board along the step's front edge, a shade darker
+			b.mat = S_TIMBER
+			b.block(Vector3(LOFT_TIER_X.x + 0.01, LOFT_Y + lift - 0.06, t.z - 0.025), Vector3(LOFT_TIER_X.y - 0.01, LOFT_Y + lift + 0.012, t.z + 0.03), C_TIMBER.darkened(0.1))
+		var seat_z := t.y
+		var bench_x := Vector2(-4.8, 3.4) if lift <= 0.0 else Vector2(LOFT_TIER_X.x + 0.25, LOFT_TIER_X.y - 0.25)
+		b.mat = S_TIMBER
+		b.block(Vector3(bench_x.x, LOFT_Y + lift + 0.35, seat_z - 0.15), Vector3(bench_x.y, LOFT_Y + lift + 0.42, seat_z + 0.25), C_TIMBER.lightened(0.05))
+		var leg := bench_x.x + 0.2
+		while leg < bench_x.y:
+			b.block(Vector3(leg - 0.05, LOFT_Y + lift, seat_z - 0.1), Vector3(leg + 0.05, LOFT_Y + lift + 0.35, seat_z + 0.2), C_TIMBER)
+			leg += (bench_x.y - bench_x.x - 0.4) / 4.0
+		b.mat = S_WOOL
+		for s: Array in SEATS:
+			if String(s[0]).begins_with("Loft") and absf(float(s[3]) - seat_z) < 0.01:
+				b.soft_box(Transform3D(Basis.IDENTITY, Vector3(float(s[1]), LOFT_Y + lift + 0.45, seat_z + 0.05)), Vector3(0.7, 0.07, 0.38), 0.03, C_FABRIC.darkened(0.1), 1.0)
 
 
 # ── The den ──────────────────────────────────────────────────
@@ -1244,9 +1358,8 @@ static func _build_back_rooms(b: Buf) -> void:
 ## stack of firewood. Called by build_cabin after _build_chimney (which makes out["ember_mat"]).
 static func _build_den(b: Buf, markers: Node3D, out: Dictionary) -> void:
 	var near_x := -HALF_W          # the great room's left wall, which the den leans on
-	var in_lo := DEN_FAR_X + LOG_R  # the inside faces of the den's walls
-	var in_hi := near_x - LOG_R
-	var z_lo := DEN_Z.x + LOG_R
+	var in_hi := near_x - LOG_R     # the den-side face of that wall, where the den's logs stop
+	var z_lo := DEN_Z.x + LOG_R      # the inside faces of the den's two long walls
 	var z_hi := DEN_Z.y - LOG_R
 	# floor and footing
 	b.mat = S_FLOOR
@@ -1256,35 +1369,50 @@ static func _build_den(b: Buf, markers: Node3D, out: Dictionary) -> void:
 	# log walls: the two long walls (z = DEN_Z.x, DEN_Z.y) and the far wall (x = DEN_FAR_X), a half
 	# log higher so the corners interlock like the great room's
 	var rows := int(floor((DEN_EAVE_Y - LOG_R) / LOG_STEP)) + 1
+	var below: Dictionary = {}       # wall -> the row underneath's spans (for the chinking, _joints)
+	var far_top := 0.0               # the top log of the far wall (its middle)
 	for r in rows:
 		var y := LOG_R + float(r) * LOG_STEP
 		for z: float in [DEN_Z.x, DEN_Z.y]:
-			for span in _den_spans(z, DEN_FAR_X - LOG_OVERHANG, in_hi, y):
+			var spans := _den_spans(z, DEN_FAR_X - LOG_OVERHANG, in_hi, y)
+			for span in spans:
 				b.mat = S_LOG
 				b.rod(Vector3(span.x, y, z), Vector3(span.y, y, z), _log_r(r + 3, span.x), 14, _log_col(r + 2, span.x + z), C_LOG_END)
-				if r > 0:
-					_chinking(b, Vector3(span.x, y - LOG_STEP * 0.5, z), Vector3(span.y, y - LOG_STEP * 0.5, z))
+			if r > 0:
+				for j in _joints(spans, below[z], DEN_FAR_X, in_hi):
+					_chinking(b, Vector3(j.x, y - LOG_STEP * 0.5, z), Vector3(j.y, y - LOG_STEP * 0.5, z))
+			below[z] = spans
 		var yf := y + LOG_STEP * 0.5
 		if yf < DEN_EAVE_Y:
 			b.mat = S_LOG
 			b.rod(Vector3(DEN_FAR_X, yf, DEN_Z.x - LOG_OVERHANG), Vector3(DEN_FAR_X, yf, DEN_Z.y + LOG_OVERHANG), _log_r(r + 5, 1.0), 14, _log_col(r + 4, 1.0), C_LOG_END)
 			if r > 0:
 				_chinking(b, Vector3(DEN_FAR_X, yf - LOG_STEP * 0.5, DEN_Z.x), Vector3(DEN_FAR_X, yf - LOG_STEP * 0.5, DEN_Z.y))
+			far_top = yf
 	b.mat = S_TIMBER
 	for w: Array in DEN_WINDOWS:
 		var z := float(w[0])
-		var t := 0.08
-		b.block(Vector3(float(w[1]) - t, float(w[3]) - t, z - 0.22), Vector3(float(w[2]) + t, float(w[3]), z + 0.22), C_FRAME)
-		b.block(Vector3(float(w[1]) - t, float(w[4]), z - 0.2), Vector3(float(w[2]) + t, float(w[4]) + t, z + 0.2), C_FRAME)
+		var t := FRAME_T
+		b.block(Vector3(float(w[1]) - t, float(w[3]) - FRAME_DEEP, z - 0.22), Vector3(float(w[2]) + t, float(w[3]), z + 0.22), C_FRAME)
+		b.block(Vector3(float(w[1]) - t, float(w[4]), z - 0.2), Vector3(float(w[2]) + t, float(w[4]) + FRAME_DEEP, z + 0.2), C_FRAME)
 		b.block(Vector3(float(w[1]) - t, float(w[3]), z - 0.2), Vector3(float(w[1]), float(w[4]), z + 0.2), C_FRAME)
 		b.block(Vector3(float(w[2]), float(w[3]), z - 0.2), Vector3(float(w[2]) + t, float(w[4]), z + 0.2), C_FRAME)
-	# the gable over the far wall, up to the den's ridge
+	# the sill timbers under the walls (as the great room's, _sills): the far wall's first log is
+	# half a row higher, so its sill is taller; the long walls' sills stop at the great room's
+	b.block(Vector3(DEN_FAR_X - 0.12, -0.2, DEN_Z.x - 0.14), Vector3(-HALF_W - 0.14, 0.06, DEN_Z.x + 0.14), C_TIMBER.darkened(0.15))
+	b.block(Vector3(DEN_FAR_X - 0.12, -0.2, DEN_Z.y - 0.14), Vector3(-HALF_W - 0.14, 0.06, DEN_Z.y + 0.14), C_TIMBER.darkened(0.15))
+	b.block(Vector3(DEN_FAR_X - 0.14, -0.2, DEN_Z.x - 0.12), Vector3(DEN_FAR_X + 0.14, 0.2, DEN_Z.y + 0.12), C_TIMBER.darkened(0.15))
+	# the gable over the far wall, up to the den's ridge, and a band of boards under it down to
+	# the top log's middle: the far wall's logs stop half a row below the eaves, and the slit
+	# that left between the top log and the gable showed the sky over the TV
 	var top := rows * LOG_STEP
 	b.mat = S_CEILING
 	b.tri(Vector3(DEN_FAR_X, top, DEN_Z.x), Vector3(DEN_FAR_X, top, DEN_Z.y), Vector3(DEN_FAR_X, DEN_RIDGE_Y + 0.1, DEN_MID_Z), C_PINE.darkened(0.2))
+	b.block(Vector3(DEN_FAR_X - 0.05, far_top, DEN_Z.x), Vector3(DEN_FAR_X + 0.05, top + 0.02, DEN_Z.y), C_PINE.darkened(0.2))
 	# the low flat ceiling of pine boards, with heavy log beams across it (none along the middle:
-	# it would hang right across the Den Fireside camera's view)
-	b.block(Vector3(in_lo, DEN_CEIL_Y, z_lo), Vector3(in_hi, DEN_CEIL_Y + 0.05, z_hi), C_PINE)
+	# it would hang right across the Den Fireside camera's view). It reaches into the walls' top
+	# logs on every side, so there is no slit along its edges.
+	b.block(Vector3(DEN_FAR_X + 0.05, DEN_CEIL_Y, DEN_Z.x + 0.08), Vector3(-HALF_W - 0.05, DEN_CEIL_Y + 0.05, DEN_Z.y - 0.08), C_PINE)
 	b.mat = S_LOG
 	for x: float in [-7.5, -8.9, -10.3]:
 		b.rod(Vector3(x, DEN_CEIL_Y - 0.14, z_lo), Vector3(x, DEN_CEIL_Y - 0.14, z_hi), 0.14, 10, C_TIMBER, C_LOG_END)
@@ -1409,18 +1537,20 @@ static func _build_den_furniture(b: Buf) -> void:
 	# the sofa: three seats 1.1 m apart, turned towards the doorway like in the picture
 	var sofa := _den_seat_xf(DEN_SOFA)
 	_sofa(b, sofa, 3, 1.1, C_LEATHER.darkened(0.05))
-	# throws: a wool one over the far arm, a red one over the back; two little pillows
+	# throws: a wool one over the far arm (lying on the rolled arm's top and hanging down its
+	# outside), a red one over the back; two little pillows
 	b.mat = S_FLEECE
-	b.soft_box(sofa * Transform3D(Basis.IDENTITY, Vector3(-1.76, 0.55, 0.0)), Vector3(0.3, 0.32, 0.95), 0.06, C_WOOL, 1.0)
-	b.soft_box(sofa * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0.7, 0.9, 0.42)), Vector3(0.9, 0.32, 0.12), 0.05, C_RUG, 1.0)
+	var arm_x := -(3.0 * 1.1 * 0.5 + 0.11)        # the far arm's middle (_sofa's ax)
+	b.soft_box(sofa * Transform3D(Basis.IDENTITY, Vector3(arm_x, 0.735, 0.0)), Vector3(0.3, 0.04, 0.72), 0.018, C_WOOL, 1.0)
+	b.soft_box(sofa * Transform3D(Basis.IDENTITY, Vector3(arm_x - 0.135, 0.5, 0.0)), Vector3(0.03, 0.46, 0.72), 0.012, C_WOOL, 1.0)
+	_throw_over_back(b, sofa, 0.7, 0.9, C_RUG)
 	b.mat = S_WOOL
 	for sx: float in [-1.45, 1.45]:
 		b.soft_box(sofa * Transform3D(Basis(Vector3.FORWARD, 0.3 * signf(sx)), Vector3(sx, 0.68, 0.08)), Vector3(0.4, 0.38, 0.14), 0.07, C_FABRIC, 1.0)
 	# the armchair, with a plaid throw over its back
 	var arm := _den_seat_xf(DEN_ARMCHAIR)
 	_sofa(b, arm, 1, 0.72, C_LEATHER.lightened(0.05))
-	b.mat = S_FLEECE
-	b.soft_box(arm * Transform3D(Basis(Vector3.RIGHT, 0.2), Vector3(0.0, 0.92, 0.42)), Vector3(0.7, 0.32, 0.1), 0.04, C_THROW_GREEN, 1.0)
+	_throw_over_back(b, arm, 0.0, 0.7, C_THROW_GREEN)
 	# side table by the armchair (the table lamp stands on it)
 	_side_table(b, Vector3(-11.35, 0.0, 3.0))
 	# the floor lamp's stand behind the sofa's far end
@@ -1501,8 +1631,11 @@ static func _build_outside_bits(b: Buf) -> void:
 	b.mat = S_STONE
 	b.block(Vector3(-0.5, DECK_Y, -3.2), Vector3(0.5, DECK_Y + 0.42, -2.7), C_STONE_DARK)
 	b.mat = S_DECK
-	# the back stoop: a small deck and steps under its own little roof
+	# the back stoop: a small deck and steps under its own little roof. The deck stands on a
+	# skirt of boards down to the ground (it used to float, with daylight under it), set in a
+	# little so its sides never share a plane with the deck's.
 	b.block(Vector3(-1.1, DECK_Y - 0.15, BACK_Z), Vector3(1.1, DECK_Y, BACK_Z + 1.3), C_DECK)
+	b.block(Vector3(-1.04, GROUND_Y - 0.1, BACK_Z + 0.14), Vector3(1.04, DECK_Y - 0.15, BACK_Z + 1.24), C_DECK.darkened(0.3))
 	for i in 3:
 		var y := DECK_Y - (DECK_Y - GROUND_Y) * float(i + 1) / 4.0
 		b.block(Vector3(-0.8, GROUND_Y, BACK_Z + 1.3 + 0.28 * float(i)), Vector3(0.8, y, BACK_Z + 1.3 + 0.28 * float(i + 1)), C_DECK.darkened(0.05))

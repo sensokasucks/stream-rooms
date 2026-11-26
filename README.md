@@ -1519,11 +1519,12 @@ Included rooms:
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
     and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
-    bookshelves and a quilted bed in the loft.
+    and bookshelves.
   - A small **den** opens off the left wall: low log beams, its own stone fireplace with a
     heavy mantel and a smaller screen, a leather sofa, an armchair and a lamp.
-  - Chat sits on 30 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
-    the dining bench), 5 at the loft railing and 7 on the deck.
+  - Chat sits on 46 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
+    the dining bench), 21 in the loft (a bench at the railing and two raised rows of benches
+    behind it, like a little gallery) and 7 on the deck.
   - A podium room: in the great room the four presenters sit in leather armchairs either side
     of the fireplace (see *Presenters*). No webcam frame: the webcam uses the corner overlay.
   - Room tab:
@@ -1568,8 +1569,8 @@ Included rooms:
     - **Rain and snow amount**: how many drops and flakes this PC draws (lower it on a slow
       graphics card). Each PC picks its own.
     - The fire crackles while it burns.
-  - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
-    at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
+  - Cameras (great room): high in the loft, between its rows of seats (the default), a Reaction
+    camera at the hearth looking back at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
     glass gable, the front door, the dining table and close on the screen. With **Gather in:
     Den** the den's four come first: by the doorway towards the fire, a Reaction camera on the
     sofa, the armchair and from the hearth looking back.
@@ -1587,7 +1588,8 @@ Included rooms:
   fire, lamps, Gather in, time of day, weather) in the Appalachian woods.
   - The deck looks out over a valley: the ground falls away in front of the cabin, so you see
     over the treetops to layers of hazy blue ridges, each paler than the one before. Behind the
-    cabin the wooded slope climbs.
+    cabin the wooded slope climbs. The mown grass round the cabin fades softly into the leafy
+    forest floor at the clearing's edge.
   - A creek runs past the right side of the cabin and down into the valley, with rocks in it and
     stepping stones where the path from the deck steps meets it.
   - Oaks, maples, tall tulip poplars and birches mixed with dark hemlocks (more of them along
