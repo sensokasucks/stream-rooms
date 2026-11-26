@@ -1781,9 +1781,9 @@ Included rooms:
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
     with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
     convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
-- **Route 81 Cruise**: the Cruise's green sister, a work in progress (two of four build rounds
-  are in: the road, the land and the tunnels; then the detailed forest, the distant views and
-  the lights). The same red woody and the same four
+- **Route 81 Cruise**: the Cruise's green sister, a work in progress (three of four build rounds
+  are in: the road, the land and the tunnels; the detailed forest, the distant views and
+  the lights; then the farm valley, the towns, the river bridge and the billboards). The same red woody and the same four
   seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
   median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
   away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. The
@@ -1800,6 +1800,21 @@ Included rooms:
     **Never**. Each tunnel is 400 m long with orange lamps, and the country on the far side is
     different (another height, another stretch of the ridges). The woody's headlights come on
     inside. In photosensitive-safe mode the lamps' light goes by evenly instead of in pools.
+  - **Country**: what kind of country the highway runs through. **The tour** goes through each
+    in turn, a new one on the far side of every tunnel (with **Tunnels** on **Never** it still
+    changes every 10 km or so, through a stretch of woods). Or stay in one:
+    - **Ridge and gaps**: woods, rock cuts and overlooks, high on a ridge.
+    - **Farm valley**: low in a valley between crop fields in strips of corn, hay and ploughed
+      earth. Along the way: family farms with a red barn and a silo, Amish farms (white barn,
+      a windmill pump, washing on the line, a horse and buggy on the lane), two kinds of small
+      town (one with a main street of shop fronts, a white church and a water tower; one old
+      county seat with a stone courthouse, a mill and a covered bridge), gas stations with a
+      tall pole sign, a truck stop and an old closed-down filling station. Their windows and
+      signs light up at night. All of it is made up: no real towns and no real brands.
+    - **River crossing**: halfway through, the highway crosses a wide river on a 640 m bridge,
+      with the other road's bridge and its piers beside you.
+    - **Endless Mountains**: the highest road (up to about 300 m above the valley), most of it
+      overlook.
   - **How often views open up**: how much of the road has an overlook on one side rather than
     woods or rock (0% = **Never**).
   - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
@@ -1819,15 +1834,24 @@ Included rooms:
     red warning lights. Some stretches have morning mist lying in the valley. They creep past
     slowly as you drive. Now and then a power line crosses the highway through a corridor cut
     in the forest.
+  - **Billboards**: Route 81 has its own set of pictures, separate from the desert Cruise's.
+    **Picture folder** (empty = the `billboards_route81` folder in Stream Rooms' data folder)
+    and **Stream Core pictures** (easier from Stream Core's dashboard: Setup > Stream Rooms
+    settings > **Route 81 billboards** > **Choose pictures**, which also has blank templates
+    to download). **How common**, **Order**, **Lit at night** and **Filler ads when the set is
+    empty** work as on Route 22. The shapes: **classic two-post board**, **tall single pole**
+    (the one that stands in front of the woods), **weathered wooden sign**, **parked trailer**
+    and **painted barn** (the picture painted on a red barn's end wall). Boards stand in
+    fields, at the quiet ends of towns and in front of woods, never at an overlook, a rock
+    cut, the bridge or a tunnel. Any picture size works; 1920 x 1080 fills every shape best.
   - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Thunderstorm**,
     **After rain**; the desert's dust storm counts as Clear here), **Clouds**, **Stars**, **Heat
     shimmer**, **Wind** and **Set detail** work as on Route 22 and share its settings.
   - Cameras and reaction targets: as on the Route 22 Cruise.
-  - In a co-stream the road (tunnels, views, season, streetlights) is the host's, and the guests' road keeps
-    pace with the host's. **Forest density** and **Set detail** are each PC's own.
-  - Still to come: more kinds of country behind the tunnels (farm valley, river crossing, coal
-    plateau, city valley, Endless Mountains), gas stations, towns, billboards with their own
-    picture folder, and more weather.
+  - In a co-stream the road (tunnels, country, views, season, streetlights, the billboards' rules) is the host's, and the guests' road keeps
+    pace with the host's. **Forest density**, **Set detail** and the billboard pictures are each PC's own.
+  - Still to come: the coal plateau and the city valley, abandoned coal towns, more trucks,
+    more weather and the countryside's own sounds.
   - Source: built in code in `rooms/route81/` on top of Route 22's parts (`r81_land.gd` the
     land, trees and far ridges, `r81_pieces.gd` rails, tunnels and signs, `r81_trip.gd` which
     land comes where, `r81_traffic.gd`). The rock, grass, forest floor, asphalt and concrete

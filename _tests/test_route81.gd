@@ -20,6 +20,7 @@ const Trip := preload("res://rooms/route81/r81_trip.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Places := preload("res://rooms/route81/r81_places.gd")
+const Billboards := preload("res://rooms/route22/r22_billboards.gd")
 var _fails: int = 0
 var _out: String = ""
 
@@ -91,6 +92,12 @@ func _ready() -> void:
 	AppState.set_setting("r81_season", "summer")
 	# (the first parts test the ridge country's road; the countries have their own part below)
 	AppState.set_setting("r81_country", "ridge")
+	AppState.set_setting("r81_bb_amount", 100.0)
+	AppState.set_setting("r81_bb_folder", "user://r81_test_no_pictures")
+	AppState.set_setting("r81_bb_core", "")
+	AppState.set_setting("r81_bb_filler", true)
+	for shape: String in Billboards.SHAPES_81:
+		AppState.set_setting("r81_bb_" + shape, true)
 	for n in range(1, 5):
 		AppState.set_setting(AppState.presenter_key(n, "on"), true)
 		AppState.set_setting(AppState.presenter_key(n, "source"), "silhouette")
@@ -302,6 +309,32 @@ func _ready() -> void:
 		await _secs(1.5)
 		await _shot("r81_town_cozy_night")
 		AppState.set_setting("r22_time", 13.0)
+	# Route 81's own billboards: one shape at a time, in a stretch of plain fields
+	var boards: Billboards = room.call("get_billboards")
+	_check(boards != null and boards.prefix == "r81_bb_" and boards.folder() == "user://r81_test_no_pictures" and boards.picture_count() == 0,
+		"Route 81 has its own billboard set (settings r81_bb_, its own folder)")
+	var k_board := _find_place(from, func(k: int) -> bool:
+		var slots := Trip.board_slots(k)
+		return slots.size() >= 1 and float(slots[0][1]) > 0.0 and (slots[0][2] as Array).has("barn") and Trip.board_slots(k + 1).size() >= 1)
+	_check(k_board > 0, "found a field with room for billboards (place %d)" % k_board)
+	EventBus.camera_preset_requested.emit(5)
+	# (looked for under the trip: the riders' pictures in the car are called "Picture" too)
+	for only: String in Billboards.SHAPES_81:
+		for shape: String in Billboards.SHAPES_81:
+			AppState.set_setting("r81_bb_" + shape, shape == only)
+		trip.set_travel(float(k_board) * Land.LENGTH - 60.0)
+		await _secs(1.2)
+		var faces: Array = trip.find_children("Picture", "MeshInstance3D", true, false).filter(func(n: Node) -> bool: return (n as MeshInstance3D).is_visible_in_tree())
+		var frames: Array = trip.find_children("Board_" + only, "Node3D", true, false)
+		_check(frames.size() >= 1 and faces.size() >= frames.size(), "billboards: the %s shape stands along the road (%d boards, %d faces)" % [only, frames.size(), faces.size()])
+		await _shot("r81_billboard_%s" % only)
+	for shape: String in Billboards.SHAPES_81:
+		AppState.set_setting("r81_bb_" + shape, true)
+	AppState.set_setting("r81_bb_amount", 0.0)
+	await _secs(1.0)
+	var left: Array = trip.find_children("Picture", "MeshInstance3D", true, false).filter(func(n: Node) -> bool: return (n as MeshInstance3D).is_visible_in_tree())
+	_check(left.is_empty(), "How common 0: no billboards (%d: %s)" % [left.size(), str(left[0].get_path()) if not left.is_empty() else ""])
+	AppState.set_setting("r81_bb_amount", 100.0)
 	AppState.set_setting("r81_season", "fall")
 	await _secs(1.0)
 	await _shot("r81_farm_valley_fall")

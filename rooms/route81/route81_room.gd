@@ -27,6 +27,7 @@ const Car := preload("res://rooms/route22/r22_car.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Trip := preload("res://rooms/route81/r81_trip.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
+const Billboards := preload("res://rooms/route22/r22_billboards.gd")
 const Traffic := preload("res://rooms/route81/r81_traffic.gd")
 const DesertCruise := preload("res://rooms/route22_cruise/route22_cruise_room.gd")
 ## This room's id (rooms/route81/room_info.tres) and the desert Cruise's: the Scenery switch.
@@ -45,6 +46,7 @@ var _car: Car
 var _kit: Dictionary
 var _backdrop: Node3D
 var _vistas: Vistas
+var _boards: Billboards            # Route 81's own billboard set (r22_billboards.gd, "r81_bb_" settings)
 var _retired: bool = false
 var _camera: Camera3D            # the camera whose reach we raised
 var _camera_far: float = 0.0     # its reach before
@@ -70,7 +72,13 @@ func _ready() -> void:
 	_desert.setup(self, _kit, Vector3(CAR_AT.x, 0.0, -6.0), heat, Vector2(90.0, 4.4), true)
 	_trip = Trip.new()
 	_desert.add_child(_trip)
-	_trip.setup(_kit, _backdrop, _vistas)
+	# Route 81's own billboards: the desert Cruise's script with other settings ("r81_bb_"),
+	# other folders and shapes, so the two roads keep separate picture sets
+	_boards = Billboards.new()
+	_desert.add_child(_boards)
+	_boards.setup(_kit, {"prefix": "r81_bb_", "folder": "user://billboards_route81", "core_folder": "user://billboards_route81_core",
+		"shapes": Billboards.SHAPES_81, "ads": PackedStringArray(["ad_diner", "ad_motel", "ad_candy", "ad_jerky", "ad_services"])})
+	_trip.setup(_kit, _backdrop, _vistas, _boards)
 	_traffic = Traffic.new()
 	_desert.add_child(_traffic)
 	_traffic.setup(_kit, _desert, false, Vector2(-520.0, 320.0))
@@ -187,6 +195,11 @@ func get_travel() -> float:
 
 
 ## The room's materials by name (r22_geo.gd new_kit plus r81_land.gd add_materials), for tests.
+## Route 81's billboards (for tests).
+func get_billboards() -> Billboards:
+	return _boards
+
+
 func get_kit() -> Dictionary:
 	return _kit
 
@@ -228,6 +241,24 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "Summer: every shade of green. Fall: the hardwoods turn gold, orange and red; the pines stay green."},
 		{"key": "r81_lights", "label": "Streetlights", "type": "option", "options": [["sodium", "Sodium (orange)"], ["led", "LED (white)"], ["mixed", "Mixed"], ["off", "Off"]],
 			"tooltip": "The lamps on the tall poles in the median before and after every tunnel, and the lamps inside the tunnels. Sodium: the old orange glow. LED: cool white. Mixed: every other pole has been replaced with LED. Off: the poles stand dark (the tunnels stay lit)."},
+		{"heading": "Billboards"},
+		{"key": "r81_bb_amount", "label": "How common", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d", "zero": "None",
+			"tooltip": "How often a billboard comes by on Route 81. They stand in fields, at the edge of towns and, on tall poles, in front of the woods; never at an overlook, a rock cut, the bridge or a tunnel, so in the mountains they are rarer than this says. 0 = none."},
+		{"key": "r81_bb_folder", "label": "Picture folder", "type": "text", "placeholder": "empty = the app's billboards_route81 folder",
+			"tooltip": "A folder of pictures (PNG, JPG, WebP or GIF, animated GIFs play) for Route 81's billboards. This is a separate set from the desert Cruise's. Empty = the \"billboards_route81\" folder in Stream Rooms' data folder. Changes are read when you change this box (or switch rooms)."},
+		{"key": "r81_bb_core", "label": "Stream Core pictures", "type": "text", "placeholder": "stored file names, comma-separated",
+			"tooltip": "Names of pictures in Stream Core's Stored files to add to Route 81's billboards, separated by commas. Stream Rooms fetches them from Core. Easier in Core's dashboard: Setup > Stream Rooms settings > Route 81 billboards > Choose pictures picks and uploads them."},
+		{"key": "r81_bb_order", "label": "Order", "type": "option", "options": [["shuffle", "Shuffle"], ["order", "In order"]],
+			"tooltip": "Shuffle: every picture once in a random order, then a new round. In order: the folder's pictures by file name, then the Core ones as typed."},
+		{"key": "r81_bb_lit", "label": "Lit at night", "type": "check",
+			"tooltip": "Lamps light the billboards after dark (the barn and the wooden sign have none)."},
+		{"key": "r81_bb_filler", "label": "Filler ads when the set is empty", "type": "check",
+			"tooltip": "With no pictures set, the billboards show made-up roadside ads (a diner, a motel, candy...). Off: no billboards until you add pictures."},
+		{"key": "r81_bb_classic", "label": "Shape: classic two-post board", "type": "check", "tooltip": "A big board on two steel posts with a catwalk and lamps."},
+		{"key": "r81_bb_monopole", "label": "Shape: tall single pole", "type": "check", "tooltip": "A board high up on one thick pole, the kind that stands in front of the woods."},
+		{"key": "r81_bb_wooden", "label": "Shape: weathered wooden sign", "type": "check", "tooltip": "A low, leaning wooden sign in a field; the picture looks sun-bleached."},
+		{"key": "r81_bb_trailer", "label": "Shape: parked trailer", "type": "check", "tooltip": "An old box trailer parked in a field with the picture on its side."},
+		{"key": "r81_bb_barn", "label": "Shape: painted barn", "type": "check", "tooltip": "A red barn in a field with the picture painted on its end wall, a little weathered."},
 		{"heading": "Time of day"},
 		{"key": "r22_time", "label": "Time of day", "min": 0.0, "max": 24.0, "step": 0.1, "format": "%.1f h",
 			"tooltip": "The hour, 0 to 24. 6 = sunrise, 12 = noon, 18 = sunset. Where the sun stands along the road changes as the highway curves."},

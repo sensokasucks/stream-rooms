@@ -56,6 +56,7 @@ const Land := preload("res://rooms/route81/r81_land.gd")
 const Pieces := preload("res://rooms/route81/r81_pieces.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Places := preload("res://rooms/route81/r81_places.gd")
+const Billboards := preload("res://rooms/route22/r22_billboards.gd")
 
 ## How far behind and ahead of the car places are kept (metres). Further ahead than the desert's:
 ## there is no flat ground to hide where the land ends, only distance, haze and the curve.
@@ -131,6 +132,7 @@ var tunnel_b: float = 0.0
 var _kit: Dictionary
 var _backdrop: Node3D
 var _vistas: Vistas
+var _boards: Billboards                 # Route 81's own billboard set (may be null: none)
 var _slots: Array[Dictionary] = []      # the place nodes, made as needed (see _make_slot)
 var _free: Array[int] = []              # indexes into _slots of the ones not in use
 var _placed: Dictionary = {}            # k -> {"slot": index, "look": what it was dressed as}
@@ -144,10 +146,15 @@ var _night: float = 0.0                 # 0 day .. 1 night, from the room every 
 ## kit: r22_geo.gd new_kit() with r81_land.gd add_materials() done. backdrop: the far view
 ## (Land.build_backdrop), which this node lowers and turns. vistas: the distant views standing
 ## on it (r81_vistas.gd), which this node tells the region.
-func setup(kit: Dictionary, backdrop: Node3D, vistas: Vistas = null) -> void:
+## boards: Route 81's billboards (r22_billboards.gd set up with the "r81_bb_" settings).
+func setup(kit: Dictionary, backdrop: Node3D, vistas: Vistas = null, boards: Billboards = null) -> void:
 	_kit = kit
 	_backdrop = backdrop
 	_vistas = vistas
+	_boards = boards
+	if _boards:
+		_boards.pictures_changed.connect(_refill_boards)
+		EventBus.setting_changed.connect(_on_board_setting_changed)
 	name = "Trip"
 	for z: float in [-5.0, 6.0]:
 		var l := OmniLight3D.new()
@@ -165,7 +172,17 @@ func setup(kit: Dictionary, backdrop: Node3D, vistas: Vistas = null) -> void:
 	_place()
 
 
+## How common or a shape tick changed (Room tab > Billboards): the boards in view follow at
+## once. (A new folder, order or filler choice reloads the set, which ends up in
+## _refill_boards by pictures_changed.)
+func _on_board_setting_changed(key: String, _value: Variant) -> void:
+	if key == "r81_bb_amount" or Billboards.SHAPES_81.has(key.trim_prefix("r81_bb_")):
+		_refill_boards()
+
+
 func _exit_tree() -> void:
+	if EventBus.setting_changed.is_connected(_on_board_setting_changed):
+		EventBus.setting_changed.disconnect(_on_board_setting_changed)
 	if EventBus.net_room_event.is_connected(_on_net_room_event):
 		EventBus.net_room_event.disconnect(_on_net_room_event)
 
@@ -322,6 +339,8 @@ static func part_at(k: int) -> String:
 ## streetlights of a later round will need it).
 func tick(delta: float, night: float) -> void:
 	_night = night
+	if _boards:
+		_boards.tick(night)
 	speed = move_toward(speed, _target_speed(), delta * 3.0)       # about 3 m/s² either way
 	travel += speed * delta
 	_work_out()
@@ -393,6 +412,8 @@ func _place() -> void:
 		if k < span.x or k > span.y:
 			var gone: int = _placed[k]["slot"]
 			(_slots[gone]["root"] as Node3D).visible = false
+			if _boards:
+				_boards.clear(_slots[gone]["boards"])
 			_free.append(gone)
 			_placed.erase(k)
 	var low := Desert.detail_level() == "low"
@@ -499,6 +520,10 @@ func _make_slot() -> void:
 				root.add_child(t)
 				(slot["trees"] as Array[MultiMeshInstance3D]).append(t)
 				slot["tree_of"]["%d|%s|%s" % [side, group, kind]] = t
+	var boards := Node3D.new()
+	boards.name = "Boards"
+	root.add_child(boards)
+	slot["boards"] = boards
 	slot["lid"] = _mesh_node(root, "MountainTop", _kit["land"], true)
 	for kind in Land.TREES:
 		var t := MultiMeshInstance3D.new()
@@ -560,6 +585,8 @@ func _dress(slot: Dictionary, k: int) -> void:
 			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
 				(slot["tree_of"]["%d|%s|%s" % [side, group, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"][group] as Dictionary).get(kind)
 	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
+	if _boards:
+		_boards.fill(slot["boards"], k, board_slots(k))
 	var over := bridge_at(k)
 	(slot["bridge"] as MeshInstance3D).mesh = Pieces.bridge(boundary(1, k), boundary(1, k + 1)) if over else null
 	(slot["piers"] as MeshInstance3D).mesh = Pieces.bridge_piers(boundary(1, k), boundary(1, k + 1)) if over else null
@@ -586,6 +613,48 @@ func _dress(slot: Dictionary, k: int) -> void:
 	sign_words.visible = signed
 	if signed:
 		sign_words.text = Pieces.sign_words(k)
+
+
+## Where billboards can stand at place k, for r22_billboards.gd fill(): [[foot (the place's
+## own metres), side, the shapes that fit there], ...]. A tall board in the grass in front of
+## woods on our side; any shape out in a field, or at the quiet end of a town or a lot, on
+## either side (never where r81_places.gd has built something: see the place numbers there).
+static func board_slots(k: int) -> Array:
+	var out: Array = []
+	if part_at(k) != "" or wires_at(k):
+		return out
+	for side: int in [1, -1]:
+		var kind := boundary(side, k)
+		if kind != boundary(side, k + 1):
+			continue
+		var u := 0.0
+		var fit: Array = []
+		var f := feature_at(side, k)
+		var i := -1 if f.is_empty() else int(f[1])
+		match kind:
+			"woods":
+				if side > 0:
+					u = 8.5
+					fit = ["monopole", "classic"]
+			"field":
+				if i == -1 or i == 0 or i == 3 or i == 6:
+					u = 27.0
+					fit = ["classic", "monopole", "wooden", "trailer", "barn"]
+			"lawn", "lot":
+				if i == -1 or i == 0 or i == 6:
+					u = 17.0
+					fit = ["classic", "monopole", "wooden", "trailer"]
+		if fit.is_empty():
+			continue
+		var x := (Land.ROAD_R + u) if side > 0 else (Land.OPP_L - u)
+		out.append([Vector3(x, Land.edge(kind, u, 0.5, 0.0)[0], -Land.LENGTH * 0.55), float(side), fit])
+	return out
+
+
+## The billboard pictures changed: put boards on the places in view again.
+func _refill_boards() -> void:
+	for k: int in _placed:
+		_boards.fill(_slots[_placed[k]["slot"]]["boards"], k, board_slots(k))
 
 
 ## The car's spot in the far view (r81_land.gd build_backdrop), in the far view's own metres,

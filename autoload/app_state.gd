@@ -122,6 +122,17 @@ const BASE_DEFAULTS: Dictionary = {
 	"r81_forest": 100.0,         # Route 81: share of the roadside trees drawn on this PC, 0..100 (r81_trip.gd _apply_forest)
 	"r81_season": "summer",      # Route 81: summer | fall (leaf colours, r81_common.gdshaderinc)
 	"r81_country": "tour",       # Route 81: the country by the road: tour (each in turn, a new one after every tunnel) | ridge | farm | river | endless (r81_trip.gd country)
+	"r81_bb_amount": 30.0,       # Route 81's own billboards (r22_billboards.gd with prefix "r81_bb_"; same keys as r22_bb_*): how common, 0..100
+	"r81_bb_folder": "",         # its picture folder on this PC; empty = user://billboards_route81
+	"r81_bb_core": "",           # Stream Core stored-file names for Route 81's billboards, comma-separated
+	"r81_bb_order": "shuffle",   # shuffle | order
+	"r81_bb_lit": true,          # lit at night
+	"r81_bb_filler": true,       # made-up roadside ads when no pictures are set
+	"r81_bb_classic": true,      # its shapes in use (r22_billboards.gd SHAPES_81)
+	"r81_bb_monopole": true,
+	"r81_bb_wooden": true,
+	"r81_bb_trailer": true,
+	"r81_bb_barn": true,
 	"r81_lights": "sodium",      # Route 81: streetlights sodium | led | mixed | off (r81_trip.gd _apply)
 	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
 	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
