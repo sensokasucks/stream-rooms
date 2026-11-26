@@ -61,6 +61,71 @@ func _find_place(from: int, test: Callable) -> int:
 	return -1
 
 
+## The "trees" part: the Detailed look's trees are the campfire's Blender trees at three levels
+## of detail (r81_land.gd card_names / CARD_BANDS). Checks the nodes and what each tree carries,
+## then saves pictures (slow under a software renderer: a few minutes).
+func _detailed_trees(trip: Trip) -> void:
+	AppState.set_setting("r22_detail", "full")
+	AppState.set_setting("r81_views", 0.0)       # woods on both sides
+	AppState.set_setting("r81_tunnels", "never")
+	await _secs(3.0)
+	_check(Land.card_levels_ready(), "the campfire's Blender trees loaded (trees.glb)")
+	_check(Land.card_names().size() == Land.CARD_KINDS.size() * 3, "three levels of detail per kind of tree")
+	# every place in view: a kind's three levels hold the same trees, each with its level's band
+	var sets := 0
+	var bad: Array[String] = []
+	for node: Node in trip.find_children("TreesR_cards_*", "MultiMeshInstance3D", true, false) + trip.find_children("TreesL_cards_*", "MultiMeshInstance3D", true, false):
+		var t := node as MultiMeshInstance3D
+		if t.multimesh == null or not t.is_visible_in_tree():
+			continue
+		var card_name := String(t.name).get_slice("_cards_", 1)
+		var level := Land.card_level(card_name)
+		if level != 0:
+			continue
+		sets += 1
+		var light := t.get_parent().get_node_or_null(String(t.name) + "_light") as MultiMeshInstance3D
+		var far := t.get_parent().get_node_or_null(String(t.name) + "_far") as MultiMeshInstance3D
+		if light == null or far == null or light.multimesh == null or far.multimesh == null:
+			bad.append("%s: a level is missing" % t.name)
+			continue
+		if light.multimesh.instance_count != t.multimesh.instance_count or far.multimesh.instance_count != t.multimesh.instance_count:
+			bad.append("%s: the levels hold different numbers of trees" % t.name)
+		var batches: Array[MultiMesh] = [t.multimesh, light.multimesh, far.multimesh]
+		for l in 3:
+			var data := batches[l].get_instance_custom_data(0)
+			if absf(data.b - Land.CARD_BANDS[l].x) > 0.01 or absf(data.a - Land.CARD_BANDS[l].y) > 1.0:
+				bad.append("%s level %d: band %.1f..%.1f" % [t.name, l, data.b, data.a])
+			if not batches[l].get_instance_transform(0).origin.is_equal_approx(t.multimesh.get_instance_transform(0).origin):
+				bad.append("%s level %d: its first tree stands elsewhere" % [t.name, l])
+		if t.visibility_range_end <= Land.CARD_BANDS[0].y or light.visibility_range_end <= Land.CARD_BANDS[1].y or far.visibility_range_end < 50000.0:
+			bad.append("%s: visibility ranges not set" % t.name)
+		if far.multimesh.mesh.get_faces().size() != 6:
+			bad.append("%s: the far level is not one square" % t.name)
+	_check(sets >= 6 and bad.is_empty(), "%d sets of detailed trees: same trees at every level, each with its band %s" % [sets, str(bad.slice(0, 4))])
+	for i: int in [5, 3, 0, 6]:
+		EventBus.camera_preset_requested.emit(i)
+		await _secs(2.5)
+		await _shot("r81_trees_cam%d" % i)
+	var eye_mats: Array = trip.get("_kit")["r81_lod"]
+	var cam := get_viewport().get_camera_3d()
+	var eye: Vector3 = (eye_mats[0] as ShaderMaterial).get_shader_parameter("lod_eye")
+	_check(eye_mats.size() == 7 and cam != null and eye.distance_to(cam.global_position) < 0.5, "the levels follow the camera in use (%d materials)" % eye_mats.size())
+	EventBus.camera_preset_requested.emit(5)
+	AppState.set_setting("r81_season", "fall")
+	await _secs(2.5)
+	await _shot("r81_trees_fall")
+	AppState.set_setting("r81_season", "summer")
+	AppState.set_setting("r81_forest", 40.0)
+	await _secs(1.0)
+	var thinned := true
+	for node: Node in trip.find_children("TreesR_cards_*", "MultiMeshInstance3D", true, false):
+		var mm := (node as MultiMeshInstance3D).multimesh
+		if mm and mm.instance_count > 4 and (mm.visible_instance_count < 0 or mm.visible_instance_count > mm.instance_count / 2 + 1):
+			thinned = false
+	_check(thinned, "Forest density thins every level alike")
+	AppState.set_setting("r81_forest", 100.0)
+
+
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
 	_out = args[0]
@@ -129,6 +194,11 @@ func _ready() -> void:
 	_check(count > 12 and missing.is_empty(), "all %d Room tab controls have defaults and tooltips %s" % [count, str(missing)])
 
 	var trip: Trip = room.call("get_trip")
+	if args.has("trees"):
+		await _detailed_trees(trip)
+		print("DONE fails=%d" % _fails)
+		AppState.request_quit(0 if _fails == 0 else 1)
+		return
 	var before := trip.travel
 	await _secs(2.0)
 	_check(trip.travel > before + 10.0 and trip.speed > 10.0, "the road moves at Speed 50 (%.1f m in 2 s)" % (trip.travel - before))

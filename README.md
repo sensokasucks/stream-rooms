@@ -1887,8 +1887,11 @@ Included rooms:
   - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
     lower it on a slow PC). **Season**: **Summer (green)** or **Fall colours**.
   - On the **Detailed** look (**Set detail**) the two or three rows of trees nearest the road
-    are full trees with limbs and photographed leaves (oak, maple, birch, fir and pine, the
-    Lakeside Campfire's); behind them and on the **Low** look they are plain low-poly ones.
+    are the Lakeside Campfire's Blender-modelled trees (oak, maple, birch, fir and pine, with
+    real branching limbs and small leafy twigs); behind them and on the **Low** look they are
+    plain low-poly ones. To keep the frame rate up each tree is drawn in full only near the
+    camera (about 26 m), as a lighter tree out to about 52 m, and beyond that as a picture of
+    itself that turns to face the camera; a tree dissolves softly from one into the next.
   - **Streetlights**: tall poles stand in the median before and after every tunnel and light
     the road at night. **Sodium (orange)**, **LED (white)**, **Mixed** (every other pole is
     LED) or **Off** (dark poles; the tunnels stay lit). The tunnel lamps take the same colour.

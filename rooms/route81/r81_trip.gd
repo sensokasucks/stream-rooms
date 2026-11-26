@@ -143,6 +143,8 @@ var _slots: Array[Dictionary] = []      # the place nodes, made as needed (see _
 var _free: Array[int] = []              # indexes into _slots of the ones not in use
 var _placed: Dictionary = {}            # k -> {"slot": index, "look": what it was dressed as}
 var _strips: Dictionary = {}            # "side|from|to|salt" -> Land.side_strip() result
+## The camera's place last written to the detailed trees' materials (lod_eye; _apply()).
+var _lod_eye: Vector3 = Vector3.INF
 var _forest_drawn: float = -1.0         # the Forest density share last applied to the tree batches
 var _lights: Array[OmniLight3D] = []    # the tunnel lamps' light on the car
 var _sync_in: float = SYNC_EVERY
@@ -530,12 +532,21 @@ func _make_slot() -> void:
 		slot["built"][side] = _mesh_node(root, "Places" + tag, _kit["prop"], true)
 		# one node per group of trees (Land._trees) and kind; "cards" meshes bring their own
 		# materials, the low-poly ones all wear kit["trees"]
+		# ("cards" has three nodes per kind, one per level of detail: Land.card_names())
 		for group: String in ["far", "near", "cards"]:
-			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
+			for kind in (Land.card_names() if group == "cards" else Land.TREES):
 				var t := MultiMeshInstance3D.new()
 				t.name = "Trees%s_%s_%s" % [tag, group, kind]
 				if group != "cards":
 					t.material_override = _kit["trees"]
+				else:
+					# Each tree picks its level in the shaders by its own distance; this only
+					# lets Redot skip a whole place's full or light trees when the place is far
+					# outside the level's band. The range is measured to the strip's middle,
+					# and the tunnel cameras never get near a strip, so the pad is generous.
+					var band: Vector2 = Land.CARD_BANDS[Land.card_level(kind)]
+					t.visibility_range_begin = maxf(0.0, band.x - Land.CARD_RANGE_PAD)
+					t.visibility_range_end = band.y + Land.CARD_RANGE_PAD
 				t.set_meta("group", group)
 				# the shaders move things a long way (the bend, the valley): never cull early
 				t.extra_cull_margin = 700.0
@@ -650,7 +661,7 @@ func _dress(slot: Dictionary, k: int) -> void:
 		var f := feature_at(side, k)
 		(slot["built"][side] as MeshInstance3D).mesh = null if f.is_empty() else Places.build(String(f[0]), int(f[1]), side)
 		for group: String in strip["trees"]:
-			for kind in (Land.CARD_KINDS if group == "cards" else Land.TREES):
+			for kind in (Land.card_names() if group == "cards" else Land.TREES):
 				(slot["tree_of"]["%d|%s|%s" % [side, group, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"][group] as Dictionary).get(kind)
 	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
 	if _boards:
@@ -770,6 +781,12 @@ func _apply() -> void:
 		m.set_shader_parameter("alt_drop", altitude)
 		m.set_shader_parameter("season", season)
 		m.set_shader_parameter("wind", wind)
+	# the detailed trees' levels of detail follow the camera in use (only written when it moved)
+	var cam := get_viewport().get_camera_3d()
+	if cam and not cam.global_position.is_equal_approx(_lod_eye):
+		_lod_eye = cam.global_position
+		for m: ShaderMaterial in _kit["r81_lod"]:
+			m.set_shader_parameter("lod_eye", _lod_eye)
 	# photosensitive-safe mode: the lamps' light slides by evenly instead of in pools
 	var safe := bool(AppState.get_setting("photosensitive_safe"))
 	var pulse := 0.25 if safe else clampf(float(AppState.get_setting("flash_strength")), 0.25, 1.0)

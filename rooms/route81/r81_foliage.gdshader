@@ -1,7 +1,7 @@
 shader_type spatial;
 render_mode cull_disabled;
 // Route 81: the leaves and needles of the detailed trees beside the highway (the Detailed
-// look; r81_land.gd card_mesh builds them with the campfire's tree kit, campfire_trees.gd).
+// look; r81_land.gd card_mesh: the campfire's Blender trees, rooms/campfire/models/trees.glb).
 // A tree's leaves are flat "cards", each showing a see-through photo of a bough or a spray
 // of leaves (rooms/campfire/textures/card_*.png, CC0). Pixels below `cut` in the photo's
 // alpha are not drawn at all, so thousands of cards stay cheap and need no sorting.
@@ -10,8 +10,13 @@ render_mode cull_disabled;
 //   COLOR.rgb  the card's own shade (darker inside the crown); 1 = as photographed
 //   COLOR.a    how far the wind moves this corner (0 at the trunk, 1 at the tips and the top)
 // Each tree (MultiMesh instance) carries INSTANCE_CUSTOM like the low-poly trees
-// (r81_tree.gdshader): r = its ground's depth, g = a number of its own 0..1.
+// (r81_tree.gdshader): r = its ground's depth, g = a number of its own 0..1; and b = from,
+// a = to: the band of distances from the camera (metres from `lod_eye`, which r81_trip.gd
+// keeps on the camera) in which this level of detail of the tree is drawn (r81_land.gd
+// CARD_BANDS). Round a band's edges two levels share the tree and dissolve into each other:
+// the campfire's camp_lod.gdshaderinc, used as it is (it wants the band in .g and .b).
 #include "res://rooms/route81/r81_common.gdshaderinc"
+#include "res://rooms/campfire/camp_lod.gdshaderinc"
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float cut = 0.33;
@@ -35,9 +40,13 @@ void vertex() {
 	w += (vec3(0.8, 0.0, 0.45) * lean * 0.12 + vec3(0.2, 0.35, 0.3) * flutter * 0.04) * wind * COLOR.a * COLOR.a;
 	w = r22_bend(w);
 	VERTEX = (inverse(MODEL_MATRIX) * vec4(w, 1.0)).xyz;
+	lod_keep = lod_vertex(VERTEX, vec4(0.0, INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a, 0.0), MODEL_MATRIX[3].xyz);
 }
 
 void fragment() {
+	if (lod_drop(FRAGCOORD.xy, lod_keep)) {
+		discard;
+	}
 	vec4 t = texture(card, UV);
 	ALPHA = t.a;
 	ALPHA_SCISSOR_THRESHOLD = cut;

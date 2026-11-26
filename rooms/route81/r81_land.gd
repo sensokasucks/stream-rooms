@@ -52,8 +52,13 @@ const FOLIAGE_SHADER := preload("res://rooms/route81/r81_foliage.gdshader")
 const LAMP_SHADER := preload("res://rooms/route81/r81_lamp.gdshader")
 const VISTA_SHADER := preload("res://rooms/route81/r81_vista.gdshader")
 const BARK_SHADER := preload("res://rooms/route81/r81_bark.gdshader")
-## The campfire's tree kit: it builds the detailed trees' meshes (trunk, limbs, leaf cards),
-## and its leaf and bark photos are used on them.
+const IMPOSTOR_SHADER := preload("res://rooms/route81/r81_impostor.gdshader")
+## The campfire's Blender trees (rooms/campfire/models/trees.glb, read through
+## campfire_forest.gd): the detailed trees' meshes at two levels of detail, the far trees'
+## pictures and the twig photos. Route 81 keeps no copy: a new export of trees.glb shows up
+## here by itself. (Sen, 2026-11-26: these trees are the ones to use from now on.)
+const CampForest := preload("res://rooms/campfire/campfire_forest.gd")
+## The campfire's older code-built trees: only the stand-in when trees.glb does not load.
 const CampTrees := preload("res://rooms/campfire/campfire_trees.gd")
 const CAMP_TEX := "res://rooms/campfire/textures/"
 
@@ -95,11 +100,26 @@ const TREES: PackedStringArray = ["oak", "maple", "pine"]
 ## Trees stand from the edge of the woods out to this far from the road; past it the land's
 ## shader paints the canopy (r81_terrain.gdshader).
 const TREE_REACH: float = 300.0
-## The Detailed look's trees (leaf cards on real limbs, card_mesh()): their kinds, and how far
+## The Detailed look's trees (the campfire's Blender trees, card_mesh()): their kinds, and how far
 ## from the road's edge they stand. Further out the low-poly trees are drawn on both looks;
 ## nobody can tell them apart behind two rows of detailed ones.
 const CARD_KINDS: PackedStringArray = ["oak", "maple", "birch", "fir", "pine"]
 const CARD_REACH: float = 46.0
+## Every detailed tree is drawn at one of three levels of detail, picked by its distance from
+## the camera (the campfire's scheme, campfire_forest.gd): the full tree, a light one (no small
+## branches, fewer and bigger leaf cards) and, far off, a picture of it that turns to the
+## camera. Each level is its own MultiMesh per kind, named the kind plus one of these endings
+## (card_names()); the shaders fold away the trees outside the level's band (CARD_BANDS).
+const CARD_LEVELS: PackedStringArray = ["", "_light", "_far"]
+## Each level's band, metres from the camera [from, to]: the campfire's distances, so a tree
+## changes level at the same range in both rooms. They travel in each tree's custom data
+## (.b = from, .a = to; half floats in the OpenGL renderer, so keep them below 65000).
+const CARD_BANDS: Array[Vector2] = [Vector2(0.0, CampForest.LOD1_FROM), Vector2(CampForest.LOD1_FROM, CampForest.IMPOSTOR_FROM),
+	Vector2(CampForest.IMPOSTOR_FROM, 60000.0)]
+## How much wider than its band a level's node is shown (r81_trip.gd sets the nodes' visibility
+## range with it, so the full and light meshes of far places are skipped outright): a place's
+## strip of detailed trees is 80 m by CARD_REACH, so half its diagonal, plus half the fade.
+const CARD_RANGE_PAD: float = 52.0
 ## A power line's place (r81_trip.gd wires_at) uses this strip variant (the `salt` of
 ## side_strip; the left side's is 50 more, like every variant): a corridor WIRE_CUT metres wide
 ## is kept clear of trees across the middle of the place, where the line crosses the road.
@@ -112,6 +132,10 @@ static var _tree_meshes: Dictionary = {}
 # made anew by add_materials().
 static var _card_meshes: Dictionary = {}
 static var _card_mats: Dictionary = {}
+# The Blender trees' meshes in this room's materials, {species: [full, light]} (CampForest.meshes);
+# empty until first asked for, and when trees.glb is missing.
+static var _card_kit: Dictionary = {}
+static var _card_kit_read: bool = false
 
 
 static func _n() -> FastNoiseLite:
@@ -473,7 +497,10 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 ## Returns three groups, each {tree kind: MultiMesh}:
 ##   "far"    low-poly trees further than CARD_REACH from the road (drawn on both looks),
 ##   "near"   low-poly trees nearer than that (the Low look),
-##   "cards"  the same near trees as detailed ones (the Detailed look; kinds CARD_KINDS).
+##   "cards"  the same near trees as detailed ones (the Detailed look): three MultiMeshes per
+##            kind, one per level of detail (card_names()), all holding the same trees in the
+##            same order; custom data = (depth, own number, the level's band from, to), and
+##            the instance colour's alpha says which tree a far picture shows (impostor row).
 ## r81_trip.gd shows "near" or "cards".
 static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
@@ -534,27 +561,72 @@ static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary
 
 ## Turns lists of trees, {tree kind: [[Transform3D, custom data Color], ...]}, into one MultiMesh
 ## per kind that has any ({tree kind: MultiMesh}). r81_pieces.gd uses it for the trees on top of
-## the tunnels. detailed = the lists hold CARD_KINDS, drawn with card_mesh().
+## the tunnels. detailed = the lists hold CARD_KINDS, and each becomes one MultiMesh per level
+## of detail (keys: card_names()), drawn with card_mesh().
 static func tree_batches(lists: Dictionary, detailed: bool = false) -> Dictionary:
 	var out := {}
 	for kind in (CARD_KINDS if detailed else TREES):
 		var list: Array = lists.get(kind, [])
 		if list.is_empty():
 			continue
-		var mm := MultiMesh.new()
-		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.use_custom_data = true
-		# (per-tree colours are not used, but without them the OpenGL renderer hands the shader
-		# the custom data as the colour and every tree comes out black)
-		mm.use_colors = true
-		mm.mesh = card_mesh(kind) if detailed else tree_mesh(kind)
-		mm.instance_count = list.size()
-		for i in list.size():
-			mm.set_instance_transform(i, list[i][0])
-			mm.set_instance_color(i, Color.WHITE)
-			mm.set_instance_custom_data(i, list[i][1])
-		out[kind] = mm
+		# without trees.glb there is one level only: the stand-in tree at every distance
+		var levels := (CARD_LEVELS.size() if card_levels_ready() else 1) if detailed else 1
+		for level in levels:
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_custom_data = true
+			# (without per-tree colours the OpenGL renderer hands the shader the custom data as
+			# the colour and every tree comes out black)
+			mm.use_colors = true
+			var key := (kind + CARD_LEVELS[level]) if detailed else kind
+			mm.mesh = card_mesh(key) if detailed else tree_mesh(kind)
+			mm.instance_count = list.size()
+			var band := CARD_BANDS[level] if levels > 1 else Vector2(0.0, 60000.0)
+			# which row of the far-picture sheets this kind is, as a share of ROW_STEPS
+			# (r81_impostor.gdshader reads it back from the colour's alpha)
+			var row_alpha := (float(CampForest.SPECIES.find(kind)) + 0.5) / IMPOSTOR_ROW_STEPS
+			for i in list.size():
+				mm.set_instance_transform(i, list[i][0])
+				var data: Color = list[i][1]
+				if detailed:
+					# (only the far pictures read the row: on the tree meshes the colour's alpha
+					# scales how far the wind moves a corner, so it stays 1 there)
+					mm.set_instance_color(i, Color(1.0, 1.0, 1.0, row_alpha if level == 2 else 1.0))
+					mm.set_instance_custom_data(i, Color(data.r, data.g, band.x, band.y))
+				else:
+					mm.set_instance_color(i, Color.WHITE)
+					mm.set_instance_custom_data(i, data)
+			out[key] = mm
 	return out
+
+
+## The far pictures' row travels as (row + 0.5) / this in the instance colour's alpha; must be
+## the same number in r81_impostor.gdshader (ROW_STEPS) and at least the number of species.
+const IMPOSTOR_ROW_STEPS: float = 8.0
+
+
+## The names of the detailed trees' MultiMeshes in a strip's "cards" group, and of r81_trip.gd's
+## nodes for them: every kind at every level ("oak", "oak_light", "oak_far", "maple", ...).
+static func card_names() -> PackedStringArray:
+	var out := PackedStringArray()
+	for kind in CARD_KINDS:
+		for ending in CARD_LEVELS:
+			out.append(kind + ending)
+	return out
+
+
+## Which level of detail (0 full, 1 light, 2 far picture) a card_names() name is.
+static func card_level(card_name: String) -> int:
+	return 2 if card_name.ends_with("_far") else (1 if card_name.ends_with("_light") else 0)
+
+
+## True when the Blender trees loaded (trees.glb), so the detailed trees have their three
+## levels. add_materials() must have run.
+static func card_levels_ready() -> bool:
+	if not _card_kit_read:
+		_card_kit_read = true
+		_card_kit = CampForest.meshes(_card_mats)
+	return not _card_kit.is_empty()
 
 
 ## The mesh of one tree kind (built once): low-poly, about 10 m tall at scale 1, its foot at the
@@ -601,15 +673,28 @@ static func tree_mesh(kind: String) -> ArrayMesh:
 	return mesh
 
 
-## The mesh of one kind of detailed tree (CARD_KINDS), 1 unit tall with its foot at the origin:
-## the campfire's tree (campfire_trees.gd kit(): a trunk and limbs, and the leaves as cards)
+## The mesh of one kind of detailed tree at one level of detail (a card_names() name), 1 unit
+## tall with its foot at the origin: the campfire's Blender tree (trees.glb through
+## campfire_forest.gd meshes()) or, for the far level, the one square its picture is drawn on,
 ## wearing Route 81's own materials (add_materials() makes them, so it must have run first).
 ## The mesh has its materials on its surfaces: the MultiMeshInstance3D that draws it must not
-## be given a material_override.
-static func card_mesh(kind: String) -> ArrayMesh:
-	if not _card_meshes.has(kind):
-		_card_meshes[kind] = CampTrees.kit(kind, _card_mats)
-	return _card_meshes[kind]
+## be given a material_override. Without trees.glb the full level is the campfire's older
+## code-built tree (campfire_trees.gd kit()) and there are no other levels.
+static func card_mesh(card_name: String) -> ArrayMesh:
+	if _card_meshes.has(card_name):
+		return _card_meshes[card_name]
+	var level := card_level(card_name)
+	var kind := card_name.trim_suffix(CARD_LEVELS[level]) if level > 0 else card_name
+	var mesh: ArrayMesh
+	if not card_levels_ready():
+		mesh = CampTrees.kit(kind, _card_mats)
+	elif level == 2:
+		mesh = CampForest.impostor_mesh()
+		mesh.surface_set_material(0, _card_mats["impostor"])
+	else:
+		mesh = (_card_kit[kind] as Array)[level]
+	_card_meshes[card_name] = mesh
+	return mesh
 
 
 # ── Materials ────────────────────────────────────────────────
@@ -618,8 +703,9 @@ static func card_mesh(kind: String) -> ArrayMesh:
 ## kit["r81"], the list r81_trip.gd writes the altitude and the season to.
 ##   kit["land"]    the ground (r81_terrain.gdshader)
 ##   kit["trees"]   the low-poly trees (r81_tree.gdshader)
-##   the detailed trees' bark and leaves (r81_bark / r81_foliage.gdshader) are not in the kit
-##   by name: card_mesh() puts them on the tree meshes
+##   the detailed trees' bark, leaves and far pictures (r81_bark / r81_foliage /
+##   r81_impostor.gdshader) are not in the kit by name: card_mesh() puts them on the tree
+##   meshes. kit["r81_lod"] lists them: r81_trip.gd writes the camera's place (lod_eye) to those.
 ##   kit["tunnel"]  the tunnels' lining (r81_tunnel.gdshader)
 ##   kit["road81"]  our road, kit["road81_opp"] the other direction's (r81_road.gdshader)
 ##   kit["street_a"] / kit["street_b"] the streetlights' lamp heads (r81_lamp.gdshader)
@@ -639,10 +725,16 @@ static func add_materials(kit: Dictionary) -> void:
 	trees.shader = TREE_SHADER
 	kit["trees"] = Geo._note(kit, trees)
 	own.append(trees)
-	# The detailed trees. The names are the ones campfire_trees.gd kit() looks up: "trunk", and
-	# a leaf material per species. [name, leaf card photo, tint, evergreen]
+	# The detailed trees. The names are the ones campfire_forest.gd meshes() (and the stand-in
+	# campfire_trees.gd kit()) look up: "trunk", and a leaf material per species.
+	# [name, leaf card photo, tint, evergreen]. The Blender trees' leafy cards are small twigs
+	# with their own photos (CampForest.TWIG_PICTURE), as in the campfire.
 	_card_meshes = {}
 	_card_mats = {}
+	_card_kit = {}
+	_card_kit_read = false
+	var lod: Array[ShaderMaterial] = []
+	kit["r81_lod"] = lod
 	var bark := ShaderMaterial.new()
 	bark.shader = BARK_SHADER
 	bark.set_shader_parameter("tex_bark", load(CAMP_TEX + "detail_bark_pine.jpg"))
@@ -650,16 +742,40 @@ static func add_materials(kit: Dictionary) -> void:
 	bark.set_shader_parameter("tex_bark_birch", load(CAMP_TEX + "detail_bark_birch.jpg"))
 	_card_mats["trunk"] = Geo._note(kit, bark)
 	own.append(bark)
+	lod.append(bark)
 	for k: Array in [["fir", "card_fir.png", Color(0.82, 0.95, 0.85), 1.0], ["pine", "card_pine.png", Color(0.9, 1.0, 0.85), 1.0],
 			["leaves", "card_oak.png", Color.WHITE, 0.0], ["leaves_birch", "card_birch.png", Color.WHITE, 0.0],
 			["leaves_maple", "card_maple.png", Color.WHITE, 0.0]]:
 		var leaves := ShaderMaterial.new()
 		leaves.shader = FOLIAGE_SHADER
-		leaves.set_shader_parameter("card", load(CAMP_TEX + String(k[1])))
+		var photo := String(CampForest.TWIG_PICTURE.get(String(k[0]), k[1]))
+		if not ResourceLoader.exists(CAMP_TEX + photo):
+			photo = String(k[1])        # (no Blender trees here: the older trees' own leaf cards)
+		leaves.set_shader_parameter("card", load(CAMP_TEX + photo))
 		leaves.set_shader_parameter("tint", k[2])
 		leaves.set_shader_parameter("evergreen", k[3])
+		leaves.set_shader_parameter("lod_fade", CampForest.LOD_FADE)
 		_card_mats[String(k[0])] = Geo._note(kit, leaves)
 		own.append(leaves)
+		lod.append(leaves)
+	# the far trees: a picture of each tree from eight sides (made by the campfire's
+	# models/make_trees.py), on one square that turns to the camera
+	var far := ShaderMaterial.new()
+	far.shader = IMPOSTOR_SHADER
+	if ResourceLoader.exists(CAMP_TEX + "impostor_color.png"):
+		far.set_shader_parameter("color_sheet", load(CAMP_TEX + "impostor_color.png"))
+		far.set_shader_parameter("normal_sheet", load(CAMP_TEX + "impostor_normal.png"))
+	far.set_shader_parameter("frames", float(CampForest.IMPOSTOR_FRAMES))
+	far.set_shader_parameter("rows", float(CampForest.SPECIES.size()))
+	far.set_shader_parameter("half_size", CampForest.IMPOSTOR_HALF)
+	far.set_shader_parameter("lod_fade", CampForest.LOD_FADE)
+	var leafy := PackedFloat32Array()
+	for sp in CampForest.SPECIES:
+		leafy.append(1.0 if sp in ["oak", "maple", "birch"] else 0.0)
+	far.set_shader_parameter("leafy", leafy)
+	_card_mats["impostor"] = Geo._note(kit, far)
+	own.append(far)
+	lod.append(far)
 	var tunnel := ShaderMaterial.new()
 	tunnel.shader = TUNNEL_SHADER
 	tunnel.set_shader_parameter("tex_concrete", load(TEX + "tunnel_concrete.jpg"))
