@@ -33,6 +33,8 @@ void vertex() {
 	pick = INSTANCE_CUSTOM.g;
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	w.y -= INSTANCE_CUSTOM.r * alt_drop;
+	// (and down with the ground where the drawn land runs out: r81_common r81_tree_taper)
+	w.y += r81_tree_taper(MODEL_MATRIX[3].xyz - vec3(0.0, INSTANCE_CUSTOM.r * alt_drop, 0.0));
 	// a slow lean of the whole tree (the same as its trunk, r81_bark.gdshader) and a quick
 	// flutter of each card
 	float lean = sin(TIME * 0.9 + w.x * 0.11 + w.z * 0.13) + 0.4 * sin(TIME * 2.7 + w.x * 0.6);

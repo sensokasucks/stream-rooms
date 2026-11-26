@@ -13,6 +13,33 @@ uniform float alt_drop = 0.0;
 // 0 = summer greens, 1 = fall colour (the Season choice, r81_season).
 uniform float season = 0.0;
 
+// Where the drawn land ends. r81_trip.gd only dresses the places from BEHIND (640 m) behind the
+// car to AHEAD (960 m) ahead of it. A side that falls to the valley ends out of sight, but a
+// climbing side (the mountainside, the hill over a tunnel) is up to 250 m tall, and where its
+// last place ended it stood cut off like a wall (Sen's PC screenshots, round 5: a flat pale
+// face in the distance from the side cameras). So over the last stretch before either end the
+// high ground is lowered toward the road's level: the mountain runs down into the distance
+// and rises again as the car comes nearer, far off in the haze.
+// wz = the spot's world Z before the road's bend (the car is at 0, ahead is negative).
+// The numbers must stay inside r81_trip.gd BEHIND / AHEAD.
+float r81_far_taper(float wz) {
+	return (1.0 - smoothstep(600.0, 940.0, -wz)) * (1.0 - smoothstep(360.0, 620.0, wz));
+}
+
+// A height y (metres above the road) with that lowering. The first TAPER_KEEP metres stay as
+// they are, so rock cuts' feet, tunnel mouths and everything standing beside the road keep
+// their place; only what is above shrinks.
+const float TAPER_KEEP = 14.0;
+float r81_taper_y(float y, float wz) {
+	return y <= TAPER_KEEP ? y : TAPER_KEEP + (y - TAPER_KEEP) * r81_far_taper(wz);
+}
+
+// How far a tree standing at world position `base` (its foot, already sunk into the valley)
+// moves down with the ground under it: add this to every corner's height.
+float r81_tree_taper(vec3 base) {
+	return r81_taper_y(base.y, base.z) - base.y;
+}
+
 // The leaf colour of a tree or a patch of canopy. green = its summer colour, pick = a number
 // 0..1 that differs from tree to tree (which fall colour it turns), evergreen = 1 for conifers,
 // which stay green.
