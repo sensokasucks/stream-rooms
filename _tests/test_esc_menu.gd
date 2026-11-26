@@ -136,7 +136,7 @@ func _ready() -> void:
 	_check(room_win.borderless and room_win.size == Vector2i(mini(1280, full.x), mini(720, full.y)), "a picked size keeps Borderless at that size (%s)" % room_win.size)
 	AppState.set_setting("window_mode", "windowed")
 	await _secs(0.5)
-	_check(not room_win.borderless and room_win.mode == Window.MODE_WINDOWED, "Windowed has a frame again")
+	_check(not room_win.borderless and room_win.mode == Window.MODE_WINDOWED, "Windowed has a frame again (borderless %s, mode %d; 0 = windowed)" % [room_win.borderless, room_win.mode])
 	_check(room_win.size.x <= 1280 and room_win.size.y <= 720 and room_win.size.x >= 1000, "Windowed uses the picked size (%s)" % room_win.size)
 	_check(DisplayMode.parse_size("1920x1080") == Vector2i(1920, 1080) and DisplayMode.parse_size("") == Vector2i.ZERO and DisplayMode.parse_size("12x9") == Vector2i.ZERO, "window sizes are read safely")
 	# Custom size: type a size, Save as preset -> the window uses it and the dropdown keeps it

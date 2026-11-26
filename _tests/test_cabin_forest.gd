@@ -1,7 +1,7 @@
 extends Node
 ## Cabin: Appalachian Forest (rooms/cabin_forest/, log_cabin_room.gd with scene = "forest",
 ## cabin_forest.gd): the room loads with the cabin and the forest round it (the land with its
-## valley, the creek, the near trees in both looks, the far forest), the sky draws the blue
+## valley, the yard fading softly into the forest floor, the creek (flowing downhill), the near trees in both looks, the far forest), the sky draws the blue
 ## ridges, the trees in front of the deck stay below the view, Season turns the leaves and the
 ## forest floor, and the fireflies come out on dry summer nights only. Saves screenshots of the
 ## deck's view and the cabin from outside by day, at dusk, at night, in autumn, in the rain and in
@@ -79,8 +79,28 @@ func _ready() -> void:
 	# the land, the creek, the far forest
 	var land := room.find_child("Land", true, false) as MeshInstance3D
 	_check(land != null and land.mesh.get_surface_count() == 2, "the land is built (yard and forest floor)")
+	if land != null and land.mesh.get_surface_count() == 2:
+		# the yard's grass fades into the forest floor (UV2.x = the other photo's share) over a
+		# band of corners, instead of the hard zigzag edge there was before round 8
+		var u2: PackedVector2Array = land.mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV2]
+		var between := 0
+		for u in u2:
+			between += 1 if u.x > 0.05 and u.x < 0.95 else 0
+		_check(between > 50, "the yard's edge fades into the forest floor (%d corners in between)" % between)
 	var creek := room.find_child("Creek", true, false) as MeshInstance3D
 	_check(creek != null and parts.has("stream_mat"), "the creek runs past the cabin")
+	if creek != null:
+		# camp_stream.gdshader moves the ripples towards smaller UV.y: UV.y must fall going
+		# downhill, or the water flows uphill (it did, before round 7)
+		var arr := creek.mesh.surface_get_arrays(0)
+		var cv: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var cu: PackedVector2Array = arr[Mesh.ARRAY_TEX_UV]
+		var hi := 0
+		var lo := 0
+		for i in cv.size():
+			hi = i if cv[i].y > cv[hi].y else hi
+			lo = i if cv[i].y < cv[lo].y else lo
+		_check(cu[hi].y > cu[lo].y, "the creek flows downhill (UV.y %.0f at the top, %.0f at the bottom)" % [cu[hi].y, cu[lo].y])
 	var front_y := Forest.height(-2.0, -90.0)
 	var back_y := Forest.height(-2.0, 90.0)
 	_check(front_y < -15.0 and back_y > 5.0, "the valley falls away in front of the deck (%.1f m) and the slope rises behind (%.1f m)" % [front_y, back_y])

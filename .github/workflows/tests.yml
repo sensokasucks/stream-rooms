@@ -27,9 +27,9 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
-    # The fast tests take about 12 minutes on a normal GitHub machine and a third longer on a
-    # slow one (seen 2026-11-26: every test passed, the job was stopped at 15), so leave room.
-    timeout-minutes: 25
+    # The room tests (campfire, Route 22, the cabin scenes) are slow under software drawing,
+    # so the whole job now needs more than 15 minutes. Raised 2026-11-26 for the release.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 

@@ -257,7 +257,7 @@ var _applying_pause: bool = false       # guest: applying the host's pause-to-re
 ## Keep in step with the "cabin_" settings in AppState.BASE_DEFAULTS (all but cabin_detail and
 ## cabin_weather_fx, which are each PC's own: Set detail and Rain and snow amount).
 const SHARED_CABIN: Array[String] = ["cabin_fire", "cabin_lamps", "cabin_view", "cabin_time", "cabin_day_minutes", "cabin_clouds", "cabin_stars",
-	"cabin_weather", "cabin_fog", "cabin_wind", "cabin_snow", "cabin_season"]
+	"cabin_weather", "cabin_fog", "cabin_wind", "cabin_snow", "cabin_season", "cabin_aurora"]
 
 
 ## Builds the shared-key whitelist and hooks up SceneMultiplayer's signals (password step,

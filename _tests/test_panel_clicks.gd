@@ -162,14 +162,15 @@ func _ready() -> void:
 	await _secs(0.3)
 	var cam_clicks := 0
 	picked.clear()
-	EventBus.camera_preset_requested.connect(on_preset)
+	# camera buttons ask for a saved view by id (camera_view_action "go"), the same as the first check above
+	EventBus.camera_view_action.connect(on_view)
 	for c in (panel._camera_box as Node).get_children():
 		if c is Button and (c as Button).is_visible_in_tree():
 			(tabs.get_current_tab_control() as ScrollContainer).ensure_control_visible(c)
 			await get_tree().process_frame
 			await _click(c)
 			cam_clicks += 1
-	EventBus.camera_preset_requested.disconnect(on_preset)
+	EventBus.camera_view_action.disconnect(on_view)
 	_check(cam_clicks > 0 and picked.size() == cam_clicks, "every camera button works (%d of %d)" % [picked.size(), cam_clicks])
 	print("tick boxes clicked: ", clicked)
 	_check(clicked > 20 and stuck.is_empty(), "every tick box clicks on and off (%d; stuck: %s)" % [clicked, ", ".join(stuck)])

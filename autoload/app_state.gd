@@ -47,6 +47,7 @@ const BASE_DEFAULTS: Dictionary = {
 	"cabin_wind": 0.4,           # wind: 0 = still, 1 = a breeze, 2 = a gale (a storm blows at least 1.4)
 	"cabin_snow": 0.0,           # snow lying on the ground and roofs, 0..1 (more piles up while it snows)
 	"cabin_weather_fx": 1.0,     # how many raindrops and snowflakes this PC draws, 0..1 (never shared)
+	"cabin_aurora": 1.0,         # Cabin: Frozen North: the northern lights on clear nights (0 = none, 2 = strong)
 	"cabin_season": "summer",    # Cabin: Appalachian Forest: "summer" / "autumn" (leaves, forest floor, fireflies)
 	"cabin_detail": "auto",      # how detailed the cabin is drawn on this PC (never shared): auto (from graphics_quality) | low (Simple) | full (Detailed: photo textures, leaf trees)
 	"cabin_view": "great_room",  # "Gather in": great_room | den. Where the presenters sit and which screen is the main one (reloads the room)
