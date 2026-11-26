@@ -97,8 +97,14 @@ const SHARED_BASE: Array[String] = ["screen_peer", "screen_tab_peer", "house_lig
 	# PC loads rooms itself), r22_bb_folder / r22_bb_core (pictures are each PC's own files).
 	# The Cruise's distance driven travels separately (room event "r22_travel", r22_trip.gd).
 	"r22_time", "r22_day_minutes", "r22_weather", "r22_clouds", "r22_stars", "r22_heat", "r22_wind",
-	"r22_speed", "r22_curves", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
+	"r22_speed", "r22_curves", "r22_hills", "r22_traffic", "r22_bb_amount", "r22_bb_order", "r22_bb_lit", "r22_bb_filler",
 	"r22_bb_classic", "r22_bb_monopole", "r22_bb_wooden", "r22_bb_rooftop", "r22_bb_neon", "r22_bb_trailer",
+	# the Cruise's dashboard bobbleheads (rooms/route22/r22_bobbles.gd): everyone sees them alike
+	"r22_bobbles", "r22_bobble_size", "r22_bobble_wobble",
+	"r22_bobble_1_x", "r22_bobble_1_z", "r22_bobble_1_y", "r22_bobble_1_turn",
+	"r22_bobble_2_x", "r22_bobble_2_z", "r22_bobble_2_y", "r22_bobble_2_turn",
+	"r22_bobble_3_x", "r22_bobble_3_z", "r22_bobble_3_y", "r22_bobble_3_turn",
+	"r22_bobble_4_x", "r22_bobble_4_z", "r22_bobble_4_y", "r22_bobble_4_turn",
 	# Route 81 (rooms/route81) drives on the r22_ keys above; its own: how the road is made up
 	# (every PC must build the same road) and the season. Not shared: r81_forest (each PC's own
 	# tree count), r22_land (each PC loads rooms itself). Its distance driven: room event "r81_travel".

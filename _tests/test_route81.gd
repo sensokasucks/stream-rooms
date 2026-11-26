@@ -21,6 +21,7 @@ const Land := preload("res://rooms/route81/r81_land.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Places := preload("res://rooms/route81/r81_places.gd")
 const Billboards := preload("res://rooms/route22/r22_billboards.gd")
+const DesertTrip := preload("res://rooms/route22/r22_trip.gd")
 var _fails: int = 0
 var _out: String = ""
 
@@ -93,7 +94,8 @@ func _detailed_trees(trip: Trip) -> void:
 		var batches: Array[MultiMesh] = [t.multimesh, light.multimesh, far.multimesh]
 		for l in 3:
 			var data := batches[l].get_instance_custom_data(0)
-			if absf(data.b - Land.CARD_BANDS[l].x) > 0.01 or absf(data.a - Land.CARD_BANDS[l].y) > 1.0:
+			var band := Land.group_band("cards", l)
+			if absf(data.b - band.x) > 0.01 or absf(data.a - band.y) > 1.0:
 				bad.append("%s level %d: band %.1f..%.1f" % [t.name, l, data.b, data.a])
 			if not batches[l].get_instance_transform(0).origin.is_equal_approx(t.multimesh.get_instance_transform(0).origin):
 				bad.append("%s level %d: its first tree stands elsewhere" % [t.name, l])
@@ -102,6 +104,26 @@ func _detailed_trees(trip: Trip) -> void:
 		if far.multimesh.mesh.get_faces().size() != 6:
 			bad.append("%s: the far level is not one square" % t.name)
 	_check(sets >= 6 and bad.is_empty(), "%d sets of detailed trees: same trees at every level, each with its band %s" % [sets, str(bad.slice(0, 4))])
+	# Every tree is a Blender tree on the Detailed look (Sen saw low-poly ones behind the first
+	# rows): the trees further from the road are in groups that start at a lighter level
+	# (Land.CARD_GROUPS), and no low-poly tree is shown.
+	var plain := 0
+	var further := {}
+	for node: Node in trip.find_children("Trees*", "MultiMeshInstance3D", true, false):
+		var t := node as MultiMeshInstance3D
+		if t.multimesh == null or t.multimesh.instance_count == 0 or not t.is_visible_in_tree():
+			continue
+		if not t.has_meta("detailed"):
+			plain += 1
+		elif String(t.get_meta("group")) != "cards":
+			further[String(t.get_meta("group"))] = true
+			var level := Land.card_level(String(t.name))
+			var band := Land.group_band(String(t.get_meta("group")), level)
+			var data := t.multimesh.get_instance_custom_data(0)
+			if absf(data.b - band.x) > 0.01 or absf(data.a - band.y) > 1.0:
+				bad.append("%s: band %.1f..%.1f" % [t.name, data.b, data.a])
+	_check(plain == 0 and further.has("cards_mid") and further.has("cards_out") and bad.is_empty(),
+		"all the trees are Blender trees, the further ones from a lighter level (%d low-poly left, %s) %s" % [plain, str(further.keys()), str(bad.slice(0, 4))])
 	for i: int in [5, 3, 0, 6]:
 		EventBus.camera_preset_requested.emit(i)
 		await _secs(2.5)
@@ -220,8 +242,20 @@ func _ready() -> void:
 	for b in range(100, 800):
 		kinds[Trip.boundary(1, b)] = true
 		kinds[Trip.boundary(-1, b)] = true
-	_check(kinds.has("woods") and kinds.has("cut") and kinds.has("drop") and kinds.has("mount") and not kinds.has("field") and not kinds.has("water"),
-		"the ridge road has woods, rock cuts, overlooks and mountains (%s)" % str(kinds.keys()))
+	_check(kinds.has("woods") and kinds.has("slope") and kinds.has("cut") and kinds.has("drop") and kinds.has("mount") and not kinds.has("field") and not kinds.has("water"),
+		"the ridge road has woods, the mountainside, rock cuts, overlooks and mountains (%s)" % str(kinds.keys()))
+	# The road runs along a mountainside (Trip.uphill): the mountain's side never falls away
+	# and the valley's side never rises into the mountainside (rock cuts there only lead into
+	# a tunnel, which boundary() decides before it looks at the side).
+	var wrong_side := 0
+	var hill_sides := {}
+	for b in range(100, 2400):
+		var hill_side := Trip.uphill(Trip.region_of(b))
+		hill_sides[hill_side] = true
+		wrong_side += 1 if Trip.boundary(hill_side, b) == "drop" or Trip.boundary(-hill_side, b) == "slope" else 0
+	_check(wrong_side == 0 and hill_sides.size() == 2, "the mountain is on one side and the valley on the other, and they swap between regions (%d wrong)" % wrong_side)
+	_check(Land.slope_height(9.0) < 1.0 and Land.slope_height(150.0) > 40.0 and Land.slope_height(700.0) > Land.slope_height(300.0),
+		"the mountainside climbs away from the road (%.0f m up at 150 m out)" % Land.slope_height(150.0))
 	AppState.set_setting("r81_views", 0.0)
 	var drops := 0
 	for b in range(100, 800):
@@ -251,7 +285,7 @@ func _ready() -> void:
 		_check(k_drop > 0, "found an overlook ahead (place %d)" % k_drop)
 		trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
 		await _secs(1.5)
-		_check(trip.altitude >= 39.0 and trip.altitude <= 241.0, "the road is %.0f m above the valley" % trip.altitude)
+		_check(trip.altitude >= 29.0 and trip.altitude <= 141.0, "the road is %.0f m above the valley" % trip.altitude)
 		await _shot("r81_overlook_chase")
 		EventBus.camera_preset_requested.emit(2)
 		await _secs(1.0)
@@ -362,7 +396,7 @@ func _ready() -> void:
 			EventBus.camera_preset_requested.emit(5)
 			trip.set_travel(float(k_f) * Land.LENGTH - 130.0)
 			await _secs(1.5)
-			_check((trip.altitude < 80.0) == (land != "coal"), "%s country's road is %s (%.0f m)" % [land, "high" if land == "coal" else "low", trip.altitude])
+			_check((trip.altitude < 67.0) == (land != "coal"), "%s country's road is %s (%.0f m)" % [land, "high" if land == "coal" else "low", trip.altitude])
 			var placed: Array = room.find_children("PlacesR", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
 				return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
 			_check(placed.size() >= 1, "the %s stands by the road (%d places)" % [feature, placed.size()])
@@ -457,7 +491,7 @@ func _ready() -> void:
 		return Trip.boundary(1, k) == "drop" and Trip.boundary(1, k + 5) == "drop" and Trip.part_at(k) == "")
 	trip.set_travel(float(k_high) * Land.LENGTH + 180.0)
 	await _secs(1.5)
-	_check(trip.altitude > 130.0 and trip.altitude <= 296.0, "the Endless Mountains' road is high (%.0f m)" % trip.altitude)
+	_check(trip.altitude > 86.0 and trip.altitude <= 214.0, "the Endless Mountains' road is high (%.0f m)" % trip.altitude)
 	await _shot("r81_endless_overlook")
 	EventBus.camera_preset_requested.emit(6)
 	await _secs(1.0)
@@ -465,7 +499,7 @@ func _ready() -> void:
 	EventBus.camera_preset_requested.emit(5)
 	AppState.set_setting("r81_tunnels", "never")
 	AppState.set_setting("r81_country", "tour")
-	_check(Trip.country(Trip.region_of(10)) == "ridge" and Trip.country(Trip.region_of(Trip.NO_TUNNEL_COUNTRY + 10)) == "farm" and Trip.boundary(1, Trip.NO_TUNNEL_COUNTRY) == "woods",
+	_check(Trip.country(Trip.region_of(10)) == "ridge" and Trip.country(Trip.region_of(Trip.NO_TUNNEL_COUNTRY + 10)) == "farm" and (Trip.boundary(1, Trip.NO_TUNNEL_COUNTRY) == "woods" or Trip.boundary(1, Trip.NO_TUNNEL_COUNTRY) == "slope"),
 		"Tunnels Never: the country still changes, through the woods")
 	AppState.set_setting("r81_tunnels", "medium")
 	AppState.set_setting("r81_country", "ridge")
@@ -561,11 +595,69 @@ func _ready() -> void:
 	var turn0 := backdrop.rotation.y
 	trip.set_travel(trip.travel + 1400.0)
 	await _secs(0.5)
-	_check(absf(backdrop.rotation.y - turn0) > 0.02 and backdrop.position.y < -100.0, "the far ridges swing with the road and lie below it (%.2f rad, %.0f m)" % [backdrop.rotation.y - turn0, backdrop.position.y])
+	_check(absf(backdrop.rotation.y - turn0) > 0.02 and backdrop.position.y < -10.0, "the far ridges swing with the road and lie below it (%.2f rad, %.0f m)" % [backdrop.rotation.y - turn0, backdrop.position.y])
 	AppState.set_setting("r22_curves", 0.0)
 	await _secs(0.3)
 	_check(absf(trip.bend) < 0.0000001 and absf(trip.heading) < 0.0001, "Curves 0: dead straight")
 	AppState.set_setting("r22_curves", 0.5)
+	# Hills has its own slider (r22_hills) since Curves only bends the road sideways
+	AppState.set_setting("r22_hills", 0.0)
+	await _secs(0.3)
+	var flat := absf(trip.hill)
+	AppState.set_setting("r22_hills", 1.0)
+	var rolling := false
+	for i in 40:
+		trip.set_travel(trip.travel + 200.0)
+		await _secs(0.05)
+		rolling = rolling or absf(trip.hill) > 0.0000001
+	_check(flat < 0.0000001 and rolling, "Hills 0: a level road; Hills 100: it rises and dips")
+	AppState.set_setting("r22_hills", 0.5)
+	# Speed is shown in miles per hour; the setting itself stays in km/h
+	var speed: Dictionary = DesertTrip.speed_control("")
+	_check(String(speed["format"]) % (80.5 * float(speed["scale"])) == "50 mph", "the Speed slider reads in mph (%s)" % (String(speed["format"]) % (80.5 * float(speed["scale"]))))
+
+	# ── the presenters' bobbleheads on the dash (rooms/route22/r22_bobbles.gd) ──
+	AppState.set_setting(AppState.presenter_key(1, "on"), true)
+	AppState.set_setting(AppState.presenter_key(2, "on"), true)
+	AppState.set_setting(AppState.presenter_key(3, "on"), false)
+	AppState.set_setting("r22_bobbles", true)
+	await _secs(0.5)
+	var bob1 := room.find_child("Bobble1", true, false) as Node3D
+	var bob3 := room.find_child("Bobble3", true, false) as Node3D
+	var stage := room.get_node_or_null("Presenters") as PresenterStage
+	var bob_pic := bob1.find_child("Picture", true, false) as MeshInstance3D if bob1 else null
+	_check(bob1 != null and bob3 != null and bob1.is_visible_in_tree() and not bob3.is_visible_in_tree(),
+		"a bobblehead stands on the dash for each presenter who is on")
+	_check(bob_pic != null and stage != null and bob_pic.material_override == stage.get_presenter(1).get_picture().material_override,
+		"a bobblehead shows its presenter's own picture")
+	var bob_at := bob1.position
+	AppState.set_setting("r22_bobble_1_x", -0.3)
+	AppState.set_setting("r22_bobble_1_z", 0.2)
+	AppState.set_setting("r22_bobble_1_turn", 90.0)
+	AppState.set_setting("r22_bobble_size", 2.0)
+	await _secs(0.3)
+	_check(absf(bob1.position.x + 0.3) < 0.001 and absf(bob1.position.z - (bob_at.z - 0.2)) < 0.001 and absf(bob1.rotation_degrees.y - 90.0) < 0.1 and absf(bob1.scale.x - 2.0) < 0.001,
+		"its sliders move, turn and size it")
+	AppState.set_setting("r22_bobble_1_x", -0.12)
+	AppState.set_setting("r22_bobble_1_z", 0.0)
+	AppState.set_setting("r22_bobble_1_turn", 0.0)
+	AppState.set_setting("r22_bobble_size", 1.0)
+	var head1 := bob1.get_node("Head") as Node3D
+	var nodded := false
+	for i in 30:
+		await _secs(0.1)
+		nodded = nodded or absf(head1.rotation.x) > 0.002
+	_check(nodded, "the heads nod while the car drives")
+	if not quick:
+		for cam: int in [8, 4, 2]:
+			EventBus.camera_preset_requested.emit(cam)
+			await _secs(1.0)
+			await _shot("r81_bobbleheads_cam%d" % cam)
+		EventBus.camera_preset_requested.emit(5)
+	AppState.set_setting("r22_bobbles", false)
+	await _secs(0.3)
+	_check(not bob1.is_visible_in_tree(), "Bobbleheads off: none on the dash")
+	AppState.set_setting("r22_bobbles", true)
 
 	# ── parked, traffic, co-stream ──
 	var traffic: Node = room.call("get_traffic")

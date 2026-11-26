@@ -83,9 +83,22 @@ func _exit_tree() -> void:
 		EventBus.net_room_event.disconnect(_on_net_room_event)
 
 
-## r22_speed in metres a second (the setting is km/h, 0..120).
+## The Speed slider (r22_speed) is kept in km/h, as it always was, so saved settings and
+## co-stream guests on it stay right; the Room tab shows it in miles an hour (Sen, 2026-11-26):
+## one step of the slider is one mph (KMH_PER_MPH), and its top is 80 mph (MAX_KMH).
+const KMH_PER_MPH: float = 1.609344
+const MAX_KMH: float = 128.74752
+
+
+## The Speed control both Cruises put on the Room tab (see above; `tooltip`: the room's own).
+static func speed_control(tooltip: String) -> Dictionary:
+	return {"key": "r22_speed", "label": "Speed", "min": 0.0, "max": MAX_KMH, "step": KMH_PER_MPH,
+		"format": "%d mph", "scale": 1.0 / KMH_PER_MPH, "zero": "Parked", "tooltip": tooltip}
+
+
+## r22_speed in metres a second.
 static func _target_speed() -> float:
-	return clampf(float(AppState.get_setting("r22_speed")), 0.0, 120.0) / 3.6
+	return clampf(float(AppState.get_setting("r22_speed")), 0.0, MAX_KMH) / 3.6
 
 
 ## The Landmarks and stops slider as a share of places, 0..1, in hundredths (so every PC rounds
@@ -155,9 +168,11 @@ func tick(delta: float, wind: float, night: float) -> void:
 	speed = move_toward(speed, _target_speed(), delta * 3.0)       # about 3 m/s² either way
 	travel += speed * delta
 	# the curves and hills: slow waves along the road (the same on every PC for the same travel)
+	# (Curves = the sideways bends, r22_curves; Hills = the rises and dips, r22_hills)
 	var curves := clampf(float(AppState.get_setting("r22_curves")), 0.0, 1.0)
+	var hills := clampf(float(AppState.get_setting("r22_hills")), 0.0, 1.0)
 	bend = curves * MAX_BEND * (0.7 * sin(travel / 900.0) + 0.3 * sin(travel / 370.0 + 1.3))
-	hill = curves * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
+	hill = hills * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
 	_place()
 	_bend_words()
 	for k: int in _placed:

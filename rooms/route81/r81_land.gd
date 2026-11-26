@@ -11,7 +11,9 @@ extends RefCounted
 ## ground here is not flat, so each place gets a strip of land on its left and one on its right,
 ## out to REACH metres. A strip's cross-section is one of a few "edge profiles" (KINDS):
 ##   woods   a ditch, then forest on gently rising ground,
-##   cut     a blasted rock wall close to the road, forest on the hill above it,
+##   slope   the mountainside the highway is benched into: a ditch, then forest climbing
+##           steeply to a crest high above the road (SLOPE_HIGH); it never falls to the valley,
+##   cut     a blasted rock wall close to the road, the same mountainside above it,
 ##   drop    a guardrail, then the ground falls away into the valley (the overlook side),
 ##   mount   the mountain a tunnel goes through: solid above the road,
 ##   field   farmland: a ditch, a wire fence (r81_places.gd), then flat crop fields in strips
@@ -31,11 +33,12 @@ extends RefCounted
 ## The shaders lower it by depth * altitude (r81_common.gdshaderinc), so the drop side is a
 ## shallow field when the road is low and a 200 m fall when it is on the ridge. Trees carry
 ## the depth of the ground they stand on.
-## The highway rides a ridge: far from the road the land falls to the valley on both sides,
-## whatever the profile (far_depth(), and every profile's height runs into far_height() towards
-## REACH). Only an overlook falls away right at the guardrail; woods, a rock cut or a tunnel's
-## mountain stand between the road and the fall. Because all profiles agree far out, a place
-## where one turns into another is a hillside, never a 200 m wall across the view.
+## The highway runs along a mountainside, as the real I-81 does (Sen, 2026-11-26: it is "not at
+## the top of mountains, but the sides and through them"): r81_trip.gd gives every stretch of
+## country an uphill side (uphill()), whose profiles are slope, cut and the tunnels' mountain.
+## Those climb and stay up (depth 0, no fall to the valley). The other side is the valley
+## side: its profiles fall to the valley far from the road (far_depth(), and their height
+## runs into far_height() towards REACH); an overlook falls away right at the guardrail.
 ##
 ## Across the road (X, metres; 0 = the dashed line between our two lanes, +X = our right):
 ##   our road ROAD_L..ROAD_R, the grass median to OPP_R, the other direction's road to OPP_L.
@@ -75,7 +78,11 @@ const OPP_L: float = -30.8
 ## How far the land reaches from the road's edge, metres.
 const REACH: float = 900.0
 ## The edge profiles (see the top of the file).
-const KINDS: PackedStringArray = ["woods", "cut", "drop", "mount", "field", "lawn", "lot", "water"]
+const KINDS: PackedStringArray = ["woods", "slope", "cut", "drop", "mount", "field", "lawn", "lot", "water"]
+## The mountainside (slope, and above a cut): how high its crest stands over the road and the
+## distance over which it gets most of the way there (metres; see slope_height()).
+const SLOPE_HIGH: float = 215.0
+const SLOPE_RUN: float = 400.0
 ## Fields and lawns are flat and stay at road height out to this far from the road (so farms,
 ## towns and gas stations can stand on them: r81_places.gd); beyond it they fall to the valley
 ## like everything else.
@@ -87,11 +94,15 @@ const WATER_Y: float = -92.6
 ## tunnel mouth, and how far outside the paved edge the tunnel walls stand.
 const TUNNEL_H: float = 9.0
 const MOUNT_RISE: float = 42.0
-const TRENCH: float = 0.6
+## (The tunnel's tiled lining stands at 0.55 m, r81_pieces.gd HALF_W. The rock starts a hand's
+## width behind it, not right on it: the lining is cut every 8 m and the land every 5 m, so on
+## a curve the two bend a little differently and rock on the same line poked through the tiles
+## as dark wedges. Sen, 2026-11-26.)
+const TRENCH: float = 0.8
 ## Distances from the paved edge (metres) where the land mesh has a line of corners: close
 ## together near the road, where the ditch, the rock face and the guardrail edge are, and
 ## further and further apart out to REACH.
-const U_LIST: PackedFloat32Array = [0.0, 0.55, 0.6, 1.5, 2.3, 3.0, 3.8, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 11.0, 13.0, 15.0,
+const U_LIST: PackedFloat32Array = [0.0, TRENCH - 0.05, TRENCH, 1.5, 2.3, 3.0, 3.8, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 11.0, 13.0, 15.0,
 	18.0, 21.0, 25.0, 30.0, 36.0, 44.0, 54.0, 66.0, 80.0, 98.0, 120.0, 150.0, 190.0, 240.0, 300.0, 380.0, 480.0, 600.0, 740.0, 900.0]
 ## Rows of corners along a place: one every 5 m.
 const ROW_STEP: float = 5.0
@@ -111,15 +122,30 @@ const CARD_REACH: float = 46.0
 ## camera. Each level is its own MultiMesh per kind, named the kind plus one of these endings
 ## (card_names()); the shaders fold away the trees outside the level's band (CARD_BANDS).
 const CARD_LEVELS: PackedStringArray = ["", "_light", "_far"]
-## Each level's band, metres from the camera [from, to]: the campfire's distances, so a tree
-## changes level at the same range in both rooms. They travel in each tree's custom data
-## (.b = from, .a = to; half floats in the OpenGL renderer, so keep them below 65000).
-const CARD_BANDS: Array[Vector2] = [Vector2(0.0, CampForest.LOD1_FROM), Vector2(CampForest.LOD1_FROM, CampForest.IMPOSTOR_FROM),
-	Vector2(CampForest.IMPOSTOR_FROM, 60000.0)]
+## Each level's band, metres from the camera [from, to]. Further out than the campfire's
+## (26 / 52 m): there the camera stands still, here the trees come at the car at up to 80 mph,
+## and a change of level 26 m ahead happens right in front of the windscreen (Sen, 2026-11-26).
+## They travel in each tree's custom data (.b = from, .a = to; half floats in the OpenGL
+## renderer, so keep them below 65000).
+const CARD_FULL_TO: float = 48.0
+const CARD_LIGHT_TO: float = 120.0
+const CARD_BANDS: Array[Vector2] = [Vector2(0.0, CARD_FULL_TO), Vector2(CARD_FULL_TO, CARD_LIGHT_TO), Vector2(CARD_LIGHT_TO, 60000.0)]
+## Metres round each change over which two levels share a tree and dissolve into each other
+## (camp_lod.gdshaderinc lod_fade): wider than the campfire's 8 m for the same reason.
+const CARD_FADE: float = 18.0
+## The detailed trees come in three groups by how far from the road's edge they stand, so the
+## heavy meshes are only handed to the GPU where a camera can get near them:
+##   "cards"      up to CARD_REACH: all three levels,
+##   "cards_mid"  up to CARD_MID_REACH: the light tree and the far picture,
+##   "cards_out"  beyond, to TREE_REACH: the far picture only.
+## [group, the levels it has]. A group's first level starts at 0 m.
+const CARD_GROUPS: Array = [["cards", [0, 1, 2]], ["cards_mid", [1, 2]], ["cards_out", [2]]]
+const CARD_MID_REACH: float = 110.0
 ## How much wider than its band a level's node is shown (r81_trip.gd sets the nodes' visibility
 ## range with it, so the full and light meshes of far places are skipped outright): a place's
-## strip of detailed trees is 80 m by CARD_REACH, so half its diagonal, plus half the fade.
-const CARD_RANGE_PAD: float = 52.0
+## strip of "cards" trees is 80 m by CARD_REACH and of "cards_mid" trees 80 m by 64 m, so a
+## little over half the diagonal, plus half the fade.
+const CARD_RANGE_PAD: float = 62.0
 ## A power line's place (r81_trip.gd wires_at) uses this strip variant (the `salt` of
 ## side_strip; the left side's is 50 more, like every variant): a corridor WIRE_CUT metres wide
 ## is kept clear of trees across the middle of the place, where the line crosses the road.
@@ -171,6 +197,9 @@ static func _drop_depth(u: float) -> float:
 ## The depth of a profile at u: an overlook's from the guardrail on, any other's only from
 ## about 40 m out (their first 40 m stay at road height), the same as the overlook's from 110 m.
 static func far_depth(kind: String, u: float) -> float:
+	# the mountainside stays up: nothing on it sinks with the valley
+	if kind == "slope" or kind == "cut" or kind == "mount":
+		return 0.0
 	if kind == "drop":
 		return _drop_depth(u)
 	if kind == "water":
@@ -196,7 +225,14 @@ static func flat_height(kind: String, u: float) -> float:
 	return 0.3 + smoothstep(12.0, 60.0, u) * 0.9 * _nx(u * 0.6, 7.0)
 
 
-## The long slope every profile ends on (metres, before the depth lowers it further): the
+## The mountainside's height at `u` metres from the paved edge (the "slope" profile without its
+## bumps; a cut joins it above its rock wall): steep beside the road, easing off towards a
+## crest SLOPE_HIGH up.
+static func slope_height(u: float) -> float:
+	return 0.4 + SLOPE_HIGH * (1.0 - exp(-maxf(u - 9.0, 0.0) / SLOPE_RUN))
+
+
+## The long slope every valley-side profile ends on (metres, before the depth lowers it further): the
 ## overlook's, 24 m down at the foot of its bank and 8 m lower every 100 m from there.
 static func far_height(u: float) -> float:
 	return -24.06 - 0.08 * (u - 43.0)
@@ -256,9 +292,11 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 			elif u < top + 4.0:
 				y = h
 			else:
+				# above the wall the mountainside goes on up, as beside a "slope"
 				var v := u - top - 4.0
-				y = h + 0.5 * minf(v, 140.0)
+				y = h + slope_height(u) - slope_height(top + 4.0)
 				y += smoothstep(0.0, 60.0, v) * (5.0 * _nx(u, 2.0) + 4.0 * env * _nz(u, zt, salt))
+				y += smoothstep(120.0, 400.0, u) * 16.0 * _nx(u * 0.25, 6.0)
 			grass = 1.0 - smoothstep(3.0, 4.2, u)
 			rock = smoothstep(3.6, 4.5, u) * (1.0 - smoothstep(top + 0.5, top + 3.0, u))
 			forest = smoothstep(top + 1.0, top + 4.0, u)
@@ -274,6 +312,21 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 			y += smoothstep(20.0, 120.0, u) * (4.0 * _nx(u, 3.0) + 3.0 * env * _nz(u, zt, salt))
 			grass = 1.0 - smoothstep(34.0, 44.0, u)
 			forest = smoothstep(38.0, 46.0, u)
+		"slope":
+			# the mountainside: shoulder, ditch, then forest climbing away from the road, with
+			# humps and benches of its own (the big ones depend on u only, so seams match)
+			if u < 3.0:
+				y = -0.03 * u
+			elif u < 5.5:
+				y = lerpf(-0.09, -0.7, (u - 3.0) / 2.5)
+			elif u < 9.0:
+				y = lerpf(-0.7, 0.4, (u - 5.5) / 3.5)
+			else:
+				y = slope_height(u)
+				y += smoothstep(9.0, 70.0, u) * (5.0 * _nx(u, 1.0) + 4.0 * env * _nz(u, zt, salt))
+				y += smoothstep(120.0, 400.0, u) * 16.0 * _nx(u * 0.25, 6.0)
+			grass = 1.0 - smoothstep(7.5, 10.0, u)
+			forest = 1.0 - grass
 		_:
 			# woods: shoulder, ditch, then forest on gently rising, rolling ground
 			if u < 3.0:
@@ -287,8 +340,9 @@ static func edge(kind: String, u: float, zt: float, salt: float) -> PackedFloat3
 				y += smoothstep(9.0, 70.0, u) * (5.0 * _nx(u, 1.0) + 4.0 * env * _nz(u, zt, salt))
 			grass = 1.0 - smoothstep(7.5, 10.0, u)
 			forest = 1.0 - grass
-	# far out every profile runs into the same long slope down to the valley (see the top)
-	if kind != "drop" and kind != "water":
+	# far out every valley-side profile runs into the same long slope down to the valley (see
+	# the top); the mountainside does not
+	if kind != "drop" and kind != "water" and kind != "slope" and kind != "cut":
 		y = lerpf(y, far_height(u), smoothstep(400.0, REACH, u))
 	depth = far_depth(kind, u)
 	slope = (far_depth(kind, u + 1.0) - far_depth(kind, u - 1.0)) * 0.5
@@ -305,8 +359,8 @@ static func mount(u: float, rise: float) -> PackedFloat32Array:
 	var base := edge("cut", u, 0.0, 0.0)
 	if u < TRENCH - 0.02:
 		return PackedFloat32Array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-	# (base already runs into the far slope; the mountain does the same, and sinks with it)
-	var m := lerpf(mount_height(rise, u), far_height(u), smoothstep(400.0, REACH, u))
+	# (the mountain is the mountainside's spur across the road: it stays up on both sides)
+	var m := mount_height(rise, u)
 	return PackedFloat32Array([maxf(m, base[0]), base[1], base[2], 0.0, 0.0, 1.0, 0.0])
 
 
@@ -495,24 +549,26 @@ static func side_strip(side: int, from: String, to: String, salt: int) -> Dictio
 ## r81_tree.gdshader. The trees are in random order, so drawing only the first part of each
 ## MultiMesh (the Forest density slider, r81_trip.gd) thins the forest evenly.
 ## Returns three groups, each {tree kind: MultiMesh}:
-##   "far"    low-poly trees further than CARD_REACH from the road (drawn on both looks),
+##   "far"    low-poly trees further than CARD_REACH from the road (the Low look),
 ##   "near"   low-poly trees nearer than that (the Low look),
-##   "cards"  the same near trees as detailed ones (the Detailed look): three MultiMeshes per
-##            kind, one per level of detail (card_names()), all holding the same trees in the
-##            same order; custom data = (depth, own number, the level's band from, to), and
-##            the instance colour's alpha says which tree a far picture shows (impostor row).
-## r81_trip.gd shows "near" or "cards".
+##   "cards", "cards_mid", "cards_out"  the same trees, all of them, as detailed ones (the
+##            Detailed look; CARD_GROUPS): per kind one MultiMesh per level of detail the group
+##            has (card_names()), all holding the same trees in the same order; custom data =
+##            (depth, own number, the level's band from, to), and the instance colour's alpha
+##            says which tree a far picture shows (impostor row).
+## r81_trip.gd shows the low-poly groups or the detailed ones.
 static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5000 + salt * 131 + (7 if side > 0 else 0)
 	var far := {}
 	var near := {}
-	var cards := {}
+	var cards := {"cards": {}, "cards_mid": {}, "cards_out": {}}
 	for kind in TREES:
 		far[kind] = []
 		near[kind] = []
 	for kind in CARD_KINDS:
-		cards[kind] = []
+		for group: String in cards:
+			cards[group][kind] = []
 	var s := float(salt)
 	# [from u, to u, trees per square metre]
 	for band: Array in [[6.0, 40.0, 0.03], [40.0, 120.0, 0.025], [120.0, TREE_REACH, 0.009]]:
@@ -539,10 +595,7 @@ static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary
 			var kind := "pine" if _n().get_noise_2d(u * 0.05 + s, zt * 3.0 + s * 0.7) > 0.32 else ("oak" if pick < 0.6 else "maple")
 			var xf := Transform3D(Basis(Vector3.UP, turn).scaled(Vector3(size, size * rng.randf_range(0.9, 1.2), size)), Vector3(x, p[0] - 0.3, -zt * LENGTH))
 			var data := Color(p[1], pick, 0.0, 0.0)
-			if u > CARD_REACH:
-				(far[kind] as Array).append([xf, data])
-				continue
-			(near[kind] as Array).append([xf, data])
+			((far if u > CARD_REACH else near)[kind] as Array).append([xf, data])
 			# The detailed tree on the same spot. Its mesh is 1 unit tall, so its scale is its
 			# height in metres: 12 to 22 m, the low-poly tree's size and a little more, because
 			# a real crown is airier than a lump and looks smaller at the same size.
@@ -555,23 +608,29 @@ static func _trees(side: int, from: String, to: String, salt: int) -> Dictionary
 			elif kind == "oak" and pick > 0.48:
 				card_kind = "birch"
 				tall *= 0.85
-			(cards[card_kind] as Array).append([Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * tall), xf.origin), data])
-	return {"far": tree_batches(far), "near": tree_batches(near), "cards": tree_batches(cards, true)}
+			var group := "cards" if u <= CARD_REACH else ("cards_mid" if u <= CARD_MID_REACH else "cards_out")
+			(cards[group][card_kind] as Array).append([Transform3D(Basis(Vector3.UP, turn).scaled(Vector3.ONE * tall), xf.origin), data])
+	var out := {"far": tree_batches(far), "near": tree_batches(near)}
+	for g: Array in CARD_GROUPS:
+		out[String(g[0])] = tree_batches(cards[String(g[0])], g[1])
+	return out
 
 
 ## Turns lists of trees, {tree kind: [[Transform3D, custom data Color], ...]}, into one MultiMesh
 ## per kind that has any ({tree kind: MultiMesh}). r81_pieces.gd uses it for the trees on top of
-## the tunnels. detailed = the lists hold CARD_KINDS, and each becomes one MultiMesh per level
-## of detail (keys: card_names()), drawn with card_mesh().
-static func tree_batches(lists: Dictionary, detailed: bool = false) -> Dictionary:
+## the tunnels. `card_levels` not empty = the lists hold CARD_KINDS, and each becomes one
+## MultiMesh per level of detail in card_levels (0 full, 1 light, 2 far picture; keys:
+## card_names()), drawn with card_mesh(); the first of them is drawn from 0 m.
+static func tree_batches(lists: Dictionary, card_levels: Array = []) -> Dictionary:
 	var out := {}
+	var detailed := not card_levels.is_empty()
 	for kind in (CARD_KINDS if detailed else TREES):
 		var list: Array = lists.get(kind, [])
 		if list.is_empty():
 			continue
 		# without trees.glb there is one level only: the stand-in tree at every distance
-		var levels := (CARD_LEVELS.size() if card_levels_ready() else 1) if detailed else 1
-		for level in levels:
+		var levels: Array = (card_levels if card_levels_ready() else [0]) if detailed else [0]
+		for level: int in levels:
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
 			mm.use_custom_data = true
@@ -581,7 +640,11 @@ static func tree_batches(lists: Dictionary, detailed: bool = false) -> Dictionar
 			var key := (kind + CARD_LEVELS[level]) if detailed else kind
 			mm.mesh = card_mesh(key) if detailed else tree_mesh(kind)
 			mm.instance_count = list.size()
-			var band := CARD_BANDS[level] if levels > 1 else Vector2(0.0, 60000.0)
+			var band := CARD_BANDS[level] if detailed and card_levels_ready() else Vector2(0.0, 60000.0)
+			if level == levels[0]:
+				band.x = 0.0
+			if level == levels[levels.size() - 1]:
+				band.y = 60000.0
 			# which row of the far-picture sheets this kind is, as a share of ROW_STEPS
 			# (r81_impostor.gdshader reads it back from the colour's alpha)
 			var row_alpha := (float(CampForest.SPECIES.find(kind)) + 0.5) / IMPOSTOR_ROW_STEPS
@@ -613,6 +676,47 @@ static func card_names() -> PackedStringArray:
 		for ending in CARD_LEVELS:
 			out.append(kind + ending)
 	return out
+
+
+## The groups of trees a strip has (_trees()), low-poly and detailed.
+static func tree_groups() -> PackedStringArray:
+	var out := PackedStringArray(["far", "near"])
+	for g: Array in CARD_GROUPS:
+		out.append(String(g[0]))
+	return out
+
+
+## The levels of detail a group of detailed trees has (CARD_GROUPS); none for a low-poly group.
+static func group_levels(group: String) -> Array:
+	for g: Array in CARD_GROUPS:
+		if String(g[0]) == group:
+			return g[1]
+	return []
+
+
+## The names of a group's MultiMeshes (and of r81_trip.gd's nodes for them): the tree kinds for
+## a low-poly group, kind plus level ending for a detailed one.
+static func group_names(group: String) -> PackedStringArray:
+	var levels := group_levels(group)
+	if levels.is_empty():
+		return TREES
+	var out := PackedStringArray()
+	for kind in CARD_KINDS:
+		for level: int in levels:
+			out.append(kind + CARD_LEVELS[level])
+	return out
+
+
+## The band of distances (metres from the camera) one level of a detailed group is drawn in:
+## CARD_BANDS, but a group's first level starts at 0 and its last never ends (tree_batches()).
+static func group_band(group: String, level: int) -> Vector2:
+	var levels := group_levels(group)
+	var band := CARD_BANDS[level]
+	if not levels.is_empty() and level == int(levels[0]):
+		band.x = 0.0
+	if not levels.is_empty() and level == int(levels[levels.size() - 1]):
+		band.y = 60000.0
+	return band
 
 
 ## Which level of detail (0 full, 1 light, 2 far picture) a card_names() name is.
@@ -754,7 +858,7 @@ static func add_materials(kit: Dictionary) -> void:
 		leaves.set_shader_parameter("card", load(CAMP_TEX + photo))
 		leaves.set_shader_parameter("tint", k[2])
 		leaves.set_shader_parameter("evergreen", k[3])
-		leaves.set_shader_parameter("lod_fade", CampForest.LOD_FADE)
+		leaves.set_shader_parameter("lod_fade", CARD_FADE)
 		_card_mats[String(k[0])] = Geo._note(kit, leaves)
 		own.append(leaves)
 		lod.append(leaves)
@@ -768,7 +872,7 @@ static func add_materials(kit: Dictionary) -> void:
 	far.set_shader_parameter("frames", float(CampForest.IMPOSTOR_FRAMES))
 	far.set_shader_parameter("rows", float(CampForest.SPECIES.size()))
 	far.set_shader_parameter("half_size", CampForest.IMPOSTOR_HALF)
-	far.set_shader_parameter("lod_fade", CampForest.LOD_FADE)
+	far.set_shader_parameter("lod_fade", CARD_FADE)
 	var leafy := PackedFloat32Array()
 	for sp in CampForest.SPECIES:
 		leafy.append(1.0 if sp in ["oak", "maple", "birch"] else 0.0)

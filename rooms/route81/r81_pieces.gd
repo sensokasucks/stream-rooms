@@ -97,12 +97,15 @@ const CONDUCTORS: Array = [[22.0, -5.5], [22.0, 5.5], [26.0, -4.5], [26.0, 4.5],
 
 ## A high-voltage line crossing the highway through its corridor in the forest: three lattice
 ## pylons on each side and the wires between them, sagging, over both roads. For a place whose
-## two sides are woods with the corridor cut (r81_land.gd WIRE_SALT; r81_trip.gd wires_at).
+## two sides are woods or mountainside with the corridor cut (r81_land.gd WIRE_SALT; r81_trip.gd
+## wires_at). `left` / `right`: each side's edge profile ("woods" or "slope"), so the pylons
+## stand on that side's ground.
 ## Drawn with the TREE material (kit["trees"], r81_tree.gdshader): the pylons further out stand
 ## on ground that sinks into the valley, and that shader lowers things by the depth in UV.y.
-static func power_line() -> ArrayMesh:
-	if _cache.has("power_line"):
-		return _cache["power_line"]
+static func power_line(left: String, right: String) -> ArrayMesh:
+	var key := "power_line|%s|%s" % [left, right]
+	if _cache.has(key):
+		return _cache[key]
 	var b := Geo.Buf.new()
 	b.mat = 0.0
 	# (alpha 0 = no sway in the wind)
@@ -115,7 +118,8 @@ static func power_line() -> ArrayMesh:
 		for n in PYLONS_AT.size():
 			# (the left side from its outermost pylon in, the right side from the road out)
 			var u := PYLONS_AT[PYLONS_AT.size() - 1 - n] if side < 0 else PYLONS_AT[n]
-			var p := Land.blend("woods", "woods", u, 0.5, float(Land.WIRE_SALT + (50 if side < 0 else 0)))
+			var kind := left if side < 0 else right
+			var p := Land.blend(kind, kind, u, 0.5, float(Land.WIRE_SALT + (50 if side < 0 else 0)))
 			feet.append([(Land.ROAD_R + u) if side > 0 else (Land.OPP_L - u), p[0], p[1]])
 	for f: Array in feet:
 		b.uv_y = float(f[2])
@@ -137,7 +141,7 @@ static func power_line() -> ArrayMesh:
 				last = at
 	b.uv_y = 0.0
 	var mesh := b.to_mesh()
-	_cache["power_line"] = mesh
+	_cache[key] = mesh
 	return mesh
 
 

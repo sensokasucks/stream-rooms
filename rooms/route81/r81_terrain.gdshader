@@ -28,6 +28,8 @@ varying vec3 w_pos;
 varying vec3 o_nrm;
 varying float field;
 varying float river;
+// the corner's height after the valley's sinking (metres; see fragment(): steep faces)
+varying float sunk_y;
 
 void vertex() {
 	o_pos = VERTEX;
@@ -35,6 +37,7 @@ void vertex() {
 	river = UV2.y;
 	vec3 v = VERTEX;
 	v.y -= UV.x * alt_drop;
+	sunk_y = v.y;
 	// the valley's extra slope tilts the surface: rebuild the normal from the two slopes
 	float up = max(NORMAL.y, 0.05);
 	vec3 n = normalize(vec3(NORMAL.x / up + UV.y * alt_drop, 1.0, NORMAL.z / up));
@@ -51,10 +54,22 @@ vec3 rock_sides(vec3 p, vec3 n, float tile) {
 }
 
 void fragment() {
-	vec2 q = o_pos.xz;
+	// The ground's patterns are laid on it from above, which on a steep bank (an overlook's
+	// fall, the river's banks) pulled every blotch into a long streak down the slope. Sliding
+	// the pattern sideways with the height gives a steep face its own spread of blotches; on
+	// gentle ground it changes nothing you can see. (Continuous across pieces, so no seams.)
+	vec2 q = o_pos.xz + vec2(0.8 * sunk_y, 0.0);
+	float dist = length(w_pos - CAMERA_POSITION_WORLD);
 	vec4 lumps = texture(rock_noise, q / 20.0);
 	vec4 patches = texture(rock_noise, q / 80.0);
-	float dist = length(w_pos - CAMERA_POSITION_WORLD);
+	// Far away the small repeating noise shows as regular stripes across a hillside (Sen: a
+	// "watermelon" look), so from a few hundred metres the tree-top lumps and the patches
+	// give way to much bigger blotches that never line up with each other.
+	float far_blur = smoothstep(180.0, 650.0, dist);
+	vec4 broad = texture(rock_noise, q / 311.0 + vec2(0.37, 0.11));
+	vec4 broader = texture(rock_noise, q.yx / 1270.0 + vec2(0.71, 0.53));
+	lumps = mix(lumps, mix(vec4(0.5), broad, 0.45), far_blur);
+	patches = mix(patches, mix(broad.gbar, broader, 0.5), far_blur * 0.85);
 	// ── forest: its floor near, its canopy far ──
 	// (the floor: last year's leaves with green undergrowth coming through in patches)
 	vec3 floor_col = texture(tex_leaves, q / 5.0).rgb * vec3(0.55, 0.6, 0.45);
@@ -107,18 +122,25 @@ void fragment() {
 	if (detail < 0.5) {
 		rock = vec3(0.34, 0.33, 0.32);
 	}
-	float bands = texture(rock_noise, vec2(o_pos.z / 40.0 + lumps.b * 0.05, o_pos.y / 5.0)).b;
+	// (the layers only show close up: far off they would stripe the whole face)
+	float bands = mix(texture(rock_noise, vec2(o_pos.z / 40.0 + lumps.b * 0.05, o_pos.y / 5.0)).b, 0.5, smoothstep(150.0, 500.0, dist));
 	rock *= 0.7 + 0.5 * bands;
 	rock *= 1.0 - 0.3 * smoothstep(0.5, 0.8, texture(rock_noise, vec2(o_pos.z / 10.0, o_pos.y / 40.0)).g);
 	col = mix(col, rock, COLOR.r);
 	col *= r22_cloud_shade(w_pos);
 	col *= 1.0 - 0.3 * wet;
-	// ── the river: dark, slow water with drifting lighter streaks, shiny enough to hold the sky ──
+	// ── the river: green-brown slow water, darker in the deep middle, with soft drifting
+	// patches of current. No long straight streaks and not a mirror: seen from the bridge and
+	// from far off those read as corrugated sheet metal (Sen, 2026-11-26). ──
 	float water = smoothstep(0.9, 0.99, river);
-	vec3 stream = mix(vec3(0.035, 0.075, 0.07), vec3(0.07, 0.13, 0.13), texture(rock_noise, q / 90.0 + vec2(TIME * 0.004, 0.0)).b);
-	stream += 0.03 * smoothstep(0.55, 0.8, texture(rock_noise, q / vec2(140.0, 18.0) + vec2(TIME * 0.01, 0.0)).g);
+	float swirl = texture(rock_noise, q / 260.0 + vec2(TIME * 0.003, TIME * 0.001)).b;
+	float swirl2 = texture(rock_noise, q.yx / 97.0 - vec2(TIME * 0.004, 0.0)).g;
+	vec3 stream = mix(vec3(0.05, 0.085, 0.06), vec3(0.09, 0.14, 0.11), 0.6 * swirl + 0.4 * swirl2);
+	// close up, small ripples that catch the light; they fade out by 400 m
+	float ripple = texture(rock_noise, q / 9.0 + vec2(TIME * 0.02, TIME * 0.013)).a - 0.5;
+	stream += 0.02 * ripple * (1.0 - smoothstep(120.0, 400.0, dist));
 	col = mix(col, stream * r22_cloud_shade(w_pos), water);
 	ALBEDO = col;
-	ROUGHNESS = mix(mix(0.95, 0.7, wet * COLOR.r), 0.12, water);
-	SPECULAR = mix(0.08 + 0.25 * wet * COLOR.r, 0.6, water);
+	ROUGHNESS = mix(mix(0.95, 0.7, wet * COLOR.r), 0.32 + 0.1 * swirl2, water);
+	SPECULAR = mix(0.08 + 0.25 * wet * COLOR.r, 0.45, water);
 }

@@ -1781,8 +1781,15 @@ Included rooms:
     slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
     an old wreck, buttes, a varnished cliff and more), never the same one twice in view, with
     telephone poles, ravens on the wires, reflector posts and mile markers.
-    - **Speed** is how fast the woody drives (0 = **Parked**). **Curves and hills** is how
-      much the road winds and rolls away in the distance.
+    - **Speed** is how fast the woody drives, in miles an hour (0 = **Parked**, up to
+      80 mph). **Curves** is how much the road winds left and right in the distance, and
+      **Hills** how much it rises and dips; each has its own slider.
+    - **Dashboard bobbleheads**: with **Bobbleheads on the dashboard** on, a little
+      bobblehead of every presenter who is in the car stands on the dash and nods with the
+      road, showing the same picture as the presenter in the seat. **Bobblehead size** and
+      **Wobble** are for all of them; each one has its own **left / right**, **forward /
+      back** (far enough forward and it stands on the hood), **height** and **turn**
+      sliders. Both Cruises share them, and in a co-stream everyone sees them alike.
     - **How busy** sets the other traffic: pickups, old sedans, semis, motorhomes, motorcycles
       and the odd tour bus, mostly oncoming, now and then one overtaking you.
     - **Landmarks and stops** sets how much of the road has something to look at (rock
@@ -1845,14 +1852,18 @@ Included rooms:
   the countryside's sounds). The same red woody and the same four
   seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
   median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
-  away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. The
+  away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. Like the
+  real road, the highway runs along the side of a mountain and through it, not over the top:
+  one side is the wooded mountainside climbing away above the car (rock cuts are on that
+  side), the other is the valley side with the overlooks, and the far ridges stand at about
+  eye level. Which side the mountain is on changes now and then after a tunnel. The
   **Scenery** choice at the top of the Room tab of either Cruise jumps between **Route 22
   (desert highway)** and **Route 81 (Pennsylvania mountains)**. All place names on the green
   signs and the tunnels are made up.
-  - **Speed**, **Curves and hills** and **How busy** are the same sliders as the desert
-    Cruise's. Here the curves are stronger and really turn the car: the far ridges and the sun
-    swing round as the highway bends. The road also climbs and falls between about 40 and
-    240 m above the valley floor, so the same overlook is a gentle field one time and a long
+  - **Speed** (miles an hour), **Curves**, **Hills**, **How busy** and the **Dashboard
+    bobbleheads** are the same controls as the desert Cruise's. Here the curves are stronger
+    and really turn the car: the far ridges and the sun swing round as the highway bends. The
+    road also climbs and falls between about 15 and 215 m above the valley floor, so the same overlook is a gentle field one time and a long
     fall another. Traffic runs on the other road across the median, and now and then something
     passes you in the left lane; a lot of it is trucks.
   - **Tunnels**: **Often** (about every 4 km), **Now and then** (7 km), **Seldom** (13 km) or
@@ -1882,16 +1893,17 @@ Included rooms:
     - **City valley**: low in a wide valley through an old industrial city: a brick mill
       with saw-tooth roofs and tall smokestacks, warehouses, streets of brick row houses, a
       few taller blocks downtown and a big stone church, all lit at night.
-  - **How often views open up**: how much of the road has an overlook on one side rather than
-    woods or rock (0% = **Never**).
+  - **How often views open up**: how much of the valley side of the road is an overlook rather
+    than woods (0% = **Never**).
   - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
     lower it on a slow PC). **Season**: **Summer (green)** or **Fall colours**.
-  - On the **Detailed** look (**Set detail**) the two or three rows of trees nearest the road
-    are the Lakeside Campfire's Blender-modelled trees (oak, maple, birch, fir and pine, with
-    real branching limbs and small leafy twigs); behind them and on the **Low** look they are
-    plain low-poly ones. To keep the frame rate up each tree is drawn in full only near the
-    camera (about 26 m), as a lighter tree out to about 52 m, and beyond that as a picture of
-    itself that turns to face the camera; a tree dissolves softly from one into the next.
+  - On the **Detailed** look (**Set detail**) every tree is one of the Lakeside Campfire's
+    Blender-modelled trees (oak, maple, birch, fir and pine, with real branching limbs and
+    small leafy twigs); the **Low** look has plain low-poly ones. To keep the frame rate up
+    each tree is drawn in full only near the camera (about 48 m), as a lighter tree out to
+    about 120 m, and beyond that as a picture of itself that turns to face the camera; a tree
+    dissolves softly from one into the next. The distances are long enough that the change
+    happens well ahead of the car at highway speed.
   - **Streetlights**: tall poles stand in the median before and after every tunnel and light
     the road at night. **Sodium (orange)**, **LED (white)**, **Mixed** (every other pole is
     LED) or **Off** (dark poles; the tunnels stay lit). The tunnel lamps take the same colour.

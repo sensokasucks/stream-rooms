@@ -26,8 +26,11 @@ const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Car := preload("res://rooms/route22/r22_car.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Trip := preload("res://rooms/route81/r81_trip.gd")
+## (the desert Cruise's trip, for the Speed control both Cruises share)
+const DesertTrip := preload("res://rooms/route22/r22_trip.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Billboards := preload("res://rooms/route22/r22_billboards.gd")
+const Bobbles := preload("res://rooms/route22/r22_bobbles.gd")
 const Traffic := preload("res://rooms/route81/r81_traffic.gd")
 const DesertCruise := preload("res://rooms/route22_cruise/route22_cruise_room.gd")
 ## This room's id (rooms/route81/room_info.tres) and the desert Cruise's: the Scenery switch.
@@ -47,6 +50,7 @@ var _kit: Dictionary
 var _backdrop: Node3D
 var _vistas: Vistas
 var _boards: Billboards            # Route 81's own billboard set (r22_billboards.gd, "r81_bb_" settings)
+var _bobbles: Bobbles             # the presenters' dashboard bobbleheads (r22_bobbles.gd)
 var _retired: bool = false
 var _camera: Camera3D            # the camera whose reach we raised
 var _camera_far: float = 0.0     # its reach before
@@ -122,6 +126,7 @@ func _process(delta: float) -> void:
 	_traffic.tick(delta, _trip.speed)
 	# headlights on in the tunnels as well as at night
 	_car.tick(delta, _trip.speed, maxf(_desert.night, _trip.cover), _desert.wet, Desert.detail_level() == "full")
+	_bobbles.tick(delta, _trip.speed, _trip.bend, _trip.hill)
 
 
 ## Lets the camera in use see as far as the far ridges (once per camera; put back by
@@ -175,6 +180,10 @@ func _build_set() -> void:
 	_car.dusty = false
 	_car.build(_kit)
 	_car.position = CAR_AT
+	# the presenters' bobbleheads on the dash (they ride in the car's space)
+	_bobbles = Bobbles.new()
+	_car.add_child(_bobbles)
+	_bobbles.setup(self, presenter_size)
 	var markers := Node3D.new()
 	markers.name = "Markers"
 	add_child(markers)
@@ -261,10 +270,11 @@ func get_controls() -> Array[Dictionary]:
 	var out: Array[Dictionary] = [{"heading": "Route 81"}]
 	out.append(DesertCruise.land_control())
 	out.append_array([
-		{"key": "r22_speed", "label": "Speed", "min": 0.0, "max": 120.0, "step": 1.0, "format": "%d km/h", "zero": "Parked",
-			"tooltip": "How fast the woody drives. 50 km/h is an easy cruise (slow for an interstate, but it gives the view time); 0 parks it on the shoulder. The same slider as the desert Cruise's."},
-		{"key": "r22_curves", "label": "Curves and hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
-			"tooltip": "How much the highway winds and rolls. Here the curves also swing the far ridges and the sun round, like a real change of direction. 0% = dead straight and flat."},
+		DesertTrip.speed_control("How fast the woody drives, in miles an hour. 30 mph is an easy cruise (slow for an interstate, but it gives the view time); 0 parks it on the shoulder. The same slider as the desert Cruise's."),
+		{"key": "r22_curves", "label": "Curves", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the highway bends left and right. Here the curves also swing the far ridges and the sun round, like a real change of direction. 0% = dead straight."},
+		{"key": "r22_hills", "label": "Hills", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
+			"tooltip": "How much the highway rises and dips ahead of the car. 0% = flat. (How high above the valley the road runs is the Country's own.)"},
 		{"key": "r22_traffic", "label": "How busy", "min": 0.0, "max": 100.0, "step": 1.0, "format": "%d", "zero": "Empty road",
 			"tooltip": "How much other traffic there is, a lot of it trucks: on the other road across the median, and now and then one passing you in the left lane. 100 = about one every 6 seconds. 0 = an empty road."},
 		{"heading": "The road"},
@@ -317,6 +327,9 @@ func get_controls() -> Array[Dictionary]:
 			"tooltip": "On hot, dry afternoons the air over the asphalt wobbles. 0% = off."},
 		{"key": "r22_wind", "label": "Wind", "min": 0.0, "max": 1.0, "step": 0.01, "format": "%d%%", "scale": 100.0,
 			"tooltip": "How hard the wind blows: the trees sway and cloud shadows race over the hills."},
+	])
+	out.append_array(Bobbles.controls())
+	out.append_array([
 		{"heading": "Look"},
 		{"key": "r22_detail", "label": "Set detail", "type": "option", "options": [["auto", "Auto (follows Graphics quality)"], ["low", "Low (flat colours)"], ["full", "Detailed"]],
 			"tooltip": "How detailed the set is drawn on this PC. Detailed: photo textures on the rock, the ground and the road, modelled cars and trucks, trees drawn further out, haze and sunbeams in the air, and the car's chrome and paint reflecting what goes by. Low: flat colours and fewer trees, the lightest. Auto: Low on the Low graphics setting, Detailed otherwise. Each PC in a co-stream chooses its own."},

@@ -57,6 +57,8 @@ const Geo := preload("res://rooms/route22/r22_geo.gd")
 const Desert := preload("res://rooms/route22/r22_desert.gd")
 const Land := preload("res://rooms/route81/r81_land.gd")
 const Pieces := preload("res://rooms/route81/r81_pieces.gd")
+## (the desert Cruise's trip: the Speed slider's units are its, MAX_KMH)
+const DesertTrip := preload("res://rooms/route22/r22_trip.gd")
 const Vistas := preload("res://rooms/route81/r81_vistas.gd")
 const Places := preload("res://rooms/route81/r81_places.gd")
 const Billboards := preload("res://rooms/route22/r22_billboards.gd")
@@ -106,9 +108,12 @@ const COUNTRIES: PackedStringArray = ["ridge", "farm", "river", "endless", "coal
 ## The river country is low so its bridge is not absurdly high (the river lies on the valley
 ## floor, FLOOR_BELOW under the lowest road); the bridge piers (r81_pieces.gd PIER_MAX_ALT)
 ## allow up to 320.
-const HEIGHTS: Dictionary = {"ridge": Vector3(140.0, 70.0, 30.0), "farm": Vector3(45.0, 18.0, 8.0),
-	"river": Vector3(30.0, 10.0, 4.0), "endless": Vector3(215.0, 55.0, 25.0),
-	"coal": Vector3(170.0, 40.0, 20.0), "city": Vector3(42.0, 14.0, 6.0)}
+## (Sen, 2026-11-26: the real road is benched into the mountainsides, not on the peaks, so
+## these are well below the far ridges' crests, r81_land.gd RIDGES: 280 m and up. The far
+## ridges then stand at eye level and above across the valley.)
+const HEIGHTS: Dictionary = {"ridge": Vector3(85.0, 40.0, 15.0), "farm": Vector3(40.0, 16.0, 7.0),
+	"river": Vector3(30.0, 10.0, 4.0), "endless": Vector3(150.0, 45.0, 18.0),
+	"coal": Vector3(115.0, 30.0, 14.0), "city": Vector3(40.0, 14.0, 6.0)}
 ## With Tunnels = Never: places per country.
 const NO_TUNNEL_COUNTRY: int = 120
 ## A river crossing: both sides are water for boundaries mid - CROSS_HALF .. mid + CROSS_HALF
@@ -195,9 +200,10 @@ func _exit_tree() -> void:
 		EventBus.net_room_event.disconnect(_on_net_room_event)
 
 
-## r22_speed in metres a second (the setting is km/h, 0..120).
+## r22_speed in metres a second (the setting is kept in km/h, 0..MAX_KMH; the Room tab shows
+## it in miles an hour).
 static func _target_speed() -> float:
-	return clampf(float(AppState.get_setting("r22_speed")), 0.0, 120.0) / 3.6
+	return clampf(float(AppState.get_setting("r22_speed")), 0.0, DesertTrip.MAX_KMH) / 3.6
 
 
 ## Places from one tunnel mouth to the next (0 = no tunnels), from the Tunnels choice.
@@ -255,6 +261,14 @@ static func crossing(b: int) -> String:
 	return "drop" if off == CROSS_HALF + 1 else ""
 
 
+## Which side of the highway the mountain is on in region r: +1 = our right, -1 = the left.
+## The road is benched into a mountainside (r81_land.gd, "slope"): that side climbs, the other
+## is the valley side with the overlooks. It swaps now and then from region to region (the
+## road has gone through the mountain in the tunnel between them).
+static func uphill(r: int) -> int:
+	return 1 if _dice(r * 31 + 17) < 0.55 else -1
+
+
 ## The eight boundaries a side keeps one profile for: [the group's number, its first boundary].
 ## The right side's groups start at boundaries 0, 8, 16.., the left's at 4, 12, 20..
 static func _group(side: int, b: int) -> Vector2i:
@@ -274,9 +288,10 @@ static func boundary(side: int, b: int) -> String:
 		# rock cuts lead into and out of every tunnel (the land only knows cut <-> mountain)
 		if j == 0 or j == 6 or j == 7 or j == p - 1:
 			return "cut"
-	elif posmod(b, NO_TUNNEL_COUNTRY) <= 1:
+	var on_hill := side == uphill(region_of(b))
+	if p <= 0 and posmod(b, NO_TUNNEL_COUNTRY) <= 1:
 		# without tunnels, one kind of country hands over to the next in the woods
-		return "woods"
+		return "slope" if on_hill else "woods"
 	var cross := crossing(b)
 	if cross != "":
 		return cross
@@ -298,11 +313,21 @@ static func boundary(side: int, b: int) -> String:
 			shares = [["lot", 0.62], ["lawn", 0.1], ["drop", v * 0.1]]
 		_:
 			shares = [["drop", v * 0.5], ["cut", 0.28], ["lot", 0.05]]
+	# The mountain side has no overlooks: where the roll says one, and wherever nothing else
+	# stands, it is the wooded mountainside. The valley side has no rock cuts (there is no
+	# on_hill to cut into), and gets the overlooks of both sides, so "How often views open up"
+	# still means about what it says.
 	for share: Array in shares:
-		roll -= float(share[1])
+		var kind := String(share[0])
+		var part := float(share[1])
+		if kind == "drop" and not on_hill:
+			part = minf(part * 1.7, 0.9)
+		if kind == "cut" and not on_hill:
+			continue
+		roll -= part
 		if roll < 0.0:
-			return String(share[0])
-	return "woods"
+			return "slope" if kind == "drop" and on_hill else kind
+	return "slope" if on_hill else "woods"
 
 
 ## What people built on `side` of place k: [a r81_places.gd feature, which of its places this
@@ -376,10 +401,12 @@ func tick(delta: float, night: float) -> void:
 
 ## Everything that follows from travel alone: the curve, the heading, the height, the tunnel.
 func _work_out() -> void:
+	# (Curves = the sideways bends, r22_curves; Hills = the rises and dips, r22_hills)
 	var curves := clampf(float(AppState.get_setting("r22_curves")), 0.0, 1.0)
+	var hills := clampf(float(AppState.get_setting("r22_hills")), 0.0, 1.0)
 	# slow waves along the road (the same on every PC for the same travel)
 	bend = curves * MAX_BEND * (0.7 * sin(travel / 900.0) + 0.3 * sin(travel / 370.0 + 1.3))
-	hill = curves * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
+	hill = hills * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
 	# A shift of bend * d² means the road ahead curves at 2 * bend radians a metre. Adding that
 	# up over the distance driven (the waves above, integrated) gives how far it has turned.
 	heading = HEADING_SHARE * curves * MAX_BEND * 2.0 * (-0.7 * 900.0 * cos(travel / 900.0) - 0.3 * 370.0 * cos(travel / 370.0 + 1.3))
@@ -457,11 +484,17 @@ func _place() -> void:
 		root.visible = true
 		root.position = Vector3(0.0, 0.0, travel - float(k) * Land.LENGTH)
 		var near := root.position.z > -tree_reach and root.position.z < tree_reach
-		# beside the road the Low look draws the low-poly trees ("near") and the Detailed look
-		# the leaf-card ones ("cards"); everything else ("far", the tunnels' tops) shows on both
-		var skip := "cards" if low else "near"
+		# The Low look draws the low-poly trees ("near", "far") and the Detailed look the
+		# Blender ones (the "cards" groups); the tunnels' tops (no group) show on both. A
+		# strip without the Blender trees (trees.glb missing) keeps its low-poly "far" trees.
 		for t: MultiMeshInstance3D in slot["trees"]:
-			t.visible = near and t.multimesh != null and String(t.get_meta("group", "")) != skip
+			var group := String(t.get_meta("group", ""))
+			var shown := true
+			if group != "":
+				shown = bool(t.get_meta("detailed", false)) != low
+				if group == "far" and not low and not Land.card_levels_ready():
+					shown = true
+			t.visible = near and t.multimesh != null and shown
 	_apply_forest()
 
 
@@ -484,7 +517,8 @@ static func wires_at(k: int) -> bool:
 	if posmod(k, 11) != 5 or part_at(k) != "":
 		return false
 	for side: int in [-1, 1]:
-		if boundary(side, k) != "woods" or boundary(side, k + 1) != "woods":
+		var kind := boundary(side, k)
+		if (kind != "woods" and kind != "slope") or boundary(side, k + 1) != kind:
 			return false
 	return true
 
@@ -532,21 +566,23 @@ func _make_slot() -> void:
 		slot["built"][side] = _mesh_node(root, "Places" + tag, _kit["prop"], true)
 		# one node per group of trees (Land._trees) and kind; "cards" meshes bring their own
 		# materials, the low-poly ones all wear kit["trees"]
-		# ("cards" has three nodes per kind, one per level of detail: Land.card_names())
-		for group: String in ["far", "near", "cards"]:
-			for kind in (Land.card_names() if group == "cards" else Land.TREES):
+		# (a detailed group has a node per kind and level of detail: Land.group_names())
+		for group: String in Land.tree_groups():
+			var detailed := not Land.group_levels(group).is_empty()
+			for kind in Land.group_names(group):
 				var t := MultiMeshInstance3D.new()
 				t.name = "Trees%s_%s_%s" % [tag, group, kind]
-				if group != "cards":
+				if not detailed:
 					t.material_override = _kit["trees"]
 				else:
 					# Each tree picks its level in the shaders by its own distance; this only
 					# lets Redot skip a whole place's full or light trees when the place is far
 					# outside the level's band. The range is measured to the strip's middle,
 					# and the tunnel cameras never get near a strip, so the pad is generous.
-					var band: Vector2 = Land.CARD_BANDS[Land.card_level(kind)]
+					var band := Land.group_band(group, Land.card_level(kind))
 					t.visibility_range_begin = maxf(0.0, band.x - Land.CARD_RANGE_PAD)
 					t.visibility_range_end = band.y + Land.CARD_RANGE_PAD
+					t.set_meta("detailed", true)
 				t.set_meta("group", group)
 				# the shaders move things a long way (the bend, the valley): never cull early
 				t.extra_cull_margin = 700.0
@@ -575,7 +611,7 @@ func _make_slot() -> void:
 		slot["tree_of"]["0|" + kind] = t
 	# (the power line wears the tree material: see Pieces.power_line)
 	var wires := _mesh_node(root, "PowerLine", _kit["trees"], true)
-	wires.mesh = Pieces.power_line()
+	wires.mesh = Pieces.power_line("woods", "woods")
 	slot["wires"] = wires
 	# the river bridge: parapets and girders, and the piers, which wear the tree material for
 	# the same reason as the power line (they reach down into the valley)
@@ -661,9 +697,12 @@ func _dress(slot: Dictionary, k: int) -> void:
 		var f := feature_at(side, k)
 		(slot["built"][side] as MeshInstance3D).mesh = null if f.is_empty() else Places.build(String(f[0]), int(f[1]), side)
 		for group: String in strip["trees"]:
-			for kind in (Land.card_names() if group == "cards" else Land.TREES):
+			for kind in Land.group_names(group):
 				(slot["tree_of"]["%d|%s|%s" % [side, group, kind]] as MultiMeshInstance3D).multimesh = (strip["trees"][group] as Dictionary).get(kind)
 	(slot["wires"] as MeshInstance3D).visible = wires_at(k)
+	if wires_at(k):
+		# (the pylons stand on the land's own profiles: mountainside on one side)
+		(slot["wires"] as MeshInstance3D).mesh = Pieces.power_line(boundary(-1, k), boundary(1, k))
 	if _boards:
 		_boards.fill(slot["boards"], k, board_slots(k))
 	var vents: Array[Vector3] = []
@@ -723,7 +762,7 @@ static func board_slots(k: int) -> Array:
 		var f := feature_at(side, k)
 		var i := -1 if f.is_empty() else int(f[1])
 		match kind:
-			"woods":
+			"woods", "slope":
 				if side > 0:
 					u = 8.5
 					fit = ["monopole", "classic"]

@@ -144,8 +144,30 @@ const BASE_DEFAULTS: Dictionary = {
 	"r22_heat": 0.5,             # heat shimmer and the road mirage on hot afternoons, 0..1
 	"r22_wind": 0.35,            # wind 0..1: brush sway, tumbleweeds, cloud shadows, blowing sand at the top
 	"r22_detail": "auto",        # how detailed the desert is drawn on this PC: auto (from graphics_quality) | low | full
-	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked)
-	"r22_curves": 0.5,           # Cruise: how much the road winds and rolls in the distance, 0..1
+	"r22_speed": 48.28032,       # Cruise: the woody's speed, kept in km/h (0 = parked); shown in mph, this is 30 mph
+	"r22_curves": 0.5,           # Cruise: how much the road bends left and right, 0..1
+	"r22_hills": 0.5,            # Cruise: how much the road rises and dips, 0..1
+	"r22_bobbles": true,         # Cruise: presenter bobbleheads on the woody's dashboard (rooms/route22/r22_bobbles.gd)
+	"r22_bobble_size": 1.0,      # their size, 1 = about 17 cm tall
+	"r22_bobble_wobble": 1.0,    # how much they nod, 0 = standing still
+	# each presenter's bobblehead: across the dash (m from the middle, + = passenger's side),
+	# forward (m, + = toward the windscreen), lifted (m above the dash top), turned (degrees)
+	"r22_bobble_1_x": -0.12,
+	"r22_bobble_1_z": 0.0,
+	"r22_bobble_1_y": 0.0,
+	"r22_bobble_1_turn": 0.0,
+	"r22_bobble_2_x": 0.12,
+	"r22_bobble_2_z": 0.0,
+	"r22_bobble_2_y": 0.0,
+	"r22_bobble_2_turn": 0.0,
+	"r22_bobble_3_x": 0.36,
+	"r22_bobble_3_z": 0.0,
+	"r22_bobble_3_y": 0.0,
+	"r22_bobble_3_turn": 0.0,
+	"r22_bobble_4_x": 0.6,
+	"r22_bobble_4_z": 0.0,
+	"r22_bobble_4_y": 0.0,
+	"r22_bobble_4_turn": 0.0,
 	"r22_traffic": 30.0,         # other vehicles: 0 = none, 100 = about one every 10 s (r22_traffic.gd)
 	"r22_bb_amount": 40.0,       # Cruise billboards: how common, 0..100 (40 = about one every 15 s at 50 km/h)
 	"r22_bb_folder": "",         # billboard picture folder on this PC; empty = user://billboards
