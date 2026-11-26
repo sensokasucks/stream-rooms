@@ -59,6 +59,8 @@ void vertex() {
 	// into the world, down into the valley and round the road's bend, like the near trees
 	vec3 w = (MODEL_MATRIX * vec4(local, 1.0)).xyz;
 	w.y -= INSTANCE_CUSTOM.r * alt_drop;
+	// (and down with the ground where the drawn land runs out: r81_common r81_tree_taper)
+	w.y += r81_tree_taper(MODEL_MATRIX[3].xyz - vec3(0.0, INSTANCE_CUSTOM.r * alt_drop, 0.0));
 	w = r22_bend(w);
 	VERTEX = (inverse(MODEL_MATRIX) * vec4(w, 1.0)).xyz;
 	lod_keep = lod_vertex(VERTEX, vec4(0.0, INSTANCE_CUSTOM.b, INSTANCE_CUSTOM.a, 0.0), MODEL_MATRIX[3].xyz);

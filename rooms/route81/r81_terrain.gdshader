@@ -41,6 +41,8 @@ void vertex() {
 	river = UV2.y;
 	vec3 v = VERTEX;
 	v.y -= UV.x * alt_drop;
+	// near the ends of the drawn land the high ground runs down (r81_common: r81_far_taper)
+	v.y = r81_taper_y(v.y, (MODEL_MATRIX * vec4(v, 1.0)).z);
 	// the valley's extra slope tilts the surface: rebuild the normal from the two slopes
 	float up = max(NORMAL.y, 0.05);
 	vec3 n = normalize(vec3(NORMAL.x / up + UV.y * alt_drop, 1.0, NORMAL.z / up));

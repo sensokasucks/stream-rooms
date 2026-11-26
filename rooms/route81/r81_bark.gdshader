@@ -40,6 +40,8 @@ void vertex() {
 	out_dir = NORMAL;
 	vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	w.y -= INSTANCE_CUSTOM.r * alt_drop;
+	// (and down with the ground where the drawn land runs out: r81_common r81_tree_taper)
+	w.y += r81_tree_taper(MODEL_MATRIX[3].xyz - vec3(0.0, INSTANCE_CUSTOM.r * alt_drop, 0.0));
 	float lean = sin(TIME * 0.9 + w.x * 0.11 + w.z * 0.13) + 0.4 * sin(TIME * 2.7 + w.x * 0.6);
 	w += vec3(0.8, 0.0, 0.45) * lean * 0.12 * wind * COLOR.a * COLOR.a;
 	w = r22_bend(w);
