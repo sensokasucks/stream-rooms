@@ -13,7 +13,8 @@ shader_type sky;
 //   6. low, puffy cloud that drifts faster and slowly changes shape, lit from the sun's or the
 //      moon's side. Both cloud layers read their shapes from a noise picture (cloud_noise),
 //   7. snow-capped mountains, then two ridges of hills with haze between them (or, with
-//      `blue_ridges`, the Appalachian layers of hazy blue ridges instead), and
+//      `blue_ridges`, the Appalachian layers of hazy blue ridges instead; with `open_sea`, nothing:
+//      a flat sea horizon), and
 //   8. the dark tree line on the far shore of the lake.
 // rooms/campfire/campfire_room.gd (_apply_time, _apply_weather) sets every uniform from the
 // Time of day setting, the Clouds / Stars / Aurora sliders and the weather. The outline of the
@@ -53,6 +54,10 @@ uniform float exposure = 1.0;
 // peaks and the two ridges, rounded wooded ridges one behind the other, each paler and bluer
 // with the distance. 0 = the campfire's mountains (every other room).
 uniform float blue_ridges = 0.0;
+// 1 = open sea all round (Cabin: Ocean, set by log_cabin_room.gd): no mountains, ridges or far
+// tree line, a flat sea horizon, and the sea's colour below it (the land of the room itself
+// stands in front where there is land).
+uniform float open_sea = 0.0;
 
 float hash3(vec3 p) {
 	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -269,8 +274,10 @@ void sky() {
 	// light and the other in shade, snow on the upper slopes from a ragged line upwards, and
 	// the most haze. A second, lower outline in front of the first (the same peaks, shifted
 	// and darker) gives the range some depth.
-	float tree_h = hz_tree_line(az);
-	if (blue_ridges > 0.5) {
+	float tree_h = open_sea > 0.5 ? -1.0 : hz_tree_line(az);
+	if (open_sea > 0.5) {
+		// nothing stands on the horizon
+	} else if (blue_ridges > 0.5) {
 		// five long rounded ridges, the furthest first: each a little lower in the view and a
 		// darker, greener blue than the one behind it (more air in front of the far ones)
 		vec3 ridge_far = mix(vec3(0.5, 0.6, 0.76), vec3(0.012, 0.016, 0.035), night);
@@ -323,7 +330,13 @@ void sky() {
 	tree_col = mix(tree_col, haze_col, 0.25 * haze);
 	c = mix(c, tree_col, smoothstep(tree_h + 0.0015, tree_h - 0.0015, d.y));
 	if (d.y < 0.0) {
-		c = mix(tree_col, vec3(0.01, 0.012, 0.012), clamp(-d.y * 6.0, 0.0, 1.0));     // below the horizon: dark ground
+		if (open_sea > 0.5) {
+			// below the horizon: far sea, the horizon's haze darkening downwards (the room's
+			// sea sheet ends a few kilometres out; this fills the sliver beyond it)
+			c = mix(haze_col * 0.75, haze_col * 0.3, clamp(-d.y * 8.0, 0.0, 1.0));
+		} else {
+			c = mix(tree_col, vec3(0.01, 0.012, 0.012), clamp(-d.y * 6.0, 0.0, 1.0));     // below the horizon: dark ground
+		}
 	}
 	COLOR = c * exposure;
 }

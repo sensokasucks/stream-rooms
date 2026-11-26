@@ -9,6 +9,10 @@ render_mode cull_disabled;
 //              (a MultiMesh instance colour); 1 = as photographed
 //   COLOR.a    how far the wind moves this corner (0 at the trunk, 1 at the tips and the top)
 // `wind` and `sway` work as in camp_prop.gdshader.
+// `snow_load` 0..1: snow lying on the boughs (the shared weather sets it in a room that asks for
+// it, rooms/weather/room_weather.gd `tree_snow`; Cabin: Frozen North): white on the cards that
+// face up and on the lighter parts of the picture, so the crowns look heaped with snow on top
+// and dark green underneath. 0 = none (every other room).
 
 uniform sampler2D card : source_color, filter_linear_mipmap_anisotropic, repeat_disable;
 uniform float cut = 0.33;
@@ -24,6 +28,7 @@ uniform vec3 fall_a : source_color = vec3(0.9, 0.6, 0.1);
 uniform vec3 fall_b : source_color = vec3(0.85, 0.3, 0.08);
 // How much light comes through a leaf from behind (0 = none).
 uniform float see_through = 0.35;
+uniform float snow_load : hint_range(0.0, 1.0) = 0.0;
 
 varying float tree_pick;       // 0..1, fixed for each tree (its number in the MultiMesh)
 
@@ -54,5 +59,12 @@ void fragment() {
 	// renderer gives a back face, or the far side of every tree would be lit inside out.
 	if (!FRONT_FACING) {
 		NORMAL = -NORMAL;
+	}
+	if (snow_load > 0.001) {
+		float up = (INV_VIEW_MATRIX * vec4(NORMAL, 0.0)).y;
+		float light = dot(t.rgb, vec3(0.3, 0.6, 0.1));
+		float lying = snow_load * smoothstep(-0.25, 0.55, up) * smoothstep(0.05, 0.3, light + snow_load * 0.15);
+		ALBEDO = mix(ALBEDO, vec3(0.86, 0.89, 0.94), lying);
+		BACKLIGHT = ALBEDO * see_through * (1.0 - 0.7 * lying);
 	}
 }

@@ -188,9 +188,11 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 	var verts := PackedVector3Array()
 	var normals := PackedVector3Array()
 	var colors := PackedColorArray()
+	var yard_share := PackedFloat32Array()     # 1 = mown yard, 0 = forest floor, soft between
 	verts.resize(n * n)
 	normals.resize(n * n)
 	colors.resize(n * n)
+	yard_share.resize(n * n)
 	var coords := PackedFloat32Array()
 	coords.resize(n)
 	for i in n:
@@ -213,6 +215,8 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 			var near := C_LITTER.lerp(C_MOSS, 0.35 * mottle)
 			# the mown yard (the Simple look shows these colours; Detailed shows the grass photo)
 			var yard_d := Vector2((x - YARD.x) / 1.15, z - YARD.y).length()
+			var share := (1.0 - smoothstep(YARD_R - 5.0, YARD_R - 1.0, yard_d)) * smoothstep(2.5, 5.0, creek_distance(x, z))
+			yard_share[k] = share
 			near = near.lerp(Builder.C_GRASS, 1.0 - smoothstep(YARD_R - 5.0, YARD_R - 1.0, yard_d))
 			var c := near.lerp(canopy, smoothstep(70.0, 140.0, r))
 			c.a = 1.0 - smoothstep(85.0, 150.0, r)
@@ -233,13 +237,27 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 				yard_idx.append_array([a, b, c, b, d, c])
 			else:
 				wood_idx.append_array([a, b, c, b, d, c])
+	# Each cell is wholly yard or wholly forest floor, so the two photos used to meet in a hard
+	# zigzag along the grid. Each part now also gets a UV2.x per corner, the share of the OTHER
+	# photo there (cabin_surface.gdshader `tex_b`, set by cabin_builder.gd PHOTO_BLEND): the
+	# yard's photo fades into the forest floor's over the last few metres of the yard and the
+	# forest floor's into the yard's, the same mix at a shared corner from either side, so the
+	# edge is a soft band.
+	var to_wood := PackedVector2Array()
+	var to_yard := PackedVector2Array()
+	to_wood.resize(n * n)
+	to_yard.resize(n * n)
+	for k in n * n:
+		to_wood[k] = Vector2(1.0 - yard_share[k], 0.0)
+		to_yard[k] = Vector2(yard_share[k], 0.0)
 	var mesh := ArrayMesh.new()
-	for part: Array in [[yard_idx, Builder.S_GRASS], [wood_idx, Builder.S_LITTER]]:
+	for part: Array in [[yard_idx, Builder.S_GRASS, to_wood], [wood_idx, Builder.S_LITTER, to_yard]]:
 		var arrays: Array = []
 		arrays.resize(Mesh.ARRAY_MAX)
 		arrays[Mesh.ARRAY_VERTEX] = verts
 		arrays[Mesh.ARRAY_NORMAL] = normals
 		arrays[Mesh.ARRAY_COLOR] = colors
+		arrays[Mesh.ARRAY_TEX_UV2] = part[2]
 		arrays[Mesh.ARRAY_INDEX] = part[0]
 		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 		mesh.surface_set_material(mesh.get_surface_count() - 1, surf[part[1]])
@@ -262,8 +280,8 @@ static func _build_land(parent: Node3D, surf: Dictionary) -> void:
 
 # ── The creek ────────────────────────────────────────────────
 ## The creek's water: a ribbon along its middle line, five corners across, laid out the way
-## camp_stream.gdshader reads it (UV.x metres across, UV.y metres along, COLOR.r depth, COLOR.g
-## how steeply it runs). The water's surface is level across and follows the land along.
+## camp_stream.gdshader reads it (UV.x metres across, UV.y metres along, falling downstream,
+## COLOR.r depth, COLOR.g how steeply it runs). The water's surface is level across and follows the land along.
 static func _build_creek(parent: Node3D, out: Dictionary) -> void:
 	var pts := smooth_creek()
 	var verts := PackedVector3Array()
@@ -289,7 +307,10 @@ static func _build_creek(parent: Node3D, out: Dictionary) -> void:
 			var q := p + side * a * CREEK_HALF
 			verts.append(Vector3(q.x, y, q.y))
 			normals.append(Vector3.UP)
-			uvs.append(Vector2(a * CREEK_HALF, along))
+			# (camp_stream.gdshader runs its ripples towards smaller UV.y, its "metres from the
+			# lake": our points start up the hill, so UV.y counts down the creek, or the water
+			# flowed uphill)
+			uvs.append(Vector2(a * CREEK_HALF, -along))
 			colors.append(Color(1.0 - absf(a) * absf(a), drop, 0.0))
 		if i > 0:
 			for c in across.size() - 1:
@@ -316,7 +337,8 @@ static func _build_creek(parent: Node3D, out: Dictionary) -> void:
 
 # ── Rocks and the fence ──────────────────────────────────────
 ## Mossy boulders round the yard and in the creek, stepping stones where the path meets it, and
-## a split-rail fence (rails laid zigzag, three high, no posts) along the front left of the yard.
+## a split-rail fence (rails laid zigzag, four high, stacked at the corners on a flat stone and held
+## by crossed stakes) along the front left of the yard.
 static func _build_rocks_and_fence(parent: Node3D, surf: Dictionary) -> void:
 	var b := Builder.Buf.new()
 	var rng := RandomNumberGenerator.new()
@@ -351,21 +373,42 @@ static func _build_rocks_and_fence(parent: Node3D, surf: Dictionary) -> void:
 		var q := end + Vector2(0.9 + float(k) * 0.95, -0.5 - float(k) * 0.35)
 		b.soft_box(Transform3D(Basis(Vector3.UP, float(k)), Vector3(q.x, raw_height(q.x, q.y) - CREEK_DEPTH + CREEK_WATER + 0.06, q.y)),
 			Vector3(0.75, 0.3, 0.6), 0.14, Builder.C_STONE.darkened(0.1))
-	# the fence: sections laid zigzag (each rail from one corner to the next), three rails high
+	# the fence: a "worm" fence, sections laid zigzag (each rail from one corner to the next),
+	# four rails high. At each corner the rails of the two sections lie on one another, the
+	# bottom ones on a flat stone, and a pair of stakes driven in crosswise holds the stack, so
+	# nothing hangs in the air (round 7: the rails floated with no corners, like a wavy pipe).
 	b.mat = Builder.S_TIMBER
 	var run := FENCE_TO - FENCE_FROM
 	var count := int(run.length() / 3.0)
 	var side := Vector2(-run.y, run.x).normalized()
+	var along := Vector3(run.x, 0.0, run.y).normalized()
+	var across := Vector3(side.x, 0.0, side.y)
 	var corners: Array[Vector3] = []
 	for i in count + 1:
 		var p := FENCE_FROM + run * float(i) / float(count) + side * (0.45 if i % 2 == 0 else -0.45)
 		corners.append(Vector3(p.x, height(p.x, p.y), p.y))
+	const RAIL_R := 0.07
 	for i in count:
-		for level in 3:
-			var lift := 0.3 + float(level) * 0.36
+		for level in 4:
+			# odd sections sit one rail-radius higher, so at each corner a rail of one section lies
+			# on a rail of the next, alternating up the stack
+			var lift := 0.14 + float(level) * 0.26 + (RAIL_R if i % 2 == 1 else 0.0)
 			var col := C_RAIL.darkened(rng.randf_range(0.0, 0.2))
-			b.rod(corners[i] + Vector3(0.0, lift + (0.05 if i % 2 == 0 else 0.0), 0.0),
-				corners[i + 1] + Vector3(0.0, lift + (0.0 if i % 2 == 0 else 0.05), 0.0), 0.065, 7, col)
+			# (the rails run a little past the corners, as split rails do)
+			var a := corners[i] - along * 0.25
+			var c := corners[i + 1] + along * 0.25
+			b.rod(Vector3(a.x, corners[i].y + lift, a.z), Vector3(c.x, corners[i + 1].y + lift, c.z), RAIL_R, 7, col)
+	b.mat = Builder.S_STONE
+	for q: Vector3 in corners:
+		b.soft_box(Transform3D(Basis(Vector3.UP, rng.randf() * TAU), q + Vector3(0.0, 0.02, 0.0)), Vector3(0.5, 0.16, 0.45), 0.06, Builder.C_STONE.darkened(0.15))
+	b.mat = Builder.S_TIMBER
+	for q: Vector3 in corners:
+		# two stakes, one each side of the stack, leaning in to cross about 0.3 m above the top
+		# rail (they clear the rails: 0.1 m out at the top rail's height)
+		for sd: float in [-1.0, 1.0]:
+			var foot := q + across * (sd * 0.5) + Vector3(0.0, -0.1, 0.0)
+			var top := q + across * (-sd * 0.08) + Vector3(0.0, 1.6, 0.0)
+			b.rod(foot, top, 0.055, 6, C_RAIL.darkened(0.12))
 	Builder._add_mesh(parent, "RocksAndFence", b.to_mesh(surf), null, true)
 
 

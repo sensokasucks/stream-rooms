@@ -64,6 +64,13 @@ var _amb: AudioStreamGeneratorPlayback
 var _wet: float = 0.0
 var _rain_now: float = 0.0
 var _frost: float = 0.0
+## The least snow there always is on the ground, 0..1, whatever the setting says (a snowy scene
+## sets it before setup(): Cabin: Frozen North, cabin_north.gd SNOW_FLOOR). 0 = none.
+var snow_floor: float = 0.0
+## How much of the lying snow heaps up on the detailed trees' boughs (camp_foliage.gdshader
+## `snow_load` = snow on the ground times this), 0..1. 0 = none, only the frost tint (set before
+## setup(); Cabin: Frozen North sets 0.7).
+var tree_snow: float = 0.0
 var _built_snow: float = 0.0      # snow that has piled up while it snowed, on top of the setting
 var _pushed: Vector4 = Vector4(-1, -1, -1, -1)   # wet, snow, frost, wind last given to the materials
 # lightning
@@ -129,6 +136,7 @@ func settle() -> void:
 	var look := _look()
 	_rain_now = float(look["rain"])
 	_wet = _rain_now
+	_built_snow = 0.6 if bool(look["snow"]) else 0.0
 	_frost = 1.0 if bool(look["snow"]) else (0.45 if snow_cover() > 0.3 else 0.0)
 	_pushed = Vector4(-1, -1, -1, -1)
 
@@ -177,9 +185,10 @@ func sun_share() -> float:
 	return float(_look()["sun"])
 
 
-## The snow shown on the ground and roofs now, 0..1.
+## The snow shown on the ground and roofs now, 0..1: the room's snow_floor or the setting,
+## whichever is more, plus what has piled up while it snowed.
 func snow_cover() -> float:
-	return clampf(float(AppState.get_setting(prefix + "snow")) + _built_snow, 0.0, 1.0)
+	return clampf(maxf(float(AppState.get_setting(prefix + "snow")), snow_floor) + _built_snow, 0.0, 1.0)
 
 
 ## How wet things are now, 0..1 (for tests).
@@ -226,7 +235,12 @@ func run(delta: float) -> void:
 	_rain_now = move_toward(_rain_now, rain_target, delta / 4.0)
 	_wet = move_toward(_wet, rain_target, delta / (20.0 if rain_target > _wet else 90.0))
 	_frost = move_toward(_frost, 1.0 if snowing else (0.45 if snow_cover() > 0.3 else 0.0), delta / 60.0)
-	_built_snow = move_toward(_built_snow, 0.6 if snowing else 0.0, delta / (300.0 if snowing else 600.0))
+	# snow piles up over about two minutes of snowfall; once it stops it melts in about a minute
+	# (half a minute in rain), so changing the weather shows on the ground soon after. It used to
+	# take ten minutes and the snow seemed to stay for good. Snow wanted for longer: the
+	# "Snow on the ground" slider (or the room's snow_floor), which this never melts.
+	var melt := 30.0 if rain_target > 0.0 else 60.0
+	_built_snow = move_toward(_built_snow, 0.6 if snowing else 0.0, delta / (120.0 if snowing else melt))
 	# the falling rain and snow
 	if _rain:
 		_rain.emitting = rain_target > 0.0 and fx > 0.01
@@ -285,6 +299,8 @@ func _push_materials(w: float) -> void:
 		m.set_shader_parameter("wind", 0.4 + w)
 		# frost on the leaves and needles: paler, a little blue, as the snow lies
 		m.set_shader_parameter("tint", (f[1] as Color).lerp(Color(1.25, 1.3, 1.4), now.y * 0.55))
+		if tree_snow > 0.0:
+			m.set_shader_parameter("snow_load", now.y * tree_snow)
 
 
 ## The sky, fog and light for the weather. Called by the room each time it redraws its sky
