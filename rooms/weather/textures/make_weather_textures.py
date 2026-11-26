@@ -10,8 +10,10 @@ pictures):
   runners.png  256 x 1024, tiles both ways. Drops sliding down with the wet trail they leave.
                R, G = lean as above; B = water; A = 0 at the drop's head, rising along its trail
                (the shader fades the trail with it).
-  frost.png    512 x 512, tiles both ways. Feathery frost crystals over a thin patchy film (bright = thick frost);
-               the shader grows it in from the bottom of each pane as it gets colder.
+  frost.png    1024 x 1024 RGB, tiles both ways. R = feathery frost crystals over a thin patchy
+               film (bright = thick frost); G, B = smooth noise (large, small) for the shader to
+               wobble the frost's edge with. The shader grows the frost in from the edges of each
+               pane (most from the bottom) as it gets colder.
 """
 import os
 
@@ -131,27 +133,36 @@ def _frost_branch(draw, x, y, ang, length, width, depth, rng, size):
 
 def make_frost():
     from PIL import ImageDraw, ImageFilter
-    size = 512
+    # 1024 pixels for 1.3 m of glass (weather_glass.gdshader frost_size): big enough, with a
+    # second copy laid over it turned and scaled, that the pattern doesn't visibly repeat
+    size = 1024
     rng = np.random.default_rng(3141)
-    # the crystals: feathery strokes growing every which way (the shader decides where on the
-    # pane they show; bright = frost)
+    # R, the crystals: feathery strokes growing every which way (bright = frost; the shader
+    # decides where on the pane they show)
     lines = Image.new("L", (size, size), 0)
     draw = ImageDraw.Draw(lines)
-    for _ in range(20):
+    for _ in range(64):
         x, y = rng.uniform(0, size, 2)
-        _frost_branch(draw, x, y, rng.uniform(0, 2 * np.pi), rng.uniform(120, 260), rng.uniform(1.2, 2.2), 2, rng, size)
-    soft = np.asarray(lines.filter(ImageFilter.GaussianBlur(1.2)), np.float32) / 255.0
-    glow = np.asarray(lines.filter(ImageFilter.GaussianBlur(6)), np.float32) / 255.0
+        _frost_branch(draw, x, y, rng.uniform(0, 2 * np.pi), rng.uniform(160, 420), rng.uniform(1.4, 2.6), 2, rng, size)
+    soft = np.asarray(lines.filter(ImageFilter.GaussianBlur(1.4)), np.float32) / 255.0
+    glow = np.asarray(lines.filter(ImageFilter.GaussianBlur(8)), np.float32) / 255.0
     # a thin frosty film between the crystals, patchy (smooth noise), and a fine grain
     film = np.zeros((size, size), np.float32)
     amp = 1.0
-    for cells in (4, 8, 16):
+    for cells in (5, 10, 20):
         film += tile_noise(size, cells, rng) * amp
         amp *= 0.5
     film /= film.max()
-    grain = tile_noise(size, 256, rng)
-    img = np.clip(soft * 0.8 + glow * 0.5 + film * 0.35 + grain * 0.08 - 0.05, 0, 1)
-    Image.fromarray((img * 255).astype(np.uint8), "L").save(os.path.join(HERE, "frost.png"))
+    grain = tile_noise(size, 384, rng)
+    crystals = np.clip(soft * 0.8 + glow * 0.5 + film * 0.35 + grain * 0.08 - 0.05, 0, 1)
+    # G, B: smooth noise at two sizes (no crystals), which the shader uses to make the edge of
+    # the frost wander in and out instead of following the window frame in a straight line
+    wander = tile_noise(size, 3, rng) * 0.6 + tile_noise(size, 7, rng) * 0.4
+    wander = (wander - wander.min()) / (wander.max() - wander.min())
+    lumps = tile_noise(size, 16, rng) * 0.7 + tile_noise(size, 33, rng) * 0.3
+    lumps = (lumps - lumps.min()) / (lumps.max() - lumps.min())
+    img = np.dstack([crystals, wander, lumps])
+    Image.fromarray((img * 255).astype(np.uint8), "RGB").save(os.path.join(HERE, "frost.png"))
 
 
 if __name__ == "__main__":

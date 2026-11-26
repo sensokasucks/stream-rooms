@@ -10,12 +10,17 @@
 # Run from PowerShell in the project folder:
 #   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1
 #   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Tests test_crowd,test_reactions
+#   powershell -ExecutionPolicy Bypass -File tools\run_tests.ps1 -Screen 0   (test windows on the first monitor)
 # Screenshots and logs go to -Out (default C:\temp\sr_tests), outside the project folder.
 param(
 	[string[]]$Tests = @("test_performance", "test_accessibility", "test_crowd", "test_platform_split", "test_reactions", "test_mp_profile", "test_together", "test_panel_clicks", "test_spout", "test_watch_together", "test_mic_safety", "test_shared_audience", "test_net_pictures", "test_streamer_looks", "test_costream_resync", "test_presenter_extras", "test_room_swaps", "test_throne_hall", "test_forge_hall", "test_ui_review", "test_chat_replies", "test_core_pictures", "test_odd_text", "test_emote_urls", "test_bubble_colors", "test_chat_hud", "test_red_flags", "test_highlight_glow", "test_bubble_leave", "test_capture_key", "test_together_limits", "test_tab_switch", "test_video_quit", "test_status_line", "test_busy_chat", "test_panel_tidy", "test_bubble_filter", "test_esc_menu", "test_reserved_seats", "test_camera_views", "test_video_steps", "test_people_menu", "test_rooms_remote", "test_laser_pointer", "test_campfire", "test_drive_in", "test_screen_only"),
 	[string]$Out = "C:\temp\sr_tests",
 	[string]$Redot = "G:\streamin dings\Redot_v26.2-stable_windows_win64\redot.windows.editor.x86_64.console.exe",
 	[int]$TimeLimit = 400,
+	# Which monitor the test windows open on, counted from 0 (0 = the first monitor Windows lists,
+	# usually "1" in Windows' display settings). -1 = wherever Redot opens them. Lets the owner keep
+	# reading on another monitor while a long run goes: -Screen 0
+	[int]$Screen = -1,
 	[switch]$SkipImport
 )
 $ErrorActionPreference = "Stop"
@@ -51,7 +56,9 @@ foreach ($t in $Tests) {
 	Remove-Item "$profileCfg.bak", "$profileCfg.tmp" -Force -ErrorAction SilentlyContinue
 	Set-Content -Path $profileCfg -Encoding ascii -Value "[settings]`r`n`r`nchat_enabled=false`r`nchat_core_url=`"ws://127.0.0.1:9/ws`"`r`n"
 	$log = Join-Path $Out "$t.log"
-	$ended = Invoke-Redot @("--path", "`"$project`"", "_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test") $log $TimeLimit
+	# Redot's own --screen flag picks the monitor; it goes before the "--" (after it are the test's arguments)
+	$screenArgs = if ($Screen -ge 0) { @("--screen", "$Screen") } else { @() }
+	$ended = Invoke-Redot (@("--path", "`"$project`"") + $screenArgs + @("_tests/$t.tscn", "--", "`"$dir`"", "--mp-profile=test")) $log $TimeLimit
 	$text = @(Get-Content $log -ErrorAction SilentlyContinue) + @(Get-Content "$log.err" -ErrorAction SilentlyContinue)
 	$rows += [pscustomobject]@{
 		Test           = $t

@@ -1508,21 +1508,23 @@ Included rooms:
   - Source: `blender/forge_hall_gen.py` (run inside Blender: see the top of that file; it
     writes the `.glb`). The granite, wood, metal, sign, sun-patch and stand-by card textures
     come from `blender/make_forge_textures.py`. The sky is `rooms/forge_hall/forge_sky.gdshader`.
-- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest** and **Cabin: Lakeside** below put it in the woods and by a lake): a cozy log cabin with a tall
+- **Log Cabin** (the cabin in a plain clearing; **Cabin: Appalachian Forest**, **Cabin: Lakeside**, **Cabin: Ocean** and **Cabin: Frozen North** below put it in the woods, by a lake, on the coast and in the snowy north): a cozy log cabin with a tall
   great room. A stone chimney stands in the middle of a two-storey glass wall, with the big
   screen above the mantel, so every seat sees the fire, the screen and the view outside at once.
   - A loft runs across the back over the kitchen, the dining table and the back door, with
     stairs up the right wall. Glass doors in the front corners open onto a deck with chairs and
     a fire table. Outside is a grassy clearing ringed by forest. The scene rooms (so far
-    **Cabin: Appalachian Forest** and **Cabin: Lakeside**) are the same cabin somewhere else.
+    **Cabin: Appalachian Forest**, **Cabin: Lakeside**, **Cabin: Ocean** and **Cabin: Frozen North**) are the same cabin
+    somewhere else.
   - Lived-in details: chinked log walls, plump leather sofas with wool throws, sheepskins by the
     hearth, a live-edge coffee table with books, mugs and a candle, a kitchen with an iron stove
     and kettle, shelves of enamel mugs and plates, coats and boots by the back door,
-    bookshelves and a quilted bed in the loft.
+    and bookshelves.
   - A small **den** opens off the left wall: low log beams, its own stone fireplace with a
     heavy mantel and a smaller screen, a leather sofa, an armchair and a lamp.
-  - Chat sits on 30 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
-    the dining bench), 5 at the loft railing and 7 on the deck.
+  - Chat sits on 46 seats: 18 on the main floor (cushions by the hearth, two sofas, armchairs,
+    the dining bench), 21 in the loft (a bench at the railing and two raised rows of benches
+    behind it, like a little gallery) and 7 on the deck.
   - A podium room: in the great room the four presenters sit in leather armchairs either side
     of the fireplace (see *Presenters*). No webcam frame: the webcam uses the corner overlay.
   - Room tab:
@@ -1553,9 +1555,12 @@ Included rooms:
       - **Storm**: the same, plus strong wind, lightning with thunder a moment later, and the
         lamps dipping now and then. In photosensitive-safe mode the lightning is a soft, slow glow
         and the lamps don't dip; **Flash strength** turns it down too.
-      - **Snow**: flakes drift down, frost grows up the windows, and snow slowly piles up on the
-        ground, the roofs, the deck and the railings, with frost on the trees.
-      - When the weather clears, the glass dries and the snow melts slowly instead of all at once.
+      - **Snow**: flakes drift down, frost creeps in from the edges of the windows (thickest at
+        the bottom), and snow piles up on the ground, the roofs, the deck and the railings over
+        a couple of minutes, with frost on the trees. The windows between the den and the great
+        room are indoors, so they never get rain or frost.
+      - When the weather clears, the glass dries over a minute or so and the snow that fell
+        melts within about a minute (faster in rain). Snow set with **Snow on the ground** stays.
     - **Fog**: **Off**, **Light** or **Heavy**, on top of any weather. Heavy fog swallows the
       trees within about 30 metres; the inside of the cabin stays clear.
     - **Wind**: how hard the wind blows (the trees, the rain's slant, the snow, the chimney
@@ -1564,8 +1569,8 @@ Included rooms:
     - **Rain and snow amount**: how many drops and flakes this PC draws (lower it on a slow
       graphics card). Each PC picks its own.
     - The fire crackles while it burns.
-  - Cameras (great room): the loft (the default), a Reaction camera at the hearth looking back
-    at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
+  - Cameras (great room): high in the loft, between its rows of seats (the default), a Reaction
+    camera at the hearth looking back at the room, the sofa, the stair corner, the deck looking in and looking out, outside the
     glass gable, the front door, the dining table and close on the screen. With **Gather in:
     Den** the den's four come first: by the doorway towards the fire, a Reaction camera on the
     sofa, the armchair and from the hearth looking back.
@@ -1583,7 +1588,8 @@ Included rooms:
   fire, lamps, Gather in, time of day, weather) in the Appalachian woods.
   - The deck looks out over a valley: the ground falls away in front of the cabin, so you see
     over the treetops to layers of hazy blue ridges, each paler than the one before. Behind the
-    cabin the wooded slope climbs.
+    cabin the wooded slope climbs. The mown grass round the cabin fades softly into the leafy
+    forest floor at the clearing's edge.
   - A creek runs past the right side of the cabin and down into the valley, with rocks in it and
     stepping stones where the path from the deck steps meets it.
   - Oaks, maples, tall tulip poplars and birches mixed with dark hemlocks (more of them along
@@ -1620,6 +1626,52 @@ Included rooms:
     brown; the pines and firs stay green). Shared in a co-stream.
   - Built in code when the room loads (`rooms/log_cabin/cabin_lake.gd`, room files in
     `rooms/cabin_lake/`). The trees, grass, sand and lake water are the Lakeside Campfire's.
+- **Cabin: Ocean**: the Log Cabin (everything above: seats, cameras, presenters, fire, lamps,
+  Gather in, time of day, weather) on a grassy bluff over the sea.
+  - In front of the deck the grass runs to the edge of the bluff, which drops to a wide sandy
+    beach. Beyond it the open sea runs out to a flat horizon. Waves roll in, break into foam and
+    wash up the sand, and the sea gets rougher and the surf bigger as the **Wind** rises (a
+    storm whips it up).
+  - Wooden stairs lead from the path down the bluff to the beach. Sun-bleached driftwood and dark
+    rocks lie on the sand, and tall pale dune grass grows along the bluff's edge and the back of
+    the beach. The coastal pines are bent inland by the wind, hardest near the bluff.
+  - Out to sea, a lighthouse stands on a small rocky island with the keeper's house beside it.
+    From dusk and through the night, and in fog by day, its lamp glows and two beams turn slowly
+    across the sea. (The lamp brightens a little as a beam sweeps past you; with
+    **Photosensitive safe** on it stays steady.)
+  - Gulls glide in circles over the beach by day in fair weather, and call now and then.
+  - Sound: the surf rolling in (made by the app, no recording), the gulls (a public domain
+    recording from the US National Park Service's Sound Gallery) and a foghorn every 30 seconds
+    when **Fog** is **Heavy**. They all play on the room ambience, so **Room ambience** on the
+    **Sound** tab sets how loud they are.
+  - No **Season** here: the coast stays as it is. The same `cabin_` settings as the other cabin
+    rooms.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_ocean.gd`, room files in
+    `rooms/cabin_ocean/`; the surf is `rooms/log_cabin/cabin_surf.gdshader`, the beams
+    `cabin_beam.gdshader`).
+- **Cabin: Frozen North**: the Log Cabin (everything above: seats, cameras, presenters, fire,
+  lamps, Gather in, time of day, weather) deep in snow by a frozen lake.
+  - In front of the deck a snowy slope runs down to the lake, frozen over and stretching out to
+    low mountains. The wind has swept parts of the ice clean, so it is dark and glassy and
+    mirrors the sky; elsewhere snow has drifted across it in long streaks, and pale cracks run
+    through the clear ice. A trail of packed snow leads from the deck steps down onto the ice.
+  - Tall, narrow spruces and a few big pines, frosted pale, crowd the shores and the slope behind
+    the cabin, and a small wooded island sits out on the ice. Snow-capped boulders lie round
+    the yard and along the shore.
+  - A pair of old laced snowshoes leans by the corner glass door, and a wooden sled with red
+    runners stands at the foot of the deck steps.
+  - It is always winter here: the ground stays under deep snow even with **Snow on the ground**
+    at 0% (raise it, or let it snow, for even more on the roofs and railings), and frost creeps
+    up the windows.
+  - **Aurora** (Room tab, under **Sky**, only in this room): the northern lights, slow green and
+    violet curtains over the frozen lake on clear nights. Cloud thins them out; snow, rain and
+    fog hide them. 0% = none, 200% = a strong display. Shared in a co-stream.
+  - Sound: now and then the ice creaks, sings or booms as it settles (made by the app, no
+    recording), most often around dawn and dusk. It plays on the room ambience, so **Room
+    ambience** on the **Sound** tab sets how loud it is.
+  - No **Season** here. The same `cabin_` settings as the other cabin rooms, plus **Aurora**.
+  - Built in code when the room loads (`rooms/log_cabin/cabin_north.gd`, room files in
+    `rooms/cabin_north/`; the ice is `rooms/log_cabin/cabin_ice.gdshader`).
 - **Lakeside Campfire**: an outdoor room. A campfire in a forest clearing at the edge of a
   lake, with mountains behind it and a sky that changes with the hour.
   - The big screen hangs between two wooden posts with the lake behind it. Untick **Big screen**

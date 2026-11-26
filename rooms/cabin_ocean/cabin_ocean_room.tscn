@@ -1,0 +1,12 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://rooms/log_cabin/log_cabin_room.gd" id="1_lc"]
+
+[node name="CabinOceanRoom" type="Node3D"]
+script = ExtResource("1_lc")
+scene = "ocean"
+dimmed_level = 0.3
+fade_speed = 0.5
+lamp_color = Color(1, 0.74, 0.46, 1)
+lamp_energy = 1.1
+lamp_range = 5.5

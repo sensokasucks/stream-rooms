@@ -1,11 +1,13 @@
 extends Node
 ## Log Cabin (first layout pass): the room loads with everything its markers promise (the screen
-## on the chimney, ten cameras with a Reaction one, four podium armchairs, 30 chat seats on the
+## on the chimney, ten cameras with a Reaction one, four podium armchairs, 46 chat seats on the
 ## main floor, in the loft and on the deck, seven lamps, three reaction targets, two fires), and
 ## the Room tab's four controls do their job: Fire (flames, coals, the fires' light), Lamps (the
 ## house lights go out), Light outside (day / dusk / night: sun or moon, sky colours) and Gather
 ## in (Den reloads the room with the presenters on the den's sofa and armchair, the den's screen
-## as the main one and its cameras first).
+## as the main one and its cameras first). The weather: rain, a storm (soft lightning in safe
+## mode), snow (the outside panes frost, the windows into the den stay clear), the snow that fell
+## melts within a minute of clearing, and fog.
 ## Saves one screenshot per camera, the dusk / night / day looks and the den's cameras into the output folder (look
 ## at them: the look is not checked here).
 ##   <redot console exe> --path . _tests/test_log_cabin.tscn -- C:/temp/sr_tests --mp-profile=test
@@ -89,7 +91,7 @@ func _ready() -> void:
 	var lamps := room.find_child("LIGHTS_House", false, false)
 	_check(lamps != null and lamps.find_children("*", "OmniLight3D", true, false).size() == 7, "seven lamps under LIGHTS_House (five in the great room, two in the den)")
 
-	# the audience: 30 seats, 18 on the main floor, 5 in the loft, 7 on the deck
+	# the audience: 46 seats, 18 on the main floor, 21 in the loft (three rows), 7 on the deck
 	var seats := room.get_audience_seats()
 	var floor_n := 0
 	var loft_n := 0
@@ -102,8 +104,8 @@ func _ready() -> void:
 			deck_n += 1
 		else:
 			floor_n += 1
-	_check(seats.size() == 30, "30 chat seats at the default seat spacing (%d)" % seats.size())
-	_check(floor_n == 18 and loft_n == 5 and deck_n == 7, "18 on the main floor, 5 in the loft, 7 on the deck (%d / %d / %d)" % [floor_n, loft_n, deck_n])
+	_check(seats.size() == 46, "46 chat seats at the default seat spacing (%d)" % seats.size())
+	_check(floor_n == 18 and loft_n == 21 and deck_n == 7, "18 on the main floor, 21 in the loft, 7 on the deck (%d / %d / %d)" % [floor_n, loft_n, deck_n])
 
 	# the fire
 	var fx := room.find_child("SunShafts", false, false)
@@ -257,6 +259,14 @@ func _ready() -> void:
 		_check(snow_p.emitting and not rain_p.emitting, "Snow: flakes fall, the rain has stopped")
 		_check(float(surf0.get_shader_parameter("snow")) >= 0.79 and float(glass.get_shader_parameter("frost")) > 0.9,
 			"Snow: snow lies outside and the glass frosts (%.2f / %.2f)" % [float(surf0.get_shader_parameter("snow")), float(glass.get_shader_parameter("frost"))])
+		# the windows between the great room and the den are indoors: never frosted or wet
+		var inside_glass := room.get("_parts")["inside_glass_mat"] as ShaderMaterial
+		# (a value never set reads back as null: count that as 0)
+		var in_frost: Variant = inside_glass.get_shader_parameter("frost")
+		var in_wet: Variant = inside_glass.get_shader_parameter("wet")
+		var in_f := float(in_frost) if in_frost != null else 0.0
+		var in_w := float(in_wet) if in_wet != null else 0.0
+		_check(in_f < 0.01 and in_w < 0.01, "Snow: the windows into the den stay clear (frost %.2f)" % in_f)
 		EventBus.camera_preset_requested.emit(6)
 		await _secs(2.0)
 		await _shot(_out.path_join("weather_snow_outside.png"))
@@ -282,6 +292,13 @@ func _ready() -> void:
 		AppState.set_setting("cabin_fog", "off")
 		AppState.set_setting("cabin_weather", "clear")
 		await _secs(0.5)
+		# the snow that fell melts within about a minute once the weather clears (it once took ten)
+		AppState.set_setting("cabin_weather", "snow")
+		weather.call("settle")
+		AppState.set_setting("cabin_weather", "clear")
+		for i in 65:
+			weather.call("run", 1.0)
+		_check(float(weather.call("snow_cover")) < 0.02, "Clear: the snow that fell has melted a minute later (%.2f)" % float(weather.call("snow_cover")))
 		# (fog_density too: switching fog_mode resets it to 1.0, which once drowned clear days in fog)
 		_check(env.fog_mode == Environment.FOG_MODE_EXPONENTIAL and env.fog_density < 0.01,
 			"Clear: the fog is back to the room's own thin haze (density %.4f)" % env.fog_density)
@@ -310,7 +327,7 @@ func _ready() -> void:
 			in_den += 1 if m != null and m.global_position.x < -7.0 and m.global_position.y > 0.3 else 0
 			with_podium += 1 if p["podium"] != null else 0
 		_check(dpres.size() == 4 and in_den == 4 and with_podium == 0, "Den: four presenters on the sofa and armchair, no podium chairs (%d / %d / %d)" % [dpres.size(), in_den, with_podium])
-		_check(den.get_audience_seats().size() == 30, "Den: chat keeps its 30 seats (%d)" % den.get_audience_seats().size())
+		_check(den.get_audience_seats().size() == 46, "Den: chat keeps its 46 seats (%d)" % den.get_audience_seats().size())
 		for i in 4:
 			EventBus.camera_preset_requested.emit(i)
 			await _secs(1.2)
