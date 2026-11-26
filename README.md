@@ -1708,9 +1708,10 @@ Included rooms:
     co-stream chooses its own.
     The detailed trees are modelled in Blender (real branching trunks and limbs, small leafy
     twigs and needle sprays). To keep the frame rate up, each tree is drawn in full only
-    within about 16 m of the camera, as a lighter version of itself up to about 34 m, and
+    within about 26 m of the camera, as a lighter version of itself up to about 52 m, and
     beyond that as a picture of itself that turns to face you. Each tree switches on its own
-    as the camera moves, so you will not see whole patches of forest change at once.
+    as the camera moves, and over a few metres the two versions blend into each other, so
+    you will not see trees or whole patches of forest pop from one to the other.
   - **Fire** sets how big the campfire is (0% puts it out). It lights the clearing at night.
   - **Time of day** is the hour, 0 to 24: sunrise at 6, noon at 12, sunset at 18. The sun, the
     moon, the colour of the sky, the light on the ground and the reflection on the lake all

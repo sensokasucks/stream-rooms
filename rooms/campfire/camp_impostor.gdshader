@@ -10,8 +10,8 @@ render_mode cull_disabled;
 //   INSTANCE_CUSTOM.r  the species' row in the sheets (campfire_forest.gd SPECIES order)
 //   INSTANCE_CUSTOM.gb the level's band (metres from lod_eye), as in camp_prop.gdshader
 //   COLOR.rgb          the tree's tint (its MultiMesh instance colour), as on the near trees
-// The far trees' band starts where the light level's ends, so each tree is drawn at exactly
-// one level.
+// The far trees' band starts where the light level's ends; round that edge the two share each
+// tree for a few metres (camp_lod.gdshaderinc), so a tree dissolves from one into the other.
 // Autumn: as in camp_foliage.gdshader, but per row (leafy[] says which rows turn colour,
 // fall_a[] / fall_b[] their range); campfire_room.gd _apply_autumn sets them.
 // Keep frames, rows and half_size equal to make_trees.py IMPOSTOR_FRAMES, len(SPECIES), IMP_HALF.
@@ -31,7 +31,8 @@ uniform float autumn = 0.0;
 uniform float leafy[6];
 uniform vec3 fall_a[6];
 uniform vec3 fall_b[6];
-uniform vec3 lod_eye = vec3(0.0);
+
+#include "res://rooms/campfire/camp_lod.gdshaderinc"
 
 varying flat float frame;
 varying flat float row;
@@ -53,15 +54,13 @@ void vertex() {
 	vec2 c = vec2((UV.x - 0.5) * 2.0 * half_size, (1.0 - UV.y) * 2.0 * half_size);
 	VERTEX = right * c.x + vec3(0.0, c.y, 0.0);
 	NORMAL = to_cam;
-	if (INSTANCE_CUSTOM.b > 0.0) {
-		float d = distance(MODEL_MATRIX[3].xyz, lod_eye);
-		if (d < INSTANCE_CUSTOM.g || d >= INSTANCE_CUSTOM.b) {
-			VERTEX = vec3(0.0);
-		}
-	}
+	lod_keep = lod_vertex(VERTEX, INSTANCE_CUSTOM, MODEL_MATRIX[3].xyz);
 }
 
 void fragment() {
+	if (lod_drop(FRAGCOORD.xy, lod_keep)) {
+		discard;
+	}
 	vec2 uv = vec2((frame + UV.x) / frames, (row + UV.y) / rows);
 	vec4 c = texture(color_sheet, uv);
 	vec4 n = texture(normal_sheet, uv);

@@ -128,7 +128,8 @@ def build_twig_scene(species: str) -> None:
     """A twig with its leaves, laid flat on the XY plane inside the square x -0.5..0.5,
     y 0..1, stem end at (0, 0). Emission materials only, so the picture is the colours as
     they are (the game lights the cards)."""
-    rnd = random.Random(hash(species) & 0xFFFF)
+    # a string seed, so every run draws the same twig (Python's hash() of a string changes per run)
+    rnd = random.Random("twig_" + species)
     # [leaves on the main stem, leaf length, colour (sRGB), side twigs]
     look = {"oak": (11, 0.25, (0.20, 0.33, 0.09), 2), "maple": (9, 0.27, (0.22, 0.38, 0.10), 2),
             "birch": (16, 0.15, (0.30, 0.45, 0.11), 3)}[species]
@@ -423,7 +424,10 @@ def fir(lod: int, whorls: int, first: float, reach: float, seed: str) -> Geo:
     """A fir / spruce: rings ("whorls") of drooping boughs up a straight trunk, long at the
     bottom and short at the top, each bough carrying overlapping needle cards (and a thin
     bare branch in the lower half, where the boughs are long enough to show one) rolled to different angles, so the tree has a body from every side and gaps to see into.
-    lod 1: no branch meshes, one long card per bough."""
+    lod 1: no branch meshes, one long card per bough.
+    Sen (round 2): the firs looked thin (sky and bare trunk showing between the boughs, worst on
+    the slim firs behind the screen), so there are more boughs per whorl, wider cards and, on
+    the lower boughs, a third card lying flat across the other two."""
     rnd = random.Random(seed)
     g = Geo(["trunk", "needles_fir"])
     bark = (0.34, 0.26, 0.2)
@@ -432,7 +436,7 @@ def fir(lod: int, whorls: int, first: float, reach: float, seed: str) -> Geo:
         t = w / (whorls - 1)
         y = lerp(first, 0.9, t) + rnd.uniform(-0.012, 0.012)
         length = reach * (1.0 - t) ** 0.82 + 0.05
-        boughs = 7 if t < 0.5 else (6 if t < 0.8 else 5)
+        boughs = 9 if t < 0.5 else (8 if t < 0.8 else 6)
         turn = rnd.random() * math.tau
         for i in range(boughs):
             ang = turn + math.tau * i / boughs + rnd.uniform(-0.25, 0.25)
@@ -451,12 +455,17 @@ def fir(lod: int, whorls: int, first: float, reach: float, seed: str) -> Geo:
             d = (tip - base).normalized()
             if lod == 0:
                 # two overlapping cards along the bough, each rolled differently round it
-                for s0, s1, wid in ((0.0, 0.62, 0.62), (0.4, 1.05, 0.55)):
+                for s0, s1, wid in ((0.0, 0.62, 0.75), (0.4, 1.05, 0.66)):
                     a = base.lerp(tip, s0)
                     b = base.lerp(tip, s1)
                     side = d.cross(Vector((0, 0, 1))).normalized()
                     side = Matrix.Rotation(rnd.uniform(-0.6, 0.6), 3, d) @ side
                     g.card(a, b, side, (s1 - s0) * l * wid * 1.6, n, lerp(0.45, 0.75, s0), lerp(0.85, 1.0, s1), 1)
+                if t < 0.6:
+                    # the third card, on its edge (turned a quarter round the bough), so a bough
+                    # seen end-on still shows needles instead of a thin line
+                    side = Matrix.Rotation(math.pi / 2 + rnd.uniform(-0.3, 0.3), 3, d) @ d.cross(Vector((0, 0, 1))).normalized()
+                    g.card(base.lerp(tip, 0.15), base.lerp(tip, 0.9), side, l * 0.5, n, 0.5, 0.9, 1)
             else:
                 side = Matrix.Rotation(rnd.uniform(-0.4, 0.4), 3, d) @ d.cross(Vector((0, 0, 1))).normalized()
                 g.card(base, tip + d * 0.05 * l, side, l * 0.85, n, 0.5, 1.0, 1)
@@ -521,19 +530,23 @@ LEAFY = {
     # spread sideways, 1 = they sweep up), twig cards at lod 0, card length, droop (1 = the
     # twigs hang), card material
     "oak": dict(bark=BARK_OAK, col=(0.4, 0.36, 0.31), trunk=0.05, fork=0.26, centre=0.62, radii=(0.47, 0.3),
-                limbs=9, limb_r=0.55, rise=0.2, cards=340, size=0.15, droop=0.1, mat="twigs_oak"),
+                limbs=9, limb_r=0.55, rise=0.2, cards=440, size=0.16, droop=0.1, mat="twigs_oak"),
     "maple": dict(bark=BARK_OAK, col=(0.36, 0.33, 0.3), trunk=0.034, fork=0.3, centre=0.66, radii=(0.3, 0.34),
-                  limbs=8, limb_r=0.45, rise=0.65, cards=310, size=0.14, droop=0.05, mat="twigs_maple"),
+                  limbs=8, limb_r=0.45, rise=0.65, cards=420, size=0.15, droop=0.05, mat="twigs_maple"),
+    # birch (Sen, round 2: leaves were too big): smaller cards, more of them
     "birch": dict(bark=BARK_BIRCH, col=(0.66, 0.65, 0.61), trunk=0.022, fork=0.42, centre=0.7, radii=(0.21, 0.3),
-                  limbs=8, limb_r=0.38, rise=0.75, cards=290, size=0.125, droop=0.55, mat="twigs_birch"),
+                  limbs=8, limb_r=0.38, rise=0.75, cards=430, size=0.085, droop=0.55, mat="twigs_birch"),
 }
 
 
 def leafy(species: str, lod: int) -> Geo:
-    """A leafy tree: trunk, limbs that bend and fork into branches, and twig cards on the
-    branches. The crown is an egg shape (centre, radii); its outside gets the most twigs, the
-    inside stays darker and has gaps, as real crowns do. lod 1: no small branches and a third
-    as many twig cards, each bigger, in the same places (so the outline matches)."""
+    """A leafy tree: trunk, limbs that bend and fork into branches and twiglets, and twig cards
+    on them. The crown is an egg shape (centre, radii); its outside gets the most twigs, the
+    inside stays darker and has gaps, as real crowns do. lod 1: no small branches and half as
+    many twig cards, each bigger, on the same branches (so the outline matches).
+    Every card's stem end sits on a branch or twiglet (Sen, round 2: cards scattered round
+    the branch ends, and over the crown's skin to close holes, left leaves floating in the air
+    on the birches). The holes are closed by more branches instead."""
     p = LEAFY[species]
     rnd = random.Random(species)
     g = Geo(["trunk", p["mat"]])
@@ -552,7 +565,9 @@ def leafy(species: str, lod: int) -> Geo:
         q = v - centre
         return math.sqrt((q.x / rx) ** 2 + (q.y / rx) ** 2 + (q.z / ry) ** 2)
 
-    twigs = [top]                           # points the twig cards grow from
+    # the pieces of wood the twig cards grow from: [from, to]; a card's stem end sits somewhere
+    # on the outer two thirds of one
+    wood = [(fork.lerp(top, 0.7), top)]
     limbs = p["limbs"]
     rise = p["rise"]
     lr = r * p["limb_r"]
@@ -571,39 +586,61 @@ def leafy(species: str, lod: int) -> Geo:
         path = [start, start.lerp(elbow, 0.5), elbow, elbow.lerp(tip, 0.5) + jitter(rnd, 0.01), tip]
         rad0 = lr * lerp(1.0, 0.6, t)
         g.tube(path, [rad0, rad0 * 0.8, rad0 * 0.55, rad0 * 0.35, rad0 * 0.1], 5 if lod == 0 else 4, bark, col)
-        twigs += [tip, elbow.lerp(tip, 0.6)]
-        # branches off the limb's outer half, reaching out to the crown's skin
-        for k in range(5):
-            s = lerp(0.35, 0.95, k / 4) + rnd.uniform(-0.05, 0.05)
+        wood.append((elbow.lerp(tip, 0.3), tip))
+        # branches off the limb's outer half, reaching out to the crown's skin, each with two
+        # twiglets (the wood the outer cards hang on)
+        for k in range(7):
+            s = lerp(0.3, 0.95, k / 6) + rnd.uniform(-0.04, 0.04)
             seg = min(int(s * 4), 3)
             at = path[seg].lerp(path[seg + 1], s * 4 - seg)
             d = ((at - centre).normalized() * 0.6 + random_side(rnd, (tip - start).normalized()) * 0.6
                  + Vector((0, 0, lerp(0.1, 0.5, rise) - p["droop"] * 0.5))).normalized()
-            blen = rnd.uniform(0.1, 0.17) * (rx + ry)
+            blen = rnd.uniform(0.12, 0.2) * (rx + ry)
             end = at + d * blen
-            while inside(end) > 1.0:
+            while inside(end) > 0.97:
                 end = centre + (end - centre) * 0.96
             if lod == 0:
                 g.tube(curve(at, end, 0.01 * p["droop"], 3), [rad0 * 0.32, rad0 * 0.18, rad0 * 0.05], 3, bark, col)
-            twigs += [end, at.lerp(end, 0.55)]
-    # twig cards: round the twig points, most of them near the crown's outside
-    count = p["cards"] if lod == 0 else p["cards"] // 3
-    size = p["size"] * (1.0 if lod == 0 else 1.7)
+            wood.append((at, end))
+            for j in range(2):
+                tat = at.lerp(end, rnd.uniform(0.4, 0.85))
+                td = (d + random_side(rnd, d) * 0.9 - Vector((0, 0, p["droop"] * 0.6))).normalized()
+                tend = tat + td * blen * rnd.uniform(0.4, 0.6)
+                while inside(tend) > 1.0:
+                    tend = centre + (tend - centre) * 0.96
+                if lod == 0:
+                    g.tube([tat, tend], [rad0 * 0.1, rad0 * 0.03], 3, bark, col)
+                wood.append((tat, tend))
+    # branches off the top of the trunk, up into the crown's top (without them the top of a
+    # wide crown, the oak's, was a hole: its limbs all reach sideways)
+    for k in range(6):
+        at = fork.lerp(top, lerp(0.55, 0.95, k / 5))
+        ang = k * 2.4 + rnd.uniform(-0.3, 0.3)
+        d = Vector((math.cos(ang) * 0.8, math.sin(ang) * 0.8, 1.0)).normalized()
+        end = at + d * (rx + ry) * 0.3
+        while inside(end) > 0.95:
+            end = centre + (end - centre) * 0.96
+        if lod == 0:
+            g.tube([at, at.lerp(end, 0.5), end], [lr * 0.3, lr * 0.18, lr * 0.05], 3, bark, col)
+        wood.append((at.lerp(end, 0.3), end))
+    # twig cards: each one's stem end on a piece of wood (most on its outer part), pointing
+    # out of the crown, down a little where the species' twigs hang
+    count = p["cards"] if lod == 0 else p["cards"] // 2
+    size = p["size"] * (1.0 if lod == 0 else 1.45)
     droop = p["droop"]
+    # pieces whose end reaches the crown's skin get more cards (a crown is leafy outside and
+    # shows its wood inside): weight = how far out the end is, squared
+    weights = [max(0.05, min(1.0, inside(b))) ** 2 for _, b in wood]
     for i in range(count):
-        src = twigs[(i * 7) % len(twigs)]
-        u = Vector((rnd.uniform(-1, 1), rnd.uniform(-1, 1), rnd.uniform(-0.7, 1))).normalized()
-        at = src + u * rnd.uniform(0.0, 0.09) * (rx + ry)
-        if i % 5 == 0:
-            # some anywhere on the crown's skin, to close holes between the branches
-            at = centre + Vector((u.x * rx, u.y * rx, u.z * ry)) * rnd.uniform(0.75, 1.0)
-        if inside(at) > 1.05:
-            at = centre + (at - centre) * (1.0 / inside(at))
+        a, b = rnd.choices(wood, weights)[0]
+        at = a.lerp(b, rnd.uniform(0.3, 1.0) ** 0.7)
         from_c = at - centre
         outward = Vector((from_c.x / rx, from_c.y / rx, from_c.z / ry))
-        d = (outward.normalized() + jitter(rnd, 0.6) + Vector((0, 0, 0.25)) - Vector((0, 0, droop * 1.6))).normalized()
+        along = (b - a).normalized()
+        d = (outward.normalized() * 0.7 + along * 0.5 + jitter(rnd, 0.55) + Vector((0, 0, 0.2))
+             - Vector((0, 0, droop * 1.5))).normalized()
         l = size * rnd.uniform(0.85, 1.2)
-        base = at - d * l * 0.35
+        base = at
         side = random_side(rnd, d)
         n = (outward.normalized() + Vector((0, 0, 0.35))).normalized()
         depth = min(1.0, outward.length)

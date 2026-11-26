@@ -1074,15 +1074,27 @@ static func _pick(roll: float, shares: Array) -> String:
 ## the screen go down to CLOSE_SLIM; at 0.3 a 10 m fir's boughs reach 0.9 m, still clear of the
 ## screen 1.1 m in front of it). Leafy trees and pines are built to other proportions
 ## (campfire_trees.gd), so they are kept from getting needle-thin or wider than they are tall.
+## Firs behind the screen (Sen, round 2: they looked too thin) are stretched along the wall
+## (world x) to FIR_WALL_WIDE of their height, so their boughs meet their neighbours', and kept
+## at 0.3 towards the screen (world z), so they still stay clear of the picture.
+## Birches stand a little smaller than the other leafy trees (Sen, round 2: too big).
+const FIR_WALL_WIDE: float = 0.5
 static func _detailed_spot(xf: Transform3D, species: String) -> Transform3D:
 	if species == "young_fir":
 		return xf
 	var size := xf.basis.get_scale()
 	if species == "fir":
+		var behind_screen := xf.origin.z < SCREEN_Z - 0.8 and absf(xf.origin.x) < CLOSE_WALL_HALF
+		if behind_screen and size.x < size.y * FIR_WALL_WIDE:
+			# turned first, then stretched in world axes (the stretch must not turn with the tree)
+			var depth := maxf(size.x, size.y * 0.3)
+			return Transform3D(Basis.from_scale(Vector3(size.y * FIR_WALL_WIDE, size.y, depth)) * xf.basis.orthonormalized(), xf.origin)
 		if size.x >= size.y * 0.3:
 			return xf
 		return Transform3D(xf.basis.orthonormalized().scaled(Vector3(size.y * 0.3, size.y, size.y * 0.3)), xf.origin)
 	var tall := size.y * (0.85 if species != "pine" else 1.05)
+	if species == "birch":
+		tall = size.y * 0.72
 	var wide := clampf(size.x, tall * 0.55, tall * 0.9)
 	return Transform3D(xf.basis.orthonormalized().scaled(Vector3(wide, tall, wide)), xf.origin)
 

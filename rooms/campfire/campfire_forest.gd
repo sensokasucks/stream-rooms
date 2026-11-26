@@ -15,8 +15,9 @@ extends RefCounted
 ## of one square patch of ground (LEVELS: small patches for the full trees, big ones for the
 ## light trees and the pictures, so there are few draw calls). The shaders fold away each tree whose distance
 ## from the camera is outside its level's band (in each tree's MultiMesh custom data, .g = from
-## and .b = to, in metres from the material's `lod_eye`), so each tree is drawn at exactly one
-## level and switches on its own. (Not an instance uniform: camp_prop.gdshader is on hundreds of
+## and .b = to, in metres from the material's `lod_eye`), so each tree is drawn at one level and
+## switches on its own; round each change two levels share it for LOD_FADE metres and dissolve
+## into each other (camp_lod.gdshaderinc). (Not an instance uniform: camp_prop.gdshader is on hundreds of
 ## the room's meshes, and every one of them would take a slot of the engine's small table.)
 ## The patches let Redot skip whole MultiMeshes that are far outside a band (their visibility
 ## range), so the GPU does not even look at most of the full trees far away. Each level has its
@@ -39,9 +40,14 @@ const LEAF_MATERIAL: Dictionary = {"needles_fir": "fir", "needles_pine": "pine",
 ## The twig pictures make_trees.py draws, for the leafy species' card materials.
 const TWIG_PICTURE: Dictionary = {"leaves": "twig_oak.png", "leaves_maple": "twig_maple.png", "leaves_birch": "twig_birch.png"}
 ## Where the levels change, in metres from the camera: full trees up to LOD1_FROM, the light
-## ones up to IMPOSTOR_FROM, pictures beyond.
-const LOD1_FROM: float = 16.0
-const IMPOSTOR_FROM: float = 34.0
+## ones up to IMPOSTOR_FROM, pictures beyond. (Sen, round 2: 16 and 34 were too close: the
+## change showed near the clearing.)
+const LOD1_FROM: float = 26.0
+const IMPOSTOR_FROM: float = 52.0
+## Metres round each change where both levels share a tree, dissolving one into the other
+## (camp_lod.gdshaderinc `lod_fade`; half before the change, half after). build() widens each
+## patch's visibility range by half of it, so a patch is never hidden while its trees fade.
+const LOD_FADE: float = 8.0
 ## The levels: [node name prefix, patch size in metres, band from, band to]. A bigger patch means
 ## fewer draw calls but more trees the GPU looks at and folds away; the full trees are the
 ## heavy ones, so theirs are small. The bands travel in MultiMesh custom data, which the
@@ -76,6 +82,9 @@ static func add_materials(mats: Dictionary) -> void:
 		leafy.append(1.0 if s in ["oak", "maple", "birch"] else 0.0)
 	imp.set_shader_parameter("leafy", leafy)
 	mats["impostor"] = imp
+	# the soft change between levels (camp_lod.gdshaderinc) on the materials that fade
+	for key: String in ["fir", "pine", "leaves", "leaves_maple", "leaves_birch", "impostor"]:
+		(mats[key] as ShaderMaterial).set_shader_parameter("lod_fade", LOD_FADE)
 
 
 ## The meshes from trees.glb with the room's materials on them: species -> [lod0, lod1].
@@ -145,7 +154,8 @@ static func build(parent: Node3D, holder_name: String, trees: Dictionary, kit: D
 		var prefix: String = LEVELS[level][0]
 		var size: float = LEVELS[level][1]
 		var band := Vector2(float(LEVELS[level][2]), float(LEVELS[level][3]))
-		var reach := size * 0.75                 # a little more than half a patch's diagonal
+		# a little more than half a patch's diagonal, plus the fade's half beyond the band's edge
+		var reach := size * 0.75 + LOD_FADE * 0.5
 		# patch -> species -> [spots, tints]
 		var cells: Dictionary = {}
 		for species: String in trees:

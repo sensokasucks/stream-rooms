@@ -103,7 +103,10 @@ func _ready() -> void:
 				var band: Vector2 = mmi.get_meta("lod_band")
 				var want := Vector2(float(FOREST.LEVELS[level][2]), float(FOREST.LEVELS[level][3]))
 				counts[level] += mmi.multimesh.instance_count
-				levels_ok = levels_ok and band == want and mmi.visibility_range_end > band.y and mmi.visibility_range_begin < maxf(band.x, 0.001)
+				# a patch stays shown while its trees fade out past the band's edge (LOD_FADE)
+				var half_fade: float = FOREST.LOD_FADE * 0.5
+				levels_ok = levels_ok and band == want and mmi.visibility_range_end > band.y + half_fade \
+					and mmi.visibility_range_begin < maxf(band.x - half_fade, 0.001)
 				levels_ok = levels_ok and (level < 2 or mmi.material_override != null)
 				# every tree carries its level's band (the shaders read it from the custom data)
 				var c := mmi.multimesh.get_instance_custom_data(0)
@@ -114,6 +117,36 @@ func _ready() -> void:
 	_check(levels_ok, "the three levels meet without a gap or an overlap (full to %d m, light to %d m, pictures beyond)" % [FOREST.LOD1_FROM, FOREST.IMPOSTOR_FROM])
 	_check(counts[0] == expected and counts[1] == expected and counts[2] == expected,
 		"every tree is in every level once (full %d, light %d, pictures %d, trees %d)" % [counts[0], counts[1], counts[2], expected])
+
+	# ── the soft change between levels (camp_lod.gdshaderinc) ──
+	var fade_ok := true
+	for key: String in ["fir", "pine", "leaves", "leaves_maple", "leaves_birch", "impostor"]:
+		var f: Variant = (mats[key] as ShaderMaterial).get_shader_parameter("lod_fade")
+		fade_ok = fade_ok and f != null and is_equal_approx(float(f), FOREST.LOD_FADE)
+	_check(fade_ok, "the leaves and the far pictures blend over %d m round each change" % int(FOREST.LOD_FADE))
+
+	# ── the firs behind the screen are wide along the wall, slim towards the screen (Sen, round 2) ──
+	var wall_ok := false
+	var close_holder: Node3D = parts["close_woods_detail"]
+	for cell in close_holder.get_children():
+		if not String(cell.name).begins_with("Full_"):
+			continue
+		var fir_mmi := cell.get_node_or_null("Fir") as MultiMeshInstance3D
+		if fir_mmi == null:
+			continue
+		for i in fir_mmi.multimesh.instance_count:
+			var xf := fir_mmi.multimesh.get_instance_transform(i)
+			var at := (cell as Node3D).position + xf.origin
+			if at.z < -7.3 and absf(at.x) < 3.0:
+				var b := xf.basis
+				# world x reach vs world z reach of the unit tree's width
+				var along := Vector2(b.x.x, b.z.x).length()
+				var across := Vector2(b.x.z, b.z.z).length()
+				wall_ok = along > b.y.y * 0.45 and across < b.y.y * 0.45
+				break
+		if wall_ok:
+			break
+	_check(wall_ok, "a fir behind the screen is wide along the wall and slim towards the screen")
 
 	# ── the levels follow the camera ──
 	var cam := get_viewport().get_camera_3d()
