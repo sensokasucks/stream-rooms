@@ -130,6 +130,21 @@ func _ready() -> void:
 				await _shot(String(s[0]) + "_" + a.trim_prefix("hide:").replace("*", ""))
 				for n: Node in hidden:
 					n.set("visible", true)
+	# "lightsend": at night, where a lit stretch after a tunnel ends (and where the one before
+	# the next tunnel starts), from the chase and the drone cameras
+	if args.has("lightsend"):
+		AppState.set_setting("r81_country", "ridge")
+		AppState.set_setting("r22_time", 22.5)
+		AppState.set_setting("r81_lights", "sodium")
+		var p := Trip.period()
+		var first := (floori(trip.travel / Land.LENGTH / float(p)) + 1) * p
+		for spot: Array in [["lights_end", first + Trip.LIT_TO - 1], ["lights_start", first + p - Trip.LIT_BEFORE - 2]]:
+			trip.set_travel(float(int(spot[1])) * Land.LENGTH + 40.0)
+			for cam: int in [5, 6]:
+				EventBus.camera_preset_requested.emit(cam)
+				await _secs(2.5)
+				await _shot("%s_cam%d" % [spot[0], cam])
+		AppState.set_setting("r22_time", 14.0)
 	# "swap": to the desert Cruise and back, printing what RoomHost shows every few seconds
 	if args.has("swap"):
 		AppState.set_setting("r22_land", "desert")

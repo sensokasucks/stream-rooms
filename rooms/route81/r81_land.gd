@@ -662,7 +662,9 @@ static func _trees(side: int, from: String, to: String, salt: int, climb_a: floa
 		cards2[kind] = []
 	var s := float(salt)
 	# [from u, to u, trees per square metre]
-	for band: Array in [[6.0, 40.0, 0.03], [40.0, 120.0, 0.025], [120.0, TREE_REACH, 0.009]]:
+	# (the first trees stand 9 m out: nearer, their crowns hung over the shoulder and hid the
+	# green signs and the billboards in front of the woods, Sen round 7)
+	for band: Array in [[9.0, 40.0, 0.03], [40.0, 120.0, 0.025], [120.0, TREE_REACH, 0.009]]:
 		var count := roundi((float(band[1]) - float(band[0])) * LENGTH * float(band[2]))
 		for i in count:
 			var u := rng.randf_range(float(band[0]), float(band[1]))

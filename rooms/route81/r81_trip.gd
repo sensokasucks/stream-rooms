@@ -943,7 +943,9 @@ static func board_slots(k: int) -> Array:
 		match kind:
 			"woods":
 				if side > 0:
-					u = 8.5
+					# (on the verge in front of the trees, like the green signs, so their
+					# crowns don't hide it)
+					u = 4.0
 					fit = ["monopole", "classic"]
 			"field":
 				if i == -1 or i == 0 or i == 3 or i == 6:
@@ -1060,9 +1062,14 @@ func _apply() -> void:
 	# halfway along its place; steady at half strength in photosensitive-safe mode)
 	var here := floori(travel / Land.LENGTH)
 	var from_pole := fposmod(travel, Land.LENGTH) - Land.LENGTH * 0.5
+	# (the poles of this place and the places either side, as r81_road.gdshader adds them up,
+	# so the light on the car fades in and out with the road's)
 	var under := 0.0
-	if lit_at(here) and cover < 0.01:
-		under = street_on * (0.5 if safe else exp(-from_pole * from_pole / 900.0))
+	if cover < 0.01:
+		for i: int in [-1, 0, 1]:
+			if lit_at(here + i):
+				var d := from_pole - float(i) * Land.LENGTH
+				under += street_on * (0.5 * smoothstep(Land.LENGTH, 0.0, absf(d)) if safe else exp(-d * d / 900.0))
 	for l in _lights:
 		l.visible = cover > 0.01 or under > 0.01
 		l.light_color = col_a if cover > 0.01 or posmod(here, 2) == 0 else col_b
