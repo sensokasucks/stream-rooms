@@ -80,8 +80,9 @@ void fragment() {
 	floor_col = mix(floor_col, vec3(0.08, 0.15, 0.045) * (0.7 + 0.6 * lumps.a), smoothstep(0.35, 0.6, lumps.b));
 	vec3 green = mix(vec3(0.07, 0.15, 0.04), vec3(0.17, 0.31, 0.08), smoothstep(0.3, 0.7, lumps.b));
 	green *= 0.7 + 0.6 * patches.b;
-	// dark gaps between the crowns
-	green *= 0.55 + 0.45 * smoothstep(0.2, 0.45, lumps.a + lumps.b * 0.5);
+	// dark gaps between the crowns; far off, where the crowns are too small to see, their
+	// average shade (without it a distant wooded mountain read as a mown lawn)
+	green *= mix(0.68, 0.55 + 0.45 * smoothstep(0.2, 0.45, lumps.a + lumps.b * 0.5), fine);
 	// about one patch in six is conifers: darker, and green all year
 	float conifer = smoothstep(0.62, 0.7, patches.a);
 	green = mix(green, green * vec3(0.55, 0.7, 0.75), conifer);

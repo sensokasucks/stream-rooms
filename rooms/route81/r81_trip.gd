@@ -68,6 +68,17 @@ const Billboards := preload("res://rooms/route22/r22_billboards.gd")
 ## there is no flat ground to hide where the land ends, only distance, haze and the curve.
 const BEHIND: float = 640.0
 const AHEAD: float = 960.0
+## Past those, out to these, the far land: the places drawn with coarse strips of land only (no
+## trees, rails, signs or buildings; r81_land.gd side_strip(... coarse)), plus the mountain over
+## a tunnel and the river's far reaches. From a kilometre off the painted forest is all that
+## shows, and the road and the hills now run on into the distance instead of stopping at about
+## 1 km (Sen, round 6). r81_common.gdshaderinc r81_far_taper must stay inside these, and
+## route81_room.gd lays the two roads out this far.
+const FAR_BEHIND: float = 1400.0
+const FAR_AHEAD: float = 2800.0
+## How far the bend's distance keeps growing normally before it levels off (r22_common.gdshaderinc
+## bend_far, set by route81_room.gd): the far land otherwise swung kilometres sideways and up.
+const BEND_FAR: float = 700.0
 ## Trees are only drawn on places whose start is nearer than this (metres; past it the land's
 ## shader paints tree tops instead). The second number is for the Low look.
 const TREES_NEAR: float = 480.0
@@ -110,13 +121,27 @@ const COUNTRIES: PackedStringArray = ["ridge", "farm", "river", "endless", "coal
 const HEIGHTS: Dictionary = {"ridge": Vector3(150.0, 50.0, 20.0), "farm": Vector3(24.0, 6.0, 3.0),
 	"river": Vector3(32.0, 6.0, 3.0), "endless": Vector3(235.0, 40.0, 15.0),
 	"coal": Vector3(170.0, 30.0, 15.0), "city": Vector3(28.0, 8.0, 4.0)}
-## How often one side of the road climbs into a mountainside in each country (the share of its
-## regions; which side is up to the dice): the ridge, the Endless Mountains and the city valley
-## always (the city lies at the foot of its mountain), half the time on the coal plateau and in
-## the farm valley, never at the river crossing (an open valley on both sides).
-const CLIMBS: Dictionary = {"ridge": 1.0, "farm": 0.5, "river": 0.0, "endless": 1.0, "coal": 0.5, "city": 1.0}
-## Without tunnels a side's climb changes over this many places before the next country.
-const CLIMB_EASE: int = 8
+## The road winds through the hills: every STRETCH places (1.6 km) it takes a new "lay", how the
+## land lies on its two sides (Sen, round 6: the mountains should change sides and the road dip
+## into valleys):
+##   right / left   that side climbs a mountainside, the other falls to the valley,
+##   notch          both sides climb: the road runs through a gap between two mountains,
+##   valley         both sides fall: the road dips down into the valley.
+## [right, left, notch, valley] are each country's chances (they add up to 1). The river crossing
+## is always open valley (its bridge needs a river on both sides).
+const LAYS: Dictionary = {"ridge": [0.35, 0.35, 0.18, 0.12], "endless": [0.4, 0.4, 0.1, 0.1],
+	"coal": [0.25, 0.25, 0.2, 0.3], "farm": [0.22, 0.22, 0.0, 0.56], "city": [0.35, 0.35, 0.0, 0.3],
+	"river": [0.0, 0.0, 0.0, 1.0]}
+const LAY_NAMES: PackedStringArray = ["right", "left", "notch", "valley"]
+## How high the road runs in each lay, as a share of the country's height (HEIGHTS): down in
+## the valley, part way up in a notch, on the mountainside along a slope.
+const LAY_HEIGHT: Dictionary = {"right": 1.0, "left": 1.0, "notch": 0.7, "valley": 0.35}
+## Places in a stretch of one lay. NO_TUNNEL_COUNTRY is a whole number of them, so without
+## tunnels a new country always starts with a new stretch.
+const STRETCH: int = 20
+## Places over which one lay eases into the next at the start of a stretch (the climbs are in
+## sixths there, so the strips that ease can be kept and shared).
+const CLIMB_EASE: int = 6
 ## With Tunnels = Never: places per country.
 const NO_TUNNEL_COUNTRY: int = 120
 ## A river crossing: both sides are water for boundaries mid - CROSS_HALF .. mid + CROSS_HALF
@@ -152,6 +177,9 @@ var _boards: Billboards                 # Route 81's own billboard set (may be n
 var _slots: Array[Dictionary] = []      # the place nodes, made as needed (see _make_slot)
 var _free: Array[int] = []              # indexes into _slots of the ones not in use
 var _placed: Dictionary = {}            # k -> {"slot": index, "look": what it was dressed as}
+var _far_slots: Array[Dictionary] = []  # the far land's place nodes (_make_far_slot)
+var _far_free: Array[int] = []
+var _far_placed: Dictionary = {}        # k -> {"slot": index, "look": ...}, as _placed
 var _strips: Dictionary = {}            # "side|from|to|salt" -> Land.side_strip() result
 ## The camera's place last written to the detailed trees' materials (lod_eye; _apply()).
 var _lod_eye: Vector3 = Vector3.INF
@@ -276,29 +304,54 @@ static func river_middle(k: int) -> bool:
 	return posmod(k, span) == mid
 
 
-## Whether `side` of region r climbs (1) into a mountainside or falls to the valley (0): by
-## the country's share (CLIMBS), and never both sides at once.
-static func _region_climb(side: int, r: int) -> float:
-	var share := float(CLIMBS.get(country(r), 0.0))
-	if _dice(r * 5 + 3001) >= share:
-		return 0.0
-	var right_up := _dice(r * 5 + 3002) < 0.5
-	return 1.0 if right_up == (side > 0) else 0.0
+## The lay of stretch number `st` (boundaries st * STRETCH ..) in region r: one of LAY_NAMES,
+## by that country's chances (LAYS); the same on every PC.
+static func lay(st: int, r: int) -> String:
+	var odds: Array = LAYS.get(country(r), LAYS["ridge"])
+	var roll := _dice(st * 7 + 3001)
+	for i in odds.size():
+		roll -= float(odds[i])
+		if roll < 0.0:
+			return LAY_NAMES[i]
+	return "valley"
 
 
-## How much `side` (+1 our right, -1 the left) climbs at boundary b, 0..1 (r81_land.gd edge()).
-## It changes from country to country: in the middle of a tunnel, where both sides are inside
-## the mountain anyway, or without tunnels over the last CLIMB_EASE places before the next
-## country (in eighths, so the strips that ease can be kept and shared).
+## Whether `side` climbs in a lay (1) or falls to the valley (0).
+static func _lay_climb(side: int, lay_name: String) -> float:
+	match lay_name:
+		"notch":
+			return 1.0
+		"right":
+			return 1.0 if side > 0 else 0.0
+		"left":
+			return 1.0 if side < 0 else 0.0
+	return 0.0
+
+
+## How much `side` (+1 our right, -1 the left) climbs at boundary b, 0..1 (r81_land.gd edge()):
+## its stretch's lay, eased from the stretch before over the first CLIMB_EASE places. (Where a
+## country changes inside a stretch, in the middle of a tunnel, both sides are the tunnel's
+## mountain, so the change does not show.)
 static func climb(side: int, b: int) -> float:
-	var r := region_of(b)
-	var c := _region_climb(side, r)
-	if period() > 0:
+	var st := floori(float(b) / float(STRETCH))
+	var c := _lay_climb(side, lay(st, region_of(b)))
+	var into := b - st * STRETCH
+	if into >= CLIMB_EASE:
 		return c
-	var into := posmod(b, NO_TUNNEL_COUNTRY) - (NO_TUNNEL_COUNTRY - CLIMB_EASE)
-	if into <= 0:
-		return c
-	return lerpf(c, _region_climb(side, r + 1), float(into) / float(CLIMB_EASE))
+	var first := st * STRETCH
+	var before := _lay_climb(side, lay(st - 1, region_of(first - 1)))
+	return lerpf(before, c, float(into) / float(CLIMB_EASE))
+
+
+## The share of the country's height the road runs at, `here` places along (a fraction):
+## LAY_HEIGHT of the stretch's lay, eased from the one before like climb(), so the road comes
+## down into a valley and climbs out again smoothly.
+static func lay_height(here: float) -> float:
+	var st := floori(here / float(STRETCH))
+	var first := st * STRETCH
+	var now := float(LAY_HEIGHT[lay(st, region_of(floori(here)))])
+	var before := float(LAY_HEIGHT[lay(st - 1, region_of(first - 1))])
+	return lerpf(before, now, smoothstep(0.0, float(CLIMB_EASE), here - float(first)))
 
 
 ## The eight boundaries a side keeps one profile for: [the group's number, its first boundary].
@@ -461,6 +514,9 @@ func _work_out() -> void:
 		var r0 := floori(at)
 		h = (HEIGHTS[country(r0)] as Vector3).lerp(HEIGHTS[country(r0 + 1)], smoothstep(0.8, 1.0, at - float(r0)))
 	altitude = h.x + h.y * sin(travel / 1900.0 + float(region) * 2.0) + h.z * sin(travel / 730.0 + 1.0)
+	# ...lower where the road dips into a valley, part way down in a notch (lay_height); never
+	# so low the bank below the guardrail flattens out
+	altitude = maxf(altitude * lay_height(here), 12.0)
 
 
 ## The places' numbers in view now.
@@ -518,6 +574,78 @@ func _place() -> void:
 			var detailed_group := String(t.get_meta("group", "")) in ["cards", "cards2", "top_cards"]
 			t.visible = near and t.multimesh != null and detailed_group != low
 	_apply_forest()
+	_place_far(span)
+
+
+## The far land's places in view now (they include the near ones, which _place_far skips).
+func in_view_far() -> Vector2i:
+	return Vector2i(floori((travel - FAR_BEHIND) / Land.LENGTH), floori((travel + FAR_AHEAD) / Land.LENGTH))
+
+
+## Puts the far land where it belongs: every place in in_view_far() that is not one of the near
+## places (`near`, in_view()) gets a far slot, dressed the first time and whenever its look changes.
+func _place_far(near: Vector2i) -> void:
+	var span := in_view_far()
+	for k: int in _far_placed.keys():
+		if k < span.x or k > span.y or (k >= near.x and k <= near.y):
+			var gone: int = _far_placed[k]["slot"]
+			(_far_slots[gone]["root"] as Node3D).visible = false
+			_far_free.append(gone)
+			_far_placed.erase(k)
+	for k in range(span.x, span.y + 1):
+		if k >= near.x and k <= near.y:
+			continue
+		if not _far_placed.has(k):
+			if _far_free.is_empty():
+				_make_far_slot()
+			_far_placed[k] = {"slot": _far_free.pop_back(), "look": ""}
+		var entry: Dictionary = _far_placed[k]
+		var slot: Dictionary = _far_slots[entry["slot"]]
+		var look := _far_look(k)
+		if String(entry["look"]) != look:
+			entry["look"] = look
+			_dress_far(slot, k)
+		var root := slot["root"] as Node3D
+		root.visible = true
+		root.position = Vector3(0.0, 0.0, travel - float(k) * Land.LENGTH)
+
+
+## What a far place is: both sides' profiles and climbs, the tunnel part, the river.
+func _far_look(k: int) -> String:
+	return "%s>%s %.3f>%.3f / %s>%s %.3f>%.3f / %s %s" % [boundary(-1, k), boundary(-1, k + 1), climb(-1, k), climb(-1, k + 1),
+		boundary(1, k), boundary(1, k + 1), climb(1, k), climb(1, k + 1), part_at(k), "river" if river_middle(k) else ""]
+
+
+## A new far place node: the land of both sides, the mountain over a tunnel and its portal, and
+## the river's far reaches.
+func _make_far_slot() -> void:
+	var root := Node3D.new()
+	root.name = "FarPlace_%d" % _far_slots.size()
+	root.visible = false
+	add_child(root)
+	var slot := {"root": root, "land": {}}
+	for side: int in [1, -1]:
+		slot["land"][side] = _mesh_node(root, "Land" + ("R" if side > 0 else "L"), _kit["land"], false)
+	slot["lid"] = _mesh_node(root, "MountainTop", _kit["land"], false)
+	slot["frame"] = _mesh_node(root, "Portal", _kit["prop"], false)
+	var river := _mesh_node(root, "RiverFar", _kit["land"], false)
+	river.mesh = Land.river_ribbon()
+	slot["river"] = river
+	# (the bend moves the far land a long way: never cull it early)
+	for mi: Node in root.get_children():
+		(mi as MeshInstance3D).extra_cull_margin = 3000.0
+	_far_slots.append(slot)
+	_far_free.append(_far_slots.size() - 1)
+
+
+## Gives a far place node what place k needs.
+func _dress_far(slot: Dictionary, k: int) -> void:
+	var part := part_at(k)
+	for side: int in [1, -1]:
+		(slot["land"][side] as MeshInstance3D).mesh = _strip(side, boundary(side, k), boundary(side, k + 1), k, true)["mesh"]
+	(slot["lid"] as MeshInstance3D).mesh = Pieces.lid(part) if part != "" else null
+	(slot["frame"] as MeshInstance3D).mesh = Pieces.frame(part) if part == "in" or part == "out" else null
+	(slot["river"] as MeshInstance3D).visible = river_middle(k)
 
 
 ## How many places the streetlights' pattern repeats after (the tunnels' period when there are
@@ -561,7 +689,8 @@ func _look(k: int) -> String:
 ## One side's land and trees for a place (built the first time it is needed, then kept).
 ## Steady stretches come in three variants (their bumps and trees differ), picked by k.
 ## The side's climb at both ends (climb()) is part of what makes a strip, and of its key.
-func _strip(side: int, from: String, to: String, k: int) -> Dictionary:
+## coarse = the far land's strip (no trees).
+func _strip(side: int, from: String, to: String, k: int, coarse: bool = false) -> Dictionary:
 	var ca := climb(side, k)
 	var cb := climb(side, k + 1)
 	var salt := 0
@@ -572,9 +701,9 @@ func _strip(side: int, from: String, to: String, k: int) -> Dictionary:
 		salt = Land.WIRE_SALT
 	if side < 0:
 		salt += 50
-	var key := "%d|%s|%s|%d|%.3f|%.3f" % [side, from, to, salt, ca, cb]
+	var key := "%d|%s|%s|%d|%.3f|%.3f%s" % [side, from, to, salt, ca, cb, "|far" if coarse else ""]
 	if not _strips.has(key):
-		_strips[key] = Land.side_strip(side, from, to, salt, ca, cb)
+		_strips[key] = Land.side_strip(side, from, to, salt, ca, cb, coarse)
 		_forest_drawn = -1.0          # (the new trees need the Forest density applied)
 	return _strips[key]
 

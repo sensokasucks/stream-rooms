@@ -1860,7 +1860,11 @@ Included rooms:
   real I-81 it mostly runs along the side of a mountain or at its foot rather than on top:
   in the mountain countries one side climbs, wooded, to a crest a couple of hundred metres up,
   and the views open on the other side; in the valleys the road runs a little above the
-  fields, the river or the city, with the ridges standing round the valley. The
+  fields, the river or the city, with the ridges standing round the valley. Every mile or so
+  the lie of the land changes: the mountain swaps to the other side, the road runs through a
+  notch between two mountains, or it dips down into a valley and climbs out again. The land
+  and the road carry on into the distance, nearly 3 km ahead (the far stretch is drawn
+  simpler, with painted forest instead of single trees, so it costs little). The
   **Scenery** choice at the top of the Room tab of either Cruise jumps between **Route 22
   (desert highway)** and **Route 81 (Pennsylvania mountains)**. All place names on the green
   signs and the tunnels are made up.

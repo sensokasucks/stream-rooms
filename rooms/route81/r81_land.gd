@@ -111,6 +111,13 @@ const U_LIST: PackedFloat32Array = [0.0, 0.55, 1.15, 1.2, 1.5, 2.3, 3.0, 3.8, 4.
 	18.0, 21.0, 25.0, 30.0, 36.0, 44.0, 54.0, 66.0, 80.0, 98.0, 120.0, 150.0, 190.0, 240.0, 300.0, 380.0, 480.0, 600.0, 740.0, 900.0]
 ## Rows of corners along a place: one every 5 m.
 const ROW_STEP: float = 5.0
+## The far land's coarse strips (side_strip(... coarse = true): the places past r81_trip.gd's
+## AHEAD and BEHIND, out to FAR_AHEAD / FAR_BEHIND there, Sen round 6: draw the land further).
+## Far fewer corners across and along: only the shapes that still show from a kilometre off.
+## Keep 0, 1.15, 1.2 and REACH (the tunnel's rock face and the land's edge) and the median's
+## TRENCH columns, so a far strip meets the next one and the road the same way a near one does.
+const U_LIST_FAR: PackedFloat32Array = [0.0, 1.15, 1.2, 4.5, 12.0, 30.0, 60.0, 110.0, 180.0, 280.0, 420.0, 600.0, 900.0]
+const ROW_STEP_FAR: float = 20.0
 ## The tree kinds, and how tall each stands at scale 1 (metres).
 const TREES: PackedStringArray = ["oak", "maple", "pine"]
 ## Trees stand from the edge of the woods out to this far from the road; past it the land's
@@ -502,17 +509,20 @@ static func median(from: String, to: String, m: float, zt: float) -> PackedFloat
 ## whether it is median (1), the other road's bed (2) or the side's own profile (0, with its
 ## distance u from the paved edge in the third number). side: +1 = our right, -1 = our left
 ## (which starts with the median and the other road).
-static func _columns(side: int) -> Array:
+## coarse = the far land's fewer columns (U_LIST_FAR).
+static func _columns(side: int, coarse: bool = false) -> Array:
 	var cols: Array = []
+	var us := U_LIST_FAR if coarse else U_LIST
 	if side > 0:
-		for u in U_LIST:
+		for u in us:
 			cols.append([ROAD_R + u, 0, u])
 		return cols
 	var width := ROAD_L - OPP_R
-	for m: float in [0.0, TRENCH - 0.05, TRENCH, 2.0, 4.0, 7.0, 10.0, 12.0, width - TRENCH, width - TRENCH + 0.05, width]:
+	var ms: Array = [0.0, TRENCH - 0.05, TRENCH, 7.0, width - TRENCH, width - TRENCH + 0.05, width] if coarse else 		[0.0, TRENCH - 0.05, TRENCH, 2.0, 4.0, 7.0, 10.0, 12.0, width - TRENCH, width - TRENCH + 0.05, width]
+	for m: float in ms:
 		cols.append([ROAD_L - m, 1, m])
 	cols.append([OPP_L, 2, 0.0])
-	for u in U_LIST:
+	for u in us:
 		if u > 0.0:
 			cols.append([OPP_L - u, 0, u])
 	return cols
@@ -520,9 +530,10 @@ static func _columns(side: int) -> Array:
 
 ## The rows of corners along a strip, as zt (0..1). A strip with a tunnel mouth in it gets two
 ## rows a hair apart at the middle, which is what makes the mouth's face sheer.
-static func _rows(from: String, to: String) -> PackedFloat32Array:
+## step = metres between rows (ROW_STEP, or ROW_STEP_FAR for the far land).
+static func _rows(from: String, to: String, step: float = ROW_STEP) -> PackedFloat32Array:
 	var rows := PackedFloat32Array()
-	var n := roundi(LENGTH / ROW_STEP)
+	var n := roundi(LENGTH / step)
 	var step_face := (from == "mount") != (to == "mount")
 	for i in n + 1:
 		var zt := float(i) / float(n)
@@ -538,9 +549,11 @@ static func _rows(from: String, to: String) -> PackedFloat32Array:
 ## side +1 / -1, from / to = its edge profiles at the start and the end, salt = its own number,
 ## climb_a / climb_b = how much the side climbs at the start and the end (see edge()).
 ## Returns {"mesh": ArrayMesh, "trees": the groups of tree batches, see _trees()}.
-static func side_strip(side: int, from: String, to: String, salt: int, climb_a: float = 0.0, climb_b: float = 0.0) -> Dictionary:
-	var cols := _columns(side)
-	var rows := _rows(from, to)
+## coarse = a far strip (U_LIST_FAR, ROW_STEP_FAR) without trees: from a kilometre off the
+## terrain shader's painted forest is all that shows.
+static func side_strip(side: int, from: String, to: String, salt: int, climb_a: float = 0.0, climb_b: float = 0.0, coarse: bool = false) -> Dictionary:
+	var cols := _columns(side, coarse)
+	var rows := _rows(from, to, ROW_STEP_FAR if coarse else ROW_STEP)
 	var nc := cols.size()
 	var nr := rows.size()
 	var pos := PackedVector3Array()
@@ -614,7 +627,7 @@ static func side_strip(side: int, from: String, to: String, salt: int, climb_a: 
 	arrays[Mesh.ARRAY_INDEX] = idx
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return {"mesh": mesh, "trees": _trees(side, from, to, salt, climb_a, climb_b)}
+	return {"mesh": mesh, "trees": {} if coarse else _trees(side, from, to, salt, climb_a, climb_b)}
 
 
 # ── Trees ────────────────────────────────────────────────────
