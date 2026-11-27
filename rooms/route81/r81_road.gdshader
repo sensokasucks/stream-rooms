@@ -95,15 +95,26 @@ void fragment() {
 	ALBEDO = col * (1.0 - 0.97 * inside);
 	EMISSION = col * lamp_color * pool * inside * 0.9;
 	// a streetlight's pool: brightest under the lamp (which hangs over the left lane, x = -3
-	// on both roads), fading along and across; evened out in photosensitive-safe mode
+	// on both roads), fading along and across; evened out in photosensitive-safe mode.
+	// Each spot gets the light of its own place's pole and of the poles of the places either
+	// side, so the light runs on past the first and last pole of a lit stretch and fades out
+	// over about 40 m into the dark instead of stopping at the place's edge (Sen, round 7).
+	// (The even part is a smoothstep ramp 80 m either side of each pole: two neighbouring
+	// ramps add up to exactly 1, so between lit poles it stays even.)
 	float route = -flow * along + route_base;
 	float place = floor(route / 80.0);
-	float nth = mod(place, street_period);
-	float lit = max(step(street_period - 8.0, nth), step(6.0, nth) * step(nth, 13.0));
-	float from_pole = fract(route / 80.0) * 80.0 - 40.0;
 	float across = exp(-(x + 3.0) * (x + 3.0) / 90.0);
-	float glow = across * mix(0.45, exp(-from_pole * from_pole / 900.0), pulse);
-	EMISSION += col * mix(street_a, street_b, mod(place, 2.0)) * glow * lit * street_on * (1.0 - inside) * 2.4;
+	vec3 street = vec3(0.0);
+	for (int i = -1; i <= 1; i++) {
+		float p = place + float(i);
+		float nth = mod(p, street_period);
+		float lit = max(step(street_period - 8.0, nth), step(6.0, nth) * step(nth, 13.0));
+		float from_pole = route - (p + 0.5) * 80.0;
+		float even = smoothstep(80.0, 0.0, abs(from_pole));
+		float glow = mix(0.45 * even, exp(-from_pole * from_pole / 900.0), pulse);
+		street += mix(street_a, street_b, mod(p, 2.0)) * glow * lit;
+	}
+	EMISSION += col * street * across * street_on * (1.0 - inside) * 2.4;
 	ROUGHNESS = rough;
 	SPECULAR = 0.4 + 0.3 * wet;
 }
