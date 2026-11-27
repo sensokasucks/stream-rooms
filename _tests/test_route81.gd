@@ -225,6 +225,13 @@ func _ready() -> void:
 	_check(trip.travel > before + 10.0 and trip.speed > 10.0, "the road moves at Speed 50 (%.1f m in 2 s)" % (trip.travel - before))
 	var span := trip.in_view()
 	_check(span.y - span.x >= 18 and trip.looks_in_view().size() == span.y - span.x + 1, "%d places of land in view" % trip.looks_in_view().size())
+	# round 6: past them the far land runs on, out to about 2.8 km ahead
+	var far_span := trip.in_view_far()
+	var far_shown := 0
+	for node: Node in trip.find_children("FarPlace_*", "Node3D", false, false):
+		far_shown += 1 if (node as Node3D).visible else 0
+	_check(far_shown == (far_span.y - far_span.x + 1) - (span.y - span.x + 1) and far_span.y * Land.LENGTH - trip.travel > 2500.0,
+		"%d places of far land, out to %.0f m ahead" % [far_shown, far_span.y * Land.LENGTH - trip.travel])
 
 	# ── the road's rules ──
 	var period := Trip.period()
@@ -249,17 +256,29 @@ func _ready() -> void:
 		drops += 1 if Trip.boundary(1, b) == "drop" or Trip.boundary(-1, b) == "drop" else 0
 	_check(drops == 0, "views at 0%: no overlooks")
 	AppState.set_setting("r81_views", 0.6)
-	# Round 5: the ridge road runs along a mountainside: one side climbs, never both, and the
-	# climbing side has no overlooks
-	var one_up := true
+	# Round 5 and 6: the ridge road runs along mountainsides that change sides every stretch,
+	# through notches (both sides up) and down into valleys (both down); a climbing side never
+	# has an overlook, and the road is lower in a valley than along a slope
+	var lays := {}
 	var no_view_up := true
-	for b in range(100, 800):
+	for b in range(100, 2000):
 		var up_r := Trip.climb(1, b)
 		var up_l := Trip.climb(-1, b)
-		one_up = one_up and up_r + up_l == 1.0
+		if posmod(b, Trip.STRETCH) >= Trip.CLIMB_EASE:
+			lays["%d%d" % [roundi(up_l), roundi(up_r)]] = true
 		if (up_r > 0.5 and Trip.boundary(1, b) == "drop") or (up_l > 0.5 and Trip.boundary(-1, b) == "drop"):
 			no_view_up = false
-	_check(one_up and no_view_up, "ridge country: one side climbs the mountain, never with an overlook on it")
+	_check(lays.size() == 4 and no_view_up, "ridge country: the mountain changes sides, notches and valleys come (%s), never an overlook on a climbing side" % str(lays.keys()))
+	var valley_st := -1
+	var side_st := -1
+	for st in range(5, 200):
+		if Trip.lay(st, Trip.region_of(st * Trip.STRETCH)) == "valley" and valley_st < 0:
+			valley_st = st
+		if Trip.lay(st, Trip.region_of(st * Trip.STRETCH)) == "right" and side_st < 0:
+			side_st = st
+	var mid := float(Trip.STRETCH) * 0.5
+	_check(Trip.lay_height(float(valley_st * Trip.STRETCH) + mid) < Trip.lay_height(float(side_st * Trip.STRETCH) + mid),
+		"the road dips lower in a valley than along a mountainside")
 	var hill_side := Land.edge("woods", 600.0, 0.5, 3.0, 1.0)
 	var valley_side := Land.edge("woods", Land.REACH, 0.5, 3.0, 0.0)
 	_check(hill_side[0] > 120.0 and hill_side[1] == 0.0 and absf(valley_side[0]) < 0.5 and valley_side[1] > 0.99,
@@ -287,7 +306,7 @@ func _ready() -> void:
 		_check(k_drop > 0, "found an overlook ahead (place %d)" % k_drop)
 		trip.set_travel(float(k_drop) * Land.LENGTH + 180.0)
 		await _secs(1.5)
-		_check(trip.altitude >= 20.0 and trip.altitude <= 300.0, "the road is %.0f m above the valley" % trip.altitude)
+		_check(trip.altitude >= 12.0 and trip.altitude <= 300.0, "the road is %.0f m above the valley" % trip.altitude)
 		await _shot("r81_overlook_chase")
 		EventBus.camera_preset_requested.emit(2)
 		await _secs(1.0)
@@ -398,7 +417,9 @@ func _ready() -> void:
 			EventBus.camera_preset_requested.emit(5)
 			trip.set_travel(float(k_f) * Land.LENGTH - 130.0)
 			await _secs(1.5)
-			_check((trip.altitude < 80.0) == (land != "coal"), "%s country's road is %s (%.0f m)" % [land, "high" if land == "coal" else "low", trip.altitude])
+			# (as high as the country and the stretch's lay say: down in a valley it is lower)
+			var lay_h := Trip.lay_height(trip.travel / Land.LENGTH)
+			_check((trip.altitude < 80.0 * lay_h) == (land != "coal"), "%s country's road is %s (%.0f m, lay %.2f)" % [land, "high" if land == "coal" else "low", trip.altitude, lay_h])
 			var placed: Array = room.find_children("PlacesR", "MeshInstance3D", true, false).filter(func(n: Node) -> bool:
 				return (n as MeshInstance3D).mesh != null and (n as MeshInstance3D).is_visible_in_tree())
 			_check(placed.size() >= 1, "the %s stands by the road (%d places)" % [feature, placed.size()])
@@ -499,7 +520,7 @@ func _ready() -> void:
 		return Trip.boundary(1, k) == "drop" and Trip.boundary(1, k + 5) == "drop" and Trip.part_at(k) == "")
 	trip.set_travel(float(k_high) * Land.LENGTH + 180.0)
 	await _secs(1.5)
-	_check(trip.altitude > 130.0 and trip.altitude <= 296.0, "the Endless Mountains' road is high (%.0f m)" % trip.altitude)
+	_check(trip.altitude > 130.0 * Trip.lay_height(trip.travel / Land.LENGTH) and trip.altitude <= 296.0, "the Endless Mountains' road is high (%.0f m)" % trip.altitude)
 	await _shot("r81_endless_overlook")
 	EventBus.camera_preset_requested.emit(6)
 	await _secs(1.0)

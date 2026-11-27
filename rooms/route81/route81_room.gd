@@ -81,6 +81,11 @@ func _ready() -> void:
 	_boards.setup(_kit, {"prefix": "r81_bb_", "folder": "user://billboards_route81", "core_folder": "user://billboards_route81_core",
 		"shapes": Billboards.SHAPES_81, "ads": PackedStringArray(["ad_diner", "ad_motel", "ad_candy", "ad_jerky", "ad_services"])})
 	_trip.setup(_kit, _backdrop, _vistas, _boards)
+	# the far land's bend levels off (r22_common.gdshaderinc bend_far; r81_trip.gd BEND_FAR)
+	for m: ShaderMaterial in _kit["mats"]:
+		m.set_shader_parameter("bend_far", Trip.BEND_FAR)
+	for m: ShaderMaterial in _kit["r81"]:
+		m.set_shader_parameter("bend_far", Trip.BEND_FAR)
 	_traffic = Traffic.new()
 	_desert.add_child(_traffic)
 	_traffic.setup(_kit, _desert, false, Vector2(-520.0, 320.0))
@@ -153,15 +158,16 @@ func _build_set() -> void:
 	set_root.name = "Set"
 	add_child(set_root)
 	# our road, and the other direction's: the same strip turned round, across the median
-	var z_far := -(Trip.AHEAD + 60.0)
-	var z_near := Trip.BEHIND + 60.0
+	# (out to the far land's ends, r81_trip.gd FAR_AHEAD / FAR_BEHIND)
+	var z_far := -(Trip.FAR_AHEAD + 60.0)
+	var z_near := Trip.FAR_BEHIND + 60.0
 	for ours: bool in [true, false]:
 		var road := MeshInstance3D.new()
 		road.name = "Road" if ours else "RoadOpposite"
 		road.mesh = Land.road_strip(Land.ROAD_L, Land.ROAD_R, z_near if ours else -z_near, z_far if ours else -z_far, 2.0)
 		road.material_override = _kit["road81" if ours else "road81_opp"]
 		road.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		road.extra_cull_margin = 700.0
+		road.extra_cull_margin = 3000.0
 		set_root.add_child(road)
 		road.position = Vector3(0.0 if ours else Land.OPP_C, 0.005, 0.0)
 		if not ours:

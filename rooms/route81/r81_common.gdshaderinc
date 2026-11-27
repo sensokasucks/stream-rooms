@@ -13,17 +13,18 @@ uniform float alt_drop = 0.0;
 // 0 = summer greens, 1 = fall colour (the Season choice, r81_season).
 uniform float season = 0.0;
 
-// Where the drawn land ends. r81_trip.gd only dresses the places from BEHIND (640 m) behind the
-// car to AHEAD (960 m) ahead of it. A side that falls to the valley ends out of sight, but a
+// Where the drawn land ends. r81_trip.gd only dresses the places from FAR_BEHIND (1400 m) behind
+// the car to FAR_AHEAD (2800 m) ahead of it (the last stretches coarse). A side that falls to the valley ends out of sight, but a
 // climbing side (the mountainside, the hill over a tunnel) is up to 250 m tall, and where its
 // last place ended it stood cut off like a wall (Sen's PC screenshots, round 5: a flat pale
 // face in the distance from the side cameras). So over the last stretch before either end the
 // high ground is lowered toward the road's level: the mountain runs down into the distance
 // and rises again as the car comes nearer, far off in the haze.
 // wz = the spot's world Z before the road's bend (the car is at 0, ahead is negative).
-// The numbers must stay inside r81_trip.gd BEHIND / AHEAD.
+// The numbers must stay inside r81_trip.gd FAR_BEHIND / FAR_AHEAD.
 float r81_far_taper(float wz) {
-	return (1.0 - smoothstep(600.0, 940.0, -wz)) * (1.0 - smoothstep(360.0, 620.0, wz));
+	// (round 6: the far land carries on to FAR_AHEAD 2800 m / FAR_BEHIND 1400 m)
+	return (1.0 - smoothstep(2350.0, 2780.0, -wz)) * (1.0 - smoothstep(1050.0, 1380.0, wz));
 }
 
 // A height y (metres above the road) with that lowering. The first TAPER_KEEP metres stay as

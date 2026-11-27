@@ -30,9 +30,19 @@ uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 // 0 = the plain low-poly look, 1 = with the photo detail textures (the room's Set detail).
 uniform float detail = 1.0;
 
+// Route 81's far land (out to nearly 3 km, rooms/route81/r81_trip.gd FAR_AHEAD): beyond
+// BEND_EXACT metres the distance the bend is worked out from grows more and more slowly and
+// levels off about bend_far metres further, so the far road curves away instead of swinging
+// kilometres sideways or into the sky. 0 (Route 22) = the plain bend at every distance.
+uniform float bend_far = 0.0;
+const float BEND_EXACT = 900.0;
+
 // Where a world point is drawn once the road bends and climbs away from the car.
 vec3 r22_bend(vec3 world) {
 	float d = max(abs(world.z) - bend_start, 0.0);
+	if (bend_far > 0.0 && d > BEND_EXACT) {
+		d = BEND_EXACT + bend_far * tanh((d - BEND_EXACT) / bend_far);
+	}
 	world.x += bend * d * d;
 	world.y += hill * d * d;
 	return world;
