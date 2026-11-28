@@ -117,6 +117,25 @@ const BASE_DEFAULTS: Dictionary = {
 	"camp_games": true,          # fire games: hold M to roast a marshmallow, T to toss a stick (rooms/campfire/campfire_games.gd)
 	# Route 22 (rooms/route22 Drive-In, rooms/route22_cruise Cruise): one desert, two scenes.
 	"r22_scene": "drivein",      # Scene switch: drivein | cruise (each room sets it to its own on load; changing it loads the other)
+	"r22_land": "desert",        # Cruise Scenery switch: desert (rooms/route22_cruise) | route81 (rooms/route81); each room sets it to its own on load, changing it loads the other
+	"r81_tunnels": "medium",     # Route 81: how often a tunnel comes: short | medium | long | never (r81_trip.gd PERIODS)
+	"r81_views": 0.6,            # Route 81: how often a side opens into an overlook, 0..1 (r81_trip.gd boundary)
+	"r81_forest": 100.0,         # Route 81: share of the roadside trees drawn on this PC, 0..100 (r81_trip.gd _apply_forest)
+	"r81_season": "summer",      # Route 81: summer | fall (leaf colours, r81_common.gdshaderinc)
+	"r81_country": "tour",       # Route 81: the country by the road: tour (each in turn, a new one after every tunnel) | ridge | farm | river | endless | coal | city (r81_trip.gd country)
+	"r81_bb_amount": 30.0,       # Route 81's own billboards (r22_billboards.gd with prefix "r81_bb_"; same keys as r22_bb_*): how common, 0..100
+	"r81_bb_folder": "",         # its picture folder on this PC; empty = user://billboards_route81
+	"r81_bb_core": "",           # Stream Core stored-file names for Route 81's billboards, comma-separated
+	"r81_bb_order": "shuffle",   # shuffle | order
+	"r81_bb_lit": true,          # lit at night
+	"r81_bb_filler": true,       # made-up roadside ads when no pictures are set
+	"r81_bb_classic": true,      # its shapes in use (r22_billboards.gd SHAPES_81)
+	"r81_bb_monopole": true,
+	"r81_bb_wooden": true,
+	"r81_bb_trailer": true,
+	"r81_bb_barn": true,
+	"r81_drift": false,          # Route 81: the weather moves on by itself every few minutes (route81_room.gd _drift_weather; the host's in a co-stream)
+	"r81_lights": "sodium",      # Route 81: streetlights sodium | led | mixed | off (r81_trip.gd _apply)
 	"r22_time": 18.2,            # time of day, hours 0..24 (18 = sunset down the road ahead / behind the drive-in screen)
 	"r22_day_minutes": 0.0,      # minutes one full day takes while the clock runs; 0 = the clock stands still
 	"r22_weather": "clouddeck",  # clear | clouddeck | dust | storm | afterrain (r22_desert.gd WEATHER)
@@ -125,8 +144,25 @@ const BASE_DEFAULTS: Dictionary = {
 	"r22_heat": 0.5,             # heat shimmer and the road mirage on hot afternoons, 0..1
 	"r22_wind": 0.35,            # wind 0..1: brush sway, tumbleweeds, cloud shadows, blowing sand at the top
 	"r22_detail": "auto",        # how detailed the desert is drawn on this PC: auto (from graphics_quality) | low | full
-	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked)
-	"r22_curves": 0.5,           # Cruise: how much the road winds and rolls in the distance, 0..1
+	"r22_speed": 50.0,           # Cruise: the woody's speed, km/h (0 = parked; the Room tab shows it in mph)
+	"r22_curves": 0.5,           # Cruise: how much the road winds left and right in the distance, 0..1
+	"r22_hills": 0.5,            # Cruise: how much it rises and falls in the distance, 0..1 (was part of r22_curves)
+	# Cruise: bobblehead copies of the riders on the woody's dashboard (rooms/route22/r22_bobbleheads.gd)
+	"r22_bob_on": true,          # show them (only riders who are on get one)
+	"r22_bob_size": 1.0,         # 1 = about 17 cm tall
+	"r22_bob_wobble": 1.0,       # how much they bob, 0..3
+	"r22_bob_1_x": -0.7,         # bobblehead n: metres from the dash's middle (+ = passenger side),
+	"r22_bob_1_z": 0.0,          #   forward (-) / back (+) in metres, and the way it faces in degrees
+	"r22_bob_1_turn": 0.0,       #   (0 = out through the windscreen)
+	"r22_bob_2_x": -0.05,
+	"r22_bob_2_z": 0.0,
+	"r22_bob_2_turn": 0.0,
+	"r22_bob_3_x": 0.3,
+	"r22_bob_3_z": 0.0,
+	"r22_bob_3_turn": 0.0,
+	"r22_bob_4_x": 0.65,
+	"r22_bob_4_z": 0.0,
+	"r22_bob_4_turn": 0.0,
 	"r22_traffic": 30.0,         # other vehicles: 0 = none, 100 = about one every 10 s (r22_traffic.gd)
 	"r22_bb_amount": 40.0,       # Cruise billboards: how common, 0..100 (40 = about one every 15 s at 50 km/h)
 	"r22_bb_folder": "",         # billboard picture folder on this PC; empty = user://billboards

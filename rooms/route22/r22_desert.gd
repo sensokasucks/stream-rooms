@@ -51,6 +51,11 @@ const WEATHER: Dictionary = {
 	"dust": {"clouds": 0.55, "storm": 0.0, "dust": 0.75, "wet": 0.0, "rainbow": 0.0, "haze": 1.0, "fog": 0.018, "sun": 0.45},
 	"storm": {"clouds": 2.0, "storm": 1.0, "dust": 0.0, "wet": 1.0, "rainbow": 0.0, "haze": 0.5, "fog": 0.006, "sun": 0.3},
 	"afterrain": {"clouds": 0.9, "storm": 0.15, "dust": 0.0, "wet": 0.75, "rainbow": 1.0, "haze": 0.25, "fog": 0.0022, "sun": 0.95},
+	# Green country only (Route 81; _weather_now turns them into other weathers in the desert):
+	# valley fog ("mist" = fog lying in the valleys of the far view and thick in the air) and a
+	# steady light rain without thunder ("drizzle" = how much of it).
+	"fog": {"clouds": 0.9, "storm": 0.0, "dust": 0.0, "wet": 0.2, "rainbow": 0.0, "haze": 1.0, "fog": 0.02, "sun": 0.6, "mist": 1.0},
+	"drizzle": {"clouds": 1.7, "storm": 0.0, "dust": 0.0, "wet": 0.7, "rainbow": 0.0, "haze": 0.7, "fog": 0.008, "sun": 0.5, "mist": 0.35, "drizzle": 1.0},
 }
 
 @export var sun_energy: float = 1.5
@@ -68,6 +73,10 @@ const WEATHER: Dictionary = {
 ## lit windows, so the Lot lights tick box and the dimming for a film reach the bulbs. 1 on the Cruise.
 var lamp_scale: float = 1.0
 var road_noise: float = 0.0
+## Valley fog 0..1 and light rain 0..1 now (the "fog" and "drizzle" weathers, eased). The
+## Route 81 room hands mist on to its far view (r81_trip.gd).
+var mist: float = 0.0
+var drizzle: float = 0.0
 ## 0 = night, 1 = full day (from the hour; read by the rooms for their lamps and headlights).
 var day: float = 1.0
 ## 1 at night, 0 by day: how much lights (headlights, neon, lit windows) show.
@@ -79,10 +88,28 @@ var wet: float = 0.0
 var dust: float = 0.0
 var storm: float = 0.0
 
+## ── Hooks for Route 81 (rooms/route81/route81_room.gd; the desert rooms leave them alone) ──
+## The road's compass turn, radians (r81_trip.gd: how far the highway has swung round since the
+## trip began; positive = turned right). The sun and the moon swing the other way with it, like
+## the far ridges do, so a curve really changes where the light comes from.
+var heading: float = 0.0
+## 0..1 = how deep inside a tunnel the car is (r81_trip.gd): takes the sky's ambient light away.
+var cover: float = 0.0
+## True on Route 81: green country. No dust storm (that weather counts as Clear) and no blowing
+## sand, blue-grey haze instead of the desert's orange, and the sky without mesas (r22_sky.gdshader
+## `land`). The room sets it before setup().
+var green_land: bool = false
+## Multiplies every weather's fog density (Route 81: thinner, so the valley shows).
+var fog_scale: float = 1.0
+
+var _heading_drawn: float = 0.0   # the heading and cover the sky was last drawn with
+var _cover_drawn: float = 0.0
 var _room: Node3D
 var _kit: Dictionary
 var _sun: DirectionalLight3D
 var _bolt: DirectionalLight3D     # the lightning flash
+## Raindrops in the air at once in a thunderstorm (a drizzle shows a third: tick()).
+const RAIN_DROPS := 900
 var _rain: CPUParticles3D
 var _sand: CPUParticles3D
 var _heat_sheets: Array[MeshInstance3D] = []
@@ -155,8 +182,7 @@ func setup(room: Node3D, kit: Dictionary, centre: Vector3, heat: Array[Transform
 		mi.visible = false
 		_heat_sheets.append(mi)
 	_hour = fposmod(float(AppState.get_setting("r22_time")), 24.0)
-	var w: Dictionary = WEATHER.get(String(AppState.get_setting("r22_weather")), WEATHER["clouddeck"])
-	_snap_weather(w)
+	_snap_weather(_weather_now())
 	if sound and room.has_method("_start_generated_ambience"):
 		_amb = room.call("_start_generated_ambience", MIX_RATE, 0.3)
 		_howl_player = AudioStreamPlayer.new()
@@ -269,15 +295,24 @@ func tick(delta: float, travel: float, bend: float, hill: float, speed: float) -
 	_cloud_drift = Vector2(fposmod(_cloud_drift.x, TRAVEL_WRAP), fposmod(_cloud_drift.y, TRAVEL_WRAP))
 	var env := get_world_3d().environment if is_inside_tree() else null
 	var env_id := env.get_instance_id() if env else 0
-	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn or _flash > 0.0 or _changing:
+	var turned := absf(heading - _heading_drawn) > 0.002 or absf(cover - _cover_drawn) > 0.01
+	if absf(_hour - _hour_drawn) >= time_step or env_id != _env_drawn or _flash > 0.0 or _changing or turned:
 		_hour_drawn = _hour
+		_heading_drawn = heading
+		_cover_drawn = cover
 		_env_drawn = env_id
 		_apply_sky(env)
 	_apply_shared(travel, bend, hill, wind)
-	_rain.emitting = storm > 0.35
-	_rain.visible = storm > 0.05
+	_rain.emitting = storm > 0.35 or drizzle > 0.3
+	_rain.visible = storm > 0.05 or drizzle > 0.05
+	# A drizzle is a third of the storm's drops. CPU particles have no amount_ratio and
+	# start over when their amount changes, so it is only set when it really changes.
+	@warning_ignore("integer_division")
+	var drops := RAIN_DROPS if storm > 0.35 else RAIN_DROPS / 3
+	if _rain.amount != drops:
+		_rain.amount = drops
 	_rain.gravity = Vector3(wind * 4.0, -30.0, speed * 0.8)
-	_sand.emitting = dust > 0.2 or wind > 0.75
+	_sand.emitting = (dust > 0.2 or wind > 0.75) and not green_land
 	_sand.visible = _sand.emitting or _sand.visible and dust > 0.05
 	_sand.gravity = Vector3(6.0 + 14.0 * wind, 0.2, speed)
 	_fill_ambience(wind)
@@ -291,7 +326,7 @@ var _changing: bool = false       # the weather is still easing (redraw the sky 
 ## The weather's numbers move towards the setting's targets: a few seconds for cloud and dust;
 ## rain soaks the ground in about 20 s and it dries in about two minutes.
 func _ease_weather(delta: float) -> void:
-	var w: Dictionary = WEATHER.get(String(AppState.get_setting("r22_weather")), WEATHER["clouddeck"])
+	var w := _weather_now()
 	var clouds_to := float(w["clouds"]) * clampf(float(AppState.get_setting("r22_clouds")), 0.0, 2.0)
 	var before := _clouds + dust + storm + _haze + _rainbow + _fog * 100.0 + _sun_through
 	_clouds = move_toward(_clouds, clouds_to, delta * 0.3)
@@ -301,9 +336,25 @@ func _ease_weather(delta: float) -> void:
 	_rainbow = move_toward(_rainbow, float(w["rainbow"]), delta * 0.1)
 	_fog = move_toward(_fog, float(w["fog"]), delta * 0.004)
 	_sun_through = move_toward(_sun_through, float(w["sun"]), delta * 0.2)
+	mist = move_toward(mist, float(w.get("mist", 0.0)), delta * 0.08)
+	drizzle = move_toward(drizzle, float(w.get("drizzle", 0.0)), delta * 0.15)
 	var wet_to := float(w["wet"])
 	wet = move_toward(wet, wet_to, delta * (0.05 if wet_to > wet else 0.008))
 	_changing = absf(before - (_clouds + dust + storm + _haze + _rainbow + _fog * 100.0 + _sun_through)) > 0.00001
+
+
+## The chosen weather's targets (r22_weather). In green country (Route 81) a dust storm counts
+## as Clear: the setting is shared with the desert rooms, so it can still say "dust".
+func _weather_now() -> Dictionary:
+	var choice := String(AppState.get_setting("r22_weather"))
+	if green_land and choice == "dust":
+		choice = "clear"
+	# ...and the green country's fog and drizzle are a cloud deck and a wet road in the desert
+	if not green_land and choice == "fog":
+		choice = "clouddeck"
+	if not green_land and choice == "drizzle":
+		choice = "afterrain"
+	return WEATHER.get(choice, WEATHER["clouddeck"])
 
 
 ## Jumps straight to a weather (when the room loads).
@@ -315,6 +366,8 @@ func _snap_weather(w: Dictionary) -> void:
 	_rainbow = float(w["rainbow"])
 	_fog = float(w["fog"])
 	_sun_through = float(w["sun"])
+	mist = float(w.get("mist", 0.0))
+	drizzle = float(w.get("drizzle", 0.0))
 	wet = float(w["wet"])
 
 
@@ -363,6 +416,8 @@ func _apply_sky(env: Environment) -> void:
 	night = 1.0 - smoothstep(0.05, 0.45, day)
 	var dusk := (1.0 - smoothstep(0.0, 0.4, absf(sun.y))) * smoothstep(-0.3, -0.05, sun.y)
 	var turn := _room.global_basis.orthonormalized() if _room else Basis.IDENTITY
+	# Route 81: the road has turned, so the whole sky's lights have swung round the other way
+	turn = Basis(Vector3.UP, heading) * turn
 	var flash := _flash_shown()
 	var hor := Color(0.015, 0.02, 0.05).lerp(Color(0.62, 0.66, 0.78), day).lerp(Color(0.95, 0.55, 0.35), dusk * 0.6)
 	if env and env.sky and env.sky.sky_material is ShaderMaterial and (env.sky.sky_material as ShaderMaterial).shader == SKY_SHADER:
@@ -381,19 +436,22 @@ func _apply_sky(env: Environment) -> void:
 		sky.set_shader_parameter("rainbow", _rainbow * smoothstep(0.02, 0.15, sun.y) * smoothstep(0.75, 0.45, sun.y))
 		sky.set_shader_parameter("dust", dust)
 		sky.set_shader_parameter("haze", clampf(_haze, 0.0, 1.0))
+		sky.set_shader_parameter("land", 1.0 if green_land else 0.0)
 		var amb := night_ambient.lerp(day_ambient, day).lerp(Color(0.75, 0.48, 0.42), dusk * 0.35)
 		amb = amb.lerp(Color(0.6, 0.42, 0.3), dust * 0.6).lerp(Color(0.45, 0.48, 0.55), storm * 0.5)
 		env.ambient_light_color = amb
-		env.ambient_light_energy = lerpf(night_ambient_energy, day_ambient_energy, day) * (1.0 - 0.3 * storm) + flash * 0.6
+		# (inside a Route 81 tunnel almost none of the sky's light is left)
+		env.ambient_light_energy = (lerpf(night_ambient_energy, day_ambient_energy, day) * (1.0 - 0.3 * storm) + flash * 0.6) * (1.0 - 0.8 * cover)
 		var fog_col := hor.lerp(Color(0.62, 0.4, 0.25) * (0.06 + 0.94 * day), dust)
 		env.fog_light_color = fog_col.lerp(Color(0.5, 0.52, 0.6) * (0.05 + 0.95 * day), storm * 0.5)
-		env.fog_density = _fog
+		env.fog_density = _fog * fog_scale
 		# the volumetric haze (when the graphics settings have it on): sunbeams through the rock
 		# gaps on Detailed, thick in a dust storm
 		if env.volumetric_fog_enabled:
-			var vol := 0.0 if detail_level() == "low" else 0.004 + 0.03 * dust + 0.008 * storm + 0.004 * dusk
+			# (valley fog: thick enough for the sun and the headlights to throw beams in it)
+			var vol := 0.0 if detail_level() == "low" else 0.004 + 0.03 * dust + 0.008 * storm + 0.004 * dusk + 0.02 * mist
 			env.volumetric_fog_density = vol
-			env.volumetric_fog_albedo = Color(0.9, 0.7, 0.55).lerp(Color(0.85, 0.6, 0.4), dust)
+			env.volumetric_fog_albedo = Color(0.82, 0.86, 0.9) if green_land else Color(0.9, 0.7, 0.55).lerp(Color(0.85, 0.6, 0.4), dust)
 	# the sun by day, the moon by night
 	var light_dir := sun
 	var light_col := Color(1.0, 0.52, 0.25).lerp(Color(1.0, 0.95, 0.86), smoothstep(0.05, 0.45, sun.y))
@@ -421,6 +479,18 @@ func _apply_sky(env: Environment) -> void:
 		m.set_shader_parameter("sky_horizon", Vector3(hor.r, hor.g, hor.b) * (0.6 + 0.4 * day))
 		m.set_shader_parameter("heat", heat)
 		m.set_shader_parameter("night", night)
+	# Route 81's far ridges (r81_backdrop.gdshader) light and haze themselves: tell them the sun
+	# (and the distant views standing on them, r81_vista.gdshader, the same way)
+	for far_key: String in ["backdrop", "vista"]:
+		if not _kit.has(far_key):
+			continue
+		var back := _kit[far_key] as ShaderMaterial
+		back.set_shader_parameter("sun_dir", turn * light_dir)
+		back.set_shader_parameter("day", maxf(day, 0.06 * smoothstep(0.05, 0.25, moon.y)))
+		back.set_shader_parameter("sky_horizon", Vector3(hor.r, hor.g, hor.b))
+		# its haze thickens with the weather's fog, a little slower (they are mountains: they
+		# must still show at 10 km on a clear day)
+		back.set_shader_parameter("haze_length", 1.6 / maxf(_fog * fog_scale, 0.00005))
 
 
 ## Writes the shared uniforms to every Route 22 material (r22_common.gdshaderinc) and the night
@@ -458,7 +528,7 @@ func _apply_shared(travel: float, bend: float, hill: float, wind: float) -> void
 func _build_rain(centre: Vector3) -> void:
 	_rain = CPUParticles3D.new()
 	_rain.name = "Rain"
-	_rain.amount = 900
+	_rain.amount = RAIN_DROPS
 	_rain.lifetime = 0.9
 	_rain.preprocess = 0.9
 	_rain.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
@@ -529,6 +599,44 @@ func _build_sand(centre: Vector3) -> void:
 
 
 # ── Sound ────────────────────────────────────────────────────
+## One sample of a made-up songbird (green country, _fill_ambience): a phrase of a few short
+## whistled notes, each sliding up or down a little, then a few seconds of quiet before another
+## bird, somewhere else between the two speakers, sings another phrase.
+var _bird_wait: int = 30000       # samples of quiet left before the next note
+var _bird_notes: int = 0          # notes left in this phrase
+var _bird_at: int = 0             # samples into the current note
+var _bird_len: int = 0            # the current note's length in samples (0 = no note)
+var _bird_f0: float = 3000.0      # the note's pitch at its start and its end (Hz)
+var _bird_f1: float = 3000.0
+var _bird_phase: float = 0.0
+var _bird_pan: float = 0.5        # 0 = left speaker .. 1 = right
+func _bird_sample() -> float:
+	if _bird_len <= 0:
+		_bird_wait -= 1
+		if _bird_wait > 0:
+			return 0.0
+		if _bird_notes <= 0:
+			# a new bird: its own pitch, place and number of notes
+			_bird_notes = _rng.randi_range(2, 6)
+			_bird_f0 = _rng.randf_range(2200.0, 4600.0)
+			_bird_pan = _rng.randf_range(0.15, 0.85)
+		_bird_notes -= 1
+		_bird_len = int(MIX_RATE * _rng.randf_range(0.06, 0.16))
+		_bird_at = 0
+		_bird_f0 *= _rng.randf_range(0.9, 1.12)
+		_bird_f1 = _bird_f0 * _rng.randf_range(0.75, 1.3)
+		return 0.0
+	var x := float(_bird_at) / float(_bird_len)
+	_bird_phase = fmod(_bird_phase + TAU * lerpf(_bird_f0, _bird_f1, x) / MIX_RATE, TAU)
+	_bird_at += 1
+	if _bird_at >= _bird_len:
+		_bird_len = 0
+		# a short breath between notes, a long quiet between birds
+		_bird_wait = int(MIX_RATE * (_rng.randf_range(0.05, 0.13) if _bird_notes > 0 else _rng.randf_range(1.2, 6.0)))
+	var swell := sin(PI * x)
+	return sin(_bird_phase) * swell * swell
+
+
 ## Called every frame: tops the generator up with the desert's sound. Wind (two bands of
 ## filtered noise, gusting), rain hiss, thunder (a low rumble after each stroke), crickets on dry
 ## nights, the road (tyre roar and a low engine hum, from road_noise) and passing traffic.
@@ -543,9 +651,15 @@ func _fill_ambience(wind: float) -> void:
 	var ms := float(Time.get_ticks_msec())
 	var gust := 0.75 + 0.17 * sin(ms * 0.00025) + 0.08 * sin(ms * 0.000105 + 1.0)
 	var wind_lv := (0.006 + 0.03 * wind * gust + 0.04 * dust) * (0.8 + 0.2 * gust)
-	var rain_lv := 0.03 * storm
-	var cricket_lv := 0.01 * night * (1.0 - storm) * (1.0 - dust)
-	var road_lv := 0.045 * road_noise
+	var rain_lv := 0.03 * storm + 0.01 * drizzle
+	# (a Route 81 tunnel shuts the weather and the night out, and makes the road roar)
+	var open_air := 1.0 - cover
+	wind_lv *= open_air
+	rain_lv *= open_air
+	var cricket_lv := 0.01 * night * (1.0 - storm) * (1.0 - dust) * open_air
+	var road_lv := 0.045 * road_noise * (1.0 + 0.9 * cover)
+	# birdsong in green country by day, fewer in rain, drowned a little by the road
+	var bird_lv := 0.016 * day * (1.0 - storm) * (1.0 - 0.6 * drizzle) * open_air * (1.0 - 0.45 * minf(road_noise, 1.0)) if green_land else 0.0
 	var buf := PackedVector2Array()
 	buf.resize(n)
 	for i in n:
@@ -569,5 +683,11 @@ func _fill_ambience(wind: float) -> void:
 		s += (_lp_wind2 * 0.7 + _lp_road * 0.3) * _whoosh_lv * 0.3
 		if cricket_lv > 0.0005 and fmod(t, 1.1) < 0.4 and sin(t * 180.0) > 0.0:
 			s += sin(t * 26000.0) * cricket_lv
-		buf[i] = Vector2(s, s * 0.94)
+		var left := s
+		var right := s * 0.94
+		if bird_lv > 0.0005:
+			var bird := _bird_sample() * bird_lv
+			left += bird * (1.0 - _bird_pan)
+			right += bird * _bird_pan
+		buf[i] = Vector2(left, right)
 	_amb.push_buffer(buf)

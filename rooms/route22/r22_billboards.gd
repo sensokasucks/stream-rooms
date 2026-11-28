@@ -22,6 +22,8 @@ extends Node
 ##     classic two-post board with a catwalk and lamps, a tall single-pole board, a weathered
 ##     wooden sign, a board on the roof of an old roadside stop, a board with a neon arrow, and an
 ##     old trailer parked in the dirt with the picture on its side.
+## The Route 81 Cruise uses this script too, with its own settings ("r81_bb_" and the same key
+## names), its own picture folders and its own shapes (SHAPES_81): see setup().
 ## Every board shows its picture on both faces, angled a little towards the road, so it reads
 ## from the cameras looking ahead and the ones looking back.
 ## The whole picture shows: each board is built to its picture's shape (wide, square or tall,
@@ -33,6 +35,9 @@ const Geo := preload("res://rooms/route22/r22_geo.gd")
 const PICTURE_SHADER := preload("res://rooms/route22/r22_picture.gdshader")
 const ADS: PackedStringArray = ["ad_rock_shop", "ad_jerky", "ad_diner", "ad_motel", "ad_arch", "ad_candy", "ad_services", "ad_canyon"]
 const SHAPES: PackedStringArray = ["classic", "monopole", "wooden", "rooftop", "neon", "trailer"]
+## Route 81's shapes (route81_room.gd hands them to setup): no desert shack or neon arrow, and
+## a "barn" with the picture painted on its end wall.
+const SHAPES_81: PackedStringArray = ["classic", "monopole", "wooden", "trailer", "barn"]
 ## The default picture folder (when r22_bb_folder is empty) and where Core's pictures are kept.
 const DEFAULT_FOLDER := "user://billboards"
 const CORE_FOLDER := "user://billboards_core"
@@ -44,7 +49,7 @@ const PER_PIECE_AT_100: float = 0.96
 ## The largest picture each shape carries (width, height in metres): a board is as big as fits
 ## in this with its picture's own shape (_picture_size).
 const BOX: Dictionary = {"classic": Vector2(8.4, 4.6), "monopole": Vector2(7.2, 4.2), "wooden": Vector2(5.0, 3.0),
-	"rooftop": Vector2(5.4, 3.0), "neon": Vector2(5.6, 3.4), "trailer": Vector2(6.4, 2.2)}
+	"rooftop": Vector2(5.4, 3.0), "neon": Vector2(5.6, 3.4), "trailer": Vector2(6.4, 2.2), "barn": Vector2(7.6, 4.2)}
 ## The narrowest and the widest board built (width / height). A picture taller or wider than
 ## this has its middle cut to fit (_fit); every other picture shows whole.
 const ASPECT_MIN: float = 0.7
@@ -52,6 +57,15 @@ const ASPECT_MAX: float = 3.4
 
 ## The set's pictures were (re)loaded: r22_trip.gd refills the boards in view.
 signal pictures_changed
+
+## Whose billboards these are. Route 22's by default; the Route 81 Cruise (route81_room.gd)
+## has its own set, so setup() can be told another settings prefix (the same key names after
+## it), other folders, other shapes and other filler ads. Set by setup(), read everywhere.
+var prefix: String = "r22_bb_"
+var default_folder: String = DEFAULT_FOLDER
+var core_folder: String = CORE_FOLDER
+var shapes: PackedStringArray = SHAPES
+var ads: PackedStringArray = ADS
 
 var _kit: Dictionary
 var _pictures: Array[Texture2D] = []
@@ -65,13 +79,21 @@ var _downloads: Dictionary = {}         # Core picture name -> HTTPRequest
 var _checked: Dictionary = {}           # Core picture names already asked for this run (set of names)
 
 
-func setup(kit: Dictionary) -> void:
+## kit: the room's materials (r22_geo.gd new_kit). other: for another road's own set, any of
+## "prefix" (settings prefix, e.g. "r81_bb_"), "folder" (the default picture folder), "core_folder"
+## (where Core's pictures are kept), "shapes" and "ads" (file names in Route 22's textures).
+func setup(kit: Dictionary, other: Dictionary = {}) -> void:
 	_kit = kit
 	name = "Billboards"
+	prefix = String(other.get("prefix", prefix))
+	default_folder = String(other.get("folder", default_folder))
+	core_folder = String(other.get("core_folder", core_folder))
+	shapes = other.get("shapes", shapes)
+	ads = other.get("ads", ads)
 	_rng.randomize()
-	for ad in ADS:
+	for ad in ads:
 		_filler.append(load(Geo.TEX + ad + ".png") as Texture2D)
-	DirAccess.make_dir_recursive_absolute(DEFAULT_FOLDER)
+	DirAccess.make_dir_recursive_absolute(default_folder)
 	reload()
 	EventBus.setting_changed.connect(_on_setting_changed)
 
@@ -82,7 +104,7 @@ func _exit_tree() -> void:
 
 
 func _on_setting_changed(key: String, _v: Variant) -> void:
-	if key in ["r22_bb_folder", "r22_bb_core", "r22_bb_order", "r22_bb_filler"]:
+	if key in [prefix + "folder", prefix + "core", prefix + "order", prefix + "filler"]:
 		reload()
 
 
@@ -92,9 +114,9 @@ func picture_count() -> int:
 
 
 ## The folder pictures are read from (r22_bb_folder, else DEFAULT_FOLDER).
-static func folder() -> String:
-	var f := String(AppState.get_setting("r22_bb_folder")).strip_edges()
-	return f if f != "" else DEFAULT_FOLDER
+func folder() -> String:
+	var f := String(AppState.get_setting(prefix + "folder")).strip_edges()
+	return f if f != "" else default_folder
 
 
 ## Reads the set again: the folder's pictures (by name), then Core's (in the order chosen in
@@ -131,9 +153,9 @@ func reload() -> void:
 
 
 ## The Core picture names typed in r22_bb_core (comma or newline separated, "media:" allowed).
-static func core_names() -> PackedStringArray:
+func core_names() -> PackedStringArray:
 	var out := PackedStringArray()
-	for part in String(AppState.get_setting("r22_bb_core")).replace("\n", ",").split(",", false):
+	for part in String(AppState.get_setting(prefix + "core")).replace("\n", ",").split(",", false):
 		var n := part.strip_edges().trim_prefix("media:")
 		if n != "" and not out.has(n):
 			out.append(n)
@@ -144,7 +166,7 @@ static func core_names() -> PackedStringArray:
 func _core_file(stored: String) -> String:
 	var safe := stored.to_lower().validate_filename().replace(" ", "_")
 	for ext in ["png", "jpg", "webp", "gif"]:
-		var p := CORE_FOLDER.path_join(safe + "." + ext)
+		var p := core_folder.path_join(safe + "." + ext)
 		if FileAccess.file_exists(p):
 			return p
 	return ""
@@ -179,9 +201,9 @@ func _download(stored: String) -> void:
 			return
 		if old != "":
 			DirAccess.remove_absolute(old)     # (it may have another file type now)
-		DirAccess.make_dir_recursive_absolute(CORE_FOLDER)
+		DirAccess.make_dir_recursive_absolute(core_folder)
 		var safe := stored.to_lower().validate_filename().replace(" ", "_")
-		var fa := FileAccess.open(CORE_FOLDER.path_join(safe + "." + kind), FileAccess.WRITE)
+		var fa := FileAccess.open(core_folder.path_join(safe + "." + kind), FileAccess.WRITE)
 		if fa:
 			fa.store_buffer(body)
 			fa.close()
@@ -195,10 +217,10 @@ func _download(stored: String) -> void:
 ## Filler ads is on), else null (no board).
 func _take_picture() -> Texture2D:
 	if _pictures.is_empty():
-		if not bool(AppState.get_setting("r22_bb_filler")):
+		if not bool(AppState.get_setting(prefix + "filler")):
 			return null
 		return _filler[_rng.randi() % _filler.size()]
-	if String(AppState.get_setting("r22_bb_order")) == "order":
+	if String(AppState.get_setting(prefix + "order")) == "order":
 		var t := _pictures[_next % _pictures.size()]
 		_next += 1
 		return t
@@ -218,10 +240,10 @@ func _take_picture() -> Texture2D:
 
 
 ## The shapes switched on (Room tab > Billboards shape ticks).
-static func shapes_on() -> PackedStringArray:
+func shapes_on() -> PackedStringArray:
 	var out := PackedStringArray()
-	for s in SHAPES:
-		if bool(AppState.get_setting("r22_bb_" + s)):
+	for s in shapes:
+		if bool(AppState.get_setting(prefix + s)):
 			out.append(s)
 	return out
 
@@ -229,12 +251,13 @@ static func shapes_on() -> PackedStringArray:
 ## Puts boards on a road piece that has just come up: holder = the piece's "Boards" node (its
 ## old boards are removed first), k = the piece's number along the trip (so every PC's dice
 ## agree on where boards stand), slots = [[position, side (+1 right / -1 left)], ...] in the
-## piece's space.
+## piece's space. A slot may have a third entry: the shapes that fit that spot (Route 81: only
+## a tall board shows in front of woods); it gets a board only in one of those.
 func fill(holder: Node3D, k: int, slots: Array) -> void:
 	clear(holder)
-	var amount := clampf(float(AppState.get_setting("r22_bb_amount")), 0.0, 100.0)
-	var shapes := shapes_on()
-	if amount <= 0.0 or shapes.is_empty() or slots.is_empty():
+	var amount := clampf(float(AppState.get_setting(prefix + "amount")), 0.0, 100.0)
+	var on := shapes_on()
+	if amount <= 0.0 or on.is_empty() or slots.is_empty():
 		return
 	var chance := amount / 100.0 * PER_PIECE_AT_100 / float(slots.size())
 	for i in slots.size():
@@ -242,11 +265,17 @@ func fill(holder: Node3D, k: int, slots: Array) -> void:
 		dice.seed = hash(Vector2i(k, i)) + 2201
 		if dice.randf() >= chance:
 			continue
+		var slot: Array = slots[i]
+		var fit: Array = []
+		for shape_on in on:
+			if slot.size() < 3 or (slot[2] as Array).has(shape_on):
+				fit.append(shape_on)
+		if fit.is_empty():
+			continue
 		var tex := _take_picture()
 		if tex == null:
 			return
-		var slot: Array = slots[i]
-		var shape := shapes[dice.randi() % shapes.size()]
+		var shape := String(fit[dice.randi() % fit.size()])
 		_place(holder, shape, slot[0], float(slot[1]), tex, dice)
 
 
@@ -262,7 +291,7 @@ func clear(holder: Node3D) -> void:
 ## the prop material has, and their lamps light at night when "Lit at night" is on.
 func tick(night: float) -> void:
 	var pm := _kit["prop"] as ShaderMaterial
-	var lit := night * 1.2 if bool(AppState.get_setting("r22_bb_lit")) else 0.0
+	var lit := night * 1.2 if bool(AppState.get_setting(prefix + "lit")) else 0.0
 	var keys: Array[String] = ["travel", "bend", "hill", "wet", "cloud_shadow", "cloud_drift", "detail", "bend_start"]
 	var vals: Array = []
 	for key in keys:
@@ -474,6 +503,31 @@ func _shape(shape: String, aspect: float) -> Dictionary:
 			var side_turn := Basis(Vector3.UP, PI * 0.5)
 			faces.append(Transform3D(side_turn, Vector3(1.22, 2.0, 0.0)))
 			faces.append(Transform3D(side_turn * back, Vector3(-1.22, 2.0, 0.0)))
+		"barn":
+			# (Route 81) a red barn standing end-on to the traffic, the picture painted on both
+			# end walls the way barns once carried tobacco ads; weathered, unlit
+			faded = 0.35
+			var y := 0.9 + half.y
+			var wide := size.x + 1.8
+			var eave := size.y + 1.6
+			var deep := 11.0
+			var red := Color(0.42, 0.09, 0.06)
+			b.mat = Geo.MAT_WOOD
+			b.block(Vector3(0.0, eave * 0.5, 0.0), Vector3(wide, eave, deep), red)
+			var ridge := eave + wide * 0.3
+			for e: float in [-1.0, 1.0]:
+				b.tri(Vector3(-wide * 0.5, eave, e * deep * 0.5), Vector3(wide * 0.5, eave, e * deep * 0.5), Vector3(0.0, ridge, e * deep * 0.5), red)
+			b.mat = Geo.MAT_PANEL
+			for sx: float in [-1.0, 1.0]:
+				b.quad(Vector3(sx * (wide * 0.5 + 0.4), eave - 0.25, deep * 0.5 + 0.4), Vector3(sx * (wide * 0.5 + 0.4), eave - 0.25, -deep * 0.5 - 0.4),
+					Vector3(0.0, ridge + 0.05, -deep * 0.5 - 0.4), Vector3(0.0, ridge + 0.05, deep * 0.5 + 0.4), Color(0.4, 0.42, 0.43))
+			# white corner boards
+			b.mat = Geo.MAT_PAINT
+			for sx: float in [-1.0, 1.0]:
+				for e: float in [-1.0, 1.0]:
+					b.block(Vector3(sx * wide * 0.5, eave * 0.5, e * deep * 0.5), Vector3(0.22, eave, 0.22), Color(0.82, 0.82, 0.78))
+			faces.append(Transform3D(Basis.IDENTITY, Vector3(0.0, y, deep * 0.5 + 0.03)))
+			faces.append(Transform3D(back, Vector3(0.0, y, -deep * 0.5 - 0.03)))
 	b.mat = Geo.MAT_PAINT
 	info["mesh"] = b.to_mesh()
 	info["faces"] = faces

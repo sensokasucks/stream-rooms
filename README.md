@@ -1781,8 +1781,9 @@ Included rooms:
     slickrock domes, sand drifts, a gas station, a motel, a diner, a jerky stand, a ranch gate,
     an old wreck, buttes, a varnished cliff and more), never the same one twice in view, with
     telephone poles, ravens on the wires, reflector posts and mile markers.
-    - **Speed** is how fast the woody drives (0 = **Parked**). **Curves and hills** is how
-      much the road winds and rolls away in the distance.
+    - **Speed** is how fast the woody drives, in miles an hour (0 = **Parked**). **Curves** is
+      how much the road winds left and right away in the distance, **Hills** how much it rises
+      and dips; each can be 0 without the other.
     - **How busy** sets the other traffic: pickups, old sedans, semis, motorhomes, motorcycles
       and the odd tour bus, mostly oncoming, now and then one overtaking you.
     - **Landmarks and stops** sets how much of the road has something to look at (rock
@@ -1797,7 +1798,7 @@ Included rooms:
       (in the game the same list is the **Stream Core pictures** box, names separated by
       commas). Every board is built to its picture's shape (wide, square or tall), so the
       whole picture shows, and no post, lamp or catwalk stands in front of it. **How common** sets how often a board comes by (40 = about one every 15
-      seconds at 50 km/h, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
+      seconds at about 30 mph, 0 = **None**). **Order** is **Shuffle** or **In order**. **Lit at
       night** puts lamps on them. **Filler ads when the set is empty** shows made-up roadside
       ads until you add pictures. Six shapes, each with its own tick box: a classic two-post
       board, a tall single pole, a weathered wooden sign, one on an old roadside stop's roof, a
@@ -1806,6 +1807,15 @@ Included rooms:
       road, from each side, from the hood, a chase camera behind, a drone, from the roadside as
       you pass, a Reaction camera, and the road ahead.
     - Reaction targets: `!tomato car`, `road`.
+    - **Bobbleheads** (also on Route 81): little copies of the riders on springs on the woody's
+      dashboard, each showing the same picture as that rider in the seat (only riders who are
+      on get one). They nod and sway as the car speeds up, brakes, takes the curves and hits
+      bumps. **Bobbleheads on the dashboard** turns them on or off, **Size** sets how big
+      (100% = about 17 cm, toy size) and **Wobble** how loose the springs are (0 = **Still**,
+      up to 300%). Each one has its own **sideways** (along the dashboard), **forward / back**
+      and **turn** sliders, numbered by rider; turn 0 faces out through the windscreen towards
+      the Windshield camera, 180 faces the riders. In a co-stream everyone sees the host's
+      dashboard. The Hood camera shows them best.
   - Shared by both scenes:
     - **Time of day** (sunset at 18 lies straight down the road ahead and behind the drive-in
       screen; night brings the Milky Way) and **Day length** to let the clock run.
@@ -1839,6 +1849,117 @@ Included rooms:
     the room's own red sandstone so they match. The Cruise's woody is our own model, made
     with Blender by `rooms/route22/models/make_woody.py`; the other vehicles (sedan,
     convertible, pickup, semi, motorhome, tour bus, motorcycle) by `make_vehicles.py` there.
+- **Route 81 Cruise**: the Cruise's green sister, built in five rounds (the road, the land
+  and the tunnels; the detailed forest, the distant views and the lights; the farm valley, the
+  towns, the river bridge and the billboards; the coal country, the city, more weather and
+  the countryside's sounds; then the mountainsides, all-Blender trees and the bobbleheads).
+  The same red woody and the same four
+  seats and ten cameras, on an endless Pennsylvania interstate: two lanes each way with a grass
+  median between, forest on both sides, blasted rock cuts, overlooks where the ground falls
+  away behind a guardrail to a valley with long wooded ridges beyond, and tunnels. Like the
+  real I-81 it mostly runs along the side of a mountain or at its foot rather than on top:
+  in the mountain countries one side climbs, wooded, to a crest a couple of hundred metres up,
+  and the views open on the other side; in the valleys the road runs a little above the
+  fields, the river or the city, with the ridges standing round the valley. Every mile or so
+  the lie of the land changes: the mountain swaps to the other side, the road runs through a
+  notch between two mountains, or it dips down into a valley and climbs out again. The land
+  and the road carry on into the distance, nearly 3 km ahead (the far stretch is drawn
+  simpler, with painted forest instead of single trees, so it costs little). The
+  **Scenery** choice at the top of the Room tab of either Cruise jumps between **Route 22
+  (desert highway)** and **Route 81 (Pennsylvania mountains)**. All place names on the green
+  signs and the tunnels are made up.
+  - **Speed** (in miles an hour), **Curves**, **Hills** and **How busy** are the same sliders
+    as the desert Cruise's. Here the curves are stronger and really turn the car: the far
+    ridges and the sun swing round as the highway bends. **Hills** is the rise and dip of the
+    road ahead, separate from the curves. How high the road is above the valley floor depends
+    on the country: about 20 to 40 m in the farm, river and city valleys, 100 to 300 m in the
+    mountains, so the same overlook is a low bank one time and a long fall another. Traffic runs on the other road across the median, and now and then something
+    passes you in the left lane; a lot of it is trucks.
+  - **Tunnels**: **Often** (about every 4 km), **Now and then** (7 km), **Seldom** (13 km) or
+    **Never**. Each tunnel is 400 m long with orange lamps, and the country on the far side is
+    different (another height, another stretch of the ridges). The woody's headlights come on
+    inside. In photosensitive-safe mode the lamps' light goes by evenly instead of in pools.
+  - **Country**: what kind of country the highway runs through. **The tour** goes through each
+    in turn, a new one on the far side of every tunnel (with **Tunnels** on **Never** it still
+    changes every 10 km or so, through a stretch of woods). Or stay in one:
+    - **Ridge and gaps**: woods, rock cuts and overlooks, high on a ridge.
+    - **Farm valley**: low in a valley between crop fields in strips of corn, hay and ploughed
+      earth. Along the way: family farms with a red barn and a silo, Amish farms (white barn,
+      a windmill pump, washing on the line, a horse and buggy on the lane), two kinds of small
+      town (one with a main street of shop fronts, a white church and a water tower; one old
+      county seat with a stone courthouse, a mill and a covered bridge), gas stations with a
+      tall pole sign, a truck stop and an old closed-down filling station. Their windows and
+      signs light up at night. All of it is made up: no real towns and no real brands.
+    - **River crossing**: halfway through, the highway crosses a wide river on a 400 m bridge,
+      with the other road's bridge and its piers beside you. The river winds on into the
+      distance on both sides, its surface rippling as it flows.
+    - **Endless Mountains**: the highest road (up to about 300 m above the valley), most of it
+      overlook.
+    - **Coal country**: a high plateau of scrub woods and black heaps of mine waste. Along the
+      way: a coal town of double houses along one street with its company store and
+      wooden church, a huge old coal breaker, a town left empty (cellar walls and chimneys,
+      boarded-up houses, leaning poles) and one where an old mine burns underground: scorched
+      sunken ground, dead grey trees and smoke rising beside the street.
+    - **City valley**: low in a wide valley through an old industrial city: a brick mill
+      with saw-tooth roofs and tall smokestacks, warehouses, streets of brick row houses, a
+      few taller blocks downtown and a big stone church, all lit at night.
+  - **How often views open up**: how much of the road has an overlook on one side rather than
+    woods or rock (0% = **Never**).
+  - **Forest density**: how many of the trees near the road this PC draws (each PC's own;
+    lower it on a slow PC). **Season**: **Summer (green)** or **Fall colours**.
+  - On the **Detailed** look (**Set detail**) every tree is one of the Lakeside Campfire's
+    Blender-modelled trees (oak, maple, birch, fir and pine, with real branching limbs and small
+    leafy twigs), all the way back and on top of the tunnels; on the **Low** look they are plain
+    low-poly ones. To keep the frame rate up each tree is drawn in full only near the camera
+    (about 55 m), as a lighter tree out to about 140 m, and beyond that as a picture of itself
+    that turns to face the camera; a tree dissolves softly from one into the next. (Further out
+    than the campfire's, so the changes are not seen at highway speed.) Further than about
+    300 m from the road the forest is painted on the ground.
+  - **Streetlights**: tall poles stand in the median before and after every tunnel and light
+    the road at night. **Sodium (orange)**, **LED (white)**, **Mixed** (every other pole is
+    LED) or **Off** (dark poles; the tunnels stay lit). The tunnel lamps take the same colour.
+    In photosensitive-safe mode their light on the road is even instead of in pools.
+  - Distant views: from an overlook every stretch of country between two tunnels shows a
+    different pair of things in the valley (a river bend, a patchwork of farms, a town whose
+    windows light up at night, a stone railway viaduct with a train on it, a reservoir and its
+    dam, a field of bare boulders, a water gap), one thing on the nearest ridge (a ski hill, a
+    wind farm with turning blades, a strip mine, a fire tower, a quarry) and a radio mast with
+    red warning lights. Some stretches have morning mist lying in the valley. They creep past
+    slowly as you drive. Now and then a power line crosses the highway through a corridor cut
+    in the forest.
+  - **Billboards**: Route 81 has its own set of pictures, separate from the desert Cruise's.
+    **Picture folder** (empty = the `billboards_route81` folder in Stream Rooms' data folder)
+    and **Stream Core pictures** (easier from Stream Core's dashboard: Setup > Stream Rooms
+    settings > **Route 81 billboards** > **Choose pictures**, which also has blank templates
+    to download). **How common**, **Order**, **Lit at night** and **Filler ads when the set is
+    empty** work as on Route 22. The shapes: **classic two-post board**, **tall single pole**
+    (the one that stands in front of the woods), **weathered wooden sign**, **parked trailer**
+    and **painted barn** (the picture painted on a red barn's end wall). Boards stand in
+    fields, at the quiet ends of towns and in front of woods, never at an overlook, a rock
+    cut, the bridge or a tunnel. Any picture size works; 1920 x 1080 fills every shape best.
+  - **Time of day**, **Day length**, **Weather** (**Clear**, **Cloud deck**, **Valley fog**,
+    **Drizzle**, **Thunderstorm**, **After rain**; the desert's dust storm counts as Clear
+    here), **Clouds**, **Stars**, **Heat
+    shimmer**, **Wind** and **Set detail** work as on Route 22 and share its settings.
+  - **Valley fog** and **Drizzle** are Route 81's own weathers. Valley fog lies in the valleys
+    of the far view and hangs over the road; on the **Detailed** look the sun and the lamps
+    throw beams in it. Drizzle is a grey sky with a steady light rain and no thunder. (If you
+    jump to the desert with one of them picked, fog shows as a cloud deck and drizzle as After
+    rain.)
+  - **Weather changes by itself**: off, the weather stays what you picked. On, it moves on
+    every four to nine minutes the way weather does: clear, cloud, a foggy spell, drizzle, now
+    and then a thunderstorm and the wet road after it. For the hour to move too, set **Day
+    length**.
+  - Sound: by day birds sing in the woods (quieter at speed and in the rain), and inside a
+    tunnel the wind, rain and crickets drop away and the road noise booms.
+  - Cameras and reaction targets: as on the Route 22 Cruise.
+  - In a co-stream the road (tunnels, country, views, season, streetlights, the billboards' rules) is the host's, and the guests' road keeps
+    pace with the host's (with **Weather changes by itself** on, the host's weather is everyone's). **Forest density**, **Set detail** and the billboard pictures are each PC's own.
+  - Source: built in code in `rooms/route81/` on top of Route 22's parts (`r81_land.gd` the
+    land, trees and far ridges, `r81_pieces.gd` rails, tunnels and signs, `r81_trip.gd` which
+    land comes where, `r81_traffic.gd`). The rock, grass, forest floor, asphalt and concrete
+    photos come from [Poly Haven](https://polyhaven.com) (CC0) through
+    `rooms/route81/textures/make_textures.py`. Test: `test_route81`.
 - **Studio**: a simple test room without a webcam frame, which shows the corner-overlay fallback.
 
 ## Exporting a standalone build (Windows)

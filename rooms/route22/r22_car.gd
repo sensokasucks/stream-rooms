@@ -24,6 +24,11 @@ const PROBE_EVERY: float = 1.2
 ## Where the seats are, in the car's space (the presenters sit on them; route22_cruise_room.gd).
 var seats: Array[Vector3] = []
 
+## Set before build(): what the number plate says, and whether the back wheels raise a dust
+## trail on a dry road (the desert Cruise: yes; Route 81's clean interstate: no).
+var plate_text: String = "ROUTE 22"
+var dusty: bool = true
+
 var _body: Node3D                     # everything but the wheels (it sways a little)
 var _wheels: Array[Node3D] = []
 var _wheel_r: float = 0.36
@@ -71,7 +76,7 @@ func build(kit: Dictionary) -> void:
 	# the plate's words
 	var plate := model.find_child("PlateWords", true, false) as Node3D
 	if plate:
-		Geo.add_words(_body, "ROUTE 22", plate.position, 0.0, 0.085, Color(0.1, 0.1, 0.12))
+		Geo.add_words(_body, plate_text, plate.position, 0.0, 0.085, Color(0.1, 0.1, 0.12))
 	# the wheels, each its own node so it can turn (the model's wheel faces +X: turned round on the left)
 	_wheel_r = wheel_at[0].y if not wheel_at.is_empty() else 0.36
 	for c in wheel_at:
@@ -126,6 +131,12 @@ func build(kit: Dictionary) -> void:
 	_probe.position = Vector3(0.0, 1.2, 0.0)
 	for mi in find_children("*", "MeshInstance3D", true, false):
 		(mi as MeshInstance3D).layers |= REFLECT_LAYER
+
+
+## The car's body (everything but the wheels; it sways a little): r22_bobbleheads.gd stands
+## the dashboard's bobbleheads on it so they ride its sway.
+func get_body() -> Node3D:
+	return _body
 
 
 ## The positions of the model's marker nodes whose names start with `prefix`, in name order
@@ -293,7 +304,7 @@ func tick(delta: float, speed: float, night: float, wet: float, detailed: bool) 
 		s.light_energy = 3.0 * night
 	_lamp_mat.emission_energy_multiplier = 2.0 * night
 	_tail_mat.emission_energy_multiplier = 0.3 + 2.5 * night
-	_dust.emitting = speed > 4.0 and wet < 0.2
+	_dust.emitting = dusty and speed > 4.0 and wet < 0.2
 	_probe.visible = detailed
 	if detailed:
 		_probe_in -= delta

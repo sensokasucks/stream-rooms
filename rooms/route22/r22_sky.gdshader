@@ -43,6 +43,10 @@ uniform vec3 dust_color = vec3(0.62, 0.38, 0.22);
 // The ordinary desert haze low on the horizon (0..1).
 uniform float haze : hint_range(0.0, 1.0) = 0.35;
 uniform float exposure = 1.0;
+// 0 = the desert (far mesas and buttes on the horizon, a red desert floor below it).
+// 1 = green country (Route 81, rooms/route81): no mesas, and blue-grey distance haze where the
+// desert floor was; that room draws its own far ridges as a mesh (r81_land.gd build_backdrop).
+uniform float land : hint_range(0.0, 1.0) = 0.0;
 
 float hash3(vec3 p) {
 	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -287,17 +291,17 @@ void sky() {
 	c += vec3(0.5, 0.52, 0.7) * flash * 0.25 * (0.3 + 0.7 * up);
 
 	// ── layers 7 and 8: the far mesas and the nearer buttes ──
-	vec3 haze_col = mix(hor, vec3(0.78, 0.6, 0.48) * (0.06 + 0.94 * day), 0.35);
+	vec3 haze_col = mix(hor, mix(vec3(0.78, 0.6, 0.48), vec3(0.66, 0.72, 0.8), land) * (0.06 + 0.94 * day), 0.35);
 	float light_az = day > 0.3 ? atan(sun_dir.x, -sun_dir.z) : atan(moon_dir.x, -moon_dir.z);
 	float far_h = far_mesas(az);
-	if (d.y < far_h + 0.003) {
+	if (d.y < far_h + 0.003 && land < 0.5) {
 		vec3 far_col = mix(vec3(0.03, 0.025, 0.05), vec3(0.5, 0.42, 0.52), day);
 		far_col = mix(far_col, vec3(0.5, 0.3, 0.4), dusk * 0.6);
 		far_col = mix(far_col, haze_col, 0.35 + 0.4 * haze);
 		c = mix(c, far_col, smoothstep(far_h + 0.0015, far_h - 0.0015, d.y));
 	}
 	float near_h = near_buttes(az);
-	if (d.y < near_h + 0.003) {
+	if (d.y < near_h + 0.003 && land < 0.5) {
 		float side = sin(light_az - az);
 		float lean = (near_buttes(az + 0.006) - near_buttes(az - 0.006)) * 40.0;
 		float lit = clamp(0.55 - lean * side * 1.2, 0.0, 1.0);
@@ -315,6 +319,8 @@ void sky() {
 	if (d.y < 0.0) {
 		vec3 floor_col = mix(vec3(0.02, 0.016, 0.02), vec3(0.62, 0.38, 0.25), day);
 		floor_col = mix(floor_col, vec3(0.55, 0.3, 0.22), dusk * 0.4);
+		// green country: below the horizon is only ever a sliver under the far ridges, so haze
+		floor_col = mix(floor_col, haze_col, land);
 		c = mix(mix(haze_col, floor_col, 0.6), floor_col, clamp(-d.y * 5.0, 0.0, 1.0));
 	}
 	c = mix(c, haze_col, haze * 0.5 * smoothstep(0.06, 0.0, abs(d.y)));

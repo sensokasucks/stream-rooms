@@ -17,7 +17,8 @@ extends Node3D
 ## Also here: the road's slow curves and hills (bend / hill, for r22_common.gdshaderinc, also
 ## from travel), bending the signs' words (Label3D is not drawn by our shaders, so the bend is
 ## applied to them here), turning the windmills, and the mile markers.
-## Settings: r22_speed (km/h; 0 = parked), r22_curves (how much the road winds and rolls),
+## Settings: r22_speed (km/h; 0 = parked), r22_curves (how much the road winds), r22_hills
+## (how much it rolls),
 ## r22_scenery (how many places are landmarks rather than plain desert; shared in a co-stream,
 ## so every PC's road matches).
 ## route22_cruise_room.gd makes it (setup) and calls tick() every frame.
@@ -83,9 +84,10 @@ func _exit_tree() -> void:
 		EventBus.net_room_event.disconnect(_on_net_room_event)
 
 
-## r22_speed in metres a second (the setting is km/h, 0..120).
+## r22_speed in metres a second (the setting is km/h, 0 to 130: up to 80 mph, which is how
+## the Room tab shows it).
 static func _target_speed() -> float:
-	return clampf(float(AppState.get_setting("r22_speed")), 0.0, 120.0) / 3.6
+	return clampf(float(AppState.get_setting("r22_speed")), 0.0, 130.0) / 3.6
 
 
 ## The Landmarks and stops slider as a share of places, 0..1, in hundredths (so every PC rounds
@@ -155,9 +157,11 @@ func tick(delta: float, wind: float, night: float) -> void:
 	speed = move_toward(speed, _target_speed(), delta * 3.0)       # about 3 m/s² either way
 	travel += speed * delta
 	# the curves and hills: slow waves along the road (the same on every PC for the same travel)
+	# (Curves, r22_curves, bends it sideways; Hills, r22_hills, up and down)
 	var curves := clampf(float(AppState.get_setting("r22_curves")), 0.0, 1.0)
+	var hills := clampf(float(AppState.get_setting("r22_hills")), 0.0, 1.0)
 	bend = curves * MAX_BEND * (0.7 * sin(travel / 900.0) + 0.3 * sin(travel / 370.0 + 1.3))
-	hill = curves * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
+	hill = hills * MAX_HILL * (0.6 * sin(travel / 640.0 + 0.4) + 0.4 * sin(travel / 290.0 + 2.1))
 	_place()
 	_bend_words()
 	for k: int in _placed:
